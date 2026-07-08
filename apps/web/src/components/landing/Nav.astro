@@ -1,0 +1,64 @@
+---
+/*
+  Nav — cabecera del sitio público (sticky, con blur).
+  El enlace activo se resalta según la ruta actual.
+*/
+import Logo from '../ui/Logo.astro';
+import Icon from '../ui/Icon.astro';
+
+const links = [
+  { href: '/', label: 'Inicio' },
+  { href: '/quienes-somos', label: 'Quiénes somos' },
+  { href: '/servicios', label: 'Servicios' },
+  { href: '/rastreo', label: 'Rastrear' },
+];
+
+const path = Astro.url.pathname;
+const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
+---
+<header class="nav">
+  <div class="nav__inner wrap">
+    <a href="/" aria-label="Inicio"><Logo size={21} /></a>
+
+    <nav class="nav__links">
+      {links.map((l) => (
+        <a href={l.href} class:list={['nav__link', { 'is-active': isActive(l.href) }]}>
+          {l.label}
+        </a>
+      ))}
+    </nav>
+
+    <div class="nav__actions">
+      <a href="/ingresar" class="btn btn-ghost btn-sm">Iniciar sesión</a>
+      <a href="/registro" class="btn btn-primary btn-sm">
+        Crear casillero<Icon name="arrowR" size={15} />
+      </a>
+    </div>
+  </div>
+</header>
+
+<style>
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    background: oklch(0.985 0.004 263 / .82);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav__inner {
+    height: 70px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .nav__links { display: flex; align-items: center; gap: 4px; }
+  .nav__link {
+    padding: 8px 14px; border-radius: 8px;
+    font-size: 14px; font-weight: 600; color: var(--ink-2);
+    transition: background .15s, color .15s;
+  }
+  .nav__link:hover { color: var(--ink); }
+  .nav__link.is-active { color: var(--brand); background: var(--brand-soft); }
+  .nav__actions { display: flex; align-items: center; gap: 10px; }
+
+  @media (max-width: 860px) {
+    .nav__links { display: none; }
+  }
+</style>

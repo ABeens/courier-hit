@@ -1,0 +1,144 @@
+---
+/*
+  Hero — sección principal del landing. Titular, CTAs, barra de
+  rastreo (form GET → /rastreo) y una tarjeta visual decorativa.
+*/
+import Icon from '../ui/Icon.astro';
+
+const demoTn = '1Z999AA10123456784';
+---
+<section class="hero">
+  <div class="hero__inner wrap">
+    <div class="hero__copy fadeUp">
+      <span class="chip hero__badge">
+        <span class="hero__dot"></span>+12.000 paquetes entregados este año
+      </span>
+
+      <h1 class="hero__title">
+        Compra en EE.&nbsp;UU.<br />
+        <span class="hero__accent">Recíbelo</span> en casa.
+      </h1>
+
+      <p class="hero__lead">
+        Tu casillero en Miami para comprar donde quieras. Te lo consolidamos,
+        despachamos y rastreas cada paso en tiempo real.
+      </p>
+
+      <div class="hero__cta">
+        <a href="/registro" class="btn btn-primary btn-lg">
+          Crear mi casillero gratis<Icon name="arrowR" size={17} />
+        </a>
+        <a href="/servicios" class="btn btn-ghost btn-lg">Ver servicios</a>
+      </div>
+
+      <form class="card hero__track" action="/rastreo" method="get">
+        <span class="hero__track-ic"><Icon name="search" size={19} /></span>
+        <input
+          class="input hero__track-input"
+          type="text"
+          name="tn"
+          placeholder="Rastrea con tu número de tracking…"
+          autocomplete="off"
+        />
+        <button type="submit" class="btn btn-dark">Rastrear</button>
+      </form>
+      <div class="hero__hint">
+        Prueba con <a class="mono hero__demo" href={`/rastreo?tn=${demoTn}`}>{demoTn}</a>
+      </div>
+    </div>
+
+    <!-- Visual decorativo: tarjeta de rastreo simulada -->
+    <div class="hero__visual fadeUp" aria-hidden="true">
+      <div class="card hero__card hero__card--main">
+        <div class="between hero__card-head">
+          <div class="row" style="gap:10px">
+            <span class="carrier">UPS</span>
+            <span class="mono hero__tn">1Z999AA101…6784</span>
+          </div>
+          <span class="spill hero__pill">
+            <span class="dot"></span>En tránsito
+          </span>
+        </div>
+        <div class="hero__prod">Audífonos Sony WH-1000XM5</div>
+        <div class="muted hero__prod-sub">1.2 kg · Bodega Miami → Bogotá</div>
+        <div class="hero__steps">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <span class:list={['hero__step', { 'is-done': i <= 2 }]}></span>
+          ))}
+        </div>
+      </div>
+
+      <div class="card hero__card hero__card--float">
+        <span class="hero__ok"><Icon name="checkCircle" size={20} color="oklch(0.45 0.12 160)" /></span>
+        <div>
+          <div class="hero__ok-title">¡Paquete entregado!</div>
+          <div class="muted hero__ok-sub">Lote SHEIN · Hace 2 días</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    position: relative; overflow: hidden;
+    background: linear-gradient(180deg, var(--brand-softer), var(--paper) 70%);
+  }
+  .hero__inner {
+    padding-top: 76px; padding-bottom: 64px;
+    display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center;
+  }
+
+  .hero__badge { background: var(--surface); border-color: var(--brand-soft); color: var(--brand-600); }
+  .hero__dot { width: 7px; height: 7px; border-radius: 99px; background: var(--ok); }
+
+  .hero__title { font-size: 56px; line-height: 1.04; margin-top: 22px; letter-spacing: -0.035em; }
+  .hero__accent { color: var(--brand); }
+  .hero__lead { font-size: 18px; color: var(--muted); margin-top: 20px; max-width: 460px; line-height: 1.55; }
+
+  .hero__cta { display: flex; gap: 12px; margin-top: 30px; flex-wrap: wrap; }
+
+  .hero__track {
+    margin-top: 36px; padding: 8px; display: flex; gap: 8px; align-items: center;
+    box-shadow: var(--sh-2);
+  }
+  .hero__track-ic { padding-left: 10px; color: var(--faint); display: flex; }
+  .hero__track-input { border: none; box-shadow: none; flex: 1; }
+  .hero__track-input:focus { box-shadow: none; }
+  .hero__hint { font-size: 12.5px; color: var(--faint); margin-top: 10px; padding-left: 4px; }
+  .hero__demo { color: var(--brand); font-weight: 600; }
+
+  /* Visual */
+  .hero__card { padding: 22px; }
+  .hero__card--main { box-shadow: var(--sh-3); transform: rotate(1.2deg); }
+  .hero__card-head { margin-bottom: 16px; }
+  .hero__tn { font-size: 12.5px; color: var(--muted); }
+  .carrier {
+    font-size: 11px; font-weight: 700; letter-spacing: .02em;
+    padding: 3px 8px; border-radius: 6px; background: var(--ink); color: #fff;
+  }
+  .hero__pill { background: var(--info-soft); color: var(--info); font-size: 12.5px; }
+  .hero__pill .dot { background: var(--info); animation: pulseDot 1.4s infinite; }
+  .hero__prod { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+  .hero__prod-sub { font-size: 13px; margin-bottom: 18px; }
+  .hero__steps { display: flex; gap: 6px; }
+  .hero__step { flex: 1; height: 6px; border-radius: 99px; background: var(--paper-2); }
+  .hero__step.is-done { background: var(--brand); }
+
+  .hero__card--float {
+    padding: 16px; margin-top: 16px; margin-left: 40px; transform: rotate(-1.5deg);
+    box-shadow: var(--sh-2); display: flex; align-items: center; gap: 13px;
+  }
+  .hero__ok {
+    width: 40px; height: 40px; border-radius: 12px; background: var(--ok-soft);
+    display: grid; place-items: center; flex-shrink: 0;
+  }
+  .hero__ok-title { font-weight: 700; font-size: 14px; }
+  .hero__ok-sub { font-size: 12.5px; }
+
+  @media (max-width: 900px) {
+    .hero__inner { grid-template-columns: 1fr; gap: 40px; }
+    .hero__visual { display: none; }
+    .hero__title { font-size: 44px; }
+  }
+</style>

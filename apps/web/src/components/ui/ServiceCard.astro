@@ -1,0 +1,43 @@
+---
+/*
+  ServiceCard — tarjeta de servicio reutilizable (landing y /servicios).
+*/
+import Icon from './Icon.astro';
+import type { Service } from '../../data/services';
+
+interface Props {
+  service: Service;
+}
+const { service } = Astro.props;
+---
+<a href={`/servicios/${service.id}`} class="card svc">
+  <div class="between">
+    <span class="svc__ic"><Icon name={service.icon} size={23} color="var(--brand)" /></span>
+    {service.tag && <span class="svc__tag">{service.tag}</span>}
+  </div>
+  <div class="svc__name">{service.name}</div>
+  <p class="muted svc__short">{service.short}</p>
+  <div class="svc__more">Conocer más<Icon name="chevR" size={15} /></div>
+</a>
+
+<style>
+  .svc {
+    padding: 24px; text-align: left; display: block;
+    transition: box-shadow .18s ease, transform .18s ease;
+  }
+  .svc:hover { box-shadow: var(--sh-3); transform: translateY(-3px); }
+  .svc__ic {
+    width: 48px; height: 48px; border-radius: 13px; background: var(--brand-soft);
+    display: grid; place-items: center;
+  }
+  .svc__tag {
+    font-size: 11px; font-weight: 700; color: var(--brand-600);
+    background: var(--brand-soft); padding: 4px 10px; border-radius: 99px;
+  }
+  .svc__name { font-weight: 700; font-size: 17px; margin-top: 18px; font-family: var(--font-display); }
+  .svc__short { font-size: 14px; margin-top: 8px; line-height: 1.55; }
+  .svc__more {
+    display: flex; align-items: center; gap: 6px; margin-top: 16px;
+    color: var(--brand); font-weight: 600; font-size: 13.5px;
+  }
+</style>

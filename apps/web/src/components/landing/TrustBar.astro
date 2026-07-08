@@ -1,0 +1,46 @@
+---
+/*
+  TrustBar — franja de métricas de confianza bajo el hero.
+*/
+import Icon from '../ui/Icon.astro';
+
+const stats = [
+  { icon: 'box', big: '+12k', small: 'paquetes/año' },
+  { icon: 'globe', big: '8', small: 'transportistas' },
+  { icon: 'zap', big: '3–6', small: 'días aéreo' },
+  { icon: 'shield', big: '100%', small: 'pago seguro' },
+  { icon: 'star', big: '4.9', small: 'satisfacción' },
+];
+---
+<section class="trust">
+  <div class="trust__inner wrap">
+    {stats.map((s) => (
+      <div class="trust__item">
+        <span class="trust__ic"><Icon name={s.icon} size={20} color="var(--brand)" /></span>
+        <div>
+          <div class="trust__big">{s.big}</div>
+          <div class="muted trust__small">{s.small}</div>
+        </div>
+      </div>
+    ))}
+  </div>
+</section>
+
+<style>
+  .trust {
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .trust__inner {
+    display: flex; justify-content: space-between; gap: 24px;
+    padding-top: 26px; padding-bottom: 26px; flex-wrap: wrap;
+  }
+  .trust__item { display: flex; align-items: center; gap: 12px; }
+  .trust__ic {
+    width: 42px; height: 42px; border-radius: 12px; background: var(--brand-soft);
+    display: grid; place-items: center; flex-shrink: 0;
+  }
+  .trust__big { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -.02em; }
+  .trust__small { font-size: 12.5px; }
+</style>

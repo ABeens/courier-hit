@@ -1,0 +1,24 @@
+# Dependencias
+node_modules/
+.pnpm-store/
+
+# Build / salida Astro
+dist/
+.astro/
+
+# Lockfiles ajenos (este repo usa pnpm-lock.yaml)
+package-lock.json
+yarn.lock
+
+# Logs y entorno
+*.log
+.env
+.env.*
+!.env.example
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Documentación (no versionada por ahora)
+docs/

@@ -1,0 +1,47 @@
+---
+/*
+  CTA — llamado a la acción final antes del footer.
+*/
+import Icon from '../ui/Icon.astro';
+---
+<section class="cta wrap">
+  <div class="cta__box">
+    <div class="cta__glow"></div>
+    <div class="cta__content">
+      <h2 class="cta__title">Tu próxima compra te está esperando en Miami.</h2>
+      <p class="cta__lead">
+        Crea tu casillero gratis en menos de dos minutos y empieza a comprar sin fronteras.
+      </p>
+      <div class="cta__actions">
+        <a href="/registro" class="btn btn-primary btn-lg">
+          Crear casillero gratis<Icon name="arrowR" size={17} />
+        </a>
+        <a href="/rastreo" class="btn btn-lg cta__ghost">Rastrear un paquete</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .cta { padding-top: 80px; padding-bottom: 80px; }
+  .cta__box {
+    background: var(--dark); border-radius: var(--r-xl); padding: 56px;
+    position: relative; overflow: hidden;
+  }
+  .cta__glow {
+    position: absolute; right: -60px; top: -60px; width: 280px; height: 280px;
+    border-radius: 50%;
+    background: radial-gradient(circle, oklch(0.55 0.20 263 / .35), transparent 70%);
+  }
+  .cta__content { position: relative; max-width: 560px; }
+  .cta__title { font-size: 40px; color: #fff; letter-spacing: -.03em; line-height: 1.1; }
+  .cta__lead { color: var(--on-dark-muted); font-size: 17px; margin-top: 16px; line-height: 1.55; }
+  .cta__actions { display: flex; gap: 12px; margin-top: 30px; flex-wrap: wrap; }
+  .cta__ghost { background: var(--dark-2); color: #fff; border: 1px solid var(--dark-line); }
+  .cta__ghost:hover { background: var(--dark-line); }
+
+  @media (max-width: 640px) {
+    .cta__box { padding: 36px 28px; }
+    .cta__title { font-size: 30px; }
+  }
+</style>

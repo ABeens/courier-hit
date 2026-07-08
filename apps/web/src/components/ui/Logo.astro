@@ -1,0 +1,56 @@
+---
+/*
+  Logo — marca HS Global Courier. Portado del prototipo.
+  - dark: para fondos oscuros (texto blanco)
+  - mono: monocromo (hereda currentColor), sin sombra
+*/
+interface Props {
+  size?: number;
+  dark?: boolean;
+  mono?: boolean;
+}
+const { size = 22, dark = false, mono = false } = Astro.props;
+
+const fg = mono ? 'currentColor' : dark ? '#fff' : 'var(--ink)';
+const accent = mono ? 'currentColor' : 'var(--brand)';
+const accentText = mono ? 'currentColor' : 'var(--brand)';
+---
+<div class="logo" style={`--logo-size:${size}px`}>
+  <div
+    class="logo__mark"
+    style={`background:${accent};box-shadow:${mono ? 'none' : '0 4px 12px oklch(0.55 0.20 263 / .35)'}`}
+  >
+    <svg
+      width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"
+    >
+      <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+      <path d="M3.3 7l8.7 5 8.7-5" />
+      <path d="M12 22V12" />
+    </svg>
+  </div>
+  <div class="logo__text">
+    <div class="logo__name" style={`color:${fg}`}>HS Global</div>
+    <div class="logo__sub" style={`color:${accentText}`}>Courier</div>
+  </div>
+</div>
+
+<style>
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo__mark {
+    width: calc(var(--logo-size) * 1.65);
+    height: calc(var(--logo-size) * 1.65);
+    border-radius: calc(var(--logo-size) * 0.42);
+    display: grid; place-items: center; flex-shrink: 0;
+    position: relative; overflow: hidden;
+  }
+  .logo__text { line-height: 1; font-family: var(--font-display); }
+  .logo__name {
+    font-size: calc(var(--logo-size) * 0.82);
+    font-weight: 700; letter-spacing: -0.02em;
+  }
+  .logo__sub {
+    font-size: calc(var(--logo-size) * 0.40);
+    font-weight: 600; letter-spacing: 0.18em; margin-top: 3px; text-transform: uppercase;
+  }
+</style>

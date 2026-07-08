@@ -1,0 +1,25 @@
+---
+/*
+  Landing público — compone las secciones modulares.
+  100% estático: cero JavaScript en el cliente.
+*/
+import Base from '../layouts/Base.astro';
+import Nav from '../components/landing/Nav.astro';
+import Hero from '../components/landing/Hero.astro';
+import TrustBar from '../components/landing/TrustBar.astro';
+import HowItWorks from '../components/landing/HowItWorks.astro';
+import ServicesPreview from '../components/landing/ServicesPreview.astro';
+import CTA from '../components/landing/CTA.astro';
+import Footer from '../components/landing/Footer.astro';
+---
+<Base>
+  <Nav />
+  <main>
+    <Hero />
+    <TrustBar />
+    <HowItWorks />
+    <ServicesPreview />
+    <CTA />
+  </main>
+  <Footer />
+</Base>
