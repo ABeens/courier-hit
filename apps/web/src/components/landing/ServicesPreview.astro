@@ -1,0 +1,39 @@
+---
+/*
+  ServicesPreview — muestra los servicios en el landing.
+*/
+import Icon from '../ui/Icon.astro';
+import ServiceCard from '../ui/ServiceCard.astro';
+import { SERVICES } from '../../data/services';
+---
+<section class="svcs">
+  <div class="svcs__inner wrap">
+    <div class="between svcs__head">
+      <div>
+        <span class="chip"><Icon name="layers" size={13} color="var(--brand)" />Servicios</span>
+        <h2 class="svcs__title">Todo lo que necesitas para importar</h2>
+      </div>
+      <a href="/servicios" class="btn btn-ghost">
+        Ver los {SERVICES.length} servicios<Icon name="arrowR" size={16} />
+      </a>
+    </div>
+
+    <div class="svcs__grid">
+      {SERVICES.map((s) => <ServiceCard service={s} />)}
+    </div>
+  </div>
+</section>
+
+<style>
+  .svcs { background: var(--paper-2); border-top: 1px solid var(--line); }
+  .svcs__inner { padding-top: 80px; padding-bottom: 80px; }
+  .svcs__head { margin-bottom: 36px; align-items: flex-end; }
+  .svcs__title { font-size: 38px; margin-top: 16px; letter-spacing: -.03em; }
+  .svcs__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+
+  @media (max-width: 900px) { .svcs__grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) {
+    .svcs__grid { grid-template-columns: 1fr; }
+    .svcs__head { flex-direction: column; align-items: flex-start; gap: 16px; }
+  }
+</style>

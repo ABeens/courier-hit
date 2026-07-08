@@ -1,0 +1,9 @@
+{
+  "name": "courier-hit",
+  "private": true,
+  "packageManager": "pnpm@11.1.1",
+  "scripts": {
+    "dev": "pnpm --filter @courier/web dev",
+    "build": "pnpm --filter @courier/web build"
+  }
+}

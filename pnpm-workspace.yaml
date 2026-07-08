@@ -1,0 +1,9 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# Dependencias a las que se les permite ejecutar build scripts (postinstall).
+# Astro/Vite los necesitan para compilar y optimizar imágenes.
+allowBuilds:
+  esbuild: true
+  sharp: true

@@ -1,0 +1,7 @@
+/* ============================================================
+   HS GLOBAL — Hoja global. Importa el sistema de diseño completo.
+   Se carga una vez en el layout base.
+   ============================================================ */
+@import './tokens.css';
+@import './base.css';
+@import './atoms.css';

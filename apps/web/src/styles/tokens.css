@@ -1,0 +1,65 @@
+/* ============================================================
+   HS GLOBAL — Design tokens
+   Fuente única de colores, tipografía, radios y sombras.
+   Portado 1:1 del prototipo (backup/HS Global Courier.html).
+   ============================================================ */
+:root {
+  /* Brand */
+  --brand:        oklch(0.55 0.20 263);
+  --brand-600:    oklch(0.49 0.20 263);
+  --brand-700:    oklch(0.43 0.18 263);
+  --brand-soft:   oklch(0.95 0.03 263);
+  --brand-softer: oklch(0.975 0.018 263);
+
+  /* Neutrals (cool) */
+  --ink:      oklch(0.21 0.025 263);
+  --ink-2:    oklch(0.34 0.02 263);
+  --muted:    oklch(0.52 0.018 263);
+  --faint:    oklch(0.66 0.015 263);
+  --line:     oklch(0.915 0.006 263);
+  --line-2:   oklch(0.95 0.005 263);
+  --paper:    oklch(0.985 0.004 263);
+  --paper-2:  oklch(0.965 0.006 263);
+  --surface:  #ffffff;
+
+  /* Dark sidebar / portal chrome */
+  --dark:     oklch(0.235 0.028 264);
+  --dark-2:   oklch(0.285 0.03 264);
+  --dark-line:oklch(0.34 0.03 264);
+  --on-dark:  oklch(0.97 0.01 264);
+  --on-dark-muted: oklch(0.70 0.02 264);
+
+  /* Status semantics */
+  --ok:       oklch(0.60 0.13 160);
+  --ok-soft:  oklch(0.95 0.04 160);
+  --warn:     oklch(0.70 0.14 72);
+  --warn-soft:oklch(0.96 0.05 75);
+  --danger:   oklch(0.58 0.19 25);
+  --danger-soft: oklch(0.95 0.04 25);
+  --info:     oklch(0.62 0.13 240);
+  --info-soft:oklch(0.95 0.04 240);
+  --purple:   oklch(0.55 0.17 300);
+  --purple-soft: oklch(0.95 0.04 300);
+
+  /* Radius */
+  --r-xs: 6px;
+  --r-sm: 9px;
+  --r-md: 13px;
+  --r-lg: 18px;
+  --r-xl: 26px;
+  --r-pill: 999px;
+
+  /* Shadows — soft, fintech */
+  --sh-1: 0 1px 2px rgba(20,24,40,.05), 0 1px 1px rgba(20,24,40,.04);
+  --sh-2: 0 2px 6px rgba(20,24,40,.06), 0 8px 24px rgba(20,24,40,.05);
+  --sh-3: 0 4px 12px rgba(20,24,40,.08), 0 18px 48px rgba(20,24,40,.10);
+  --sh-brand: 0 6px 20px oklch(0.55 0.20 263 / .28);
+
+  /* Typography */
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Manrope', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Layout */
+  --maxw: 1240px;
+}
