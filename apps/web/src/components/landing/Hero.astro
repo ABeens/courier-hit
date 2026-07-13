@@ -1,144 +1,159 @@
 ---
 /*
-  Hero — sección principal del landing. Titular, CTAs, barra de
-  rastreo (form GET → /rastreo) y una tarjeta visual decorativa.
+  Hero — banner principal. Texto a la izquierda e imagen a la derecha.
+  En móvil se apilan (imagen arriba, texto abajo).
 */
+import { Image } from 'astro:assets';
 import Icon from '../ui/Icon.astro';
+import mainBanner from '../../assets/images/main-banner.png';
 
-const demoTn = '1Z999AA10123456784';
+const features = [
+  { icon: 'plane', title: 'Vuelos todos los días', sub: 'Salidas diarias desde Miami' },
+  { icon: 'scale', title: 'Tarifa por peso real', sub: 'Pagas solo lo que pesa, sin sorpresas' },
+  { icon: 'pin', title: 'Dirección de Miami Tax Free', sub: 'Compra sin impuestos de estado' },
+];
 ---
 <section class="hero">
   <div class="hero__inner wrap">
-    <div class="hero__copy fadeUp">
-      <span class="chip hero__badge">
-        <span class="hero__dot"></span>+12.000 paquetes entregados este año
-      </span>
-
-      <h1 class="hero__title">
-        Compra en EE.&nbsp;UU.<br />
-        <span class="hero__accent">Recíbelo</span> en casa.
-      </h1>
-
-      <p class="hero__lead">
-        Tu casillero en Miami para comprar donde quieras. Te lo consolidamos,
-        despachamos y rastreas cada paso en tiempo real.
-      </p>
-
-      <div class="hero__cta">
-        <a href="/registro" class="btn btn-primary btn-lg">
-          Crear mi casillero gratis<Icon name="arrowR" size={17} />
-        </a>
-        <a href="/servicios" class="btn btn-ghost btn-lg">Ver servicios</a>
-      </div>
-
-      <form class="card hero__track" action="/rastreo" method="get">
-        <span class="hero__track-ic"><Icon name="search" size={19} /></span>
-        <input
-          class="input hero__track-input"
-          type="text"
-          name="tn"
-          placeholder="Rastrea con tu número de tracking…"
-          autocomplete="off"
-        />
-        <button type="submit" class="btn btn-dark">Rastrear</button>
-      </form>
-      <div class="hero__hint">
-        Prueba con <a class="mono hero__demo" href={`/rastreo?tn=${demoTn}`}>{demoTn}</a>
-      </div>
+    <div class="hero__media fadeUp">
+      <Image
+        class="hero__img"
+        src={mainBanner}
+        alt=""
+        widths={[360, 520, 640, 960]}
+        sizes="(max-width: 680px) 92vw, 580px"
+        loading="eager"
+        fetchpriority="high"
+      />
     </div>
 
-    <!-- Visual decorativo: tarjeta de rastreo simulada -->
-    <div class="hero__visual fadeUp" aria-hidden="true">
-      <div class="card hero__card hero__card--main">
-        <div class="between hero__card-head">
-          <div class="row" style="gap:10px">
-            <span class="carrier">UPS</span>
-            <span class="mono hero__tn">1Z999AA101…6784</span>
-          </div>
-          <span class="spill hero__pill">
-            <span class="dot"></span>En tránsito
-          </span>
-        </div>
-        <div class="hero__prod">Audífonos Sony WH-1000XM5</div>
-        <div class="muted hero__prod-sub">1.2 kg · Bodega Miami → Bogotá</div>
-        <div class="hero__steps">
-          {[0, 1, 2, 3, 4].map((i) => (
-            <span class:list={['hero__step', { 'is-done': i <= 2 }]}></span>
-          ))}
-        </div>
-      </div>
+    <div class="hero__copy fadeUp">
+      <span class="hero__eyebrow">
+        <span class="hero__eyebrow-dot"></span>¿Por qué HS Global?
+      </span>
 
-      <div class="card hero__card hero__card--float">
-        <span class="hero__ok"><Icon name="checkCircle" size={20} color="oklch(0.45 0.12 160)" /></span>
-        <div>
-          <div class="hero__ok-title">¡Paquete entregado!</div>
-          <div class="muted hero__ok-sub">Lote SHEIN · Hace 2 días</div>
-        </div>
-      </div>
+      <ul class="hero__features">
+        {features.map((f) => (
+          <li class="hero__feature">
+            <span class="hero__feature-ic"><Icon name={f.icon} size={22} color="#fff" /></span>
+            <span class="hero__feature-body">
+              <span class="hero__feature-title">{f.title}</span>
+              <span class="hero__feature-sub">{f.sub}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <p class="hero__lead">
+        Nos encargamos de todo: logística, tracking y entrega.
+        <strong>Tú solo enfócate en tu negocio.</strong>
+      </p>
     </div>
   </div>
 </section>
 
 <style>
   .hero {
-    position: relative; overflow: hidden;
     background: linear-gradient(180deg, var(--brand-softer), var(--paper) 70%);
   }
   .hero__inner {
-    padding-top: 76px; padding-bottom: 64px;
-    display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center;
+    padding-top: 56px; padding-bottom: 56px;
+    display: grid; grid-template-columns: 0.9fr minmax(0, 580px); gap: 48px;
+    align-items: center;
+  }
+  /* Imagen a la derecha, texto a la izquierda (el orden del DOM deja la
+     imagen arriba cuando se apila en móvil). */
+  .hero__copy { grid-column: 1; grid-row: 1; }
+  .hero__media { grid-column: 2; grid-row: 1; }
+
+  .hero__img {
+    width: 100%; height: auto; display: block;
+    border-radius: var(--r-lg); box-shadow: var(--sh-3);
   }
 
-  .hero__badge { background: var(--surface); border-color: var(--brand-soft); color: var(--brand-600); }
-  .hero__dot { width: 7px; height: 7px; border-radius: 99px; background: var(--ok); }
+  /* Eyebrow */
+  .hero__eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--font-display);
+    font-size: 12.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--brand-600);
+    background: var(--surface);
+    border: 1px solid var(--brand-soft);
+    padding: 7px 14px; border-radius: var(--r-pill);
+    box-shadow: var(--sh-1);
+    margin-bottom: 24px;
+  }
+  .hero__eyebrow-dot {
+    width: 7px; height: 7px; border-radius: 99px; background: var(--brand);
+    box-shadow: 0 0 0 4px oklch(0.55 0.20 263 / .18);
+  }
 
-  .hero__title { font-size: 56px; line-height: 1.04; margin-top: 22px; letter-spacing: -0.035em; }
-  .hero__accent { color: var(--brand); }
-  .hero__lead { font-size: 18px; color: var(--muted); margin-top: 20px; max-width: 460px; line-height: 1.55; }
-
-  .hero__cta { display: flex; gap: 12px; margin-top: 30px; flex-wrap: wrap; }
-
-  .hero__track {
-    margin-top: 36px; padding: 8px; display: flex; gap: 8px; align-items: center;
+  /* Ganchos */
+  .hero__features {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .hero__feature {
+    position: relative; overflow: hidden;
+    display: flex; align-items: flex-start; gap: 16px;
+    padding: 16px 18px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--sh-1);
+    transition: transform .22s cubic-bezier(.2,.7,.3,1),
+                box-shadow .22s ease, border-color .22s ease;
+  }
+  /* Barra de acento a la izquierda que aparece en hover */
+  .hero__feature::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: linear-gradient(180deg, var(--brand), var(--brand-700));
+    transform: scaleY(0); transform-origin: center;
+    transition: transform .22s ease;
+  }
+  .hero__feature:hover {
+    transform: translateY(-3px);
     box-shadow: var(--sh-2);
+    border-color: var(--brand-soft);
   }
-  .hero__track-ic { padding-left: 10px; color: var(--faint); display: flex; }
-  .hero__track-input { border: none; box-shadow: none; flex: 1; }
-  .hero__track-input:focus { box-shadow: none; }
-  .hero__hint { font-size: 12.5px; color: var(--faint); margin-top: 10px; padding-left: 4px; }
-  .hero__demo { color: var(--brand); font-weight: 600; }
+  .hero__feature:hover::before { transform: scaleY(1); }
 
-  /* Visual */
-  .hero__card { padding: 22px; }
-  .hero__card--main { box-shadow: var(--sh-3); transform: rotate(1.2deg); }
-  .hero__card-head { margin-bottom: 16px; }
-  .hero__tn { font-size: 12.5px; color: var(--muted); }
-  .carrier {
-    font-size: 11px; font-weight: 700; letter-spacing: .02em;
-    padding: 3px 8px; border-radius: 6px; background: var(--ink); color: #fff;
+  .hero__feature-ic {
+    width: 48px; height: 48px; flex-shrink: 0;
+    display: grid; place-items: center;
+    border-radius: var(--r-md);
+    background: var(--brand); /* respaldo sólido por si el degradado no aplica */
+    background: linear-gradient(140deg, var(--brand), var(--brand-700));
+    box-shadow: var(--sh-brand);
+    transition: transform .22s cubic-bezier(.2,.7,.3,1);
   }
-  .hero__pill { background: var(--info-soft); color: var(--info); font-size: 12.5px; }
-  .hero__pill .dot { background: var(--info); animation: pulseDot 1.4s infinite; }
-  .hero__prod { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
-  .hero__prod-sub { font-size: 13px; margin-bottom: 18px; }
-  .hero__steps { display: flex; gap: 6px; }
-  .hero__step { flex: 1; height: 6px; border-radius: 99px; background: var(--paper-2); }
-  .hero__step.is-done { background: var(--brand); }
+  .hero__feature-ic :global(svg) { display: block; }
+  .hero__feature:hover .hero__feature-ic { transform: scale(1.06) rotate(-3deg); }
 
-  .hero__card--float {
-    padding: 16px; margin-top: 16px; margin-left: 40px; transform: rotate(-1.5deg);
-    box-shadow: var(--sh-2); display: flex; align-items: center; gap: 13px;
+  .hero__feature-body { display: flex; flex-direction: column; gap: 2px; }
+  .hero__feature-title {
+    font-family: var(--font-display);
+    font-size: 17px; font-weight: 600; color: var(--ink);
+    letter-spacing: -0.01em; line-height: 1.2;
   }
-  .hero__ok {
-    width: 40px; height: 40px; border-radius: 12px; background: var(--ok-soft);
-    display: grid; place-items: center; flex-shrink: 0;
+  .hero__feature-sub {
+    font-size: 13.5px; color: var(--muted); line-height: 1.35;
   }
-  .hero__ok-title { font-weight: 700; font-size: 14px; }
-  .hero__ok-sub { font-size: 12.5px; }
 
-  @media (max-width: 900px) {
-    .hero__inner { grid-template-columns: 1fr; gap: 40px; }
-    .hero__visual { display: none; }
-    .hero__title { font-size: 44px; }
+  .hero__lead {
+    margin-top: 26px;
+    font-size: 16.5px; line-height: 1.6; color: var(--muted); max-width: 480px;
+  }
+  .hero__lead strong { color: var(--ink); font-weight: 700; }
+
+  @media (max-width: 680px) {
+    .hero__inner {
+      grid-template-columns: 1fr; gap: 32px;
+      padding-top: 40px; padding-bottom: 40px;
+    }
+    /* Reset del posicionamiento de escritorio para que se apilen
+       (imagen arriba, texto abajo) en una sola columna. */
+    .hero__copy, .hero__media { grid-column: 1; grid-row: auto; }
+    .hero__media { max-width: 480px; margin: 0 auto; }
   }
 </style>
