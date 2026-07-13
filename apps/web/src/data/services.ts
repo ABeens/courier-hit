@@ -40,7 +40,7 @@ export const SERVICES: Service[] = [
     tag: null,
     short: 'Entrega rápida puerta a puerta con seguimiento en tiempo real.',
     desc: 'Para lo urgente. Despacho aéreo con tiempos de 3 a 6 días hábiles, tracking en vivo y gestión aduanera incluida.',
-    points: ['3–6 días hábiles', 'Tracking en vivo', 'Gestión aduanera incluida'],
+    points: ['3 a 6 días hábiles', 'Tracking en vivo', 'Gestión aduanera incluida'],
   },
   {
     id: 'maritimo',
