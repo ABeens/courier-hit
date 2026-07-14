@@ -8,6 +8,13 @@
       "when": 1783928476521,
       "tag": "0000_wakeful_shadow_king",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784014577439,
+      "tag": "0001_loose_ozymandias",
+      "breakpoints": true
     }
   ]
 }

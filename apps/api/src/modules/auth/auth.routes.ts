@@ -6,7 +6,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { deleteCookie, setCookie } from 'hono/cookie';
-import { loginSchema, registerSchema, verifySchema } from '@courier/shared';
+import { acceptInviteSchema, loginSchema, registerSchema, verifySchema } from '@courier/shared';
 import { config, isProd } from '../../core/config';
 import type { AppEnv } from '../../core/http';
 import { requireSession } from '../../core/middleware/requireSession';
@@ -31,6 +31,12 @@ authRoutes.post('/register', zValidator('json', registerSchema), async (c) => {
 
 authRoutes.post('/verify', zValidator('json', verifySchema), async (c) => {
   const result = await authService.verify(c.req.valid('json'));
+  return c.json(result);
+});
+
+// Aceptar invitacion de staff: fija la contrasena desde el token del correo (publico).
+authRoutes.post('/accept-invite', zValidator('json', acceptInviteSchema), async (c) => {
+  const result = await authService.acceptInvite(c.req.valid('json'));
   return c.json(result);
 });
 

@@ -29,6 +29,14 @@ export const AuthErrors = {
   userInactive: () => new AppError('USER_INACTIVE', 'La cuenta está deshabilitada.', 403),
   emailNotVerified: () => new AppError('EMAIL_NOT_VERIFIED', 'Debes verificar tu correo antes de ingresar.', 403),
   invalidCode: () => new AppError('INVALID_CODE', 'El código es incorrecto o expiró.', 400),
+  invalidToken: () => new AppError('INVALID_TOKEN', 'El enlace es inválido o expiró.', 400),
+};
+
+/** Errores de la gestion de staff (docs/roles.md §1.3). */
+export const UserErrors = {
+  notFound: () => new AppError('USER_NOT_FOUND', 'Usuario no encontrado.', 404),
+  lastAdmin: () =>
+    new AppError('LAST_ADMIN', 'No puedes deshabilitar ni cambiar el rol del último administrador activo.', 409),
 };
 
 export function onError(err: Error, c: Context) {

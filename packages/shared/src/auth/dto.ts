@@ -31,3 +31,13 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'La contraseña es obligatoria.'),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
+
+/**
+ * Aceptar invitacion de staff: fija la contrasena a partir del token enviado por
+ * correo (docs/roles.md §1.3.4). Al fijarla, la cuenta queda verificada.
+ */
+export const acceptInviteSchema = z.object({
+  token: z.string().min(1, 'Token inválido.'),
+  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres.'),
+});
+export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;

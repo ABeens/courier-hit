@@ -1,9 +1,9 @@
 /**
  * Acceso a datos del modulo auth (Drizzle). Solo toca SUS tablas.
  */
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
 import { db } from '../../core/db';
-import { clients, emailVerifications, sessions, users } from './auth.schema';
+import { clients, emailVerifications, passwordResets, sessions, users } from './auth.schema';
 
 export const authRepo = {
   // --- users ---
@@ -28,6 +28,10 @@ export const authRepo = {
       .update(users)
       .set({ emailVerifiedAt: new Date(), updatedAt: new Date() })
       .where(eq(users.id, userId));
+  },
+
+  async setPassword(userId: string, passwordHash: string) {
+    await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, userId));
   },
 
   // --- clients (perfil de casillero) ---
@@ -92,5 +96,35 @@ export const authRepo = {
 
   async deleteSession(id: string) {
     await db.delete(sessions).where(eq(sessions.id, id));
+  },
+
+  /** Revoca TODAS las sesiones de un usuario (al deshabilitarlo; roles.md §1.3.8). */
+  async deleteSessionsByUser(userId: string) {
+    await db.delete(sessions).where(eq(sessions.userId, userId));
+  },
+
+  // --- password_resets (invitacion / restablecer) ---
+  async insertPasswordReset(values: typeof passwordResets.$inferInsert) {
+    await db.insert(passwordResets).values(values);
+  },
+
+  /** Token vigente: no usado y sin expirar. */
+  async findValidPasswordReset(tokenHash: string) {
+    const [row] = await db
+      .select()
+      .from(passwordResets)
+      .where(
+        and(
+          eq(passwordResets.tokenHash, tokenHash),
+          isNull(passwordResets.usedAt),
+          gt(passwordResets.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  },
+
+  async markPasswordResetUsed(id: string) {
+    await db.update(passwordResets).set({ usedAt: new Date() }).where(eq(passwordResets.id, id));
   },
 };

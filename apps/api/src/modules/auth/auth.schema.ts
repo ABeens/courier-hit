@@ -94,5 +94,26 @@ export const emailVerifications = pgTable(
   (t) => [index('email_verifications_user_idx').on(t.userId)],
 );
 
+/**
+ * Token para fijar/restablecer contrasena por correo. Cubre dos propositos
+ * (docs/roles.md §1.3.4): 'invite' (alta de staff) y 'reset' (olvido). El token
+ * viaja al correo; en BD solo su hash. Un uso, con expiracion.
+ */
+export const passwordResets = pgTable(
+  'password_resets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    purpose: text('purpose').notNull(), // 'invite' | 'reset'
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('password_resets_user_idx').on(t.userId)],
+);
+
 export type UserRow = typeof users.$inferSelect;
 export type NewUserRow = typeof users.$inferInsert;
