@@ -4,3 +4,8 @@ export * from './auth/permissions';
 export * from './auth/user';
 export * from './auth/session';
 export * from './auth/dto';
+export * from './users/dto';
+export * from './workflow/shipment-type';
+export * from './workflow/states';
+export * from './workflow/automation';
+export * from './workflow/machine';

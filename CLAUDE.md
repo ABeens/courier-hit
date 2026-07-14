@@ -28,6 +28,12 @@ backup/    # origen funcional (prototipo). No se modifica.
 ## Convenciones
 
 - Idioma del producto y del dominio: español (es-CO).
+- **Nombres de código en inglés** (archivos, clases, interfaces, funciones,
+  variables), especialmente en `packages/`. Solo se conserva el español para el
+  **dominio**: miembros y valores de enum de dominio (p. ej. `Role.ServicioCliente`,
+  `State.Prealertado`, `'maritimo_fcl'`), etiquetas visibles (`STATE_LABELS`) y
+  comentarios. Los enums de comportamiento van 100% en inglés, valores incluidos
+  (p. ej. `Trigger.NotifyStateChange = 'notify_state_change'`).
 - Sistema de diseño en `apps/web/src/styles/` (tokens · base · atoms), portado 1:1
   del prototipo. Reutilizar los tokens/átomos; no hardcodear colores.
 - Componentes Astro modulares: primitivas en `components/ui/`, secciones en carpetas

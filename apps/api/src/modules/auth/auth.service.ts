@@ -6,7 +6,7 @@
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { hash, verify } from '@node-rs/argon2';
 import { Principal, Role, UserStatus, principalForRole } from '@courier/shared';
-import type { LoginInput, RegisterInput, Session, VerifyInput } from '@courier/shared';
+import type { AcceptInviteInput, LoginInput, RegisterInput, Session, VerifyInput } from '@courier/shared';
 import { config, isProd } from '../../core/config';
 import { AuthErrors } from '../../core/errors';
 import { authRepo } from './auth.repo';
@@ -24,6 +24,10 @@ function newSessionId(): string {
 
 function newVerificationCode(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, '0');
+}
+
+function newToken(): string {
+  return randomBytes(32).toString('base64url');
 }
 
 type SessionMeta = { userAgent?: string | undefined; ip?: string | undefined };
@@ -81,6 +85,32 @@ export const authService = {
     await authRepo.markEmailVerified(user.id);
     await authRepo.deleteVerifications(user.id);
     return { verified: true };
+  },
+
+  /**
+   * Emite un token de invitacion para que un staff recien creado fije su
+   * contrasena (docs/roles.md §1.3.4). El admin nunca ve ni digita la clave.
+   */
+  async issueInvitation(userId: string, email: string): Promise<void> {
+    const token = newToken();
+    const expiresAt = new Date(Date.now() + config.INVITE_TTL_HOURS * 3_600_000);
+    await authRepo.insertPasswordReset({ userId, tokenHash: sha256(token), purpose: 'invite', expiresAt });
+
+    // TODO(09/email): enviar el enlace real (WEB_ORIGIN/invitacion?token=...). En dev lo mostramos.
+    if (!isProd) console.log(`[auth] invitación para ${email}: token=${token}`);
+  },
+
+  /** Fija la contrasena desde un token de invitacion/reset y deja la cuenta lista. */
+  async acceptInvite(input: AcceptInviteInput): Promise<{ ok: true }> {
+    const reset = await authRepo.findValidPasswordReset(sha256(input.token));
+    if (!reset) throw AuthErrors.invalidToken();
+
+    const passwordHash = await hash(input.password);
+    await authRepo.setPassword(reset.userId, passwordHash);
+    await authRepo.markPasswordResetUsed(reset.id);
+    // Aceptar la invitacion desde el correo prueba la titularidad del email.
+    await authRepo.markEmailVerified(reset.userId);
+    return { ok: true };
   },
 
   /** Email+contraseña => crea sesion. El principal/rol salen del usuario, no del body. */

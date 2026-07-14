@@ -13,6 +13,8 @@ const EnvSchema = z.object({
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
   EMAIL_CODE_TTL_MINUTES: z.coerce.number().int().positive().default(15),
   EMAIL_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  // Invitacion de staff: el token de fijar contrasena dura mas que un codigo (docs/roles.md §1.3.4).
+  INVITE_TTL_HOURS: z.coerce.number().int().positive().default(72),
 });
 
 export type Config = z.infer<typeof EnvSchema>;

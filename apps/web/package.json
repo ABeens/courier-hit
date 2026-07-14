@@ -10,7 +10,15 @@
     "astro": "astro"
   },
   "dependencies": {
+    "@astrojs/react": "^6.0.1",
+    "@courier/shared": "workspace:*",
     "astro": "^5.0.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3"
   }
 }
