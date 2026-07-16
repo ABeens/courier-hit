@@ -32,22 +32,32 @@ const contact = [
     </header>
 
     <div class="ctc__grid">
-      <div class="ctc__cards">
-        {contact.map((c) => {
-          const Tag = c.href ? 'a' : 'div';
-          return (
-            <Tag href={c.href} class="card ctc__card">
-              <span class="ctc__ic"><Icon name={c.icon} size={19} color="var(--brand)" /></span>
-              <div>
-                <div class="ctc__label">{c.label}</div>
-                <div class="ctc__value">{c.value}</div>
-              </div>
-            </Tag>
-          );
-        })}
-      </div>
+      <aside class="card ctc__info">
+        <h3 class="ctc__info-title">Datos de contacto</h3>
+        <ul class="ctc__list">
+          {contact.map((c) => {
+            const Tag = c.href ? 'a' : 'div';
+            return (
+              <li>
+                <Tag href={c.href} class={`ctc__row-item${c.href ? ' is-link' : ''}`}>
+                  <span class="ctc__ic"><Icon name={c.icon} size={18} color="var(--brand)" /></span>
+                  <span class="ctc__row-text">
+                    <span class="ctc__label">{c.label}</span>
+                    <span class="ctc__value">{c.value}</span>
+                  </span>
+                </Tag>
+              </li>
+            );
+          })}
+        </ul>
+        <p class="ctc__info-note muted">
+          Respondemos en horario laboral (Miami · Bogotá). Para cotizar, incluye
+          los detalles de tu envío en el mensaje.
+        </p>
+      </aside>
 
       <form class="card ctc__form" data-contact-form novalidate>
+        <h3 class="ctc__form-title">Escríbenos</h3>
         <div class="ctc__row">
           <div class="ctc__f">
             <label class="field-label" for="ctc-name">Nombre</label>
@@ -95,36 +105,45 @@ const contact = [
   .ctc__title { font-size: 34px; margin-top: 16px; letter-spacing: -.03em; }
   .ctc__lead { font-size: 16px; margin-top: 12px; }
 
-  .ctc__grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+  .ctc__grid { display: grid; grid-template-columns: 320px 1fr; gap: 20px; align-items: stretch; }
 
-  .ctc__cards { display: grid; gap: 16px; align-content: start; }
-  .ctc__card {
-    display: flex; align-items: center; gap: 14px; padding: 20px;
-    transition: box-shadow .18s ease, transform .18s ease;
+  /* ---- Columna de datos (una sola tarjeta) ---- */
+  .ctc__info { padding: 26px; display: flex; flex-direction: column; }
+  .ctc__info-title { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+  .ctc__list { list-style: none; margin: 18px 0 0; padding: 0; display: flex; flex-direction: column; }
+  .ctc__list li + li { border-top: 1px solid var(--line); }
+  .ctc__row-item {
+    display: flex; align-items: center; gap: 13px; padding: 15px 0;
+    border-radius: var(--r-sm); transition: color .15s ease;
   }
-  a.ctc__card:hover { box-shadow: var(--sh-2); transform: translateY(-2px); }
+  .ctc__row-item.is-link:hover .ctc__value { color: var(--brand); }
   .ctc__ic {
-    width: 42px; height: 42px; border-radius: var(--r-sm); flex-shrink: 0;
+    width: 40px; height: 40px; border-radius: var(--r-sm); flex-shrink: 0;
     background: var(--brand-soft); display: grid; place-items: center;
   }
-  .ctc__label { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-  .ctc__value { font-size: 14.5px; font-weight: 600; color: var(--ink); margin-top: 3px; }
+  .ctc__row-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .ctc__label { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .ctc__value { font-size: 14.5px; font-weight: 600; color: var(--ink); transition: color .15s ease; overflow-wrap: anywhere; }
+  .ctc__info-note { font-size: 13px; line-height: 1.5; margin: auto 0 0; padding-top: 18px; }
 
   /* ---- Formulario ---- */
-  .ctc__form { padding: 24px; display: grid; gap: 16px; }
-  .ctc__row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .ctc__form { padding: 26px; display: grid; gap: 15px; align-content: start; }
+  .ctc__form-title { font-size: 16px; font-weight: 700; letter-spacing: -.01em; margin-bottom: 3px; }
+  .ctc__row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
   .ctc__f { display: block; }
-  .ctc__actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-  .ctc__note { font-size: 13px; margin: 0; }
+  .ctc__actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 5px; }
+  .ctc__note { font-size: 13px; margin: 0; line-height: 1.4; }
   .ctc__note[data-state='ok'] { color: var(--brand); font-weight: 600; }
-  .ctc__note[data-state='error'] { color: var(--danger, oklch(0.55 0.2 25)); font-weight: 600; }
+  .ctc__note[data-state='error'] { color: var(--danger); font-weight: 600; }
 
   @media (max-width: 900px) {
     .ctc__grid { grid-template-columns: 1fr; }
+    .ctc__info-note { margin-top: 4px; }
   }
   @media (max-width: 520px) {
     .ctc__title { font-size: 27px; }
     .ctc__row { grid-template-columns: 1fr; }
+    .ctc__info, .ctc__form { padding: 20px; }
   }
 </style>
 
