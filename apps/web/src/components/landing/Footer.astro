@@ -8,16 +8,18 @@ import { SERVICES } from '../../data/services';
 
 const cols = [
   {
+    /* Los servicios no tienen página propia: se describen en la sección del
+       landing, así que todos los nombres llevan allí. */
     title: 'Servicios',
-    items: SERVICES.slice(0, 4).map((s) => ({ label: s.name, href: `/servicios/${s.id}` })),
+    items: SERVICES.slice(0, 5).map((s) => ({ label: s.name, href: '/#servicios' })),
   },
   {
     title: 'Empresa',
     items: [
-      { label: 'Quiénes somos', href: '/quienes-somos' },
-      { label: 'Servicios', href: '/servicios' },
-      { label: 'Rastrear paquete', href: '/rastreo' },
-      { label: 'Contacto', href: '/quienes-somos' },
+      { label: 'Quiénes somos', href: '/#quienes-somos' },
+      { label: 'Servicios', href: '/#servicios' },
+      { label: 'Preguntas frecuentes', href: '/preguntas-frecuentes' },
+      { label: 'Contacto', href: '/#contacto' },
     ],
   },
   {
@@ -34,10 +36,10 @@ const cols = [
   <div class="ft__inner wrap">
     <div class="ft__grid">
       <div>
-        <Logo size={22} dark />
+        <Logo size={46} dark />
         <p class="ft__pitch">
-          Tu casillero en Miami para comprar en cualquier tienda de EE. UU. y recibir en
-          la puerta de tu casa, con rastreo en tiempo real.
+          Tu casillero en Miami y tu operador de carga: paquetería, consolidado aéreo y
+          marítimo, aduana y seguro, hasta la puerta de tu casa.
         </p>
         <div class="ft__chips">
           <span class="chip ft__chip"><Icon name="shield" size={13} />Pagos seguros</span>

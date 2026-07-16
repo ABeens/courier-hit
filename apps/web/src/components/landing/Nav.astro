@@ -1,24 +1,30 @@
 ---
 /*
   Nav — cabecera del sitio público (sticky, con blur).
-  El enlace activo se resalta según la ruta actual.
+  El enlace activo se resalta según la ruta actual. En móvil los enlaces y
+  acciones se ocultan tras un menú hamburguesa (toggle con JS, ver <script>).
 */
 import Logo from '../ui/Logo.astro';
 import Icon from '../ui/Icon.astro';
 
+/* El rastreo no se ofrece en el sitio público: solo se consulta desde el
+   portal, con sesión iniciada. */
 const links = [
   { href: '/', label: 'Inicio' },
-  { href: '/quienes-somos', label: 'Quiénes somos' },
-  { href: '/servicios', label: 'Servicios' },
-  { href: '/rastreo', label: 'Rastrear' },
+  { href: '/#servicios', label: 'Servicios' },
+  { href: '/#quienes-somos', label: 'Quiénes somos' },
+  { href: '/preguntas-frecuentes', label: 'Preguntas frecuentes' },
 ];
 
 const path = Astro.url.pathname;
-const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
+/* Los enlaces con ancla (/#quienes-somos) apuntan a una sección del landing,
+   no a una ruta: nunca se marcan como activos. */
+const isActive = (href: string) =>
+  href.includes('#') ? false : href === '/' ? path === '/' : path.startsWith(href);
 ---
-<header class="nav">
+<header class="nav" data-nav>
   <div class="nav__inner wrap">
-    <a href="/" aria-label="Inicio"><Logo size={21} /></a>
+    <a href="/" aria-label="Inicio" class="nav__brand"><Logo size={44} /></a>
 
     <nav class="nav__links">
       {links.map((l) => (
@@ -34,6 +40,33 @@ const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWit
         Crear casillero<Icon name="arrowR" size={15} />
       </a>
     </div>
+
+    <button
+      class="nav__toggle"
+      type="button"
+      aria-label="Abrir menú"
+      aria-expanded="false"
+      aria-controls="nav-mobile"
+      data-nav-toggle
+    >
+      <span class="nav__toggle-bars"><span></span><span></span><span></span></span>
+    </button>
+  </div>
+
+  <div class="nav__mobile" id="nav-mobile" data-nav-mobile hidden>
+    <nav class="nav__mobile-links">
+      {links.map((l) => (
+        <a href={l.href} class:list={['nav__mobile-link', { 'is-active': isActive(l.href) }]}>
+          {l.label}
+        </a>
+      ))}
+    </nav>
+    <div class="nav__mobile-actions">
+      <a href="/ingresar" class="btn btn-ghost">Iniciar sesión</a>
+      <a href="/registro" class="btn btn-primary">
+        Crear casillero<Icon name="arrowR" size={15} />
+      </a>
+    </div>
   </div>
 </header>
 
@@ -46,19 +79,104 @@ const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWit
   }
   .nav__inner {
     height: 70px;
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
   }
+  .nav__brand { flex-shrink: 0; }
   .nav__links { display: flex; align-items: center; gap: 4px; }
   .nav__link {
     padding: 8px 14px; border-radius: 8px;
     font-size: 14px; font-weight: 600; color: var(--ink-2);
-    transition: background .15s, color .15s;
+    transition: background .15s, color .15s; white-space: nowrap;
   }
   .nav__link:hover { color: var(--ink); }
   .nav__link.is-active { color: var(--brand); background: var(--brand-soft); }
   .nav__actions { display: flex; align-items: center; gap: 10px; }
 
-  @media (max-width: 860px) {
-    .nav__links { display: none; }
+  /* ---- Botón hamburguesa (solo móvil) ---- */
+  .nav__toggle {
+    display: none; align-items: center; justify-content: center;
+    width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0;
+    background: none; border: 1px solid var(--line); cursor: pointer; padding: 0;
+  }
+  .nav__toggle-bars { display: block; position: relative; width: 20px; height: 14px; }
+  .nav__toggle-bars span {
+    position: absolute; left: 0; width: 100%; height: 2px; border-radius: 2px;
+    background: var(--ink); transition: transform .22s ease, opacity .18s ease, top .22s ease;
+  }
+  .nav__toggle-bars span:nth-child(1) { top: 0; }
+  .nav__toggle-bars span:nth-child(2) { top: 6px; }
+  .nav__toggle-bars span:nth-child(3) { top: 12px; }
+  .nav__toggle[aria-expanded='true'] .nav__toggle-bars span:nth-child(1) { top: 6px; transform: rotate(45deg); }
+  .nav__toggle[aria-expanded='true'] .nav__toggle-bars span:nth-child(2) { opacity: 0; }
+  .nav__toggle[aria-expanded='true'] .nav__toggle-bars span:nth-child(3) { top: 6px; transform: rotate(-45deg); }
+
+  /* ---- Panel móvil ---- */
+  .nav__mobile {
+    display: none; border-top: 1px solid var(--line);
+    background: var(--surface); padding: 12px 20px 20px;
+  }
+  .nav__mobile[hidden] { display: none; }
+  .nav__mobile.is-open { display: block; }
+  .nav__mobile-links { display: flex; flex-direction: column; gap: 2px; }
+  .nav__mobile-link {
+    padding: 12px 12px; border-radius: 10px;
+    font-size: 15px; font-weight: 600; color: var(--ink-2);
+  }
+  .nav__mobile-link.is-active { color: var(--brand); background: var(--brand-soft); }
+  .nav__mobile-actions {
+    display: flex; flex-direction: column; gap: 10px;
+    margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line);
+  }
+  .nav__mobile-actions .btn { width: 100%; }
+
+  /* 940px y no 860: los enlaces (con "Preguntas frecuentes") más las dos
+     acciones no caben en el contenedor por debajo de ese ancho. */
+  @media (max-width: 940px) {
+    .nav__links, .nav__actions { display: none; }
+    .nav__toggle { display: inline-flex; }
   }
 </style>
+
+<script>
+  // Toggle del menú hamburguesa. Se enlaza por-instancia y es idempotente ante
+  // navegaciones (data-attr como guard).
+  function initNav() {
+    const nav = document.querySelector('[data-nav]');
+    if (!nav || nav.hasAttribute('data-nav-ready')) return;
+    nav.setAttribute('data-nav-ready', '');
+
+    const toggle = nav.querySelector('[data-nav-toggle]');
+    const menu = nav.querySelector('[data-nav-mobile]');
+    if (!toggle || !menu) return;
+
+    const setOpen = (open: boolean) => {
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.setAttribute('aria-label', open ? 'Cerrar menú' : 'Abrir menú');
+      menu.classList.toggle('is-open', open);
+      if (open) menu.removeAttribute('hidden');
+      else menu.setAttribute('hidden', '');
+    };
+
+    toggle.addEventListener('click', () => {
+      setOpen(toggle.getAttribute('aria-expanded') !== 'true');
+    });
+
+    // Cerrar al elegir un enlace: los de ancla (/#quienes-somos) no recargan la
+    // página, así que el panel quedaría abierto tapando la sección a la que salta.
+    menu.querySelectorAll('a').forEach((link) => {
+      link.addEventListener('click', () => setOpen(false));
+    });
+
+    // Cerrar al pasar a escritorio (debe coincidir con el breakpoint del CSS).
+    const mq = window.matchMedia('(min-width: 941px)');
+    mq.addEventListener('change', (e) => { if (e.matches) setOpen(false); });
+
+    // Cerrar con Escape.
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    });
+  }
+
+  initNav();
+  document.addEventListener('astro:after-swap', initNav);
+</script>

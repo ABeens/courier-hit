@@ -39,8 +39,10 @@ export const usersService = {
       status: UserStatus.Activo,
     });
 
-    await authService.issueInvitation(user.id, user.email);
-    return user;
+    // En dev devolvemos el enlace de invitacion para mostrarlo en la UI (sin SMTP).
+    // En prod issueInvitation devuelve null: el token solo viaja por correo.
+    const inviteLink = await authService.issueInvitation(user.id, user.email);
+    return { ...user, inviteLink: inviteLink ?? undefined };
   },
 
   /** Edita nombre/telefono/rol/estado con la salvaguarda del ultimo admin. */

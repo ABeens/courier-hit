@@ -1,0 +1,77 @@
+---
+/*
+  Contact — sección de contacto del landing (destino de /#contacto).
+
+  OJO: los datos de contacto se toman del footer y están por confirmar (el
+  teléfono es un placeholder del prototipo).
+*/
+import Icon from '../ui/Icon.astro';
+
+const contact = [
+  { icon: 'mail', label: 'Correo', value: 'info@hsgloballtd.com', href: 'mailto:info@hsgloballtd.com' },
+  { icon: 'phone', label: 'Teléfono', value: '+1 (555) 010-0000', href: 'tel:+15550100000' },
+  { icon: 'pin', label: 'Oficinas', value: 'Miami, EE. UU. · Bogotá, Colombia', href: null },
+];
+---
+<section class="ctc" id="contacto">
+  <div class="ctc__inner wrap">
+    <header class="ctc__head">
+      <span class="chip"><Icon name="mail" size={13} color="var(--brand)" />Contacto</span>
+      <h2 class="ctc__title">Hablemos de tu envío</h2>
+      <p class="muted ctc__lead">
+        Para cotizar necesitamos origen y destino, peso y dimensiones, tipo de mercancía,
+        fecha estimada y valor comercial si aplica.
+      </p>
+    </header>
+
+    <div class="ctc__cards">
+      {contact.map((c) => {
+        const Tag = c.href ? 'a' : 'div';
+        return (
+          <Tag href={c.href} class="card ctc__card">
+            <span class="ctc__ic"><Icon name={c.icon} size={19} color="var(--brand)" /></span>
+            <div>
+              <div class="ctc__label">{c.label}</div>
+              <div class="ctc__value">{c.value}</div>
+            </div>
+          </Tag>
+        );
+      })}
+    </div>
+  </div>
+</section>
+
+<style>
+  /* scroll-margin: el nav es sticky (70px) y taparía el borde superior al
+     llegar desde /#contacto. */
+  .ctc {
+    background: var(--paper-2);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    scroll-margin-top: 70px;
+  }
+  .ctc__inner { padding-top: 72px; padding-bottom: 72px; }
+  .ctc__head { text-align: center; max-width: 620px; margin: 0 auto 36px; }
+  .ctc__title { font-size: 34px; margin-top: 16px; letter-spacing: -.03em; }
+  .ctc__lead { font-size: 16px; margin-top: 12px; }
+
+  .ctc__cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .ctc__card {
+    display: flex; align-items: center; gap: 14px; padding: 20px;
+    transition: box-shadow .18s ease, transform .18s ease;
+  }
+  a.ctc__card:hover { box-shadow: var(--sh-2); transform: translateY(-2px); }
+  .ctc__ic {
+    width: 42px; height: 42px; border-radius: var(--r-sm); flex-shrink: 0;
+    background: var(--brand-soft); display: grid; place-items: center;
+  }
+  .ctc__label { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .ctc__value { font-size: 14.5px; font-weight: 600; color: var(--ink); margin-top: 3px; }
+
+  @media (max-width: 900px) {
+    .ctc__cards { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 520px) {
+    .ctc__title { font-size: 27px; }
+  }
+</style>

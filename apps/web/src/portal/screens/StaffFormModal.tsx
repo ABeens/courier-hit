@@ -8,11 +8,17 @@ import { ROLE_LABELS, Role, STAFF_ROLES, createStaffSchema } from '@courier/shar
 import { ApiError, api } from '../lib/api';
 import type { StaffRow } from './UsersScreen';
 
+export interface SavedResult {
+  message?: string;
+  /** Enlace de activacion (solo en dev; en prod lo lleva el correo). */
+  link?: string;
+}
+
 interface Props {
   mode: 'create' | 'edit';
   row?: StaffRow;
   onClose: () => void;
-  onSaved: (message?: string) => void;
+  onSaved: (result?: SavedResult) => void;
 }
 
 export function StaffFormModal({ mode, row, onClose, onSaved }: Props) {
@@ -40,8 +46,11 @@ export function StaffFormModal({ mode, row, onClose, onSaved }: Props) {
           setBusy(false);
           return;
         }
-        await api.post('/users', parsed.data);
-        onSaved(`Usuario creado. Se envió una invitación a ${parsed.data.email} para fijar su contraseña.`);
+        const res = await api.post<{ inviteLink?: string }>('/users', parsed.data);
+        onSaved({
+          message: `Usuario creado. Se envió una invitación a ${parsed.data.email} para fijar su contraseña.`,
+          link: res.inviteLink,
+        });
       } else if (row) {
         // Solo enviamos lo que cambio (el correo no se edita).
         const patch: Record<string, unknown> = {};
@@ -53,7 +62,7 @@ export function StaffFormModal({ mode, row, onClose, onSaved }: Props) {
           return;
         }
         await api.patch(`/users/${row.id}`, patch);
-        onSaved(`Usuario ${name} actualizado.`);
+        onSaved({ message: `Usuario ${name} actualizado.` });
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo guardar.');

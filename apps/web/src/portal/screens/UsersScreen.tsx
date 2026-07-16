@@ -30,7 +30,7 @@ export function UsersScreen() {
   const [role, setRole] = useState('');
   const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; link?: string } | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
 
   const load = useCallback(async () => {
@@ -58,7 +58,7 @@ export function UsersScreen() {
     setNotice(null);
     try {
       await api.patch(`/users/${row.id}`, { status: next });
-      setNotice(`${row.name}: ${next === UserStatus.Activo ? 'habilitado' : 'deshabilitado'}.`);
+      setNotice({ text: `${row.name}: ${next === UserStatus.Activo ? 'habilitado' : 'deshabilitado'}.` });
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
@@ -82,7 +82,19 @@ export function UsersScreen() {
       </div>
 
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
-      {notice && <div className="banner ok" style={{ marginBottom: 14 }}>{notice}</div>}
+      {notice && (
+        <div className="banner ok" style={{ marginBottom: 14 }}>
+          {notice.text}
+          {notice.link && (
+            <>
+              {' '}
+              <a href={notice.link} target="_blank" rel="noreferrer" style={{ textDecoration: 'underline', fontWeight: 700 }}>
+                Abrir enlace de activación (dev)
+              </a>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="filters">
         <input
@@ -104,6 +116,7 @@ export function UsersScreen() {
         </select>
       </div>
 
+      <div className="table-wrap">
       <table className="table">
         <thead>
           <tr>
@@ -146,6 +159,7 @@ export function UsersScreen() {
           ))}
         </tbody>
       </table>
+      </div>
 
       {data && data.items.length === 0 && <div className="empty">No hay usuarios que coincidan.</div>}
 
@@ -154,9 +168,9 @@ export function UsersScreen() {
           mode={modal.mode}
           row={modal.mode === 'edit' ? modal.row : undefined}
           onClose={() => setModal(null)}
-          onSaved={(msg) => {
+          onSaved={(result) => {
             setModal(null);
-            setNotice(msg ?? null);
+            setNotice(result?.message ? { text: result.message, link: result.link } : null);
             setError(null);
             void load();
           }}

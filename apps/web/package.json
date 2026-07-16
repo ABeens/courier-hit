@@ -12,7 +12,7 @@
   "dependencies": {
     "@astrojs/react": "^6.0.1",
     "@courier/shared": "workspace:*",
-    "astro": "^5.0.0",
+    "astro": "^7.0.8",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "sharp": "^0.35.3"

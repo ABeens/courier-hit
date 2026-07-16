@@ -19,8 +19,8 @@
   width: 100%; max-width: 400px; padding: 34px 30px; background: var(--surface);
   border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-3);
 }
-.login-card h1 { font-family: var(--font-display); font-size: 22px; color: var(--ink); margin-bottom: 4px; }
-.login-card .sub { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+.login-card .login-logo { height: 68px; width: auto; display: block; margin: 0 auto 10px; }
+.login-card .sub { color: var(--muted); font-size: 14px; margin-bottom: 24px; text-align: center; }
 .login-card .field-label { margin-top: 14px; }
 .login-card .btn { width: 100%; margin-top: 22px; }
 
@@ -32,53 +32,73 @@
 
 /* ---- Sidebar oscuro ---- */
 .side {
-  background: var(--dark); color: var(--on-dark); display: flex; flex-direction: column;
+  background: var(--surface); color: var(--ink); display: flex; flex-direction: column;
   padding: 20px 14px; gap: 6px; position: sticky; top: 0; height: 100vh;
+  border-right: 1px solid var(--line);
 }
 .side-brand {
   display: flex; align-items: center; gap: 10px; padding: 6px 10px 18px;
-  font-family: var(--font-display); font-weight: 700; font-size: 17px; letter-spacing: -0.01em;
 }
-.side-brand .mark {
-  width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
-  background: var(--brand); color: #fff; font-size: 14px; box-shadow: var(--sh-brand);
+.side-brand .side-logo {
+  height: 38px; width: auto; display: block; flex: none;
+}
+.side-brand-text { font-family: var(--font-display); line-height: 1; }
+.side-brand-text .n {
+  display: block; font-weight: 700; font-size: 16px; letter-spacing: -0.01em; color: var(--ink);
+}
+.side-brand-text .s {
+  display: block; margin-top: 3px; font-weight: 600; font-size: 10px;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--brand);
 }
 .side-group-label {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--on-dark-muted); padding: 16px 10px 6px;
+  color: var(--muted); padding: 16px 10px 6px;
 }
 .navitem {
   display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
-  padding: 9px 11px; border-radius: var(--r-sm); color: var(--on-dark-muted);
+  padding: 9px 11px; border-radius: var(--r-sm); color: var(--ink-2);
   font-size: 14px; font-weight: 600; cursor: pointer; border: none; background: none;
   transition: background .14s ease, color .14s ease;
 }
-.navitem:hover { background: var(--dark-2); color: var(--on-dark); }
+.navitem:hover { background: var(--paper-2); color: var(--ink); }
 .navitem.active { background: var(--brand); color: #fff; box-shadow: var(--sh-brand); }
 .navitem svg { width: 18px; height: 18px; flex: none; }
-.side-foot { margin-top: auto; border-top: 1px solid var(--dark-line); padding-top: 14px; }
+.side-foot { margin-top: auto; border-top: 1px solid var(--line); padding-top: 14px; }
 .side-user { display: flex; align-items: center; gap: 10px; padding: 4px 8px 12px; }
 .side-user .avatar {
   width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--dark-2); color: var(--on-dark); font-weight: 700; font-size: 13px; flex: none;
+  background: var(--brand-soft); color: var(--brand); font-weight: 700; font-size: 13px; flex: none;
 }
 .side-user .who { line-height: 1.2; min-width: 0; }
-.side-user .who .n { font-size: 13.5px; font-weight: 700; color: var(--on-dark); }
-.side-user .who .r { font-size: 12px; color: var(--on-dark-muted); }
+.side-user .who .n { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.side-user .who .r { font-size: 12px; color: var(--muted); }
 .side-logout {
-  width: 100%; padding: 9px; border-radius: var(--r-sm); border: 1px solid var(--dark-line);
-  background: none; color: var(--on-dark-muted); font-weight: 600; font-size: 13px; cursor: pointer;
+  width: 100%; padding: 9px; border-radius: var(--r-sm); border: 1px solid var(--line);
+  background: none; color: var(--muted); font-weight: 600; font-size: 13px; cursor: pointer;
 }
-.side-logout:hover { background: var(--dark-2); color: var(--on-dark); }
+.side-logout:hover { background: var(--paper-2); color: var(--ink); }
 
 /* ---- Area principal ---- */
 .main { min-width: 0; background: var(--paper); }
 .topbar {
-  height: 66px; display: flex; align-items: center; justify-content: space-between;
+  height: 66px; display: flex; align-items: center; gap: 12px;
   padding: 0 32px; background: var(--surface); border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 5;
 }
 .topbar h2 { font-family: var(--font-display); font-size: 18px; color: var(--ink); }
+.topbar-burger {
+  display: none; align-items: center; justify-content: center; flex: none;
+  width: 40px; height: 40px; margin-left: -6px; border-radius: 10px;
+  border: 1px solid var(--line); background: none; color: var(--ink-2); cursor: pointer;
+}
+.topbar-burger:hover { background: var(--paper-2); color: var(--ink); }
+.topbar-burger svg { width: 20px; height: 20px; }
+
+/* Backdrop del drawer (solo visible cuando el sidebar está abierto en móvil) */
+.side-backdrop {
+  display: none; position: fixed; inset: 0; z-index: 40;
+  background: rgba(20, 24, 40, .42); backdrop-filter: blur(2px);
+}
 .content { padding: 28px 32px; max-width: 1100px; }
 
 /* ---- Placeholder de pantallas por construir ---- */
@@ -141,9 +161,29 @@ select.input { cursor: pointer; padding-right: 30px; }
 
 .empty { text-align: center; color: var(--muted); padding: 46px 0; font-size: 14px; }
 
-@media (max-width: 720px) {
-  .portal { grid-template-columns: 1fr; }
-  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; }
-  .side-group-label { display: none; }
-  .side-foot { width: 100%; }
+/* ---- Responsividad ---- */
+@media (max-width: 900px) {
+  .content { padding: 22px 20px; }
+  .topbar { padding: 0 20px; }
+  .head-row { flex-direction: column; align-items: stretch; }
+  .head-row .btn { width: 100%; }
+  .filters { flex-direction: column; }
+  .filters .search, .filters .input { width: 100%; }
 }
+
+/* En móvil el sidebar se vuelve un drawer off-canvas con hamburguesa */
+@media (max-width: 860px) {
+  .portal { grid-template-columns: 1fr; }
+  .topbar-burger { display: inline-flex; }
+  .side-backdrop { display: block; }
+  .side {
+    position: fixed; top: 0; left: 0; z-index: 45; height: 100vh; width: 264px;
+    transform: translateX(-100%); transition: transform .24s ease;
+    box-shadow: var(--sh-3);
+  }
+  .side.open { transform: translateX(0); }
+}
+
+/* La tabla nunca fuerza scroll horizontal de la página: desborda en su envoltorio */
+.table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-wrap .table { min-width: 560px; }

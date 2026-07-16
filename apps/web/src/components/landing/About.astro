@@ -1,0 +1,184 @@
+---
+/*
+  About — sección "Quiénes somos" del landing.
+
+  Textos OFICIALES del cliente (no se reescriben):
+  - lead (Quienes somos.txt)
+  - resumen (Historia.txt)
+  - misión (Mision.txt)
+  - títulos de los valores (Valores.txt)
+
+  OJO: las descripciones de `values` son redacción propia (el cliente entregó
+  solo los títulos), igual que en `services.ts`. Deben validarse.
+
+  La ilustración (`about-courier.png`) la entregó el cliente.
+
+  Nota: el cliente pivotó la sede a Costa Rica; los textos de esta sección ya lo
+  reflejan, pero otras partes del sitio y `docs/` aún dicen Miami→Colombia.
+*/
+import { Image } from 'astro:assets';
+import Icon from '../ui/Icon.astro';
+import aboutPhoto from '../../assets/images/about-courier.png';
+
+/* Texto oficial del cliente (Historia.txt). */
+const historia = [
+  'Fundada en 2023, somos una empresa con sede en Costa Rica y con alianzas ' +
+    'estratégicas globales, que ofrecemos soluciones integrales de cadena de ' +
+    'suministro enfocadas en la agilidad, confiabilidad y excelencia en el servicio.',
+  'Operamos como un proveedor estratégico gestionando y coordinando la logística ' +
+    'para garantizar una respuesta rápida y eficiente a las necesidades del mercado.',
+];
+
+/* Texto oficial del cliente (Mision.txt). */
+const mission =
+  'Ser un socio logístico estratégico, generando valor real a través de operaciones ' +
+  'eficientes, seguras y estructuradas, respaldadas por una ejecución clara y ' +
+  'estándares de servicio definidos.';
+
+/* Títulos oficiales del cliente (Valores.txt); descripciones provisionales. */
+const values = [
+  {
+    icon: 'user',
+    title: 'Enfoque en el cliente',
+    desc: 'Cada decisión operativa parte de lo que tu envío necesita, no de lo que nos resulta cómodo.',
+  },
+  {
+    icon: 'shield',
+    title: 'Integridad y cumplimiento',
+    desc: 'Cumplimos lo acordado y respondemos por la documentación y el trámite aduanero.',
+  },
+  {
+    icon: 'star',
+    title: 'Excelencia operativa',
+    desc: 'Procesos estructurados y medibles: la eficiencia se sostiene en el método, no en la improvisación.',
+  },
+  {
+    icon: 'users',
+    title: 'Trabajo en equipo',
+    desc: 'Un solo equipo coordinado entre nuestras sedes y aliados, con un responsable claro por envío.',
+  },
+];
+---
+<section class="abt" id="quienes-somos">
+  <div class="abt__inner wrap">
+    <header class="abt__head">
+      <span class="chip"><Icon name="building" size={13} color="var(--brand)" />Quiénes somos</span>
+      <h2 class="abt__title">Conectamos a Costa Rica con las tiendas del mundo.</h2>
+      <p class="muted abt__lead">
+        Integramos transporte, paquetería y gestión aduanal en una sola experiencia,
+        con visibilidad en tiempo real y servicio personalizado.
+      </p>
+    </header>
+
+    <div class="abt__resumen">
+      <div class="abt__resumen-text">
+        <h3 class="abt__h">Resumen</h3>
+        {historia.map((p) => <p class="muted abt__p">{p}</p>)}
+      </div>
+
+      <figure class="abt__photo">
+        <Image
+          src={aboutPhoto}
+          alt="Repartidor de HS Global llevando un paquete con seguimiento en tiempo real"
+          widths={[440, 680, 900]}
+          sizes="(max-width: 900px) 100vw, 440px"
+          loading="lazy"
+        />
+      </figure>
+    </div>
+
+    <article class="card abt__mission">
+      <span class="abt__mission-ic"><Icon name="zap" size={22} color="#fff" /></span>
+      <div>
+        <h3 class="abt__mission-title">Nuestra misión</h3>
+        <p class="muted abt__mission-text">{mission}</p>
+      </div>
+    </article>
+
+    <div class="abt__moves">
+      <h3 class="abt__moves-title">Lo que nos mueve</h3>
+      <p class="muted abt__moves-lead">Los principios que aplicamos en cada envío.</p>
+    </div>
+
+    <div class="abt__values">
+      {values.map((v) => (
+        <article class="card abt__value">
+          <span class="abt__value-ic"><Icon name={v.icon} size={21} color="#fff" /></span>
+          <div class="abt__value-title">{v.title}</div>
+          <p class="muted abt__value-desc">{v.desc}</p>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  /* scroll-margin: el nav es sticky (70px) y taparía el borde superior al
+     llegar desde /#quienes-somos. */
+  .abt { border-top: 1px solid var(--line); scroll-margin-top: 70px; }
+  .abt__inner { padding-top: 80px; padding-bottom: 80px; }
+
+  .abt__head { max-width: 720px; margin-bottom: 56px; }
+  .abt__title { font-size: 42px; margin-top: 18px; letter-spacing: -.035em; line-height: 1.1; }
+  .abt__lead { font-size: 17px; margin-top: 16px; line-height: 1.6; }
+
+  /* Resumen + foto, dos columnas. */
+  .abt__resumen {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center;
+    padding-top: 40px; border-top: 1px solid var(--line);
+  }
+  .abt__h { font-size: 24px; letter-spacing: -.02em; }
+  .abt__p { font-size: 16px; line-height: 1.7; margin-top: 14px; }
+  .abt__p + .abt__p { margin-top: 16px; }
+
+  /* La ilustración trae su propio fondo claro; el marco lo integra con la
+     sección (borde suave + radio), sin recortar (contain, no cover). */
+  .abt__photo {
+    margin: 0; border-radius: var(--r-lg); overflow: hidden;
+    border: 1px solid var(--line); background: var(--surface);
+    box-shadow: var(--sh-2);
+  }
+  .abt__photo :global(img) {
+    display: block; width: 100%; height: auto;
+  }
+
+  .abt__mission {
+    display: flex; align-items: flex-start; gap: 18px;
+    padding: 28px; margin-top: 56px;
+  }
+  .abt__mission-ic {
+    width: 46px; height: 46px; border-radius: var(--r-md); flex-shrink: 0;
+    background: linear-gradient(140deg, var(--brand), var(--brand-700));
+    display: grid; place-items: center; box-shadow: var(--sh-brand);
+  }
+  .abt__mission-title { font-size: 20px; letter-spacing: -.02em; }
+  .abt__mission-text { font-size: 16px; line-height: 1.7; margin-top: 10px; max-width: 760px; }
+
+  .abt__moves { margin-top: 56px; }
+  .abt__moves-title { font-size: 24px; letter-spacing: -.02em; }
+  .abt__moves-lead { font-size: 15px; margin-top: 8px; }
+
+  .abt__values {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 24px;
+  }
+  .abt__value { padding: 24px; }
+  .abt__value-ic {
+    width: 44px; height: 44px; border-radius: var(--r-md);
+    background: linear-gradient(140deg, var(--brand), var(--brand-700));
+    display: grid; place-items: center; margin-bottom: 16px; box-shadow: var(--sh-brand);
+  }
+  .abt__value-title { font-family: var(--font-display); font-weight: 700; font-size: 16.5px; }
+  .abt__value-desc { font-size: 14px; line-height: 1.55; margin-top: 7px; }
+
+  @media (max-width: 900px) {
+    .abt__resumen { grid-template-columns: 1fr; gap: 32px; }
+    .abt__values { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 560px) {
+    .abt__title { font-size: 31px; }
+    .abt__mission { padding: 22px; gap: 14px; }
+  }
+  @media (max-width: 520px) {
+    .abt__values { grid-template-columns: 1fr; }
+  }
+</style>

@@ -3,6 +3,22 @@
    ============================================================ */
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+/* Red de seguridad: ningún elemento debe generar scroll horizontal de la página.
+   `clip` (no `hidden`) evita romper `position: sticky` del nav. */
+html, body { overflow-x: clip; }
+
+/* Los enlaces de ancla (p. ej. /#quienes-somos) llevan a secciones de la misma
+   página: se animan para que se lean como un desplazamiento y no como un cambio
+   de página. Cada sección enlazable declara su `scroll-margin-top`, porque el
+   nav sticky (70px) taparía su borde superior al llegar. */
+html { scroll-behavior: smooth; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+/* Los medios nunca exceden su contenedor. */
+img, svg, video, canvas { max-width: 100%; }
 
 body {
   font-family: var(--font-body);

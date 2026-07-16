@@ -36,7 +36,7 @@ export function LoginScreen({ onLoggedIn }: { onLoggedIn: () => void }) {
   return (
     <div className="login-wrap">
       <form className="login-card fadeUp" onSubmit={submit}>
-        <h1>HS Global Courier</h1>
+        <img className="login-logo" src="/logo.png" alt="HS Global Courier" />
         <p className="sub">Portal interno. Ingresa con tu cuenta.</p>
 
         {error && <div className="banner err">{error}</div>}
