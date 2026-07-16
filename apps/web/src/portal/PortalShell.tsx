@@ -48,6 +48,12 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
   const [current, setCurrent] = useState<Resource>(
     allowed.has(Resource.Users) ? Resource.Users : firstResource,
   );
+  const [navOpen, setNavOpen] = useState(false);
+
+  function selectResource(resource: Resource) {
+    setCurrent(resource);
+    setNavOpen(false); // en móvil, cerrar el drawer al navegar
+  }
 
   const roleLabel = ROLE_LABELS[me.role];
   const currentLabel =
@@ -63,9 +69,14 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
 
   return (
     <div className="portal">
-      <aside className="side">
+      {navOpen && <div className="side-backdrop" onClick={() => setNavOpen(false)} />}
+      <aside className={`side${navOpen ? ' open' : ''}`}>
         <div className="side-brand">
-          <span className="mark">HS</span> Global Courier
+          <img className="side-logo" src="/logo.png" alt="" />
+          <span className="side-brand-text">
+            <span className="n">HS Global</span>
+            <span className="s">Courier</span>
+          </span>
         </div>
 
         {visibleGroups.map((g) => (
@@ -75,7 +86,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
               <button
                 key={i.resource}
                 className={`navitem${current === i.resource ? ' active' : ''}`}
-                onClick={() => setCurrent(i.resource)}
+                onClick={() => selectResource(i.resource)}
               >
                 <NavIcon resource={i.resource} /> {i.label}
               </button>
@@ -97,6 +108,17 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
 
       <main className="main">
         <header className="topbar">
+          <button
+            className="topbar-burger"
+            type="button"
+            aria-label="Abrir menú"
+            aria-expanded={navOpen}
+            onClick={() => setNavOpen(true)}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M3 6h18M3 12h18M3 18h18" />
+            </svg>
+          </button>
           <h2>{currentLabel}</h2>
         </header>
         <section className="content">

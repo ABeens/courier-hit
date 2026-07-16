@@ -11,7 +11,7 @@ interface Props {
 }
 const {
   title = 'HS Global Courier · Tu casillero en Miami',
-  description = 'Compra en cualquier tienda de EE. UU. y recíbelo en casa. Casillero en Miami, consolidación y rastreo en tiempo real.',
+  description = 'Compra en cualquier tienda de EE. UU. y recíbelo en casa. Casillero en Miami, paquetería, carga aérea y marítima, agencia aduanal y seguros de carga.',
 } = Astro.props;
 ---
 <!doctype html>
@@ -21,6 +21,16 @@ const {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{title}</title>
     <meta name="description" content={description} />
+
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={new URL('/logo.png', Astro.site)} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:image" content={new URL('/logo.png', Astro.site)} />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

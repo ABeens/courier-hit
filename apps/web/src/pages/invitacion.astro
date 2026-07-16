@@ -1,0 +1,14 @@
+---
+/*
+  Pagina PÚBLICA para aceptar una invitación de staff: el usuario llega aquí desde
+  el enlace del correo (o, mientras no hay SMTP, del log de la API) con ?token=...
+  y fija su contraseña. No requiere sesión. Monta una isla React client:only
+  porque lee el token del querystring en el navegador.
+*/
+import Base from '../layouts/Base.astro';
+import AcceptInvite from '../portal/screens/AcceptInvite';
+---
+
+<Base title="Aceptar invitación · HS Global Courier">
+  <AcceptInvite client:only="react" />
+</Base>

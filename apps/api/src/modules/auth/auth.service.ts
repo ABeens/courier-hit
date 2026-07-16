@@ -91,13 +91,20 @@ export const authService = {
    * Emite un token de invitacion para que un staff recien creado fije su
    * contrasena (docs/roles.md §1.3.4). El admin nunca ve ni digita la clave.
    */
-  async issueInvitation(userId: string, email: string): Promise<void> {
+  async issueInvitation(userId: string, email: string): Promise<string | null> {
     const token = newToken();
     const expiresAt = new Date(Date.now() + config.INVITE_TTL_HOURS * 3_600_000);
     await authRepo.insertPasswordReset({ userId, tokenHash: sha256(token), purpose: 'invite', expiresAt });
 
-    // TODO(09/email): enviar el enlace real (WEB_ORIGIN/invitacion?token=...). En dev lo mostramos.
-    if (!isProd) console.log(`[auth] invitación para ${email}: token=${token}`);
+    const link = `${config.WEB_ORIGIN}/invitacion?token=${token}`;
+    // TODO(09/email): enviar este enlace por correo (SES). Mientras no hay SMTP, en
+    // dev lo imprimimos y lo devolvemos para mostrarlo en la UI. En prod NUNCA sale
+    // del servidor: el token viaja solo por el correo.
+    if (!isProd) {
+      console.log(`\n[auth] Invitación para ${email}:\n  ${link}\n`);
+      return link;
+    }
+    return null;
   },
 
   /** Fija la contrasena desde un token de invitacion/reset y deja la cuenta lista. */

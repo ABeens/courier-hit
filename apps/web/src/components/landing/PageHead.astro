@@ -1,0 +1,36 @@
+---
+/*
+  PageHead — encabezado de las páginas interiores del sitio público
+  (/preguntas-frecuentes). Mismo ritmo visual que el hero, sin imagen.
+*/
+import Icon from '../ui/Icon.astro';
+
+interface Props {
+  eyebrow: string;
+  icon?: string;
+  title: string;
+  sub?: string;
+}
+const { eyebrow, icon = 'zap', title, sub } = Astro.props;
+---
+<header class="phead">
+  <div class="phead__inner wrap">
+    <span class="chip"><Icon name={icon} size={13} color="var(--brand)" />{eyebrow}</span>
+    <h1 class="phead__title">{title}</h1>
+    {sub && <p class="muted phead__sub">{sub}</p>}
+    <slot />
+  </div>
+</header>
+
+<style>
+  .phead { background: linear-gradient(180deg, var(--brand-softer), var(--paper) 85%); }
+  .phead__inner { padding-top: 64px; padding-bottom: 56px; max-width: 780px; }
+  .phead__title { font-size: 46px; margin-top: 18px; letter-spacing: -.035em; line-height: 1.08; }
+  .phead__sub { font-size: 17.5px; margin-top: 16px; line-height: 1.6; }
+
+  @media (max-width: 640px) {
+    .phead__inner { padding-top: 44px; padding-bottom: 40px; }
+    .phead__title { font-size: 33px; }
+    .phead__sub { font-size: 16px; }
+  }
+</style>
