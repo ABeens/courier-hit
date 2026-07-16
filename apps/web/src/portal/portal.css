@@ -161,6 +161,23 @@ select.input { cursor: pointer; padding-right: 30px; }
 
 .empty { text-align: center; color: var(--muted); padding: 46px 0; font-size: 14px; }
 
+/* ---- Tarifas de clientes ---- */
+.banner.warn { background: var(--warn-soft); color: var(--warn); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { background: oklch(0.52 0.19 25); }
+.tag-default {
+  margin-left: 8px; font-size: 11px; font-weight: 700; letter-spacing: .02em;
+  color: var(--brand); background: var(--brand-softer); padding: 2px 8px; border-radius: 999px;
+  vertical-align: middle;
+}
+.pay-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pay-chips .role-chip { background: var(--paper-2); padding: 3px 9px; border-radius: 999px; }
+.check-row {
+  display: flex; align-items: center; gap: 9px; font-size: 14px; color: var(--ink);
+  font-weight: 500; padding: 4px 0; cursor: pointer;
+}
+.check-row input { width: 16px; height: 16px; accent-color: var(--brand); cursor: pointer; }
+
 /* ---- Responsividad ---- */
 @media (max-width: 900px) {
   .content { padding: 22px 20px; }

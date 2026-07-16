@@ -14,10 +14,43 @@
  */
 import { randomBytes } from 'node:crypto';
 import { hash } from '@node-rs/argon2';
-import { eq } from 'drizzle-orm';
+import { count, eq } from 'drizzle-orm';
 import { Principal, Role, UserStatus } from '@courier/shared';
 import { db } from './core/db';
 import { users } from './modules/auth/auth.schema';
+import { clientRates } from './modules/tariffs/tariffs.schema';
+
+/**
+ * Tarifas preferenciales de cliente de ejemplo (requisito). Basica es la tarifa
+ * por defecto a la que se incorporan los casilleros nuevos. Se siembran solo si
+ * la tabla esta vacia (idempotente): no pisa ediciones posteriores del admin.
+ */
+const SEED_CLIENT_RATES: { name: string; pricePerKg: number; isDefault?: boolean }[] = [
+  { name: 'Básica', pricePerKg: 13.45, isDefault: true },
+  { name: 'Plus', pricePerKg: 9.75 },
+  { name: 'Pro', pricePerKg: 8.45 },
+  { name: 'Gold', pricePerKg: 8.15 },
+  { name: 'Black', pricePerKg: 7.45 },
+  { name: 'Platinum', pricePerKg: 7.2 },
+];
+
+async function seedClientRates(): Promise<void> {
+  const [row] = await db.select({ n: count() }).from(clientRates);
+  if ((row?.n ?? 0) > 0) {
+    console.log('[seed] Tarifas de cliente: ya existen, no se cambió nada.');
+    return;
+  }
+  await db.insert(clientRates).values(
+    SEED_CLIENT_RATES.map((r) => ({
+      name: r.name,
+      pricePerKg: r.pricePerKg,
+      isDefault: r.isDefault ?? false,
+      allowsCard: true,
+      allowsBankDeposit: true,
+    })),
+  );
+  console.log(`[seed] Tarifas de cliente creadas: ${SEED_CLIENT_RATES.length} (Básica por defecto).`);
+}
 
 /** Contrasena de alta entropia con las 4 clases de caracteres garantizadas. */
 function strongPassword(): string {
@@ -40,6 +73,8 @@ function printCreds(email: string, id: string | undefined, password: string, pro
 }
 
 async function main(): Promise<void> {
+  await seedClientRates();
+
   const email = (process.env.SEED_ADMIN_EMAIL ?? 'admin@hsglobal.ltd').trim().toLowerCase();
   const name = process.env.SEED_ADMIN_NAME ?? 'Administrador HS';
   const provided = process.env.SEED_ADMIN_PASSWORD;

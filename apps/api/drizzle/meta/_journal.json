@@ -15,6 +15,20 @@
       "when": 1784014577439,
       "tag": "0001_loose_ozymandias",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784232240937,
+      "tag": "0002_chunky_wolfsbane",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784232645676,
+      "tag": "0003_tense_silver_fox",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,8 @@ import { ROLE_LABELS, Resource, resourcesFor } from '@courier/shared';
 import type { Me } from './PortalApp';
 import { api } from './lib/api';
 import { UsersScreen } from './screens/UsersScreen';
+import { CostServicesScreen } from './screens/CostServicesScreen';
+import { TariffsScreen } from './screens/TariffsScreen';
 
 interface NavItem { resource: Resource; label: string }
 const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
@@ -27,6 +29,8 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
     group: 'Gestión',
     items: [
       { resource: Resource.Reports, label: 'Reportes' },
+      { resource: Resource.Tariffs, label: 'Tarifas' },
+      { resource: Resource.CostServices, label: 'Servicios de costos' },
       { resource: Resource.Config, label: 'Configuración' },
       { resource: Resource.Users, label: 'Usuarios' },
       { resource: Resource.Announcements, label: 'Anuncios' },
@@ -124,6 +128,10 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
         <section className="content">
           {current === Resource.Users ? (
             <UsersScreen />
+          ) : current === Resource.Tariffs ? (
+            <TariffsScreen />
+          ) : current === Resource.CostServices ? (
+            <CostServicesScreen />
           ) : (
             <div className="stub">
               <div className="big">{currentLabel}</div>
@@ -150,6 +158,8 @@ function NavIcon({ resource }: { resource: Resource }) {
     [Resource.Dashboard]: <path d="M3 12h7V3H3zM14 21h7V3h-7zM3 21h7v-6H3z" />,
     [Resource.Package]: <path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8" />,
     [Resource.Costs]: <path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
+    [Resource.CostServices]: <path d="M20 12V8H6a2 2 0 01-2-2c0-1.1.9-2 2-2h12v4M4 6v12c0 1.1.9 2 2 2h14v-4M18 12a2 2 0 000 4h4v-4z" />,
+    [Resource.Tariffs]: <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01" />,
     [Resource.Delivery]: <path d="M1 3h15v13H1zM16 8h4l3 3v5h-7M5.5 21a2 2 0 100-4 2 2 0 000 4zM18.5 21a2 2 0 100-4 2 2 0 000 4z" />,
     [Resource.Clients]: <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13A4 4 0 0116 11" />,
     [Resource.Tramite]: <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M9 13h6M9 17h6" />,
