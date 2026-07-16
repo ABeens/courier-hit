@@ -8,9 +8,10 @@ import { config } from './config';
 import * as authSchema from '../modules/auth/auth.schema';
 import * as costServicesSchema from '../modules/cost-services/cost-service.schema';
 import * as tariffsSchema from '../modules/tariffs/tariffs.schema';
+import * as routesSchema from '../modules/routes/district-route.schema';
 
 const client = postgres(config.DATABASE_URL);
 
-export const schema = { ...authSchema, ...costServicesSchema, ...tariffsSchema };
+export const schema = { ...authSchema, ...costServicesSchema, ...tariffsSchema, ...routesSchema };
 export const db = drizzle(client, { schema });
 export type Db = typeof db;

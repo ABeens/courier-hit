@@ -77,6 +77,40 @@ export function getDistricts(cantonCode: string): readonly District[] {
   return cantonByCode.get(cantonCode)?.canton.districts ?? [];
 }
 
+/** Distrito aplanado con el nombre y codigo de su canton y provincia. */
+export interface DistrictListItem {
+  provinceCode: string;
+  provinceName: string;
+  cantonCode: string;
+  cantonName: string;
+  districtCode: string;
+  districtName: string;
+}
+
+/**
+ * Aplana todo el catalogo a una fila por distrito, arrastrando el nombre y codigo
+ * de su canton y provincia. Lo consume la pantalla de definicion de rutas, que
+ * lista los 474 distritos para asignarles su numero de ruta.
+ */
+export function getAllDistricts(): DistrictListItem[] {
+  const rows: DistrictListItem[] = [];
+  for (const province of PROVINCES) {
+    for (const canton of province.cantons) {
+      for (const district of canton.districts) {
+        rows.push({
+          provinceCode: province.code,
+          provinceName: province.name,
+          cantonCode: canton.code,
+          cantonName: canton.name,
+          districtCode: district.code,
+          districtName: district.name,
+        });
+      }
+    }
+  }
+  return rows;
+}
+
 /**
  * Valida que la terna (provincia, canton, distrito) sea coherente: los tres
  * existen y el distrito cuelga del canton y este de la provincia. La API la usa

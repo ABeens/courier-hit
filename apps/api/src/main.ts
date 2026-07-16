@@ -8,12 +8,14 @@ import { authRoutes } from './modules/auth/auth.routes';
 import { usersRoutes } from './modules/users/users.routes';
 import { costServicesRoutes } from './modules/cost-services/cost-services.routes';
 import { tariffsRoutes } from './modules/tariffs/tariffs.routes';
+import { routesRoutes } from './modules/routes/routes.routes';
 
 const app = createApp();
 app.route('/api/auth', authRoutes);
 app.route('/api/users', usersRoutes);
 app.route('/api/cost-services', costServicesRoutes);
 app.route('/api/tariffs', tariffsRoutes);
+app.route('/api/routes', routesRoutes);
 
 serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   console.log(`[api] escuchando en http://localhost:${info.port}`);

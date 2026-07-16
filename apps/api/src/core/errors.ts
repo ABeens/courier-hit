@@ -65,6 +65,12 @@ export const ClientRateErrors = {
     new AppError('CLIENT_RATE_PAYMENT_REQUIRED', 'La tarifa debe permitir al menos un medio de pago.', 400),
 };
 
+/** Errores de la definicion de rutas (panel admin, permiso routes.manage). */
+export const RouteErrors = {
+  notFound: () => new AppError('DISTRICT_ROUTE_NOT_FOUND', 'El distrito no tiene una ruta asignada.', 404),
+  districtNotFound: () => new AppError('DISTRICT_NOT_FOUND', 'Distrito no encontrado.', 404),
+};
+
 export function onError(err: Error, c: Context) {
   if (err instanceof AppError) {
     return c.json({ error: { code: err.code, message: err.message } }, err.status);
