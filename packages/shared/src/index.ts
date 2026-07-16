@@ -9,6 +9,7 @@ export * from './tariffs/dto';
 export * from './costs/cost-service';
 export * from './costs/dto';
 export * from './geo/costa-rica';
+export * from './geo/routes';
 export * from './workflow/shipment-type';
 export * from './workflow/states';
 export * from './workflow/automation';

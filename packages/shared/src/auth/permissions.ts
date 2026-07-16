@@ -26,6 +26,7 @@ export enum Resource {
   Clients = 'clients',
   Config = 'config',
   Tariffs = 'tariffs',
+  Routes = 'routes',
   Users = 'users',
   Announcements = 'announcements',
 }
@@ -74,6 +75,7 @@ export enum Permission {
   ClientsWrite = 'clients.write',
   ConfigManage = 'config.manage',
   TariffsManage = 'tariffs.manage',
+  RoutesManage = 'routes.manage',
   UsersManage = 'users.manage',
   AnnouncementsManage = 'announcements.manage',
 }
@@ -108,6 +110,7 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   [Permission.ClientsWrite]: { resource: Resource.Clients, action: Action.Write, scope: Scope.All },
   [Permission.ConfigManage]: { resource: Resource.Config, action: Action.Manage, scope: Scope.All },
   [Permission.TariffsManage]: { resource: Resource.Tariffs, action: Action.Manage, scope: Scope.All },
+  [Permission.RoutesManage]: { resource: Resource.Routes, action: Action.Manage, scope: Scope.All },
   [Permission.UsersManage]: { resource: Resource.Users, action: Action.Manage, scope: Scope.All },
   [Permission.AnnouncementsManage]: { resource: Resource.Announcements, action: Action.Manage, scope: Scope.All },
 };
@@ -132,6 +135,7 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   Permission.ClientsWrite,
   Permission.ConfigManage,
   Permission.TariffsManage,
+  Permission.RoutesManage,
   Permission.UsersManage,
   Permission.AnnouncementsManage,
 ];
