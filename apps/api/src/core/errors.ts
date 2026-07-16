@@ -39,6 +39,32 @@ export const UserErrors = {
     new AppError('LAST_ADMIN', 'No puedes deshabilitar ni cambiar el rol del último administrador activo.', 409),
 };
 
+/** Errores del catalogo de servicios de costo (docs/manuales/flujo.md L1-20). */
+export const CostServiceErrors = {
+  notFound: () => new AppError('COST_SERVICE_NOT_FOUND', 'Servicio no encontrado.', 404),
+  nameInUse: () => new AppError('COST_SERVICE_NAME_IN_USE', 'Ya existe un servicio con ese nombre.', 409),
+  valueRequired: () =>
+    new AppError('COST_SERVICE_VALUE_REQUIRED', 'Indica el valor por defecto para este tipo de servicio.', 400),
+  invalidPercentage: () =>
+    new AppError('COST_SERVICE_INVALID_PERCENTAGE', 'El porcentaje debe estar entre 0 y 100.', 400),
+};
+
+/** Errores de las tarifas preferenciales de cliente. */
+export const ClientRateErrors = {
+  notFound: () => new AppError('CLIENT_RATE_NOT_FOUND', 'Tarifa no encontrada.', 404),
+  nameInUse: () => new AppError('CLIENT_RATE_NAME_IN_USE', 'Ya existe una tarifa con ese nombre.', 409),
+  defaultLocked: () =>
+    new AppError('CLIENT_RATE_DEFAULT_LOCKED', 'No se puede eliminar la tarifa por defecto.', 409),
+  defaultRequired: () =>
+    new AppError(
+      'CLIENT_RATE_DEFAULT_REQUIRED',
+      'Debe existir una tarifa por defecto. Marca otra como predeterminada en su lugar.',
+      409,
+    ),
+  paymentMethodRequired: () =>
+    new AppError('CLIENT_RATE_PAYMENT_REQUIRED', 'La tarifa debe permitir al menos un medio de pago.', 400),
+};
+
 export function onError(err: Error, c: Context) {
   if (err instanceof AppError) {
     return c.json({ error: { code: err.code, message: err.message } }, err.status);

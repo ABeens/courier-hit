@@ -2,8 +2,15 @@
 /*
   Contact — sección de contacto del landing (destino de /#contacto).
 
+  Dos columnas: a la izquierda los datos de contacto directos (correo, teléfono,
+  oficinas); a la derecha un formulario de contacto.
+
   OJO: los datos de contacto se toman del footer y están por confirmar (el
   teléfono es un placeholder del prototipo).
+
+  El formulario NO tiene backend todavía: el envío se intercepta con JS y solo
+  muestra una confirmación en pantalla (ver <script>). Cuando exista el endpoint
+  de correo, hacer el POST en el punto marcado con TODO.
 */
 import Icon from '../ui/Icon.astro';
 
@@ -24,19 +31,52 @@ const contact = [
       </p>
     </header>
 
-    <div class="ctc__cards">
-      {contact.map((c) => {
-        const Tag = c.href ? 'a' : 'div';
-        return (
-          <Tag href={c.href} class="card ctc__card">
-            <span class="ctc__ic"><Icon name={c.icon} size={19} color="var(--brand)" /></span>
-            <div>
-              <div class="ctc__label">{c.label}</div>
-              <div class="ctc__value">{c.value}</div>
-            </div>
-          </Tag>
-        );
-      })}
+    <div class="ctc__grid">
+      <div class="ctc__cards">
+        {contact.map((c) => {
+          const Tag = c.href ? 'a' : 'div';
+          return (
+            <Tag href={c.href} class="card ctc__card">
+              <span class="ctc__ic"><Icon name={c.icon} size={19} color="var(--brand)" /></span>
+              <div>
+                <div class="ctc__label">{c.label}</div>
+                <div class="ctc__value">{c.value}</div>
+              </div>
+            </Tag>
+          );
+        })}
+      </div>
+
+      <form class="card ctc__form" data-contact-form novalidate>
+        <div class="ctc__row">
+          <div class="ctc__f">
+            <label class="field-label" for="ctc-name">Nombre</label>
+            <input class="input" id="ctc-name" name="name" type="text" autocomplete="name" placeholder="Tu nombre" required />
+          </div>
+          <div class="ctc__f">
+            <label class="field-label" for="ctc-email">Correo</label>
+            <input class="input" id="ctc-email" name="email" type="email" autocomplete="email" placeholder="tu@correo.com" required />
+          </div>
+        </div>
+
+        <div class="ctc__f">
+          <label class="field-label" for="ctc-phone">Teléfono <span class="faint">(opcional)</span></label>
+          <input class="input" id="ctc-phone" name="phone" type="tel" autocomplete="tel" placeholder="+57 300 000 0000" />
+        </div>
+
+        <div class="ctc__f">
+          <label class="field-label" for="ctc-message">Mensaje</label>
+          <textarea class="input" id="ctc-message" name="message" rows="4" placeholder="Cuéntanos qué necesitas enviar: origen y destino, peso y dimensiones, tipo de mercancía…" required></textarea>
+        </div>
+
+        <div class="ctc__actions">
+          <button class="btn btn-primary" type="submit" data-contact-submit>
+            <Icon name="send" size={17} color="#fff" />
+            Enviar mensaje
+          </button>
+          <p class="ctc__note faint" data-contact-status role="status" aria-live="polite"></p>
+        </div>
+      </form>
     </div>
   </div>
 </section>
@@ -55,7 +95,9 @@ const contact = [
   .ctc__title { font-size: 34px; margin-top: 16px; letter-spacing: -.03em; }
   .ctc__lead { font-size: 16px; margin-top: 12px; }
 
-  .ctc__cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .ctc__grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+
+  .ctc__cards { display: grid; gap: 16px; align-content: start; }
   .ctc__card {
     display: flex; align-items: center; gap: 14px; padding: 20px;
     transition: box-shadow .18s ease, transform .18s ease;
@@ -68,10 +110,75 @@ const contact = [
   .ctc__label { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   .ctc__value { font-size: 14.5px; font-weight: 600; color: var(--ink); margin-top: 3px; }
 
+  /* ---- Formulario ---- */
+  .ctc__form { padding: 24px; display: grid; gap: 16px; }
+  .ctc__row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .ctc__f { display: block; }
+  .ctc__actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .ctc__note { font-size: 13px; margin: 0; }
+  .ctc__note[data-state='ok'] { color: var(--brand); font-weight: 600; }
+  .ctc__note[data-state='error'] { color: var(--danger, oklch(0.55 0.2 25)); font-weight: 600; }
+
   @media (max-width: 900px) {
-    .ctc__cards { grid-template-columns: 1fr; }
+    .ctc__grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 520px) {
     .ctc__title { font-size: 27px; }
+    .ctc__row { grid-template-columns: 1fr; }
   }
 </style>
+
+<script>
+  // Formulario de contacto sin backend: se valida en el cliente y se muestra una
+  // confirmación. El envío real por correo se hará donde está el TODO.
+  // Enlazado por-instancia e idempotente ante navegaciones (guard con data-attr).
+  function initContactForm() {
+    const form = document.querySelector<HTMLFormElement>('[data-contact-form]');
+    if (!form || form.hasAttribute('data-contact-ready')) return;
+    form.setAttribute('data-contact-ready', '');
+
+    const status = form.querySelector<HTMLParagraphElement>('[data-contact-status]');
+    const submit = form.querySelector<HTMLButtonElement>('[data-contact-submit]');
+
+    const setStatus = (msg: string, state: '' | 'ok' | 'error') => {
+      if (!status) return;
+      status.textContent = msg;
+      if (state) status.setAttribute('data-state', state);
+      else status.removeAttribute('data-state');
+    };
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        setStatus('Revisa los campos marcados.', 'error');
+        return;
+      }
+
+      const data = Object.fromEntries(new FormData(form).entries());
+      if (submit) submit.disabled = true;
+      setStatus('Enviando…', '');
+
+      try {
+        // TODO: enviar `data` al endpoint de correo cuando exista, p. ej.:
+        //   await fetch('/api/contact', {
+        //     method: 'POST',
+        //     headers: { 'Content-Type': 'application/json' },
+        //     body: JSON.stringify(data),
+        //   });
+        // De momento no hay backend: solo confirmamos en pantalla.
+        void data;
+        form.reset();
+        setStatus('¡Gracias! Recibimos tu mensaje y te contactaremos pronto.', 'ok');
+      } catch {
+        setStatus('No pudimos enviar tu mensaje. Escríbenos a info@hsgloballtd.com.', 'error');
+      } finally {
+        if (submit) submit.disabled = false;
+      }
+    });
+  }
+
+  initContactForm();
+  document.addEventListener('astro:after-swap', initContactForm);
+</script>
