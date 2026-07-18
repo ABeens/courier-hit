@@ -2,12 +2,14 @@
  * Cascara del portal: sidebar + area de contenido. El menu se arma desde el ROL
  * de la sesion usando el RBAC compartido (resourcesFor), replicando NAVS sin
  * confiar en el cliente: cada endpoint revalida el permiso (docs/06 §8).
- * Por ahora solo "Usuarios" esta implementada; el resto muestra un placeholder.
+ * La pantalla activa va en la URL (/app/<slug>, portal/routes.ts): deep-links,
+ * recarga y botones atras/adelante funcionan.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ROLE_LABELS, Resource, resourcesFor } from '@courier/shared';
 import type { Me } from './PortalApp';
 import { api } from './lib/api';
+import { pathForResource, resourceFromPath } from './routes';
 import { UsersScreen } from './screens/UsersScreen';
 import { CostServicesScreen } from './screens/CostServicesScreen';
 import { TariffsScreen } from './screens/TariffsScreen';
@@ -51,14 +53,36 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
   );
 
   const firstResource = visibleGroups[0]?.items[0]?.resource ?? Resource.Users;
-  const [current, setCurrent] = useState<Resource>(
-    allowed.has(Resource.Users) ? Resource.Users : firstResource,
-  );
+  const defaultResource = allowed.has(Resource.Users) ? Resource.Users : firstResource;
+
+  // Pantalla inicial: la de la URL si el rol la permite; si no, la por defecto.
+  const [current, setCurrent] = useState<Resource>(() => {
+    const fromUrl = resourceFromPath(window.location.pathname);
+    return fromUrl && allowed.has(fromUrl) ? fromUrl : defaultResource;
+  });
   const [navOpen, setNavOpen] = useState(false);
+
+  // Botones atras/adelante del navegador.
+  useEffect(() => {
+    function onPopState() {
+      const fromUrl = resourceFromPath(window.location.pathname);
+      setCurrent(fromUrl && allowed.has(fromUrl) ? fromUrl : defaultResource);
+    }
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [allowed, defaultResource]);
+
+  // Canonicaliza la URL al recurso activo (cubre /app a secas y slugs no validos).
+  useEffect(() => {
+    const path = pathForResource(current);
+    if (window.location.pathname !== path) window.history.replaceState(null, '', path);
+  }, [current]);
 
   function selectResource(resource: Resource) {
     setCurrent(resource);
     setNavOpen(false); // en móvil, cerrar el drawer al navegar
+    const path = pathForResource(resource);
+    if (window.location.pathname !== path) window.history.pushState(null, '', path);
   }
 
   const roleLabel = ROLE_LABELS[me.role];

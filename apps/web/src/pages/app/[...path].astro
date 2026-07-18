@@ -1,0 +1,25 @@
+---
+/*
+  Cascara del portal (Opción B, docs/00 §4 y docs/06 §8). Ruta catch-all /app/*
+  que monta la ÚNICA isla-app React del portal; ella lleva su propio router y
+  estado en cliente. Sin SSR (client:only): es zona privada tras login.
+  Deep-links: getStaticPaths genera una página estática por slug (portal/routes.ts)
+  para que /app/usuarios, /app/tarifas, … sirvan la misma cáscara y React resuelva
+  la pantalla desde la URL. En el host, rutas /app/* no enumeradas deben caer en
+  el fallback SPA a /app (docs/12).
+*/
+import Base from '../../layouts/Base.astro';
+import PortalApp from '../../portal/PortalApp';
+import { RESOURCE_SLUGS } from '../../portal/routes';
+
+export function getStaticPaths() {
+  return [
+    { params: { path: undefined } }, // /app a secas
+    ...Object.values(RESOURCE_SLUGS).map((slug) => ({ params: { path: slug } })),
+  ];
+}
+---
+
+<Base title="Portal · HS Global Courier">
+  <PortalApp client:only="react" />
+</Base>
