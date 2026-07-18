@@ -1,17 +1,24 @@
 /**
  * Pantalla "Servicios de costos" (permiso cost_services.manage, solo admin).
- * CRUD del catalogo de conceptos que se cargan manualmente a los tramites de
- * Transporte y Agenciamiento: crear, editar, habilitar/deshabilitar y buscar por
- * nombre. Fuente: docs/manuales/flujo.md L1-20. La API revalida cada accion.
+ * CRUD del catalogo de conceptos que se cargan a los tramites de Transporte y
+ * Agenciamiento o de Paqueteria: crear, editar, habilitar/deshabilitar, buscar
+ * por nombre y filtrar por tipo de servicio / tipo de valor / estado.
+ * Fuente: docs/manuales/flujo.md L1-20. La API revalida cada accion.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { SERVICE_VALUE_TYPE_LABELS, ServiceValueType } from '@courier/shared';
+import {
+  SERVICE_KIND_LABELS,
+  SERVICE_VALUE_TYPE_LABELS,
+  ServiceKind,
+  ServiceValueType,
+} from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { CostServiceFormModal } from './CostServiceFormModal';
 
 export interface CostServiceRow {
   id: string;
   name: string;
+  kind: ServiceKind;
   valueType: ServiceValueType;
   defaultValue: number | null;
   enabled: boolean;
@@ -35,6 +42,7 @@ function formatValue(row: CostServiceRow): string {
 export function CostServicesScreen() {
   const [data, setData] = useState<ListResponse | null>(null);
   const [q, setQ] = useState('');
+  const [kind, setKind] = useState('');
   const [valueType, setValueType] = useState('');
   const [enabled, setEnabled] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +52,7 @@ export function CostServicesScreen() {
   const load = useCallback(async () => {
     const params = new URLSearchParams();
     if (q.trim()) params.set('q', q.trim());
+    if (kind) params.set('kind', kind);
     if (valueType) params.set('valueType', valueType);
     if (enabled) params.set('enabled', enabled);
     const qs = params.toString();
@@ -53,7 +62,7 @@ export function CostServicesScreen() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cargar el listado.');
     }
-  }, [q, valueType, enabled]);
+  }, [q, kind, valueType, enabled]);
 
   useEffect(() => {
     const t = setTimeout(load, 250); // debounce de la busqueda
@@ -96,8 +105,14 @@ export function CostServicesScreen() {
           className="input search" placeholder="Buscar por nombre…"
           value={q} onChange={(e) => setQ(e.target.value)}
         />
+        <select className="input" value={kind} onChange={(e) => setKind(e.target.value)}>
+          <option value="">Todos los servicios</option>
+          {Object.values(ServiceKind).map((k) => (
+            <option key={k} value={k}>{SERVICE_KIND_LABELS[k]}</option>
+          ))}
+        </select>
         <select className="input" value={valueType} onChange={(e) => setValueType(e.target.value)}>
-          <option value="">Todos los tipos</option>
+          <option value="">Todos los tipos de valor</option>
           {Object.values(ServiceValueType).map((t) => (
             <option key={t} value={t}>{SERVICE_VALUE_TYPE_LABELS[t]}</option>
           ))}
@@ -114,6 +129,7 @@ export function CostServicesScreen() {
           <thead>
             <tr>
               <th>Servicio</th>
+              <th>Tipo de servicio</th>
               <th>Tipo de valor</th>
               <th>Valor por defecto</th>
               <th>Estado</th>
@@ -126,6 +142,7 @@ export function CostServicesScreen() {
                 <td>
                   <div className="cell-name">{row.name}</div>
                 </td>
+                <td>{SERVICE_KIND_LABELS[row.kind]}</td>
                 <td>{SERVICE_VALUE_TYPE_LABELS[row.valueType]}</td>
                 <td>{formatValue(row)}</td>
                 <td>

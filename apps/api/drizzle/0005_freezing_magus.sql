@@ -1,0 +1,2 @@
+CREATE TYPE "public"."service_kind" AS ENUM('transporte_agenciamiento', 'paqueteria');--> statement-breakpoint
+ALTER TABLE "cost_services" ADD COLUMN "kind" "service_kind" DEFAULT 'transporte_agenciamiento' NOT NULL;

@@ -1,12 +1,18 @@
 /**
- * Modal crear / editar servicio de costo. El tipo de valor decide si se pide un
- * valor por defecto: Porcentaje/Monto fijo lo exigen; Manual lo oculta (el importe
- * se digita al cargar los costos del tramite). En editar solo envia lo que cambio.
+ * Modal crear / editar servicio de costo. Dos reglas encadenadas:
+ *   - El tipo de servicio acota el tipo de valor: Transporte y Agenciamiento se
+ *     carga al recibir el tramite, asi que queda fijo en Manual; Paqueteria elige.
+ *   - El tipo de valor decide si se pide un valor por defecto: Porcentaje/Monto
+ *     fijo lo exigen; Manual lo oculta (el importe se digita al cargar).
+ * En editar solo envia lo que cambio.
  */
 import { useState } from 'react';
 import {
+  SERVICE_KIND_LABELS,
   SERVICE_VALUE_TYPE_LABELS,
+  ServiceKind,
   ServiceValueType,
+  allowedValueTypes,
   createCostServiceSchema,
 } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
@@ -21,6 +27,7 @@ interface Props {
 
 export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
   const [name, setName] = useState(row?.name ?? '');
+  const [kind, setKind] = useState<ServiceKind>(row?.kind ?? ServiceKind.TransporteAgenciamiento);
   const [valueType, setValueType] = useState<ServiceValueType>(row?.valueType ?? ServiceValueType.Manual);
   const [value, setValue] = useState<string>(
     row?.defaultValue !== null && row?.defaultValue !== undefined ? String(row.defaultValue) : '',
@@ -28,8 +35,16 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const valueTypeOptions = allowedValueTypes(kind);
+  const lockedToManual = valueTypeOptions.length === 1;
   const needsValue = valueType !== ServiceValueType.Manual;
   const parsedValue = needsValue ? Number(value) : null;
+
+  /** Al cambiar de tipo de servicio, reencaja el tipo de valor si dejo de ser admisible. */
+  function changeKind(next: ServiceKind) {
+    setKind(next);
+    if (!allowedValueTypes(next).includes(valueType)) setValueType(ServiceValueType.Manual);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,6 +54,7 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
       if (mode === 'create') {
         const parsed = createCostServiceSchema.safeParse({
           name,
+          kind,
           valueType,
           defaultValue: needsValue ? parsedValue : undefined,
         });
@@ -50,13 +66,14 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
         await api.post('/cost-services', parsed.data);
         onSaved(`Servicio "${parsed.data.name}" creado.`);
       } else if (row) {
-        // Solo enviamos lo que cambio. Tipo y valor van acoplados.
+        // Solo enviamos lo que cambio. Tipo de servicio, tipo y valor van acoplados.
         const patch: Record<string, unknown> = {};
         if (name.trim() !== row.name) patch.name = name.trim();
         const valueChanged = needsValue
           ? parsedValue !== row.defaultValue
           : row.defaultValue !== null;
-        if (valueType !== row.valueType || valueChanged) {
+        if (kind !== row.kind || valueType !== row.valueType || valueChanged) {
+          patch.kind = kind;
           patch.valueType = valueType;
           patch.defaultValue = needsValue ? parsedValue : null;
         }
@@ -64,9 +81,10 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
           onSaved();
           return;
         }
-        // Validamos coherencia tipo<->valor reusando el esquema de creacion.
+        // Validamos coherencia servicio<->tipo<->valor reusando el esquema de creacion.
         const check = createCostServiceSchema.safeParse({
           name: name.trim() || row.name,
+          kind,
           valueType,
           defaultValue: needsValue ? parsedValue : undefined,
         });
@@ -89,7 +107,7 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
       <form className="modal fadeUp" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal-head">
           <h3>{mode === 'create' ? 'Nuevo servicio' : 'Editar servicio'}</h3>
-          <p>Conceptos de costo para trámites de Transporte y Agenciamiento.</p>
+          <p>Conceptos de costo para trámites de Transporte y agenciamiento o de Paquetería.</p>
         </div>
 
         <div className="modal-body">
@@ -105,15 +123,33 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
           </div>
 
           <div>
+            <label className="field-label" htmlFor="s-kind">Tipo de servicio</label>
+            <select
+              id="s-kind" className="input" value={kind}
+              onChange={(e) => changeKind(e.target.value as ServiceKind)}
+            >
+              {Object.values(ServiceKind).map((k) => (
+                <option key={k} value={k}>{SERVICE_KIND_LABELS[k]}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
             <label className="field-label" htmlFor="s-type">Tipo de valor</label>
             <select
-              id="s-type" className="input" value={valueType}
+              id="s-type" className="input" value={valueType} disabled={lockedToManual}
               onChange={(e) => setValueType(e.target.value as ServiceValueType)}
             >
-              {Object.values(ServiceValueType).map((t) => (
+              {valueTypeOptions.map((t) => (
                 <option key={t} value={t}>{SERVICE_VALUE_TYPE_LABELS[t]}</option>
               ))}
             </select>
+            {lockedToManual && (
+              <div className="field-hint">
+                Los costos de {SERVICE_KIND_LABELS[ServiceKind.TransporteAgenciamiento]} se cargan al momento
+                de recibir el trámite, por eso su valor siempre es manual.
+              </div>
+            )}
           </div>
 
           {needsValue ? (

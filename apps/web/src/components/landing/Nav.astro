@@ -14,6 +14,7 @@ const links = [
   { href: '/#servicios', label: 'Servicios' },
   { href: '/#quienes-somos', label: 'Quiénes somos' },
   { href: '/preguntas-frecuentes', label: 'Preguntas frecuentes' },
+  { href: '/contacto', label: 'Contacto' },
 ];
 
 const path = Astro.url.pathname;
@@ -129,9 +130,9 @@ const isActive = (href: string) =>
   }
   .nav__mobile-actions .btn { width: 100%; }
 
-  /* 940px y no 860: los enlaces (con "Preguntas frecuentes") más las dos
+  /* 1040px: los enlaces (con "Preguntas frecuentes" y "Contacto") más las dos
      acciones no caben en el contenedor por debajo de ese ancho. */
-  @media (max-width: 940px) {
+  @media (max-width: 1040px) {
     .nav__links, .nav__actions { display: none; }
     .nav__toggle { display: inline-flex; }
   }
@@ -168,7 +169,7 @@ const isActive = (href: string) =>
     });
 
     // Cerrar al pasar a escritorio (debe coincidir con el breakpoint del CSS).
-    const mq = window.matchMedia('(min-width: 941px)');
+    const mq = window.matchMedia('(min-width: 1041px)');
     mq.addEventListener('change', (e) => { if (e.matches) setOpen(false); });
 
     // Cerrar con Escape.

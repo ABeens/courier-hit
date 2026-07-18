@@ -1,6 +1,6 @@
 ---
 /*
-  Contact — sección de contacto del landing (destino de /#contacto).
+  /contacto — página de contacto del sitio público.
 
   Dos columnas: a la izquierda los datos de contacto directos (correo, teléfono,
   oficinas); a la derecha un formulario de contacto.
@@ -12,7 +12,12 @@
   muestra una confirmación en pantalla (ver <script>). Cuando exista el endpoint
   de correo, hacer el POST en el punto marcado con TODO.
 */
-import Icon from '../ui/Icon.astro';
+import Base from '../layouts/Base.astro';
+import Nav from '../components/landing/Nav.astro';
+import PageHead from '../components/landing/PageHead.astro';
+import CTA from '../components/landing/CTA.astro';
+import Footer from '../components/landing/Footer.astro';
+import Icon from '../components/ui/Icon.astro';
 
 const contact = [
   { icon: 'mail', label: 'Correo', value: 'info@hsgloballtd.com', href: 'mailto:info@hsgloballtd.com' },
@@ -20,90 +25,86 @@ const contact = [
   { icon: 'pin', label: 'Oficinas', value: 'Miami, EE. UU. · Bogotá, Colombia', href: null },
 ];
 ---
-<section class="ctc" id="contacto">
-  <div class="ctc__inner wrap">
-    <header class="ctc__head">
-      <span class="chip"><Icon name="mail" size={13} color="var(--brand)" />Contacto</span>
-      <h2 class="ctc__title">Hablemos de tu envío</h2>
-      <p class="muted ctc__lead">
-        Para cotizar necesitamos origen y destino, peso y dimensiones, tipo de mercancía,
-        fecha estimada y valor comercial si aplica.
-      </p>
-    </header>
+<Base
+  title="Contacto · HS Global Courier"
+  description="Escríbenos para cotizar tu envío: casillero en Miami, carga aérea y marítima, agencia aduanal y seguros de carga."
+>
+  <Nav />
+  <main>
+    <PageHead
+      eyebrow="Contacto"
+      icon="mail"
+      title="Hablemos de tu envío"
+      sub="Para cotizar necesitamos origen y destino, peso y dimensiones, tipo de mercancía, fecha estimada y valor comercial si aplica."
+    />
 
-    <div class="ctc__grid">
-      <aside class="card ctc__info">
-        <h3 class="ctc__info-title">Datos de contacto</h3>
-        <ul class="ctc__list">
-          {contact.map((c) => {
-            const Tag = c.href ? 'a' : 'div';
-            return (
-              <li>
-                <Tag href={c.href} class={`ctc__row-item${c.href ? ' is-link' : ''}`}>
-                  <span class="ctc__ic"><Icon name={c.icon} size={18} color="var(--brand)" /></span>
-                  <span class="ctc__row-text">
-                    <span class="ctc__label">{c.label}</span>
-                    <span class="ctc__value">{c.value}</span>
-                  </span>
-                </Tag>
-              </li>
-            );
-          })}
-        </ul>
-        <p class="ctc__info-note muted">
-          Respondemos en horario laboral (Miami · Bogotá). Para cotizar, incluye
-          los detalles de tu envío en el mensaje.
-        </p>
-      </aside>
+    <section class="ctc wrap">
+      <div class="ctc__grid">
+        <aside class="card ctc__info">
+          <h2 class="ctc__info-title">Datos de contacto</h2>
+          <ul class="ctc__list">
+            {contact.map((c) => {
+              const Tag = c.href ? 'a' : 'div';
+              return (
+                <li>
+                  <Tag href={c.href} class={`ctc__row-item${c.href ? ' is-link' : ''}`}>
+                    <span class="ctc__ic"><Icon name={c.icon} size={18} color="var(--brand)" /></span>
+                    <span class="ctc__row-text">
+                      <span class="ctc__label">{c.label}</span>
+                      <span class="ctc__value">{c.value}</span>
+                    </span>
+                  </Tag>
+                </li>
+              );
+            })}
+          </ul>
+          <p class="ctc__info-note muted">
+            Respondemos en horario laboral (Miami · Bogotá). Para cotizar, incluye
+            los detalles de tu envío en el mensaje.
+          </p>
+        </aside>
 
-      <form class="card ctc__form" data-contact-form novalidate>
-        <h3 class="ctc__form-title">Escríbenos</h3>
-        <div class="ctc__row">
-          <div class="ctc__f">
-            <label class="field-label" for="ctc-name">Nombre</label>
-            <input class="input" id="ctc-name" name="name" type="text" autocomplete="name" placeholder="Tu nombre" required />
+        <form class="card ctc__form" data-contact-form novalidate>
+          <h2 class="ctc__form-title">Escríbenos</h2>
+          <div class="ctc__row">
+            <div class="ctc__f">
+              <label class="field-label" for="ctc-name">Nombre</label>
+              <input class="input" id="ctc-name" name="name" type="text" autocomplete="name" placeholder="Tu nombre" required />
+            </div>
+            <div class="ctc__f">
+              <label class="field-label" for="ctc-email">Correo</label>
+              <input class="input" id="ctc-email" name="email" type="email" autocomplete="email" placeholder="tu@correo.com" required />
+            </div>
           </div>
+
           <div class="ctc__f">
-            <label class="field-label" for="ctc-email">Correo</label>
-            <input class="input" id="ctc-email" name="email" type="email" autocomplete="email" placeholder="tu@correo.com" required />
+            <label class="field-label" for="ctc-phone">Teléfono <span class="faint">(opcional)</span></label>
+            <input class="input" id="ctc-phone" name="phone" type="tel" autocomplete="tel" placeholder="+57 300 000 0000" />
           </div>
-        </div>
 
-        <div class="ctc__f">
-          <label class="field-label" for="ctc-phone">Teléfono <span class="faint">(opcional)</span></label>
-          <input class="input" id="ctc-phone" name="phone" type="tel" autocomplete="tel" placeholder="+57 300 000 0000" />
-        </div>
+          <div class="ctc__f">
+            <label class="field-label" for="ctc-message">Mensaje</label>
+            <textarea class="input" id="ctc-message" name="message" rows="4" placeholder="Cuéntanos qué necesitas enviar: origen y destino, peso y dimensiones, tipo de mercancía…" required></textarea>
+          </div>
 
-        <div class="ctc__f">
-          <label class="field-label" for="ctc-message">Mensaje</label>
-          <textarea class="input" id="ctc-message" name="message" rows="4" placeholder="Cuéntanos qué necesitas enviar: origen y destino, peso y dimensiones, tipo de mercancía…" required></textarea>
-        </div>
+          <div class="ctc__actions">
+            <button class="btn btn-primary" type="submit" data-contact-submit>
+              <Icon name="send" size={17} color="#fff" />
+              Enviar mensaje
+            </button>
+            <p class="ctc__note faint" data-contact-status role="status" aria-live="polite"></p>
+          </div>
+        </form>
+      </div>
+    </section>
 
-        <div class="ctc__actions">
-          <button class="btn btn-primary" type="submit" data-contact-submit>
-            <Icon name="send" size={17} color="#fff" />
-            Enviar mensaje
-          </button>
-          <p class="ctc__note faint" data-contact-status role="status" aria-live="polite"></p>
-        </div>
-      </form>
-    </div>
-  </div>
-</section>
+    <CTA />
+  </main>
+  <Footer />
+</Base>
 
 <style>
-  /* scroll-margin: el nav es sticky (70px) y taparía el borde superior al
-     llegar desde /#contacto. */
-  .ctc {
-    background: var(--paper-2);
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
-    scroll-margin-top: 70px;
-  }
-  .ctc__inner { padding-top: 72px; padding-bottom: 72px; }
-  .ctc__head { text-align: center; max-width: 620px; margin: 0 auto 36px; }
-  .ctc__title { font-size: 34px; margin-top: 16px; letter-spacing: -.03em; }
-  .ctc__lead { font-size: 16px; margin-top: 12px; }
+  .ctc { padding-top: 56px; padding-bottom: 24px; }
 
   .ctc__grid { display: grid; grid-template-columns: 320px 1fr; gap: 20px; align-items: stretch; }
 
@@ -141,7 +142,6 @@ const contact = [
     .ctc__info-note { margin-top: 4px; }
   }
   @media (max-width: 520px) {
-    .ctc__title { font-size: 27px; }
     .ctc__row { grid-template-columns: 1fr; }
     .ctc__info, .ctc__form { padding: 20px; }
   }

@@ -10,6 +10,7 @@ import { costServices } from './cost-service.schema';
 const columns = {
   id: costServices.id,
   name: costServices.name,
+  kind: costServices.kind,
   valueType: costServices.valueType,
   defaultValue: costServices.defaultValue,
   enabled: costServices.enabled,
@@ -18,10 +19,11 @@ const columns = {
 };
 
 export const costServicesRepo = {
-  /** Lista con busqueda por nombre + filtros de tipo y habilitado. */
+  /** Lista con busqueda por nombre + filtros de tipo de servicio, tipo de valor y habilitado. */
   async list(f: ListCostServicesQuery) {
     const conds = [];
     if (f.q) conds.push(ilike(costServices.name, `%${f.q}%`));
+    if (f.kind) conds.push(eq(costServices.kind, f.kind));
     if (f.valueType) conds.push(eq(costServices.valueType, f.valueType));
     if (f.enabled !== undefined) conds.push(eq(costServices.enabled, f.enabled));
     return db

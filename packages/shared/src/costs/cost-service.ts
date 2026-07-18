@@ -1,6 +1,6 @@
 /**
  * Servicio de costo: entrada del catalogo de conceptos que el administrador puede
- * cargar manualmente sobre los tramites de Transporte y Agenciamiento.
+ * cargar sobre los tramites, sea de Transporte y Agenciamiento o de Paqueteria.
  * Fuente: docs/manuales/flujo.md L1-20 ("Administracion de Servicios para Costos
  * de Transporte y Agenciamiento" + "tarifas fijas").
  *
@@ -11,6 +11,23 @@
  *
  * Las claves (valor del enum) son estables: alimentan un enum de Postgres.
  */
+
+/**
+ * A que familia de tramites aplica el servicio. Enum de dominio: miembros y
+ * valores en espanol, alineados con `Flow` de workflow/shipment-type.
+ */
+export enum ServiceKind {
+  /** Aereo, maritimo FCL/LCL y agenciamiento (Flow.Transporte + Flow.Agenciamiento). */
+  TransporteAgenciamiento = 'transporte_agenciamiento',
+  /** Paquetes comprados en USA (Flow.Paqueteria). */
+  Paqueteria = 'paqueteria',
+}
+
+/** Etiqueta de presentacion del tipo de servicio. */
+export const SERVICE_KIND_LABELS: Record<ServiceKind, string> = {
+  [ServiceKind.TransporteAgenciamiento]: 'Transporte y agenciamiento',
+  [ServiceKind.Paqueteria]: 'Paquetería',
+};
 
 /**
  * Como se determina el valor del servicio al cargarlo en un tramite.
@@ -32,10 +49,30 @@ export const SERVICE_VALUE_TYPE_LABELS: Record<ServiceValueType, string> = {
   [ServiceValueType.Manual]: 'Manual (se define al cargar)',
 };
 
+/**
+ * Tipos de valor admitidos segun el tipo de servicio.
+ *
+ * Los costos de Transporte y Agenciamiento se cargan al momento de recibir el
+ * tramite, asi que su importe siempre se digita ahi: solo admiten Manual.
+ * Paqueteria admite los tres (porcentaje, monto fijo o manual).
+ */
+export function allowedValueTypes(kind: ServiceKind): ServiceValueType[] {
+  return kind === ServiceKind.TransporteAgenciamiento
+    ? [ServiceValueType.Manual]
+    : Object.values(ServiceValueType);
+}
+
+/** True si el tipo de valor es admisible para ese tipo de servicio. */
+export function isValueTypeAllowed(kind: ServiceKind, valueType: ServiceValueType): boolean {
+  return allowedValueTypes(kind).includes(valueType);
+}
+
 /** Servicio de costo (vista publica; forma equivalente a la fila de BD). */
 export interface CostService {
   id: string;
   name: string;
+  /** Familia de tramites a la que aplica. */
+  kind: ServiceKind;
   valueType: ServiceValueType;
   /** Porcentaje (Percentage) o importe (Fixed); null cuando es Manual. */
   defaultValue: number | null;
@@ -44,7 +81,8 @@ export interface CostService {
   updatedAt: Date;
 }
 
-/** Valores para construir el enum de la BD (Drizzle pgEnum), sin repetirlos. */
+/** Valores para construir los enums de la BD (Drizzle pgEnum), sin repetirlos. */
+export const SERVICE_KIND_VALUES = Object.values(ServiceKind) as [ServiceKind, ...ServiceKind[]];
 export const SERVICE_VALUE_TYPE_VALUES = Object.values(ServiceValueType) as [
   ServiceValueType,
   ...ServiceValueType[],
