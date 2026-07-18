@@ -3,7 +3,9 @@
   "private": true,
   "packageManager": "pnpm@11.1.1",
   "scripts": {
-    "dev": "pnpm --filter @courier/web dev",
+    "dev": "pnpm -r --parallel dev",
+    "dev:web": "pnpm --filter @courier/web dev",
+    "dev:api": "pnpm --filter @courier/api dev",
     "build": "pnpm --filter @courier/web build"
   }
 }

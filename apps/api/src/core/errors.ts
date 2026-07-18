@@ -47,6 +47,12 @@ export const CostServiceErrors = {
     new AppError('COST_SERVICE_VALUE_REQUIRED', 'Indica el valor por defecto para este tipo de servicio.', 400),
   invalidPercentage: () =>
     new AppError('COST_SERVICE_INVALID_PERCENTAGE', 'El porcentaje debe estar entre 0 y 100.', 400),
+  valueTypeNotAllowed: () =>
+    new AppError(
+      'COST_SERVICE_VALUE_TYPE_NOT_ALLOWED',
+      'Los servicios de Transporte y agenciamiento se cargan al recibir: su valor debe ser manual.',
+      400,
+    ),
 };
 
 /** Errores de las tarifas preferenciales de cliente. */

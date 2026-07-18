@@ -36,6 +36,13 @@
       "when": 1784240681973,
       "tag": "0004_groovy_dark_beast",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784314141951,
+      "tag": "0005_freezing_magus",
+      "breakpoints": true
     }
   ]
 }
