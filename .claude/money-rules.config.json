@@ -1,0 +1,108 @@
+{
+  "_doc": "Reglas de campos de monto para HS Global Courier. Editable a mano. Lo consumen el subagente money-rules-reviewer y el hook money-field-guard. Monedas del negocio: CRC (colones, Costa Rica) y USD (dolares).",
+
+  "currencies": {
+    "allowed": ["CRC", "USD"],
+    "_doc": "Las UNICAS monedas validas. CRC = colon costarricense, USD = dolar. Cualquier otra en codigo es violacion de M2."
+  },
+
+  "detection": {
+    "_doc": "Como el hook decide que un archivo/cambio toca dinero. Si el texto editado hace match con cualquiera de estos patrones (case-insensitive), se marca para revision.",
+    "filePatterns": ["\\.(ts|tsx|astro)$"],
+    "moneyPatterns": [
+      "pricePerKg",
+      "defaultValue",
+      "amount",
+      "monto",
+      "price",
+      "precio",
+      "cost(?!a)",
+      "costo",
+      "total",
+      "subtotal",
+      "importe",
+      "fee",
+      "tarifa",
+      "doublePrecision",
+      "exchangeRate",
+      "tasaCambio",
+      "currency",
+      "moneda"
+    ],
+    "ignorePaths": ["backup/", "node_modules/", "dist/", ".astro/"]
+  },
+
+  "rules": {
+    "_doc": "Cada regla: enabled, severity (blocking|warning), y descripcion. El reviewer las verifica una por una sobre el cambio.",
+
+    "M1_no_binary_float": {
+      "enabled": true,
+      "severity": "warning",
+      "title": "Dinero no en binary float",
+      "detail": "No representar dinero con float binario (number JS / doublePrecision) en logica de calculo o almacenamiento. Preferir entero (centavos/centimos) o Decimal. NOTA: el esquema actual usa doublePrecision (legado); por eso es 'warning' y no 'blocking'. Escalar a blocking cuando se migre el esquema.",
+      "appliesTo": "todo campo monetario que se calcule, sume o persista"
+    },
+
+    "M2_explicit_currency": {
+      "enabled": true,
+      "severity": "blocking",
+      "title": "Moneda explicita",
+      "detail": "Todo monto lleva su moneda de forma explicita (una de currencies.allowed). Prohibido asumir la moneda por contexto o dejarla implicita. En el modelo debe existir un campo de moneda junto al monto.",
+      "appliesTo": "todo campo monetario"
+    },
+
+    "M3_range": {
+      "enabled": true,
+      "severity": "blocking",
+      "title": "Rango valido",
+      "detail": "Montos >= 0 (no negativos). Porcentajes (ServiceValueType.Percentage) entre 0 y 100. Validar con Zod (.nonnegative()/.positive()/.min().max()) en el borde de entrada, no solo en UI.",
+      "appliesTo": "todo campo monetario y porcentajes"
+    },
+
+    "M4_rounding": {
+      "enabled": true,
+      "severity": "warning",
+      "title": "Redondeo consistente",
+      "detail": "El redondeo ocurre en el borde de presentacion/persistencia, no disperso en el calculo. Definir politica (half-up a 2 decimales para USD, a 0 decimales para CRC salvo indicacion) y aplicarla en un solo lugar.",
+      "appliesTo": "conversiones y display de montos"
+    },
+
+    "M5_currency_and_rate_on_save": {
+      "enabled": true,
+      "severity": "blocking",
+      "title": "Moneda + tasa de cambio al guardar",
+      "detail": "Al persistir un monto DEBE quedar: (a) una moneda elegida (no null, dentro de las permitidas del campo) y (b) una tasa de cambio llena (exchangeRate no null y > 0) capturada EN EL MOMENTO DE GUARDAR (snapshot historico), no leida en vivo al mostrar. Un insert/update de monto sin ambos campos es violacion.",
+      "appliesTo": "todo insert/update que persista un monto"
+    },
+
+    "M6_allowed_currency_per_field": {
+      "enabled": true,
+      "severity": "blocking",
+      "title": "Moneda permitida por campo",
+      "detail": "La moneda elegida debe estar dentro de las permitidas para ESE campo segun fields[]. Un campo 'usd' no acepta CRC y viceversa; un campo 'both' acepta cualquiera de las dos. Validar contra la politica del campo, no contra la lista global.",
+      "appliesTo": "cada campo del registro fields"
+    }
+  },
+
+  "fields": {
+    "_doc": "Registro de campos de monto y su politica de moneda. currencyPolicy: 'both' | 'crc' | 'usd'. requireExchangeRate: si M5 exige tasa al guardar. Ajusta/añade entradas segun tu dominio. El reviewer usa 'default' para campos monetarios no listados.",
+
+    "default": {
+      "currencyPolicy": "both",
+      "requireExchangeRate": true,
+      "_doc": "Politica para cualquier campo monetario nuevo no listado abajo."
+    },
+
+    "clientRates.pricePerKg": {
+      "currencyPolicy": "both",
+      "requireExchangeRate": true,
+      "_doc": "Precio por kg de la tarifa de cliente (modulo tariffs)."
+    },
+
+    "costServices.defaultValue": {
+      "currencyPolicy": "both",
+      "requireExchangeRate": true,
+      "_doc": "Valor por defecto del servicio de costo. Solo aplica cuando valueType = Fixed (monto); cuando es Percentage es %, no dinero, y no requiere moneda/tasa."
+    }
+  }
+}
