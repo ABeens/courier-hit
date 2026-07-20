@@ -94,15 +94,15 @@
     },
 
     "clientRates.pricePerKg": {
-      "currencyPolicy": "both",
-      "requireExchangeRate": true,
-      "_doc": "Precio por kg de la tarifa de cliente (modulo tariffs)."
+      "currencyPolicy": "usd",
+      "requireExchangeRate": false,
+      "_doc": "Precio por kg de la tarifa de cliente (modulo tariffs). Solo USD: las tarifas por kg son de casillero (paqueteria comprada en USA) y se cotizan en dolares; la UI muestra la moneda pero con el selector fijo. Valor de CATALOGO/plantilla: lleva moneda explicita (M2/M6) pero NO tasa de cambio. La tasa es la del dia y se captura como snapshot recien cuando el valor se aplica a un paquete; congelarla en el catalogo la volveria obsoleta. M5 aplica al monto transaccional (asignacion al paquete), no aqui."
     },
 
     "costServices.defaultValue": {
-      "currencyPolicy": "both",
-      "requireExchangeRate": true,
-      "_doc": "Valor por defecto del servicio de costo. Solo aplica cuando valueType = Fixed (monto); cuando es Percentage es %, no dinero, y no requiere moneda/tasa."
+      "currencyPolicy": "usd",
+      "requireExchangeRate": false,
+      "_doc": "Valor por defecto del servicio de costo. Solo aplica cuando valueType = Fixed (monto); cuando es Percentage es %, no dinero, y no requiere moneda/tasa. Solo USD: Fixed unicamente lo admite ServiceKind.Paqueteria (compras en USA), que se cotiza en dolares; ver allowedCurrencies() en packages/shared/src/costs/cost-service.ts. Como pricePerKg, es un valor de CATALOGO: lleva moneda (M2/M6) pero NO tasa de cambio; la tasa se captura al asignar el costo al paquete (M5 aplica alla, no en el catalogo)."
     }
   }
 }

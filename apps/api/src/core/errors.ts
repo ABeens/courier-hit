@@ -26,6 +26,18 @@ export const AuthErrors = {
   invalidCredentials: () => new AppError('INVALID_CREDENTIALS', 'Correo o contraseña incorrectos.', 401),
   forbidden: (message = 'No tienes permiso para esta acción.') => new AppError('FORBIDDEN', message, 403),
   emailInUse: () => new AppError('EMAIL_IN_USE', 'Ese correo ya está registrado.', 409),
+  idNumberInUse: () => new AppError('ID_NUMBER_IN_USE', 'Esa cédula ya tiene un casillero registrado.', 409),
+  /**
+   * Sin tarifa por defecto no podemos asignarle una al casillero nuevo, y un
+   * casillero sin tarifa no se puede cotizar. Es un fallo de configuracion del
+   * sistema, no del usuario: 500.
+   */
+  defaultRateMissing: () =>
+    new AppError(
+      'DEFAULT_CLIENT_RATE_MISSING',
+      'No hay una tarifa por defecto configurada. Contacta a soporte.',
+      500,
+    ),
   userInactive: () => new AppError('USER_INACTIVE', 'La cuenta está deshabilitada.', 403),
   emailNotVerified: () => new AppError('EMAIL_NOT_VERIFIED', 'Debes verificar tu correo antes de ingresar.', 403),
   invalidCode: () => new AppError('INVALID_CODE', 'El código es incorrecto o expiró.', 400),
@@ -45,6 +57,10 @@ export const CostServiceErrors = {
   nameInUse: () => new AppError('COST_SERVICE_NAME_IN_USE', 'Ya existe un servicio con ese nombre.', 409),
   valueRequired: () =>
     new AppError('COST_SERVICE_VALUE_REQUIRED', 'Indica el valor por defecto para este tipo de servicio.', 400),
+  currencyRequired: () =>
+    new AppError('COST_SERVICE_CURRENCY_REQUIRED', 'Elige la moneda del monto por defecto.', 400),
+  currencyNotAllowed: () =>
+    new AppError('COST_SERVICE_CURRENCY_NOT_ALLOWED', 'Los servicios de Paquetería se cotizan en dólares (USD).', 400),
   invalidPercentage: () =>
     new AppError('COST_SERVICE_INVALID_PERCENTAGE', 'El porcentaje debe estar entre 0 y 100.', 400),
   valueTypeNotAllowed: () =>
@@ -69,6 +85,32 @@ export const ClientRateErrors = {
     ),
   paymentMethodRequired: () =>
     new AppError('CLIENT_RATE_PAYMENT_REQUIRED', 'La tarifa debe permitir al menos un medio de pago.', 400),
+};
+
+/**
+ * Errores de la integracion con el proveedor Helga (docs/13 §3.5). El registro
+ * de un casillero BLOQUEA si el proveedor falla: no queremos clientes que
+ * existan de nuestro lado y no del suyo.
+ */
+export const ProviderErrors = {
+  unavailable: () =>
+    new AppError(
+      'PROVIDER_UNAVAILABLE',
+      'No pudimos crear tu casillero con el operador en Miami. Intenta de nuevo en unos minutos.',
+      503,
+    ),
+  validation: (detail?: string) =>
+    new AppError(
+      'PROVIDER_VALIDATION',
+      detail
+        ? `El operador en Miami rechazó los datos: ${detail}`
+        : 'El operador en Miami rechazó los datos del casillero.',
+      502,
+    ),
+  forbidden: () =>
+    new AppError('PROVIDER_FORBIDDEN', 'El operador en Miami rechazó la conexión (lista blanca).', 502),
+  unauthenticated: () =>
+    new AppError('PROVIDER_UNAUTHENTICATED', 'No pudimos autenticarnos con el operador en Miami.', 502),
 };
 
 /** Errores de la definicion de rutas (panel admin, permiso routes.manage). */

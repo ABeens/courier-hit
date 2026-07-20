@@ -5,10 +5,12 @@
  */
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { hash, verify } from '@node-rs/argon2';
-import { Principal, Role, UserStatus, principalForRole } from '@courier/shared';
+import { ClientReviewStatus, Principal, Role, UserStatus, principalForRole } from '@courier/shared';
 import type { AcceptInviteInput, LoginInput, RegisterInput, Session, VerifyInput } from '@courier/shared';
 import { config, isProd } from '../../core/config';
 import { AuthErrors } from '../../core/errors';
+import { createHelgaRecipient, isHelgaEnabled } from '../../integrations/helga/helga.client';
+import { tariffsRepo } from '../tariffs/tariffs.repo';
 import { authRepo } from './auth.repo';
 import type { UserRow } from './auth.schema';
 
@@ -33,10 +35,30 @@ function newToken(): string {
 type SessionMeta = { userAgent?: string | undefined; ip?: string | undefined };
 
 export const authService = {
-  /** Alta de customer (autoregistro). Crea el usuario + su casillero y emite el codigo. */
-  async register(input: RegisterInput): Promise<{ userId: string }> {
+  /**
+   * Alta de customer (autoregistro). Crea el usuario, lo registra ante el
+   * proveedor, crea su casillero con la tarifa por defecto y emite el codigo de
+   * verificacion.
+   *
+   * Orden deliberado: todo lo que puede fallar (unicidad, tarifa por defecto,
+   * proveedor) se resuelve ANTES de escribir. El registro ante Helga es
+   * bloqueante por decision de negocio: no queremos clientes que existan de
+   * nuestro lado y no del suyo.
+   */
+  async register(input: RegisterInput): Promise<{ userId: string; code: string }> {
     const existing = await authRepo.findUserByEmail(input.email);
     if (existing) throw AuthErrors.emailInUse();
+
+    const sameIdNumber = await authRepo.findClientByIdNumber(input.idNumber);
+    if (sameIdNumber) throw AuthErrors.idNumberInUse();
+
+    // Todo casillero nuevo entra con la tarifa por defecto del sistema.
+    const defaultRate = await tariffsRepo.findDefault();
+    if (!defaultRate) throw AuthErrors.defaultRateMissing();
+
+    // Se registra ante el proveedor primero: si falla, no dejamos rastro en
+    // nuestra BD y el usuario puede reintentar con los mismos datos.
+    const helgaClientId = await this.registerWithProvider(input.email);
 
     const passwordHash = await hash(input.password);
     const user = await authRepo.insertUser({
@@ -45,15 +67,46 @@ export const authService = {
       principal: Principal.Client,
       role: Role.Client,
       name: input.name,
+      phone: input.phone,
       status: UserStatus.Activo,
     });
 
     // El casillero (HS-####) se asigna ya; el login queda bloqueado hasta verificar.
     const code = await authRepo.nextClientCode();
-    await authRepo.insertClient({ userId: user.id, code, city: input.city ?? null });
+    await authRepo.insertClient({
+      userId: user.id,
+      code,
+      idNumber: input.idNumber,
+      provinceCode: input.provinceCode,
+      cantonCode: input.cantonCode,
+      districtCode: input.districtCode,
+      addressLine: input.addressLine,
+      // Nace 'nuevo' (valor por defecto de la columna) para que un admin lo revise.
+      reviewStatus: ClientReviewStatus.Nuevo,
+      clientRateId: defaultRate.id,
+      helgaClientId,
+      helgaSyncedAt: helgaClientId ? new Date() : null,
+    });
 
     await this.issueVerificationCode(user.id, user.email);
-    return { userId: user.id };
+    return { userId: user.id, code };
+  },
+
+  /**
+   * Registra el casillero ante Helga y devuelve su id, o `null` si la
+   * integracion esta apagada (desarrollo: la IP local no esta en la lista
+   * blanca del proveedor). Si esta encendida y falla, propaga el error y aborta
+   * el registro.
+   */
+  async registerWithProvider(email: string): Promise<string | null> {
+    if (!isHelgaEnabled()) {
+      // TODO(13): encender HELGA_ENABLED cuando la IP fija del backend este en
+      // la whitelist. Mientras, el casillero queda sin enlazar y hara falta un
+      // proceso de sincronizacion para los creados en este periodo.
+      if (!isProd) console.log(`[auth] Helga deshabilitado: casillero de ${email} sin enlazar.`);
+      return null;
+    }
+    return createHelgaRecipient(email);
   },
 
   /** Genera y guarda (hasheado) un codigo de 6 digitos; "envia" por email. */

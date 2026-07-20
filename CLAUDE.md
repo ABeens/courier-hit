@@ -1,7 +1,12 @@
 # HS Global Courier — Guía del repositorio
 
-App modular de courier/casillero (Miami → Colombia). Migración de un HTML
+App modular de courier/casillero (Miami → Costa Rica). Migración de un HTML
 autocontenido (`backup/`) a un monorepo con web (Astro, islas) + API (Node).
+
+Todos los clientes son de Costa Rica: el catálogo territorial
+(provincia/cantón/distrito) vive en `@courier/shared` (`geo/costa-rica`) y es la
+única fuente para direcciones. El prototipo usaba ciudades de Colombia; eso ya
+no aplica.
 
 La documentación viva del rediseño está en [`docs/`](./docs/) — empieza por
 [`docs/README.md`](./docs/README.md).
@@ -38,3 +43,7 @@ backup/    # origen funcional (prototipo). No se modifica.
   del prototipo. Reutilizar los tokens/átomos; no hardcodear colores.
 - Componentes Astro modulares: primitivas en `components/ui/`, secciones en carpetas
   por área (p. ej. `components/landing/`).
+- **Fechas: almacenar siempre en UTC, mostrar siempre en la hora local del usuario.**
+  Persistir instantes en UTC (ISO 8601, p. ej. `2026-07-19T14:30:00Z`); la
+  conversión a la zona horaria del usuario ocurre solo en la capa de presentación.
+  Nunca guardar fechas/horas ya convertidas a hora local.

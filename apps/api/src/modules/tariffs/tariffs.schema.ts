@@ -10,6 +10,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { boolean, doublePrecision, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { currencyEnum } from '../../core/currency.schema';
 
 export const clientRates = pgTable(
   'client_rates',
@@ -17,6 +18,8 @@ export const clientRates = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull().unique(),
     pricePerKg: doublePrecision('price_per_kg').notNull(),
+    /** Moneda del precio por kg (explicita, regla M2). Sin tasa de cambio: es catalogo. */
+    currency: currencyEnum('currency').notNull(),
     isDefault: boolean('is_default').notNull().default(false),
     allowsCard: boolean('allows_card').notNull().default(true),
     allowsBankDeposit: boolean('allows_bank_deposit').notNull().default(true),

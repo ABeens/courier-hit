@@ -16,7 +16,7 @@ import type { ClientRateRow } from './tariffs.schema';
 
 type RateColumns = Pick<
   ClientRateRow,
-  'id' | 'name' | 'pricePerKg' | 'isDefault' | 'allowsCard' | 'allowsBankDeposit'
+  'id' | 'name' | 'pricePerKg' | 'currency' | 'isDefault' | 'allowsCard' | 'allowsBankDeposit'
 >;
 
 /** Adjunta el conteo de casilleros a una fila (para el aviso al eliminar). */
@@ -39,6 +39,7 @@ export const tariffsService = {
     const created = await tariffsRepo.insert({
       name: input.name,
       pricePerKg: input.pricePerKg,
+      currency: input.currency,
       allowsCard: input.allowsCard,
       allowsBankDeposit: input.allowsBankDeposit,
       isDefault: isFirst || (input.isDefault ?? false),
@@ -65,6 +66,7 @@ export const tariffsService = {
     const updated = await tariffsRepo.update(id, {
       ...(patch.name !== undefined ? { name: patch.name } : {}),
       ...(patch.pricePerKg !== undefined ? { pricePerKg: patch.pricePerKg } : {}),
+      ...(patch.currency !== undefined ? { currency: patch.currency } : {}),
       ...(patch.allowsCard !== undefined ? { allowsCard: patch.allowsCard } : {}),
       ...(patch.allowsBankDeposit !== undefined ? { allowsBankDeposit: patch.allowsBankDeposit } : {}),
       ...(patch.isDefault ? { isDefault: true } : {}),

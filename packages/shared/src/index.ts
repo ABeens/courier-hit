@@ -1,4 +1,5 @@
 /** @courier/shared — dominio compartido entre API y web. */
+export * from './money/currency';
 export * from './auth/roles';
 export * from './auth/permissions';
 export * from './auth/user';

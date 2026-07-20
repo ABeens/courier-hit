@@ -18,12 +18,15 @@
  * claves de negocio) en espanol. Ver CLAUDE.md.
  */
 import { z } from 'zod';
+import { Currency } from '../money/currency';
 
 /** Tarifa preferencial de cliente (vista publica; forma equivalente a la fila de BD). */
 export interface ClientRate {
   id: string;
   name: string;
   pricePerKg: number;
+  /** Moneda del precio por kg (explicita, regla M2). La tasa de cambio no vive aqui. */
+  currency: Currency;
   isDefault: boolean;
   allowsCard: boolean;
   allowsBankDeposit: boolean;
@@ -36,11 +39,26 @@ const pricePerKgSchema = z
   .number({ invalid_type_error: 'El precio debe ser un número.' })
   .positive('El precio por kg debe ser mayor que cero.');
 
+/**
+ * Monedas admitidas por la tarifa de cliente (regla M6: moneda permitida por
+ * campo). Las tarifas por kg son de casillero (paqueteria comprada en USA), asi
+ * que se cotizan siempre en dolares. La UI muestra la moneda pero fija en USD.
+ */
+export const CLIENT_RATE_CURRENCIES: Currency[] = [Currency.USD];
+
+/** Moneda de la tarifa. Obligatoria (regla M2) y acotada a las admitidas (M6). */
+const currencySchema = z
+  .nativeEnum(Currency, { errorMap: () => ({ message: 'Elige una moneda válida (CRC o USD).' }) })
+  .refine((c) => CLIENT_RATE_CURRENCIES.includes(c), {
+    message: 'Las tarifas de cliente se cotizan en dólares (USD).',
+  });
+
 /** Crear tarifa de cliente. Debe permitir al menos un medio de pago. */
 export const createClientRateSchema = z
   .object({
     name: z.string().trim().min(1, 'El nombre es obligatorio.'),
     pricePerKg: pricePerKgSchema,
+    currency: currencySchema,
     allowsCard: z.boolean(),
     allowsBankDeposit: z.boolean(),
     isDefault: z.boolean().optional(),
@@ -60,6 +78,7 @@ export const updateClientRateSchema = z
   .object({
     name: z.string().trim().min(1, 'El nombre es obligatorio.').optional(),
     pricePerKg: pricePerKgSchema.optional(),
+    currency: currencySchema.optional(),
     allowsCard: z.boolean().optional(),
     allowsBankDeposit: z.boolean().optional(),
     isDefault: z.boolean().optional(),

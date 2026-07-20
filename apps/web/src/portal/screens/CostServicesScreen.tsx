@@ -7,10 +7,12 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
+  type Currency,
   SERVICE_KIND_LABELS,
   SERVICE_VALUE_TYPE_LABELS,
   ServiceKind,
   ServiceValueType,
+  formatMoney,
 } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { CostServiceFormModal } from './CostServiceFormModal';
@@ -21,6 +23,7 @@ export interface CostServiceRow {
   kind: ServiceKind;
   valueType: ServiceValueType;
   defaultValue: number | null;
+  currency: Currency | null;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -36,7 +39,8 @@ type ModalState = { mode: 'create' } | { mode: 'edit'; row: CostServiceRow } | n
 function formatValue(row: CostServiceRow): string {
   if (row.valueType === ServiceValueType.Manual || row.defaultValue === null) return '—';
   if (row.valueType === ServiceValueType.Percentage) return `${row.defaultValue}%`;
-  return `$${row.defaultValue.toFixed(2)}`;
+  // Monto fijo: siempre lleva moneda (regla M2); si faltara, no inventamos simbolo.
+  return row.currency ? formatMoney(row.defaultValue, row.currency) : String(row.defaultValue);
 }
 
 export function CostServicesScreen() {

@@ -4,7 +4,12 @@
  * solo envia lo que cambio. La API revalida (nombre unico, invariante de default).
  */
 import { useState } from 'react';
-import { createClientRateSchema } from '@courier/shared';
+import {
+  CLIENT_RATE_CURRENCIES,
+  CURRENCY_LABELS,
+  Currency,
+  createClientRateSchema,
+} from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import type { ClientRateRow } from './TariffsScreen';
 
@@ -18,6 +23,9 @@ interface Props {
 export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
   const [name, setName] = useState(row?.name ?? '');
   const [price, setPrice] = useState<string>(row?.pricePerKg !== undefined ? String(row.pricePerKg) : '');
+  // Las tarifas se cotizan en dolares: la moneda se muestra, pero queda fija.
+  const [currency, setCurrency] = useState<Currency>(row?.currency ?? Currency.USD);
+  const lockCurrency = CLIENT_RATE_CURRENCIES.length === 1;
   const [allowsCard, setAllowsCard] = useState(row?.allowsCard ?? true);
   const [allowsBankDeposit, setAllowsBankDeposit] = useState(row?.allowsBankDeposit ?? true);
   // Una tarifa por defecto no se puede "desmarcar" desde aqui: solo se promueve otra.
@@ -36,6 +44,7 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
         const parsed = createClientRateSchema.safeParse({
           name,
           pricePerKg,
+          currency,
           allowsCard,
           allowsBankDeposit,
           isDefault,
@@ -52,6 +61,7 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
         const patch: Record<string, unknown> = {};
         if (name.trim() !== row.name) patch.name = name.trim();
         if (pricePerKg !== row.pricePerKg) patch.pricePerKg = pricePerKg;
+        if (currency !== row.currency) patch.currency = currency;
         if (allowsCard !== row.allowsCard) patch.allowsCard = allowsCard;
         if (allowsBankDeposit !== row.allowsBankDeposit) patch.allowsBankDeposit = allowsBankDeposit;
         if (!row.isDefault && isDefault) patch.isDefault = true;
@@ -104,13 +114,29 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
             />
           </div>
 
-          <div>
-            <label className="field-label" htmlFor="r-price">Precio por kg ($)</label>
-            <input
-              id="r-price" className="input" type="number" min="0" step="0.01"
-              value={price} placeholder="8.15"
-              onChange={(e) => setPrice(e.target.value)}
-            />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label className="field-label" htmlFor="r-price">Precio por kg</label>
+              <input
+                id="r-price" className="input" type="number" min="0" step="0.01"
+                value={price} placeholder="8.15"
+                onChange={(e) => setPrice(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="field-label" htmlFor="r-currency">Moneda</label>
+              <select
+                id="r-currency" className="input" value={currency} disabled={lockCurrency}
+                onChange={(e) => setCurrency(e.target.value as Currency)}
+              >
+                {CLIENT_RATE_CURRENCIES.map((c) => (
+                  <option key={c} value={c}>{CURRENCY_LABELS[c]}</option>
+                ))}
+              </select>
+              {lockCurrency && (
+                <div className="field-hint">Las tarifas por kg se cotizan en dólares.</div>
+              )}
+            </div>
           </div>
 
           <div>
