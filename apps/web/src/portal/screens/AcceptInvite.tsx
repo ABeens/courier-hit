@@ -6,7 +6,16 @@
 import { useState } from 'react';
 import { acceptInviteSchema } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
+import { AuthShell } from '../components/AuthShell';
+import { PasswordField } from '../components/PasswordField';
 import '../portal.css';
+
+/** Ganchos del panel de marca: esta pantalla la ve el equipo interno. */
+const POINTS = [
+  { title: 'Acceso según tu rol', sub: 'Solo ves los módulos que te corresponden.' },
+  { title: 'Operación en un solo lugar', sub: 'Paquetes, clientes y rutas desde el mismo portal.' },
+  { title: 'Tu cuenta, tu contraseña', sub: 'La defines tú; nadie más la conoce.' },
+];
 
 export default function AcceptInvite() {
   const token =
@@ -51,7 +60,7 @@ export default function AcceptInvite() {
 
   if (done) {
     return (
-      <div className="login-wrap">
+      <AuthShell title="Bienvenido al equipo" lead="Tu cuenta de staff ya quedó activa." points={POINTS}>
         <div className="login-card fadeUp">
           <h1>¡Listo!</h1>
           <p className="sub">Tu contraseña quedó configurada. Ya puedes ingresar al portal.</p>
@@ -59,12 +68,16 @@ export default function AcceptInvite() {
             Ir a iniciar sesión
           </a>
         </div>
-      </div>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="login-wrap">
+    <AuthShell
+      title="Bienvenido al equipo de HS Global"
+      lead="Define tu contraseña y entra al portal para empezar a operar."
+      points={POINTS}
+    >
       <form className="login-card fadeUp" onSubmit={submit}>
         <h1>Configura tu contraseña</h1>
         <p className="sub">Fue creada tu cuenta de staff. Define una contraseña para ingresar.</p>
@@ -73,21 +86,21 @@ export default function AcceptInvite() {
         {error && <div className="banner err">{error}</div>}
 
         <label className="field-label" htmlFor="pw">Nueva contraseña</label>
-        <input
-          id="pw" className="input" type="password" autoComplete="new-password"
-          value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres"
+        <PasswordField
+          id="pw" autoComplete="new-password"
+          value={password} onChange={setPassword} placeholder="Mínimo 6 caracteres"
         />
 
         <label className="field-label" htmlFor="pw2">Repite la contraseña</label>
-        <input
-          id="pw2" className="input" type="password" autoComplete="new-password"
-          value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="••••••••"
+        <PasswordField
+          id="pw2" autoComplete="new-password"
+          value={confirm} onChange={setConfirm} placeholder="••••••••"
         />
 
         <button className="btn btn-primary btn-lg" type="submit" disabled={busy || !token}>
           {busy ? 'Guardando…' : 'Activar mi cuenta'}
         </button>
       </form>
-    </div>
+    </AuthShell>
   );
 }

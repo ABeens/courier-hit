@@ -12,9 +12,18 @@
 import { useRef, useState } from 'react';
 import { PROVINCES, getCantons, getDistricts, registerSchema, verifySchema } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
+import { AuthShell } from '../components/AuthShell';
+import { PasswordField } from '../components/PasswordField';
 import '../portal.css';
 
 const STEPS = ['Tus datos', 'Verifica tu correo', 'Listo'] as const;
+
+/** Ganchos del panel de marca: la promesa del casillero, como en la landing. */
+const POINTS = [
+  { title: 'Dirección de Miami tax free', sub: 'Compra en cualquier tienda de EE. UU. sin impuestos de estado.' },
+  { title: 'Vuelos todos los días', sub: 'Salidas diarias desde Miami hacia Costa Rica.' },
+  { title: 'Tarifa por peso real', sub: 'Pagas solo lo que pesa tu paquete, sin sorpresas.' },
+];
 
 /** Dirección del casillero en Miami: es fija de HS Global (docs/05 §2). */
 const MIAMI_ADDRESS = ['8200 NW 27th St, Suite 140', 'Doral, Miami, FL 33122', 'United States · +1 (555) 010-0000'];
@@ -139,7 +148,12 @@ export default function RegisterScreen() {
   }
 
   return (
-    <div className="login-wrap">
+    <AuthShell
+      title="Crea tu casillero gratis en menos de un minuto"
+      lead="Te damos una dirección en Miami para comprar en cualquier tienda de EE. UU. y recibirla en la puerta de tu casa en Costa Rica."
+      points={POINTS}
+      wide={step === 0}
+    >
       {/* Solo el paso de datos usa la tarjeta ancha; verificacion y cierre siguen angostos. */}
       <div className={`login-card register-card fadeUp${step === 0 ? ' is-wide' : ''}`}>
         <ol className="steps">
@@ -192,9 +206,9 @@ export default function RegisterScreen() {
                 </div>
                 <div>
                   <label className="field-label" htmlFor="password">Contraseña</label>
-                  <input
-                    id="password" className="input" type="password" autoComplete="new-password"
-                    value={form.password} onChange={(e) => set('password', e.target.value)}
+                  <PasswordField
+                    id="password" autoComplete="new-password"
+                    value={form.password} onChange={(v) => set('password', v)}
                     placeholder="Mínimo 6 caracteres"
                   />
                 </div>
@@ -330,6 +344,6 @@ export default function RegisterScreen() {
           </div>
         )}
       </div>
-    </div>
+    </AuthShell>
   );
 }

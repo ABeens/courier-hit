@@ -10,25 +10,129 @@
   color: var(--muted); font-family: var(--font-body); font-weight: 600;
 }
 
-/* ---- Login ---- */
-.login-wrap {
-  min-height: 100vh; display: grid; place-items: center; padding: 24px;
-  background: linear-gradient(160deg, var(--brand-softer), var(--paper));
+/* ---- Marca (version React de components/ui/Logo.astro) ---- */
+.brandmark { display: inline-flex; align-items: center; gap: 10px; }
+.brandmark__img {
+  height: var(--brandmark-h); width: auto; display: block;
+  object-fit: contain; flex-shrink: 0;
 }
+.brandmark--dark .brandmark__img {
+  background: #fff; border-radius: 10px; padding: 6px 10px; box-sizing: content-box;
+}
+.brandmark__text { display: block; line-height: 1; font-family: var(--font-display); }
+.brandmark__name {
+  display: block; color: var(--ink);
+  font-size: calc(var(--brandmark-h) * 0.42); font-weight: 700; letter-spacing: -0.02em;
+}
+.brandmark__sub {
+  display: block; color: var(--brand);
+  font-size: calc(var(--brandmark-h) * 0.24); font-weight: 600;
+  letter-spacing: .18em; margin-top: 3px; text-transform: uppercase;
+}
+.brandmark--dark .brandmark__name { color: #fff; }
+.brandmark--dark .brandmark__sub { color: oklch(0.86 0.09 263); }
+
+/* ---- Autenticacion: marco comun (login, registro, invitacion) ---- */
+.auth {
+  min-height: 100vh; display: grid; grid-template-columns: 430px minmax(0, 1fr);
+  font-family: var(--font-body); color: var(--ink);
+}
+
+/* Panel de marca: degradado del azul de marca al chrome oscuro del portal.
+   Queda fijo a la altura de la ventana (sticky): en formularios largos como el
+   registro, lo unico que se desplaza es la columna del formulario. */
+.auth__aside {
+  position: sticky; top: 0; align-self: start;
+  height: 100vh; height: 100dvh; overflow: hidden auto;
+  display: flex; flex-direction: column; gap: 40px;
+  padding: 46px 42px; color: var(--on-dark);
+  background: var(--dark); /* respaldo solido por si el degradado no aplica */
+  background: linear-gradient(165deg, var(--brand-700), var(--dark) 68%);
+}
+/* Halo de marca arriba y trama de puntos: textura sin imagenes extra. */
+.auth__aside::before {
+  content: ''; position: absolute; left: -30%; top: -25%; width: 130%; height: 60%;
+  background: radial-gradient(closest-side, oklch(0.55 0.20 263 / .55), transparent);
+}
+.auth__aside::after {
+  content: ''; position: absolute; inset: 0; opacity: .5;
+  background-image: radial-gradient(oklch(1 0 0 / .13) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.auth__aside > * { position: relative; z-index: 1; }
+
+.auth__brand { display: block; }
+.auth__pitch { margin-top: auto; }
+.auth__route {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-display); font-size: 12px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase; color: oklch(0.88 0.06 263);
+  background: oklch(1 0 0 / .09); border: 1px solid oklch(1 0 0 / .16);
+  padding: 6px 13px; border-radius: var(--r-pill); margin-bottom: 20px;
+}
+.auth__title {
+  font-size: 31px; line-height: 1.15; color: #fff; letter-spacing: -0.03em;
+}
+.auth__lead {
+  margin-top: 14px; font-size: 15px; line-height: 1.6; color: var(--on-dark-muted);
+}
+
+.auth__points { list-style: none; margin: 30px 0 0; padding: 0; display: grid; gap: 16px; }
+.auth__point { display: flex; align-items: flex-start; gap: 13px; }
+.auth__point-ic {
+  width: 26px; height: 26px; flex: none; display: grid; place-items: center;
+  border-radius: 99px; background: oklch(1 0 0 / .12); color: #fff;
+}
+.auth__point-ic svg { width: 15px; height: 15px; }
+.auth__point-body { display: flex; flex-direction: column; gap: 2px; }
+.auth__point-title { font-size: 14.5px; font-weight: 700; color: #fff; }
+.auth__point-sub { font-size: 13px; line-height: 1.4; color: var(--on-dark-muted); }
+
+.auth__foot { font-size: 13px; color: var(--on-dark-muted); }
+.auth__foot a { color: #fff; font-weight: 600; text-decoration: underline; }
+
+/* Columna del formulario. */
+.auth__main {
+  display: grid; place-items: center; padding: 48px 28px;
+  background: linear-gradient(160deg, var(--brand-softer), var(--paper) 60%);
+}
+.auth__inner { width: 100%; max-width: 420px; }
+.auth__inner.is-wide { max-width: 880px; }
+/* La marca solo se repite arriba cuando el panel lateral no esta a la vista. */
+.auth__brand-mobile { display: none; justify-content: center; margin-bottom: 24px; }
+
+@media (max-width: 980px) {
+  .auth { grid-template-columns: 1fr; }
+  .auth__aside { display: none; }
+  .auth__brand-mobile { display: flex; }
+  .auth__main { padding: 36px 20px; }
+}
+
+/* ---- Tarjeta de autenticacion ---- */
 .login-card {
-  width: 100%; max-width: 400px; padding: 34px 30px; background: var(--surface);
+  width: 100%; padding: 34px 30px; background: var(--surface);
   border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-3);
 }
-.login-card .login-logo { height: 68px; width: auto; display: block; margin: 0 auto 10px; }
-.login-card .sub { color: var(--muted); font-size: 14px; margin-bottom: 24px; text-align: center; }
-.login-card .field-label { margin-top: 14px; }
+.login-card h1 { font-size: 25px; letter-spacing: -0.03em; }
+.login-card .sub { color: var(--muted); font-size: 14px; margin: 8px 0 24px; line-height: 1.5; }
+.login-card .field-label { margin-top: 16px; }
 .login-card .btn { width: 100%; margin-top: 22px; }
 
+/* Campo de contrasena con boton para mostrarla/ocultarla. */
+.pw-field { position: relative; }
+.pw-field .input { padding-right: 46px; }
+.pw-toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: var(--r-xs); color: var(--faint); padding: 0;
+}
+.pw-toggle:hover { color: var(--ink-2); background: var(--paper-2); }
+.pw-toggle svg { width: 18px; height: 18px; }
+
 /* ---- Registro de casillero (asistente de 3 pasos, pagina /registro) ---- */
-.register-card { max-width: 520px; }
 .register-card .btn { width: 100%; margin-top: 22px; }
 /* El paso de datos es el unico ancho: reparte los campos en varias columnas. */
-.register-card.is-wide { max-width: 860px; padding: 38px 36px; }
+.register-card.is-wide { padding: 38px 36px; }
 @media (max-width: 560px) { .register-card.is-wide { padding: 28px 20px; } }
 
 /* Bloques tematicos del formulario (datos, direccion, acceso). */
