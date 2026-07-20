@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Principal, Role } from '@courier/shared';
 import { api } from './lib/api';
+import { clearDismissedAnnouncements } from './lib/announcements';
 import { LoginScreen } from './screens/LoginScreen';
 import { PortalShell } from './PortalShell';
 import './portal.css';
@@ -35,7 +36,23 @@ export default function PortalApp() {
     void refresh();
   }, [refresh]);
 
+  /**
+   * Los avisos descartados se olvidan en cada apertura y cierre de sesion, no al
+   * recargar (§3.4.4: "vuelve a mostrarse en el siguiente inicio de sesión"). Por
+   * eso se limpian aqui, en las transiciones de sesion, y no en el montaje del
+   * componente — que tambien ocurre al recargar la pagina.
+   */
+  const handleLoggedIn = useCallback(() => {
+    clearDismissedAnnouncements();
+    return refresh();
+  }, [refresh]);
+
+  function handleLoggedOut() {
+    clearDismissedAnnouncements();
+    setMe(null);
+  }
+
   if (loading) return <div className="portal-splash">Cargando…</div>;
-  if (!me) return <LoginScreen onLoggedIn={refresh} />;
-  return <PortalShell me={me} onLoggedOut={() => setMe(null)} />;
+  if (!me) return <LoginScreen onLoggedIn={handleLoggedIn} />;
+  return <PortalShell me={me} onLoggedOut={handleLoggedOut} />;
 }

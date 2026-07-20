@@ -51,3 +51,32 @@ export const CURRENCY_VALUES = Object.values(Currency) as [Currency, ...Currency
 export function formatMoney(value: number, currency: Currency): string {
   return `${CURRENCY_SYMBOLS[currency]}${value.toFixed(CURRENCY_DECIMALS[currency])}`;
 }
+
+/**
+ * Redondea un monto a los decimales de su moneda. Punto UNICO de redondeo de
+ * CALCULO (regla M4), hermano de `formatMoney` para la presentacion: todo importe
+ * derivado (conversiones, porcentajes, totales) pasa por aqui antes de guardarse.
+ */
+export function roundMoney(value: number, currency: Currency): number {
+  const factor = 10 ** CURRENCY_DECIMALS[currency];
+  return Math.round(value * factor) / factor;
+}
+
+/**
+ * Convierte un monto entre CRC y USD con una tasa EXPLICITA.
+ *
+ * Convencion de la tasa en todo el sistema: **colones por 1 USD** (p. ej. 512.75).
+ * Nunca se asume una tasa por contexto (regla M5): siempre viaja junto al monto.
+ * Devuelve el valor ya redondeado a los decimales de la moneda destino.
+ */
+export function convertMoney(
+  value: number,
+  from: Currency,
+  to: Currency,
+  crcPerUsd: number,
+): number {
+  if (from === to) return roundMoney(value, to);
+  if (!(crcPerUsd > 0)) throw new Error('La tasa de cambio debe ser mayor que cero.');
+  const converted = from === Currency.USD ? value * crcPerUsd : value / crcPerUsd;
+  return roundMoney(converted, to);
+}

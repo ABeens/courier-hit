@@ -103,6 +103,24 @@
       "currencyPolicy": "usd",
       "requireExchangeRate": false,
       "_doc": "Valor por defecto del servicio de costo. Solo aplica cuando valueType = Fixed (monto); cuando es Percentage es %, no dinero, y no requiere moneda/tasa. Solo USD: Fixed unicamente lo admite ServiceKind.Paqueteria (compras en USA), que se cotiza en dolares; ver allowedCurrencies() en packages/shared/src/costs/cost-service.ts. Como pricePerKg, es un valor de CATALOGO: lleva moneda (M2/M6) pero NO tasa de cambio; la tasa se captura al asignar el costo al paquete (M5 aplica alla, no en el catalogo)."
+    },
+
+    "shipmentCosts.amount": {
+      "currencyPolicy": "both",
+      "requireExchangeRate": true,
+      "_doc": "Importe de una linea de costo cargada sobre un tramite (tabla shipment_costs). Este SI es el monto transaccional al que apunta M5: es el punto donde el valor de catalogo se aplica a un paquete concreto, asi que lleva moneda explicita (M2) Y exchangeRate obligatorio > 0 (colones por 1 USD), capturado como snapshot al cargar el costo. Ambas monedas: Transporte y Agenciamiento se factura en colones o dolares. El rango (>= 0) y la tasa (> 0) los acota ademas un CHECK de la BD."
+    },
+
+    "shipments.invoiceTotalUsd": {
+      "currencyPolicy": "usd",
+      "requireExchangeRate": false,
+      "_doc": "Total de factura congelado al APROBAR los costos. Es un valor DERIVADO: sale de sumar las lineas de shipment_costs con computeTotals(), cada una convertida con SU propia tasa. No lleva exchangeRate propio porque no existe una unica tasa que lo explique: la trazabilidad esta en las lineas. La moneda no es implicita: va en el nombre del campo y siempre se guarda junto a su gemelo en colones (M2)."
+    },
+
+    "shipments.invoiceTotalCrc": {
+      "currencyPolicy": "crc",
+      "requireExchangeRate": false,
+      "_doc": "Gemelo en colones de invoiceTotalUsd. Misma naturaleza: total derivado y congelado al aprobar, sin tasa propia. Los dos se escriben siempre juntos, en la misma operacion."
     }
   }
 }
