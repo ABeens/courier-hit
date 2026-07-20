@@ -5,6 +5,15 @@
 import { useState } from 'react';
 import { loginSchema } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
+import { AuthShell } from '../components/AuthShell';
+import { PasswordField } from '../components/PasswordField';
+
+/** Ganchos del panel de marca: lo que da el portal una vez dentro. */
+const POINTS = [
+  { title: 'Tus paquetes en tiempo real', sub: 'Del prealerta a la entrega, con cada estado a la vista.' },
+  { title: 'Facturas y tarifas claras', sub: 'Consulta lo que pagas por peso real, sin sorpresas.' },
+  { title: 'Un solo acceso', sub: 'Clientes y equipo interno entran por la misma puerta.' },
+];
 
 export function LoginScreen({ onLoggedIn }: { onLoggedIn: () => void }) {
   const [email, setEmail] = useState('');
@@ -34,10 +43,14 @@ export function LoginScreen({ onLoggedIn }: { onLoggedIn: () => void }) {
   }
 
   return (
-    <div className="login-wrap">
+    <AuthShell
+      title="Tu casillero en Miami, siempre a la mano"
+      lead="Entra al portal para seguir tus paquetes, revisar tus facturas y gestionar tus envíos de Miami a Costa Rica."
+      points={POINTS}
+    >
       <form className="login-card fadeUp" onSubmit={submit}>
-        <img className="login-logo" src="/logo.png" alt="HS Global Courier" />
-        <p className="sub">Portal interno. Ingresa con tu cuenta.</p>
+        <h1>Bienvenido de vuelta</h1>
+        <p className="sub">Ingresa con tu correo y contraseña.</p>
 
         {error && <div className="banner err">{error}</div>}
 
@@ -48,15 +61,16 @@ export function LoginScreen({ onLoggedIn }: { onLoggedIn: () => void }) {
         />
 
         <label className="field-label" htmlFor="password">Contraseña</label>
-        <input
-          id="password" className="input" type="password" autoComplete="current-password"
-          value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••"
-        />
+        <PasswordField id="password" value={password} onChange={setPassword} placeholder="••••••••" />
 
         <button className="btn btn-primary btn-lg" type="submit" disabled={busy}>
           {busy ? 'Ingresando…' : 'Ingresar'}
         </button>
+
+        <p className="auth-alt">
+          ¿Aún no tienes casillero? <a href="/registro">Créalo gratis</a>
+        </p>
       </form>
-    </div>
+    </AuthShell>
   );
 }
