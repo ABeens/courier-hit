@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { type Currency, formatMoney } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
+import { ModalOverlay } from '../components/ModalOverlay';
 import { ClientRateFormModal } from './ClientRateFormModal';
 
 export interface ClientRateRow {
@@ -164,8 +165,8 @@ export function TariffsScreen() {
       )}
 
       {toDelete && (
-        <div className="overlay" onMouseDown={() => !busy && setToDelete(null)}>
-          <div className="modal fadeUp" onMouseDown={(e) => e.stopPropagation()}>
+        <ModalOverlay onClose={() => !busy && setToDelete(null)}>
+          <div className="modal modal-sm fadeUp" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <h3>Eliminar tarifa</h3>
               <p>Vas a eliminar la tarifa "{toDelete.name}".</p>
@@ -191,7 +192,7 @@ export function TariffsScreen() {
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
     </div>
   );

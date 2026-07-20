@@ -5,6 +5,13 @@
  */
 const BASE = import.meta.env.PUBLIC_API_BASE ?? 'http://localhost:3001';
 
+/**
+ * Origen de la API. Se exporta para las descargas y las imagenes, que no pasan
+ * por `request` (son `<a href>` y `<img src>` que resuelve el navegador) pero
+ * tienen que apuntar al mismo servidor.
+ */
+export const API_BASE = BASE;
+
 /** Error tipado que preserva `code` (estable) para ramificar en la UI. */
 export class ApiError extends Error {
   constructor(

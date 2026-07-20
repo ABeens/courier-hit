@@ -4,6 +4,7 @@
  * solo envia lo que cambio. La API revalida (nombre unico, invariante de default).
  */
 import { useState } from 'react';
+import { ModalOverlay } from '../components/ModalOverlay';
 import {
   CLIENT_RATE_CURRENCIES,
   CURRENCY_LABELS,
@@ -95,7 +96,7 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
   }
 
   return (
-    <div className="overlay" onMouseDown={onClose}>
+    <ModalOverlay onClose={onClose}>
       <form className="modal fadeUp" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal-head">
           <h3>{mode === 'create' ? 'Nueva tarifa' : 'Editar tarifa'}</h3>
@@ -114,7 +115,7 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="field-pair">
             <div>
               <label className="field-label" htmlFor="r-price">Precio por kg</label>
               <input
@@ -177,6 +178,6 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
           </button>
         </div>
       </form>
-    </div>
+    </ModalOverlay>
   );
 }

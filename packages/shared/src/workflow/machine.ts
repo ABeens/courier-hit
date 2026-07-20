@@ -68,6 +68,20 @@ export const FLOWS: Record<Flow, FlowDef> = {
     extra: [
       [State.EnRutaEntrega, State.DevueltoBodega], // entrega fallida -> devuelto
       [State.DevueltoBodega, State.EnRutaEntrega], // reintento de entrega
+      /**
+       * RECEPCION EN BODEGA (docs/manuales/flujo.md, Parte 4: "mueve el paquete
+       * del estado en que se encuentra al estado de Facturación en proceso").
+       *
+       * Los tramos anteriores los reporta el proveedor por API y llegan con
+       * retraso o incompletos; el paquete fisicamente sobre la mesa de bodega es
+       * un hecho mas fuerte que el ultimo estado sincronizado. Por eso la
+       * recepcion adelanta desde cualquier tramo del proveedor sin pasar por los
+       * intermedios: no es saltarse la secuencia, es que la evidencia fisica
+       * manda sobre la telemetria.
+       */
+      [State.RecibidoBodegaMiami, State.FacturacionEnProceso],
+      [State.PreparandoEnvio, State.FacturacionEnProceso],
+      [State.EnTransitoCostaRica, State.FacturacionEnProceso],
     ],
   },
 

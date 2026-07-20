@@ -44,6 +44,7 @@ import { AuthErrors, CostErrors, ShipmentErrors } from '../../core/errors';
 import { clientsRepo } from '../clients/clients.repo';
 import { costServicesRepo } from '../cost-services/cost-services.repo';
 import { shipmentsRepo } from '../shipments/shipments.repo';
+import { transitionsService } from '../shipments/transitions.service';
 import { costsRepo } from './costs.repo';
 import { exchangeRateProvider } from './exchange-rate';
 
@@ -254,13 +255,21 @@ export const costsService = {
 
     const totals = computeTotals(rows);
     await costsRepo.freezeInvoice(shipmentId, totals, session.userId);
-    // TODO(notificaciones): el step dispara Trigger.NotifyStateChange; el correo
-    // al cliente se conectara cuando exista el modulo de envio de correo.
-    await shipmentsRepo.transition(
+
+    /**
+     * El avance lo hace `transitionsService` y no el repo directamente: asi la
+     * guarda Condition.RequiresInvoiceAmount se comprueba de verdad (contra el
+     * total que se acaba de congelar) y el correo del step sale solo.
+     *
+     * `skipPermission`: avanzar es la consecuencia de aprobar, y para aprobar ya
+     * se exigio el permiso de costos arriba. Volver a pedir el del estado destino
+     * dejaria a Operativo aprobando una factura que no puede cerrar.
+     */
+    await transitionsService.transition(
+      session,
       shipmentId,
-      State.EnBodegaPendientePago,
-      session.userId,
-      'Costos aprobados.',
+      { state: State.EnBodegaPendientePago, note: 'Costos aprobados.' },
+      { skipPermission: true },
     );
 
     return this.get(session, shipmentId);

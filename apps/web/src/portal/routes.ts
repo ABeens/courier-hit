@@ -11,6 +11,9 @@ export const PORTAL_BASE = '/app';
 export const RESOURCE_SLUGS: Record<Resource, string> = {
   [Resource.Prealert]: 'prealerta',
   [Resource.Package]: 'paquetes',
+  [Resource.Locker]: 'casillero',
+  [Resource.Profile]: 'perfil',
+  [Resource.Reception]: 'recepcion',
   [Resource.Dashboard]: 'resumen',
   [Resource.Costs]: 'costos',
   [Resource.CostServices]: 'servicios-costos',

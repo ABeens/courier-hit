@@ -17,13 +17,18 @@ import {
   createShipmentSchema,
   listShipmentsQuerySchema,
   prealertShipmentSchema,
+  receiveShipmentSchema,
+  transitionShipmentSchema,
   updateShipmentSchema,
 } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
 import { requireAnyPermission } from '../../core/middleware/requireAnyPermission';
 import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
-import { shipmentsService } from './shipments.service';
+import { providerSyncService } from './provider-sync.service';
+import { receptionService } from './reception.service';
+import { shipmentsService, toDto } from './shipments.service';
+import { transitionsService } from './transitions.service';
 
 export const shipmentsRoutes = new Hono<AppEnv>();
 
@@ -56,6 +61,30 @@ shipmentsRoutes.post('/', canWrite, zValidator('json', createShipmentSchema), as
   return c.json(created, 201);
 });
 
+/**
+ * Sincronizacion manual con el proveedor.
+ *
+ * TODO(13): debe correr sola cada N minutos. El endpoint queda como disparo
+ * manual para poder probarla sin esperar al planificador.
+ */
+shipmentsRoutes.post('/sync-provider', requirePermission(Permission.ConfigManage), async (c) => {
+  return c.json(await providerSyncService.run(c.get('session')));
+});
+
+/**
+ * Recepcion en bodega por tracking (Parte 4). Va ANTES de `/:id` porque Hono
+ * resuelve por orden: `/receive` encajaria en el patron del detalle.
+ */
+shipmentsRoutes.post(
+  '/receive',
+  requirePermission(Permission.PackageReceive),
+  zValidator('json', receiveShipmentSchema),
+  async (c) => {
+    const row = await receptionService.receive(c.get('session'), c.req.valid('json'));
+    return c.json(toDto(row));
+  },
+);
+
 shipmentsRoutes.get('/:id', canRead, async (c) => {
   return c.json(await shipmentsService.get(c.get('session'), c.req.param('id')));
 });
@@ -67,4 +96,19 @@ shipmentsRoutes.get('/:id/events', canRead, async (c) => {
 shipmentsRoutes.patch('/:id', canWrite, zValidator('json', updateShipmentSchema), async (c) => {
   const updated = await shipmentsService.update(c.get('session'), c.req.param('id'), c.req.valid('json'));
   return c.json(updated);
+});
+
+/**
+ * Avance manual de estado. NO lleva middleware de permiso: el que hace falta
+ * depende del estado DESTINO (la maquina lo declara por step), asi que solo el
+ * servicio puede resolverlo. Una barrera fija aqui seria o demasiado laxa o
+ * demasiado estricta segun a donde se mueva el tramite.
+ */
+shipmentsRoutes.post('/:id/transition', zValidator('json', transitionShipmentSchema), async (c) => {
+  const row = await transitionsService.transition(
+    c.get('session'),
+    c.req.param('id'),
+    c.req.valid('json'),
+  );
+  return c.json(toDto(row));
 });

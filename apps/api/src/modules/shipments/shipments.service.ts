@@ -31,6 +31,7 @@ import type {
 } from '@courier/shared';
 import { AuthErrors, ShipmentErrors } from '../../core/errors';
 import { formatShipmentCode } from '@courier/shared';
+import { createHelgaPrealert, isHelgaEnabled } from '../../integrations/helga/helga.client';
 import { clientsRepo } from '../clients/clients.repo';
 import { shipmentsRepo } from './shipments.repo';
 
@@ -61,8 +62,13 @@ function ownerScopeFor(session: Session): string | undefined {
   return session.clientId;
 }
 
-/** Fila de BD -> DTO de la API. Deriva el flow y normaliza fechas a ISO (UTC). */
-function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
+/**
+ * Fila de BD -> DTO de la API. Deriva el flow y normaliza fechas a ISO (UTC).
+ * Exportado porque los modulos que mueven tramites (transiciones, recepcion,
+ * entregas) devuelven el tramite actualizado y deben serializarlo IGUAL que el
+ * listado: dos mapeos distintos del mismo tramite serian dos contratos.
+ */
+export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
   return {
     id: row.id,
     code: row.code,
@@ -130,14 +136,16 @@ export const shipmentsService = {
    * se acepta clientId en el cuerpo, asi un cliente no puede prealertar a nombre
    * de otro.
    *
-   * TODO(13): en Paqueteria, prealertar tambien ante el proveedor (Helga) —
-   * buscar/crear el destinatario y crear la prealerta v2. Queda desconectado
-   * hasta que la IP del backend entre en la lista blanca; los campos helga_* del
-   * casillero ya existen. Mientras tanto el tramite vive solo de nuestro lado.
+   * En Paqueteria la prealerta se replica ante el proveedor: es lo que lo
+   * autoriza a reportarnos el estado del paquete mientras esta en USA. Ese paso
+   * NO bloquea —a diferencia del registro del casillero— porque el tramite ya es
+   * util de nuestro lado aunque el proveedor no responda; la sincronizacion lo
+   * recuperara despues por tracking.
    */
   async prealert(session: Session, input: PrealertShipmentInput): Promise<ShipmentDto> {
     if (!session.clientId) throw ShipmentErrors.missingClientProfile();
-    return this.insert(
+
+    const created = await this.insert(
       {
         clientId: session.clientId,
         shipmentType: input.shipmentType,
@@ -148,6 +156,41 @@ export const shipmentsService = {
       },
       session.userId,
     );
+
+    if (usesPackageFields(input.shipmentType)) {
+      await this.prealertWithProvider(session.clientId, created);
+    }
+    return created;
+  },
+
+  /**
+   * Replica la prealerta ante el proveedor. Nunca lanza: un fallo aqui no puede
+   * deshacer una prealerta ya guardada ni mostrarle un error al cliente por algo
+   * que no depende de el.
+   *
+   * TODO(13): reintentar las que fallen. Hoy queda el aviso en el log y la
+   * recuperacion depende de que la sincronizacion encuentre el paquete por
+   * tracking cuando llegue a bodega.
+   */
+  async prealertWithProvider(clientId: string, shipment: ShipmentDto): Promise<void> {
+    if (!isHelgaEnabled()) return;
+
+    const link = await clientsRepo.providerLinkFor(clientId);
+    if (!link?.helgaClientId) {
+      console.warn(`[helga] casillero ${shipment.client.code} sin enlazar: prealerta no replicada.`);
+      return;
+    }
+
+    try {
+      await createHelgaPrealert({
+        helgaClientId: link.helgaClientId,
+        tracking: shipment.tracking,
+        description: shipment.description,
+        store: shipment.store,
+      });
+    } catch (err) {
+      console.error(`[helga] no se pudo prealertar ${shipment.tracking}:`, err);
+    }
   },
 
   /** Alta por un usuario de staff. El permiso depende del tipo de tramite. */

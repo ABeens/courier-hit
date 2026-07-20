@@ -6,7 +6,7 @@
  * recarga y botones atras/adelante funcionan.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { ROLE_LABELS, Resource, Role, resourcesFor } from '@courier/shared';
+import { Permission, ROLE_LABELS, Resource, Role, can, resourcesFor } from '@courier/shared';
 import type { Me } from './PortalApp';
 import { api } from './lib/api';
 import { pathForResource, resourceFromPath } from './routes';
@@ -19,6 +19,13 @@ import { TariffsScreen } from './screens/TariffsScreen';
 import { RoutesScreen } from './screens/RoutesScreen';
 import { PrealertScreen } from './screens/PrealertScreen';
 import { ShipmentsScreen } from './screens/ShipmentsScreen';
+import { DashboardScreen } from './screens/DashboardScreen';
+import { DeliveriesScreen } from './screens/DeliveriesScreen';
+import { ClientsScreen } from './screens/ClientsScreen';
+import { ReportsScreen } from './screens/ReportsScreen';
+import { ReceptionScreen } from './screens/ReceptionScreen';
+import { LockerScreen } from './screens/LockerScreen';
+import { ProfileScreen } from './screens/ProfileScreen';
 
 interface NavItem { resource: Resource; label: string }
 
@@ -32,8 +39,10 @@ const CLIENT_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   {
     group: 'Mi casillero',
     items: [
+      { resource: Resource.Locker, label: 'Mi casillero' },
       { resource: Resource.Prealert, label: 'Prealertar' },
       { resource: Resource.Package, label: 'Mis trámites' },
+      { resource: Resource.Profile, label: 'Mi perfil' },
     ],
   },
 ];
@@ -43,6 +52,7 @@ const STAFF_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
     group: 'Operación',
     items: [
       { resource: Resource.Dashboard, label: 'Resumen' },
+      { resource: Resource.Reception, label: 'Recepción' },
       { resource: Resource.Package, label: 'Paquetería' },
       { resource: Resource.Costs, label: 'Costos' },
       { resource: Resource.Delivery, label: 'Entregas' },
@@ -200,6 +210,20 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
             <ShipmentsScreen role={me.role} initialView={isClient ? 'propios' : 'paqueteria'} />
           ) : current === Resource.Tramite ? (
             <ShipmentsScreen role={me.role} initialView="transporte" />
+          ) : current === Resource.Dashboard ? (
+            <DashboardScreen />
+          ) : current === Resource.Reception ? (
+            <ReceptionScreen />
+          ) : current === Resource.Delivery ? (
+            <DeliveriesScreen />
+          ) : current === Resource.Clients ? (
+            <ClientsScreen canWrite={can(me.role, Permission.ClientsWrite)} />
+          ) : current === Resource.Reports ? (
+            <ReportsScreen />
+          ) : current === Resource.Locker ? (
+            <LockerScreen />
+          ) : current === Resource.Profile ? (
+            <ProfileScreen onLoggedOut={onLoggedOut} />
           ) : (
             <div className="stub">
               <div className="big">{currentLabel}</div>
@@ -225,6 +249,9 @@ function NavIcon({ resource }: { resource: Resource }) {
   const paths: Partial<Record<Resource, JSX.Element>> = {
     [Resource.Dashboard]: <path d="M3 12h7V3H3zM14 21h7V3h-7zM3 21h7v-6H3z" />,
     [Resource.Package]: <path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8" />,
+    [Resource.Locker]: <path d="M3 3h18v18H3zM3 9h18M9 9v12M6 6h.01" />,
+    [Resource.Profile]: <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z" />,
+    [Resource.Reception]: <path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M8 9.5v4M12 11v4" />,
     [Resource.Costs]: <path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
     [Resource.CostServices]: <path d="M20 12V8H6a2 2 0 01-2-2c0-1.1.9-2 2-2h12v4M4 6v12c0 1.1.9 2 2 2h14v-4M18 12a2 2 0 000 4h4v-4z" />,
     [Resource.Tariffs]: <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01" />,

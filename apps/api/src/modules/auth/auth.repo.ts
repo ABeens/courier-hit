@@ -34,6 +34,17 @@ export const authRepo = {
     await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, userId));
   },
 
+  /**
+   * Actualiza los datos de identidad (nombre, telefono, correo). La contrasena NO
+   * pasa por aqui: tiene su propio camino (`setPassword`) porque exige hashear.
+   */
+  async updateUser(userId: string, patch: Partial<typeof users.$inferInsert>) {
+    await db
+      .update(users)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(users.id, userId));
+  },
+
   // --- clients (perfil de casillero) ---
   async getClientByUserId(userId: string) {
     const [row] = await db.select().from(clients).where(eq(clients.userId, userId)).limit(1);

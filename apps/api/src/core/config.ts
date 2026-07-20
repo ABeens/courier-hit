@@ -32,6 +32,43 @@ const EnvSchema = z.object({
   // Invitacion de staff: el token de fijar contrasena dura mas que un codigo (docs/roles.md §1.3.4).
   INVITE_TTL_HOURS: z.coerce.number().int().positive().default(72),
 
+  // --- Almacen de archivos adjuntos (comprobantes de pago, fotos de entrega) ---
+  // Directorio local donde se guardan los archivos subidos. Es el driver de
+  // desarrollo: sirve para operar de punta a punta sin depender de la nube.
+  // TODO(12): en AWS esto pasa a S3 (bucket privado + URLs firmadas). El contrato
+  // de `core/storage.ts` ya esta pensado para ese cambio: se sustituye el driver,
+  // no los modulos que lo usan.
+  UPLOADS_DIR: z.string().default('./uploads'),
+  /** Techo del tamaño de un adjunto. Una foto de celular ronda los 3-5 MB. */
+  UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024),
+
+  // --- Correo saliente (verificacion, invitaciones, avisos de estado) ---
+  // Apagado en desarrollo: sin transporte real, `mailer` escribe el mensaje en la
+  // consola y sigue. Asi los flujos que disparan correo se pueden probar enteros.
+  // TODO(correo): implementar el transporte SES y encenderlo en produccion.
+  MAIL_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  MAIL_FROM: z.string().default('HS Global Courier <no-reply@hsglobalcr.com>'),
+
+  // --- Pasarela de pago: Onvo Pay ---
+  // Apagada mientras no existan credenciales. Con la pasarela apagada el pago con
+  // tarjeta no se ofrece y el cliente paga por deposito bancario, que es un flujo
+  // completo y no depende de terceros.
+  // TODO(09/onvo): implementar el cliente de Onvo Pay (crear intento de pago,
+  // confirmar contra el webhook) en `integrations/onvo/`.
+  ONVO_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  ONVO_BASE_URL: optionalEnv(),
+  ONVO_SECRET_KEY: optionalEnv(),
+  ONVO_PUBLIC_KEY: optionalEnv(),
+  /** Secreto con el que Onvo firma los webhooks; sin el no se puede confiar en uno. */
+  ONVO_WEBHOOK_SECRET: optionalEnv(),
+  ONVO_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+
   // --- Proveedor de casillero en Miami: Helga (docs/13 §5) ---
   // Interruptor de la integracion. En desarrollo va apagado: la IP local no esta
   // en la lista blanca de Helga, asi que ninguna llamada saliente funcionaria y
@@ -130,6 +167,23 @@ export const isProd = config.NODE_ENV === 'production';
  * Mientras llegan, la bandera se puede prender sin romper nada: la API arranca
  * igual y la pantalla de costos simplemente pide la tasa a mano.
  */
+/**
+ * True solo si la pasarela esta ENCENDIDA **y** tiene con que cobrar. Misma
+ * separacion que `bccrReady`: la bandera la mueve quien opera, las credenciales
+ * dependen del alta comercial con Onvo. Mientras no este lista, la web no ofrece
+ * el pago con tarjeta y el cliente usa deposito bancario.
+ */
+export const onvoReady =
+  config.ONVO_ENABLED &&
+  Boolean(config.ONVO_BASE_URL && config.ONVO_SECRET_KEY && config.ONVO_PUBLIC_KEY);
+
+if (config.ONVO_ENABLED && !onvoReady) {
+  console.warn(
+    '[config] ONVO_ENABLED=true pero faltan credenciales (ONVO_BASE_URL, ONVO_SECRET_KEY, ' +
+      'ONVO_PUBLIC_KEY). El pago con tarjeta seguirá deshabilitado.',
+  );
+}
+
 export const bccrReady =
   config.BCCR_ENABLED &&
   Boolean(config.BCCR_BASE_URL && config.BCCR_NAME && config.BCCR_EMAIL && config.BCCR_TOKEN);

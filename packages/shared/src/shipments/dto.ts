@@ -214,6 +214,38 @@ export const updateShipmentSchema = z
 export type UpdateShipmentInput = z.infer<typeof updateShipmentSchema>;
 
 // ---------------------------------------------------------------------------
+// Cambio de estado
+// ---------------------------------------------------------------------------
+
+/**
+ * Avance manual de un tramite. El estado destino se valida contra la maquina de
+ * estados en la API (`canTransition`), no aqui: el esquema no conoce el estado
+ * actual ni el tipo del tramite guardado.
+ *
+ * `note` es opcional en el esquema pero OBLIGATORIA cuando el estado destino
+ * declara Condition.RequiresComment (p. ej. "Devuelto a bodega"). Esa regla vive
+ * en la maquina, que es quien sabe a que estado se va.
+ */
+export const transitionShipmentSchema = z.object({
+  state: z.nativeEnum(State, {
+    errorMap: () => ({ message: 'Elige un estado válido.' }),
+  }),
+  note: z.string().trim().max(500, 'El comentario es demasiado largo.').optional(),
+});
+export type TransitionShipmentInput = z.infer<typeof transitionShipmentSchema>;
+
+/**
+ * Recepcion en bodega por tracking (Parte 4, "Recepción de Paquete"). El operador
+ * escanea o digita el tracking y el sistema resuelve el resto: si el tramite
+ * existe lo mueve a "Facturación en proceso"; si no, responde con un codigo
+ * estable para que la web abra el alta manual.
+ */
+export const receiveShipmentSchema = z.object({
+  tracking: trackingSchema,
+});
+export type ReceiveShipmentInput = z.infer<typeof receiveShipmentSchema>;
+
+// ---------------------------------------------------------------------------
 // Listado
 // ---------------------------------------------------------------------------
 

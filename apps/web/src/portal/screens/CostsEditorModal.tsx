@@ -11,6 +11,7 @@
  *     "En bodega - Pendiente pago". Desde ahi ya no se edita.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { ModalOverlay } from '../components/ModalOverlay';
 import {
   CURRENCY_LABELS,
   CostLineSource,
@@ -190,7 +191,7 @@ export function CostsEditorModal({ shipment, onClose, onApproved }: Props) {
   }
 
   return (
-    <div className="overlay" onMouseDown={onClose}>
+    <ModalOverlay onClose={onClose}>
       <div className="modal modal-wide fadeUp" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>Costos · {shipment.code}</h3>
@@ -342,6 +343,6 @@ export function CostsEditorModal({ shipment, onClose, onApproved }: Props) {
           )}
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
