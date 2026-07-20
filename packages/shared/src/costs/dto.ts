@@ -13,11 +13,22 @@
  * puede traer solo una parte, la coherencia final la resuelve el servicio de la API.
  */
 import { z } from 'zod';
-import { ServiceKind, ServiceValueType, isValueTypeAllowed } from './cost-service';
+import { Currency } from '../money/currency';
+import { ServiceKind, ServiceValueType, isCurrencyAllowed, isValueTypeAllowed } from './cost-service';
 
-/** Aplica la regla de coherencia kind <-> tipo <-> valor sobre un objeto ya parseado. */
+/** Moneda de un campo monetario. Solo tiene sentido cuando el valor es dinero (Fixed). */
+const currencySchema = z.nativeEnum(Currency, {
+  errorMap: () => ({ message: 'Elige una moneda válida (CRC o USD).' }),
+});
+
+/** Aplica la regla de coherencia kind <-> tipo <-> valor <-> moneda sobre un objeto ya parseado. */
 function refineValueCoherence(
-  data: { kind: ServiceKind; valueType: ServiceValueType; defaultValue?: number | null },
+  data: {
+    kind: ServiceKind;
+    valueType: ServiceValueType;
+    defaultValue?: number | null;
+    currency?: Currency | null;
+  },
   ctx: z.RefinementCtx,
 ): void {
   if (!isValueTypeAllowed(data.kind, data.valueType)) {
@@ -27,6 +38,28 @@ function refineValueCoherence(
       message: 'Los servicios de Transporte y agenciamiento se cargan al recibir: su valor debe ser manual.',
     });
     return;
+  }
+  // Solo el importe fijo es dinero: exige moneda. Porcentaje y manual la prohiben.
+  if (data.valueType === ServiceValueType.Fixed) {
+    if (data.currency === undefined || data.currency === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['currency'],
+        message: 'Elige la moneda del monto por defecto.',
+      });
+    } else if (!isCurrencyAllowed(data.kind, data.currency)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['currency'],
+        message: 'Los servicios de Paquetería se cotizan en dólares (USD).',
+      });
+    }
+  } else if (data.currency !== undefined && data.currency !== null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['currency'],
+      message: 'Solo el monto fijo lleva moneda; el porcentaje y el valor manual no.',
+    });
   }
   if (data.valueType === ServiceValueType.Manual) return; // el importe se digita luego
   if (data.defaultValue === undefined || data.defaultValue === null) {
@@ -53,6 +86,7 @@ export const createCostServiceSchema = z
     kind: z.nativeEnum(ServiceKind),
     valueType: z.nativeEnum(ServiceValueType),
     defaultValue: z.number().nonnegative('El valor no puede ser negativo.').nullable().optional(),
+    currency: currencySchema.nullable().optional(),
     enabled: z.boolean().optional(),
   })
   .superRefine(refineValueCoherence);
@@ -69,6 +103,7 @@ export const updateCostServiceSchema = z
     kind: z.nativeEnum(ServiceKind).optional(),
     valueType: z.nativeEnum(ServiceValueType).optional(),
     defaultValue: z.number().nonnegative('El valor no puede ser negativo.').nullable().optional(),
+    currency: currencySchema.nullable().optional(),
     enabled: z.boolean().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No hay cambios que aplicar.' });

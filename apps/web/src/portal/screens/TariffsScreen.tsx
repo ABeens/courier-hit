@@ -5,6 +5,7 @@
  * no se puede eliminar. La API revalida cada accion.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { type Currency, formatMoney } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { ClientRateFormModal } from './ClientRateFormModal';
 
@@ -12,6 +13,7 @@ export interface ClientRateRow {
   id: string;
   name: string;
   pricePerKg: number;
+  currency: Currency;
   isDefault: boolean;
   allowsCard: boolean;
   allowsBankDeposit: boolean;
@@ -112,7 +114,7 @@ export function TariffsScreen() {
                     {row.isDefault && <span className="tag-default">Por defecto</span>}
                   </div>
                 </td>
-                <td>${row.pricePerKg.toFixed(2)}</td>
+                <td>{formatMoney(row.pricePerKg, row.currency)}</td>
                 <td>
                   <div className="pay-chips">
                     {row.allowsCard && <span className="role-chip">Tarjeta</span>}

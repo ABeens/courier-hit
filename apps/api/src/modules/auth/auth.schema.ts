@@ -16,11 +16,20 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { PRINCIPAL_VALUES, ROLE_VALUES, USER_STATUS_VALUES, UserStatus } from '@courier/shared';
+import {
+  CLIENT_REVIEW_STATUS_VALUES,
+  ClientReviewStatus,
+  PRINCIPAL_VALUES,
+  ROLE_VALUES,
+  USER_STATUS_VALUES,
+  UserStatus,
+} from '@courier/shared';
+import { clientRates } from '../tariffs/tariffs.schema';
 
 export const principalEnum = pgEnum('principal', PRINCIPAL_VALUES);
 export const roleEnum = pgEnum('role', ROLE_VALUES);
 export const userStatusEnum = pgEnum('user_status', USER_STATUS_VALUES);
+export const clientReviewStatusEnum = pgEnum('client_review_status', CLIENT_REVIEW_STATUS_VALUES);
 
 /** Secuencia del codigo de casillero: HS-1042, HS-1043, ... */
 export const clientCodeSeq = pgSequence('hs_client_code_seq', { startWith: 1042, increment: 1 });
@@ -49,7 +58,13 @@ export const users = pgTable(
   ],
 );
 
-/** Perfil de casillero (1:1 con users). Solo para principal = 'client'. */
+/**
+ * Perfil de casillero (1:1 con users). Solo para principal = 'client'.
+ * Guarda el contacto y la direccion de entrega REALES del cliente: son
+ * propiedad de HS Global y la fuente de verdad de la operacion. Hacia el
+ * proveedor nunca viajan (docs/13 §3.6); alli va la direccion fija de
+ * consolidacion y un correo derivado.
+ */
 export const clients = pgTable('clients', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id')
@@ -57,7 +72,25 @@ export const clients = pgTable('clients', {
     .unique()
     .references(() => users.id, { onDelete: 'cascade' }),
   code: text('code').notNull().unique(),
-  city: text('city'),
+  /** Cedula normalizada a solo digitos (@courier/shared: idNumberSchema). */
+  idNumber: text('id_number').notNull().unique(),
+  // Direccion de entrega en Costa Rica: codigos del catalogo territorial
+  // compartido (no FKs: el catalogo es codigo, no tabla) + otras senas.
+  provinceCode: text('province_code').notNull(),
+  cantonCode: text('canton_code').notNull(),
+  districtCode: text('district_code').notNull(),
+  addressLine: text('address_line').notNull(),
+  /** Todo casillero nace 'nuevo' para que un admin lo revise despues. */
+  reviewStatus: clientReviewStatusEnum('review_status').notNull().default(ClientReviewStatus.Nuevo),
+  /**
+   * Tarifa asignada. Al registrarse se asigna la tarifa por defecto del sistema.
+   * `set null` al borrar la tarifa: el servicio de tarifas ya impide borrar la
+   * default, y un casillero sin tarifa es preferible a perder el casillero.
+   */
+  clientRateId: uuid('client_rate_id').references(() => clientRates.id, { onDelete: 'set null' }),
+  /** Enlace con el proveedor: id del cliente/destinatario en Helga (docs/13). */
+  helgaClientId: text('helga_client_id').unique(),
+  helgaSyncedAt: timestamp('helga_synced_at', { withTimezone: true }),
   memberSince: date('member_since'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

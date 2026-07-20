@@ -6,12 +6,14 @@
  */
 import { and, count, eq, ilike, ne } from 'drizzle-orm';
 import { db } from '../../core/db';
+import { clients } from '../auth/auth.schema';
 import { clientRates } from './tariffs.schema';
 
 const columns = {
   id: clientRates.id,
   name: clientRates.name,
   pricePerKg: clientRates.pricePerKg,
+  currency: clientRates.currency,
   isDefault: clientRates.isDefault,
   allowsCard: clientRates.allowsCard,
   allowsBankDeposit: clientRates.allowsBankDeposit,
@@ -48,21 +50,18 @@ export const tariffsRepo = {
     return row?.n ?? 0;
   },
 
-  /**
-   * Cuantos casilleros usan esta tarifa. TODO(customers): cuando exista la tabla
-   * definitiva de clientes con su tarifa asignada, contar aqui las asociaciones
-   * reales. Por ahora no hay asociacion => 0.
-   */
-  async countClientsByRate(_rateId: string): Promise<number> {
-    return 0;
+  /** Cuantos casilleros tienen asignada esta tarifa. */
+  async countClientsByRate(rateId: string): Promise<number> {
+    const [row] = await db.select({ n: count() }).from(clients).where(eq(clients.clientRateId, rateId));
+    return row?.n ?? 0;
   },
 
-  /**
-   * Reasigna a la tarifa por defecto todos los casilleros de `fromRateId`.
-   * TODO(customers): implementar el UPDATE real cuando exista la tabla de clientes.
-   */
-  async reassignClientsToDefault(_fromRateId: string, _defaultRateId: string): Promise<void> {
-    // no-op hasta que exista la asociacion casillero <-> tarifa.
+  /** Reasigna a la tarifa por defecto todos los casilleros de `fromRateId`. */
+  async reassignClientsToDefault(fromRateId: string, defaultRateId: string): Promise<void> {
+    await db
+      .update(clients)
+      .set({ clientRateId: defaultRateId })
+      .where(eq(clients.clientRateId, fromRateId));
   },
 
   /** Inserta, garantizando el invariante de un solo default en una transaccion. */
@@ -98,8 +97,9 @@ export const tariffsRepo = {
   /** Reasigna los casilleros asociados a la default y elimina la tarifa (transaccion). */
   async deleteAndReassign(id: string, defaultRateId: string) {
     await db.transaction(async (tx) => {
-      // TODO(customers): reasignar dentro de la misma transaccion cuando exista la tabla.
-      await tariffsRepo.reassignClientsToDefault(id, defaultRateId);
+      // Reasignar y borrar van en la MISMA transaccion: si el borrado falla, los
+      // casilleros no se quedan movidos a una tarifa que no les corresponde.
+      await tx.update(clients).set({ clientRateId: defaultRateId }).where(eq(clients.clientRateId, id));
       await tx.delete(clientRates).where(eq(clientRates.id, id));
     });
   },

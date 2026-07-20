@@ -11,6 +11,7 @@
  *
  * Las claves (valor del enum) son estables: alimentan un enum de Postgres.
  */
+import { Currency } from '../money/currency';
 
 /**
  * A que familia de tramites aplica el servicio. Enum de dominio: miembros y
@@ -67,6 +68,20 @@ export function isValueTypeAllowed(kind: ServiceKind, valueType: ServiceValueTyp
   return allowedValueTypes(kind).includes(valueType);
 }
 
+/**
+ * Monedas admitidas segun el tipo de servicio (regla M6: moneda permitida por
+ * campo). Los tramites de Paqueteria son compras en USA: se cotizan siempre en
+ * dolares. Transporte y Agenciamiento admite ambas.
+ */
+export function allowedCurrencies(kind: ServiceKind): Currency[] {
+  return kind === ServiceKind.Paqueteria ? [Currency.USD] : [Currency.CRC, Currency.USD];
+}
+
+/** True si la moneda es admisible para ese tipo de servicio. */
+export function isCurrencyAllowed(kind: ServiceKind, currency: Currency): boolean {
+  return allowedCurrencies(kind).includes(currency);
+}
+
 /** Servicio de costo (vista publica; forma equivalente a la fila de BD). */
 export interface CostService {
   id: string;
@@ -76,6 +91,11 @@ export interface CostService {
   valueType: ServiceValueType;
   /** Porcentaje (Percentage) o importe (Fixed); null cuando es Manual. */
   defaultValue: number | null;
+  /**
+   * Moneda del importe. Solo aplica cuando valueType = Fixed (es dinero);
+   * null cuando es Percentage (es %) o Manual (se digita al cargar). Regla M2.
+   */
+  currency: Currency | null;
   enabled: boolean;
   createdAt: Date;
   updatedAt: Date;

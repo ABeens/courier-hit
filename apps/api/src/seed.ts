@@ -15,7 +15,7 @@
 import { randomBytes } from 'node:crypto';
 import { hash } from '@node-rs/argon2';
 import { count, eq } from 'drizzle-orm';
-import { Principal, Role, UserStatus } from '@courier/shared';
+import { Currency, Principal, Role, UserStatus } from '@courier/shared';
 import { db } from './core/db';
 import { users } from './modules/auth/auth.schema';
 import { clientRates } from './modules/tariffs/tariffs.schema';
@@ -44,6 +44,8 @@ async function seedClientRates(): Promise<void> {
     SEED_CLIENT_RATES.map((r) => ({
       name: r.name,
       pricePerKg: r.pricePerKg,
+      // Precios de importacion desde Miami: se cotizan en dolares (regla M2).
+      currency: Currency.USD,
       isDefault: r.isDefault ?? false,
       allowsCard: true,
       allowsBankDeposit: true,

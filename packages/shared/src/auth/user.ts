@@ -29,10 +29,39 @@ export interface User {
   updatedAt: Date;
 }
 
+/**
+ * Estado de revision del casillero. Todo casillero nace `nuevo` para que un
+ * administrador valide despues sus datos (cedula, direccion); revisarlo es un
+ * acto manual del staff, no algo que el cliente pueda cambiar.
+ */
+export enum ClientReviewStatus {
+  Nuevo = 'nuevo',
+  Revisado = 'revisado',
+}
+
+export const CLIENT_REVIEW_STATUS_VALUES = Object.values(ClientReviewStatus) as [
+  ClientReviewStatus,
+  ...ClientReviewStatus[],
+];
+
 /** Perfil de casillero: extension 1:1 de User cuando principal = Client. */
 export interface ClientProfile {
   userId: string;
   code: string; // 'HS-1042' — clave de negocio, visible al cliente
-  city: string | null;
+  idNumber: string; // cedula normalizada a solo digitos; unica en el sistema
+  /** Direccion de entrega en Costa Rica (codigos del catalogo `geo`). */
+  provinceCode: string;
+  cantonCode: string;
+  districtCode: string;
+  addressLine: string; // "otras senas"
+  reviewStatus: ClientReviewStatus;
+  /** Tarifa asignada; al registrarse es la tarifa por defecto del sistema. */
+  clientRateId: string | null;
+  /**
+   * Id del cliente/destinatario en Helga (docs/13). Es el enlace con el
+   * proveedor: nuestro `userId` de un lado, su id del otro.
+   */
+  helgaClientId: string | null;
+  helgaSyncedAt: Date | null;
   memberSince: Date | null;
 }

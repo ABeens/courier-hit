@@ -4,18 +4,86 @@
  * Reglas del backup: nombre no vacio, email con formato valido, contrasena >= 6.
  */
 import { z } from 'zod';
+import { isValidLocation } from '../geo/costa-rica';
 
-/** Ciudades de destino soportadas (docs/05-modulo-usuarios.md §2). */
-export const CITIES = ['Bogotá', 'Medellín', 'Cali', 'Barranquilla'] as const;
-export type City = (typeof CITIES)[number];
+/**
+ * Cedula: se guarda normalizada a solo digitos. Costa Rica usa 9 digitos para la
+ * cedula fisica, 10 para la juridica y 11-12 para DIMEX/extranjeros, asi que el
+ * rango aceptado es 9-12. No validamos el digito verificador: el flag `nuevo`
+ * del casillero existe para que un administrador revise el dato (docs/05 §2).
+ */
+export const idNumberSchema = z
+  .string()
+  .trim()
+  .transform((v) => v.replace(/\D/g, ''))
+  .refine((v) => v.length >= 9 && v.length <= 12, 'La cédula debe tener entre 9 y 12 dígitos.');
 
-/** Alta de customer (autoregistro publico). Solo crea principal = Client. */
-export const registerSchema = z.object({
-  name: z.string().trim().min(1, 'El nombre es obligatorio.'),
-  email: z.string().trim().toLowerCase().email('Correo electrónico inválido.'),
-  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres.'),
-  city: z.enum(CITIES).optional(),
-});
+/**
+ * Telefono: todos los usuarios son de Costa Rica, cuyo plan nacional es de 8
+ * digitos. Se acepta el prefijo +506 al escribir y se descarta al normalizar.
+ */
+export const phoneSchema = z
+  .string()
+  .trim()
+  .transform((v) => v.replace(/\D/g, '').replace(/^506(?=\d{8}$)/, ''))
+  .refine((v) => /^\d{8}$/.test(v), 'El teléfono debe tener 8 dígitos.');
+
+/**
+ * Direccion de entrega en Costa Rica: la terna territorial del catalogo
+ * compartido mas las "otras senas" en texto libre. Es la direccion a la que HS
+ * Global reparte el paquete una vez nacionalizado; NUNCA viaja al proveedor
+ * (docs/13 §3.6: hacia Helga va siempre la direccion fija de consolidacion).
+ */
+export const deliveryAddressShape = {
+  provinceCode: z.string().trim().min(1, 'Elige la provincia.'),
+  cantonCode: z.string().trim().min(1, 'Elige el cantón.'),
+  districtCode: z.string().trim().min(1, 'Elige el distrito.'),
+  addressLine: z
+    .string()
+    .trim()
+    .min(5, 'Indica las otras señas de la dirección de entrega.')
+    .max(500, 'Las otras señas no pueden superar 500 caracteres.'),
+};
+
+/**
+ * La terna se valida contra el catalogo: no se confia en lo que manda el
+ * cliente, ni siquiera en combinaciones cruzadas de codigos que existen por
+ * separado pero no cuelgan uno del otro.
+ */
+function checkLocation(
+  v: { provinceCode: string; cantonCode: string; districtCode: string },
+  ctx: z.RefinementCtx,
+): void {
+  if (!isValidLocation(v.provinceCode, v.cantonCode, v.districtCode)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['districtCode'],
+      message: 'La provincia, el cantón y el distrito no corresponden entre sí.',
+    });
+  }
+}
+
+export const deliveryAddressSchema = z.object(deliveryAddressShape).superRefine(checkLocation);
+export type DeliveryAddressInput = z.infer<typeof deliveryAddressSchema>;
+
+/**
+ * Alta de customer (autoregistro publico). Solo crea principal = Client.
+ * Campos exigidos por el requerimiento de creacion de casillero: nombre, cedula,
+ * correo, telefono, direccion de entrega (Costa Rica), contrasena y aceptacion
+ * expresa de terminos y politica de privacidad.
+ */
+export const registerSchema = z
+  .object({
+    name: z.string().trim().min(1, 'El nombre es obligatorio.'),
+    idNumber: idNumberSchema,
+    email: z.string().trim().toLowerCase().email('Correo electrónico inválido.'),
+    phone: phoneSchema,
+    ...deliveryAddressShape,
+    password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres.'),
+    // Debe ser un `true` explicito: un checkbox sin marcar no acepta nada.
+    acceptsTerms: z.boolean().refine((v) => v, 'Debes aceptar los términos de uso y la política de privacidad.'),
+  })
+  .superRefine(checkLocation);
 export type RegisterInput = z.infer<typeof registerSchema>;
 
 /** Confirmacion del codigo de 6 digitos enviado por email. */

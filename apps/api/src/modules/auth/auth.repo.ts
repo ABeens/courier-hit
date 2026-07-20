@@ -40,6 +40,12 @@ export const authRepo = {
     return row ?? null;
   },
 
+  /** Una cedula = un casillero. Se consulta antes de crear para dar un error claro. */
+  async findClientByIdNumber(idNumber: string) {
+    const [row] = await db.select().from(clients).where(eq(clients.idNumber, idNumber)).limit(1);
+    return row ?? null;
+  },
+
   async insertClient(values: typeof clients.$inferInsert) {
     const [row] = await db.insert(clients).values(values).returning();
     if (!row) throw new Error('No se pudo crear el perfil de casillero.');

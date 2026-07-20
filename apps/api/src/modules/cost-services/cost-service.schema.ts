@@ -7,6 +7,7 @@
  */
 import { boolean, doublePrecision, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { SERVICE_KIND_VALUES, SERVICE_VALUE_TYPE_VALUES, ServiceKind } from '@courier/shared';
+import { currencyEnum } from '../../core/currency.schema';
 
 export const serviceKindEnum = pgEnum('service_kind', SERVICE_KIND_VALUES);
 export const serviceValueTypeEnum = pgEnum('service_value_type', SERVICE_VALUE_TYPE_VALUES);
@@ -19,6 +20,8 @@ export const costServices = pgTable('cost_services', {
   valueType: serviceValueTypeEnum('value_type').notNull(),
   /** Porcentaje o importe segun value_type; null cuando es 'manual'. */
   defaultValue: doublePrecision('default_value'),
+  /** Moneda del importe; solo cuando value_type = 'fixed' (es dinero), null en otro caso. Regla M2. */
+  currency: currencyEnum('currency'),
   enabled: boolean('enabled').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

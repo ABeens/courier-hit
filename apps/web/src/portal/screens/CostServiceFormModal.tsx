@@ -8,10 +8,13 @@
  */
 import { useState } from 'react';
 import {
+  CURRENCY_LABELS,
+  Currency,
   SERVICE_KIND_LABELS,
   SERVICE_VALUE_TYPE_LABELS,
   ServiceKind,
   ServiceValueType,
+  allowedCurrencies,
   allowedValueTypes,
   createCostServiceSchema,
 } from '@courier/shared';
@@ -32,18 +35,26 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
   const [value, setValue] = useState<string>(
     row?.defaultValue !== null && row?.defaultValue !== undefined ? String(row.defaultValue) : '',
   );
+  const [currency, setCurrency] = useState<Currency>(row?.currency ?? Currency.USD);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const valueTypeOptions = allowedValueTypes(kind);
   const lockedToManual = valueTypeOptions.length === 1;
   const needsValue = valueType !== ServiceValueType.Manual;
+  // Solo el monto fijo es dinero: lleva moneda. Porcentaje y manual no (regla M2).
+  const needsCurrency = valueType === ServiceValueType.Fixed;
+  // Paqueteria (compras en USA) solo admite dolares: el selector se muestra fijo.
+  const currencyOptions = allowedCurrencies(kind);
+  const lockCurrency = currencyOptions.length === 1;
   const parsedValue = needsValue ? Number(value) : null;
 
-  /** Al cambiar de tipo de servicio, reencaja el tipo de valor si dejo de ser admisible. */
+  /** Al cambiar de tipo de servicio, reencaja tipo de valor y moneda si dejaron de ser admisibles. */
   function changeKind(next: ServiceKind) {
     setKind(next);
     if (!allowedValueTypes(next).includes(valueType)) setValueType(ServiceValueType.Manual);
+    const nextCurrencies = allowedCurrencies(next);
+    if (!nextCurrencies.includes(currency)) setCurrency(Currency.USD);
   }
 
   async function submit(e: React.FormEvent) {
@@ -57,6 +68,7 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
           kind,
           valueType,
           defaultValue: needsValue ? parsedValue : undefined,
+          currency: needsCurrency ? currency : undefined,
         });
         if (!parsed.success) {
           setError(parsed.error.issues[0]?.message ?? 'Datos inválidos.');
@@ -72,10 +84,12 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
         const valueChanged = needsValue
           ? parsedValue !== row.defaultValue
           : row.defaultValue !== null;
-        if (kind !== row.kind || valueType !== row.valueType || valueChanged) {
+        const currencyChanged = needsCurrency ? currency !== row.currency : row.currency !== null;
+        if (kind !== row.kind || valueType !== row.valueType || valueChanged || currencyChanged) {
           patch.kind = kind;
           patch.valueType = valueType;
           patch.defaultValue = needsValue ? parsedValue : null;
+          patch.currency = needsCurrency ? currency : null;
         }
         if (Object.keys(patch).length === 0) {
           onSaved();
@@ -87,6 +101,7 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
           kind,
           valueType,
           defaultValue: needsValue ? parsedValue : undefined,
+          currency: needsCurrency ? currency : undefined,
         });
         if (!check.success) {
           setError(check.error.issues[0]?.message ?? 'Datos inválidos.');
@@ -153,17 +168,41 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
           </div>
 
           {needsValue ? (
-            <div>
-              <label className="field-label" htmlFor="s-value">
-                {valueType === ServiceValueType.Percentage ? 'Porcentaje por defecto (%)' : 'Monto por defecto ($)'}
-              </label>
-              <input
-                id="s-value" className="input" type="number" min="0"
-                max={valueType === ServiceValueType.Percentage ? '100' : undefined}
-                step={valueType === ServiceValueType.Percentage ? '0.1' : '0.01'}
-                value={value} onChange={(e) => setValue(e.target.value)}
-                placeholder={valueType === ServiceValueType.Percentage ? '10' : '0.00'}
-              />
+            <div
+              style={
+                needsCurrency ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } : undefined
+              }
+            >
+              <div>
+                <label className="field-label" htmlFor="s-value">
+                  {valueType === ServiceValueType.Percentage ? 'Porcentaje por defecto (%)' : 'Monto por defecto'}
+                </label>
+                <input
+                  id="s-value" className="input" type="number" min="0"
+                  max={valueType === ServiceValueType.Percentage ? '100' : undefined}
+                  step={valueType === ServiceValueType.Percentage ? '0.1' : '0.01'}
+                  value={value} onChange={(e) => setValue(e.target.value)}
+                  placeholder={valueType === ServiceValueType.Percentage ? '10' : '0.00'}
+                />
+              </div>
+              {needsCurrency && (
+                <div>
+                  <label className="field-label" htmlFor="s-currency">Moneda</label>
+                  <select
+                    id="s-currency" className="input" value={currency} disabled={lockCurrency}
+                    onChange={(e) => setCurrency(e.target.value as Currency)}
+                  >
+                    {currencyOptions.map((c) => (
+                      <option key={c} value={c}>{CURRENCY_LABELS[c]}</option>
+                    ))}
+                  </select>
+                  {lockCurrency && (
+                    <div className="field-hint">
+                      Los servicios de {SERVICE_KIND_LABELS[ServiceKind.Paqueteria]} se cotizan en dólares.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="banner ok" style={{ background: 'var(--paper-2)', color: 'var(--muted)' }}>

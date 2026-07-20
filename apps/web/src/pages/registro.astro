@@ -1,0 +1,15 @@
+---
+/*
+  Pagina PÚBLICA de creación de casillero. Es el destino de los CTA "Crear
+  casillero" de la landing (Nav.astro y CTA.astro). No requiere sesión.
+
+  Monta una isla React client:only porque todo el asistente (validación,
+  selects encadenados de Costa Rica, llamadas a la API) vive en el navegador.
+*/
+import Base from '../layouts/Base.astro';
+import RegisterScreen from '../portal/screens/RegisterScreen';
+---
+
+<Base title="Crear casillero · HS Global Courier">
+  <RegisterScreen client:only="react" />
+</Base>

@@ -13,6 +13,7 @@ const columns = {
   kind: costServices.kind,
   valueType: costServices.valueType,
   defaultValue: costServices.defaultValue,
+  currency: costServices.currency,
   enabled: costServices.enabled,
   createdAt: costServices.createdAt,
   updatedAt: costServices.updatedAt,
