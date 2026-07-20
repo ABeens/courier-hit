@@ -4,6 +4,22 @@
  */
 import { z } from 'zod';
 
+/**
+ * Variable opcional que puede venir vacia o con un placeholder de plantilla.
+ * `.optional()` solo tolera la AUSENCIA; una cadena vacia (o un `<ambiente>`
+ * sin reemplazar, como el que trae .env.example) es un valor presente e
+ * invalido, y tumbaria el arranque aunque la integracion este apagada. Aqui se
+ * normaliza a `undefined` para que la validacion fuerte quede donde importa:
+ * el superRefine que corre solo con la integracion encendida.
+ */
+function optionalEnv() {
+  return z.preprocess((v) => {
+    if (typeof v !== 'string') return v;
+    const trimmed = v.trim();
+    return trimmed === '' || /^<.*>$/.test(trimmed) ? undefined : trimmed;
+  }, z.string().optional());
+}
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
@@ -26,16 +42,41 @@ const EnvSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
-  HELGA_BASE_URL: z.string().url().optional(),
-  HELGA_CLIENT_ID: z.coerce.number().int().positive().optional(),
-  HELGA_CLIENT_SECRET: z.string().optional(),
-  HELGA_USERNAME: z.string().optional(),
-  HELGA_PASSWORD: z.string().optional(),
-  HELGA_APP_ID: z.string().optional(),
+  // La validez de URL se exige abajo, solo con la integracion encendida.
+  HELGA_BASE_URL: optionalEnv(),
+  HELGA_CLIENT_ID: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.coerce.number().int().positive().optional(),
+  ),
+  HELGA_CLIENT_SECRET: optionalEnv(),
+  HELGA_USERNAME: optionalEnv(),
+  HELGA_PASSWORD: optionalEnv(),
+  HELGA_APP_ID: optionalEnv(),
   // Origin registrado en la lista blanca; Helga responde 403 si no coincide.
-  HELGA_ORIGIN: z.string().optional(),
+  HELGA_ORIGIN: optionalEnv(),
   HELGA_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+
+  // --- Tasa de cambio sugerida: web service de indicadores del BCCR ---
+  // Solo SUGIERE la tasa del dia en la pantalla de costos; el operador es quien
+  // la digita y esa es la que se guarda. Por eso la integracion es opcional y
+  // apagarla no degrada ninguna funcion: el campo simplemente arranca vacio.
+  BCCR_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  BCCR_BASE_URL: optionalEnv(),
+  /** 318 = tipo de cambio de VENTA del dolar (el que se le cobra al cliente). */
+  BCCR_INDICATOR: z.coerce.number().int().positive().default(318),
+  /** Nombre y correo registrados en la suscripcion al web service del BCCR. */
+  BCCR_NAME: optionalEnv(),
+  BCCR_EMAIL: optionalEnv(),
+  BCCR_TOKEN: optionalEnv(),
+  BCCR_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
 }).superRefine((env, ctx) => {
+  // OJO: el BCCR NO se valida aqui a proposito. A diferencia de Helga, encenderlo
+  // sin credenciales NO tumba el arranque: es un interruptor que se puede prender
+  // y apagar mientras se consiguen las credenciales. Ver `bccrReady` mas abajo.
+
   // Si la integracion esta encendida, sus credenciales dejan de ser opcionales:
   // preferimos no arrancar a descubrirlo en el primer registro de un cliente.
   if (!(env.HELGA_ENABLED === true)) return;
@@ -56,6 +97,14 @@ const EnvSchema = z.object({
       });
     }
   }
+  // Con la integracion encendida el endpoint SI tiene que ser una URL real.
+  if (env.HELGA_BASE_URL !== undefined && !z.string().url().safeParse(env.HELGA_BASE_URL).success) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['HELGA_BASE_URL'],
+      message: 'HELGA_BASE_URL debe ser una URL válida (reemplaza el placeholder del .env.example).',
+    });
+  }
 });
 
 export type Config = z.infer<typeof EnvSchema>;
@@ -71,3 +120,25 @@ function loadConfig(): Config {
 
 export const config = loadConfig();
 export const isProd = config.NODE_ENV === 'production';
+
+/**
+ * True solo si el BCCR esta ENCENDIDO **y** tiene con que llamar.
+ *
+ * Es el interruptor efectivo del modulo de costos. Se separa de `BCCR_ENABLED`
+ * porque son dos preguntas distintas: "¿lo queremos usar?" (bandera, la mueve
+ * quien opera) y "¿ya podemos?" (credenciales, dependen de un tramite externo).
+ * Mientras llegan, la bandera se puede prender sin romper nada: la API arranca
+ * igual y la pantalla de costos simplemente pide la tasa a mano.
+ */
+export const bccrReady =
+  config.BCCR_ENABLED &&
+  Boolean(config.BCCR_BASE_URL && config.BCCR_NAME && config.BCCR_EMAIL && config.BCCR_TOKEN);
+
+// Aviso al arrancar: encendido pero sin credenciales es un estado legitimo y
+// temporal, pero silencioso seria confuso ("¿por que no me sugiere la tasa?").
+if (config.BCCR_ENABLED && !bccrReady) {
+  console.warn(
+    '[config] BCCR_ENABLED=true pero faltan credenciales (BCCR_BASE_URL, BCCR_NAME, ' +
+      'BCCR_EMAIL, BCCR_TOKEN). La tasa de cambio se seguirá digitando a mano.',
+  );
+}

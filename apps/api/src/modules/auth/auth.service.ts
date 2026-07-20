@@ -230,7 +230,10 @@ export const authService = {
     };
     if (user.principal === Principal.Client) {
       const client = await authRepo.getClientByUserId(user.id);
-      if (client) session.clientCode = client.code;
+      if (client) {
+        session.clientId = client.id;
+        session.clientCode = client.code;
+      }
     }
     // Consistencia defensiva: el principal siempre concuerda con el rol.
     session.principal = principalForRole(user.role);

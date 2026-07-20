@@ -71,6 +71,27 @@ export const CostServiceErrors = {
     ),
 };
 
+/** Errores de los costos cargados sobre un tramite (docs/06-modulo-administrativo.md §3.3). */
+export const CostErrors = {
+  alreadyApproved: () =>
+    new AppError(
+      'COSTS_ALREADY_APPROVED',
+      'Los costos de este trámite ya fueron aprobados y no se pueden modificar.',
+      409,
+    ),
+  noLines: () =>
+    new AppError('COSTS_NO_LINES', 'Agrega al menos una línea de costo antes de aprobar.', 400),
+  notBillableState: () =>
+    new AppError(
+      'COSTS_NOT_BILLABLE_STATE',
+      'Solo se pueden aprobar costos de un trámite en "Facturación en proceso".',
+      409,
+    ),
+  /** El flow no tiene paso de facturacion: es un fallo de configuracion, no del usuario. */
+  notBillable: () =>
+    new AppError('COSTS_FLOW_NOT_BILLABLE', 'Este tipo de trámite no admite carga de costos.', 500),
+};
+
 /** Errores de las tarifas preferenciales de cliente. */
 export const ClientRateErrors = {
   notFound: () => new AppError('CLIENT_RATE_NOT_FOUND', 'Tarifa no encontrada.', 404),
@@ -111,6 +132,45 @@ export const ProviderErrors = {
     new AppError('PROVIDER_FORBIDDEN', 'El operador en Miami rechazó la conexión (lista blanca).', 502),
   unauthenticated: () =>
     new AppError('PROVIDER_UNAUTHENTICATED', 'No pudimos autenticarnos con el operador en Miami.', 502),
+};
+
+/** Errores del modulo de tramites (docs/manuales/flujo.md L30-145). */
+export const ShipmentErrors = {
+  notFound: () => new AppError('SHIPMENT_NOT_FOUND', 'Trámite no encontrado.', 404),
+  clientNotFound: () => new AppError('SHIPMENT_CLIENT_NOT_FOUND', 'El cliente indicado no existe.', 404),
+  /**
+   * El casillero de la sesion no se pudo resolver. Es un fallo de datos (usuario
+   * con rol client sin perfil de casillero), no del cliente: 500.
+   */
+  missingClientProfile: () =>
+    new AppError(
+      'CLIENT_PROFILE_MISSING',
+      'Tu cuenta no tiene un casillero asociado. Contacta a soporte.',
+      500,
+    ),
+  trackingInUse: (code: string) =>
+    new AppError(
+      'SHIPMENT_TRACKING_IN_USE',
+      `Ya existe un trámite activo con ese tracking (${code}).`,
+      409,
+    ),
+  fieldNotForType: () =>
+    new AppError(
+      'SHIPMENT_FIELD_NOT_FOR_TYPE',
+      'Alguno de los datos enviados no aplica a este tipo de trámite.',
+      400,
+    ),
+};
+
+/** Errores de los anuncios del portal (docs/manuales/roles.md §3). */
+export const AnnouncementErrors = {
+  notFound: () => new AppError('ANNOUNCEMENT_NOT_FOUND', 'Anuncio no encontrado.', 404),
+  invalidRange: () =>
+    new AppError(
+      'ANNOUNCEMENT_INVALID_RANGE',
+      'El fin de la vigencia debe ser posterior al inicio.',
+      400,
+    ),
 };
 
 /** Errores de la definicion de rutas (panel admin, permiso routes.manage). */

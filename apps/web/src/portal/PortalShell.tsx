@@ -6,22 +6,44 @@
  * recarga y botones atras/adelante funcionan.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { ROLE_LABELS, Resource, resourcesFor } from '@courier/shared';
+import { ROLE_LABELS, Resource, Role, resourcesFor } from '@courier/shared';
 import type { Me } from './PortalApp';
 import { api } from './lib/api';
 import { pathForResource, resourceFromPath } from './routes';
+import { AnnouncementBanners } from './components/AnnouncementBanners';
+import { AnnouncementsScreen } from './screens/AnnouncementsScreen';
 import { UsersScreen } from './screens/UsersScreen';
 import { CostServicesScreen } from './screens/CostServicesScreen';
+import { CostsScreen } from './screens/CostsScreen';
 import { TariffsScreen } from './screens/TariffsScreen';
 import { RoutesScreen } from './screens/RoutesScreen';
+import { PrealertScreen } from './screens/PrealertScreen';
+import { ShipmentsScreen } from './screens/ShipmentsScreen';
 
 interface NavItem { resource: Resource; label: string }
-const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
+
+/**
+ * Menu del titular de casillero. Va aparte del de staff porque comparten el
+ * recurso Package con etiquetas distintas: para el cliente son "sus" tramites,
+ * no la cola de operacion. Sin esta rama el rol client se quedaba SIN NINGUNA
+ * entrada de menu, porque Prealert no figuraba en los grupos de staff.
+ */
+const CLIENT_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
+  {
+    group: 'Mi casillero',
+    items: [
+      { resource: Resource.Prealert, label: 'Prealertar' },
+      { resource: Resource.Package, label: 'Mis trámites' },
+    ],
+  },
+];
+
+const STAFF_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   {
     group: 'Operación',
     items: [
       { resource: Resource.Dashboard, label: 'Resumen' },
-      { resource: Resource.Package, label: 'Paquetes' },
+      { resource: Resource.Package, label: 'Paquetería' },
       { resource: Resource.Costs, label: 'Costos' },
       { resource: Resource.Delivery, label: 'Entregas' },
       { resource: Resource.Clients, label: 'Clientes' },
@@ -43,16 +65,18 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
 ];
 
 export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => void }) {
+  const isClient = me.role === Role.Client;
+  const navGroups = isClient ? CLIENT_NAV_GROUPS : STAFF_NAV_GROUPS;
   const allowed = useMemo(() => resourcesFor(me.role), [me.role]);
   const visibleGroups = useMemo(
     () =>
-      NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => allowed.has(i.resource)) })).filter(
+      navGroups.map((g) => ({ ...g, items: g.items.filter((i) => allowed.has(i.resource)) })).filter(
         (g) => g.items.length > 0,
       ),
-    [allowed],
+    [allowed, navGroups],
   );
 
-  const firstResource = visibleGroups[0]?.items[0]?.resource ?? Resource.Users;
+  const firstResource = visibleGroups[0]?.items[0]?.resource ?? Resource.Package;
   const defaultResource = allowed.has(Resource.Users) ? Resource.Users : firstResource;
 
   // Pantalla inicial: la de la URL si el rol la permite; si no, la por defecto.
@@ -87,7 +111,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
 
   const roleLabel = ROLE_LABELS[me.role];
   const currentLabel =
-    NAV_GROUPS.flatMap((g) => g.items).find((i) => i.resource === current)?.label ?? 'Portal';
+    navGroups.flatMap((g) => g.items).find((i) => i.resource === current)?.label ?? 'Portal';
 
   async function logout() {
     try {
@@ -129,7 +153,8 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
             <span className="avatar">{initials(roleLabel)}</span>
             <span className="who">
               <div className="n">{roleLabel}</div>
-              <div className="r">Cuenta interna</div>
+              {/* "Cuenta interna" solo aplica a staff; al titular se le muestra su casillero. */}
+              <div className="r">{isClient ? (me.clientCode ?? 'Casillero') : 'Cuenta interna'}</div>
             </span>
           </div>
           <button className="side-logout" onClick={logout}>Cerrar sesión</button>
@@ -151,15 +176,30 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
           </button>
           <h2>{currentLabel}</h2>
         </header>
+        {/* Avisos del portal del cliente: fuera de <section.content> para que la
+            pila quede sticky bajo el topbar en todas las pantallas (§3.4.1). */}
+        <AnnouncementBanners enabled={me.role === Role.Client} />
         <section className="content">
-          {current === Resource.Users ? (
+          {current === Resource.Announcements ? (
+            <AnnouncementsScreen />
+          ) : current === Resource.Users ? (
             <UsersScreen />
           ) : current === Resource.Tariffs ? (
             <TariffsScreen />
           ) : current === Resource.CostServices ? (
             <CostServicesScreen />
+          ) : current === Resource.Costs ? (
+            <CostsScreen />
           ) : current === Resource.Routes ? (
             <RoutesScreen />
+          ) : current === Resource.Prealert ? (
+            <PrealertScreen />
+          ) : current === Resource.Package ? (
+            // Para el cliente, "sus" tramites (la API ya acota el listado);
+            // para staff, el tablero de Paqueteria con opcion de ver todos.
+            <ShipmentsScreen role={me.role} initialView={isClient ? 'propios' : 'paqueteria'} />
+          ) : current === Resource.Tramite ? (
+            <ShipmentsScreen role={me.role} initialView="transporte" />
           ) : (
             <div className="stub">
               <div className="big">{currentLabel}</div>

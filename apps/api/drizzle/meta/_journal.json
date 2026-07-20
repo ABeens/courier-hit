@@ -64,6 +64,20 @@
       "when": 1784513944536,
       "tag": "0008_flippant_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784539573116,
+      "tag": "0009_faithful_penance",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784575016183,
+      "tag": "0010_steep_excalibur",
+      "breakpoints": true
     }
   ]
 }
