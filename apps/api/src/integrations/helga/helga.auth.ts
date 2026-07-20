@@ -1,9 +1,11 @@
 /**
  * Token OAuth del proveedor Helga (docs/13 §2.A y §3.2).
  *
- * El token dura ~1 año, pero no se asume: se cachea con su vencimiento y se pide
- * de nuevo de forma perezosa. Las peticiones concurrentes comparten la misma
- * promesa para no emitir dos tokens a la vez.
+ * El manual dice que el token dura ~1 año, pero el ambiente real devuelve
+ * `expires_in: 3600` (1 hora, medido el 2026-07-20): no se asume nada, se cachea
+ * con el vencimiento que venga y se pide de nuevo de forma perezosa. Las
+ * peticiones concurrentes comparten la misma promesa para no emitir dos tokens
+ * a la vez.
  *
  * TODO(13): persistir el token y el `refresh_token` (tabla `provider_credentials`)
  * y usar el grant `refresh_token`. Hoy la cache es en memoria: al reiniciar la

@@ -9,6 +9,8 @@ import { ClientReviewStatus, Principal, Role, UserStatus, principalForRole } fro
 import type { AcceptInviteInput, LoginInput, RegisterInput, Session, VerifyInput } from '@courier/shared';
 import { config, isProd } from '../../core/config';
 import { AuthErrors } from '../../core/errors';
+import { mailer } from '../../core/mailer';
+import type { HelgaRecipient } from '../../integrations/helga/helga.client';
 import { createHelgaRecipient, isHelgaEnabled } from '../../integrations/helga/helga.client';
 import { tariffsRepo } from '../tariffs/tariffs.repo';
 import { authRepo } from './auth.repo';
@@ -58,7 +60,11 @@ export const authService = {
 
     // Se registra ante el proveedor primero: si falla, no dejamos rastro en
     // nuestra BD y el usuario puede reintentar con los mismos datos.
-    const helgaClientId = await this.registerWithProvider(input.email);
+    const helga = await this.registerWithProvider({
+      name: input.name,
+      idNumber: input.idNumber,
+      email: input.email,
+    });
 
     const passwordHash = await hash(input.password);
     const user = await authRepo.insertUser({
@@ -84,8 +90,9 @@ export const authService = {
       // Nace 'nuevo' (valor por defecto de la columna) para que un admin lo revise.
       reviewStatus: ClientReviewStatus.Nuevo,
       clientRateId: defaultRate.id,
-      helgaClientId,
-      helgaSyncedAt: helgaClientId ? new Date() : null,
+      helgaClientId: helga?.id ?? null,
+      helgaSubLocker: helga?.subLocker ?? null,
+      helgaSyncedAt: helga ? new Date() : null,
     });
 
     await this.issueVerificationCode(user.id, user.email);
@@ -93,12 +100,17 @@ export const authService = {
   },
 
   /**
-   * Registra el casillero ante Helga y devuelve su id, o `null` si la
-   * integracion esta apagada (desarrollo: la IP local no esta en la lista
-   * blanca del proveedor). Si esta encendida y falla, propaga el error y aborta
-   * el registro.
+   * Registra el casillero ante Helga y devuelve su id y su sub-casillero, o
+   * `null` si la integracion esta apagada (en local no se enciende para no crear
+   * destinatarios reales en cada prueba). Si esta encendida y falla, propaga el
+   * error y aborta el registro.
    */
-  async registerWithProvider(email: string): Promise<string | null> {
+  async registerWithProvider(input: {
+    name: string;
+    idNumber: string;
+    email: string;
+  }): Promise<HelgaRecipient | null> {
+    const { email } = input;
     if (!isHelgaEnabled()) {
       // TODO(13): encender HELGA_ENABLED cuando la IP fija del backend este en
       // la whitelist. Mientras, el casillero queda sin enlazar y hara falta un
@@ -106,7 +118,11 @@ export const authService = {
       if (!isProd) console.log(`[auth] Helga deshabilitado: casillero de ${email} sin enlazar.`);
       return null;
     }
-    return createHelgaRecipient(email);
+    return createHelgaRecipient({
+      fullName: input.name,
+      idNumber: input.idNumber,
+      realEmail: email,
+    });
   },
 
   /** Genera y guarda (hasheado) un codigo de 6 digitos; "envia" por email. */
@@ -116,8 +132,21 @@ export const authService = {
     await authRepo.deleteVerifications(userId); // invalida codigos anteriores
     await authRepo.insertVerification({ userId, codeHash: sha256(code), expiresAt });
 
-    // TODO(09/email): integrar envio real. En dev lo mostramos por consola.
-    if (!isProd) console.log(`[auth] código de verificación para ${email}: ${code}`);
+    await mailer.send({
+      to: email,
+      subject: 'Verifica tu correo — HS Global Courier',
+      body: [
+        'Bienvenido(a) a HS Global Courier.',
+        '',
+        `Tu código de verificación es: ${code}`,
+        '',
+        `El código vence en ${config.EMAIL_CODE_TTL_MINUTES} minutos.`,
+        'Si no creaste esta cuenta, ignora este mensaje.',
+        '',
+        'Saludos cordiales,',
+        'Equipo HS Global',
+      ].join('\n'),
+    });
   },
 
   /** Confirma el codigo y activa la cuenta (sella email_verified_at). */
@@ -150,14 +179,25 @@ export const authService = {
     await authRepo.insertPasswordReset({ userId, tokenHash: sha256(token), purpose: 'invite', expiresAt });
 
     const link = `${config.WEB_ORIGIN}/invitacion?token=${token}`;
-    // TODO(09/email): enviar este enlace por correo (SES). Mientras no hay SMTP, en
-    // dev lo imprimimos y lo devolvemos para mostrarlo en la UI. En prod NUNCA sale
-    // del servidor: el token viaja solo por el correo.
-    if (!isProd) {
-      console.log(`\n[auth] Invitación para ${email}:\n  ${link}\n`);
-      return link;
-    }
-    return null;
+    await mailer.send({
+      to: email,
+      subject: 'Tu acceso al panel de HS Global Courier',
+      body: [
+        'Se creó una cuenta para ti en el panel de HS Global Courier.',
+        '',
+        'Define tu contraseña en el siguiente enlace:',
+        link,
+        '',
+        `El enlace vence en ${config.INVITE_TTL_HOURS} horas.`,
+        '',
+        'Saludos cordiales,',
+        'Equipo HS Global',
+      ].join('\n'),
+    });
+
+    // En desarrollo se devuelve para mostrarlo en la UI y no depender de leer el
+    // log. En produccion NUNCA sale del servidor: el token viaja solo por correo.
+    return isProd ? null : link;
   },
 
   /** Fija la contrasena desde un token de invitacion/reset y deja la cuenta lista. */

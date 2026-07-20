@@ -11,6 +11,9 @@ import * as tariffsSchema from '../modules/tariffs/tariffs.schema';
 import * as routesSchema from '../modules/routes/district-route.schema';
 import * as announcementsSchema from '../modules/announcements/announcement.schema';
 import * as shipmentsSchema from '../modules/shipments/shipments.schema';
+import * as shipmentCostsSchema from '../modules/costs/shipment-cost.schema';
+import * as paymentsSchema from '../modules/payments/payments.schema';
+import * as deliveriesSchema from '../modules/deliveries/deliveries.schema';
 
 const client = postgres(config.DATABASE_URL);
 
@@ -20,6 +23,9 @@ export const schema = {
   ...tariffsSchema,
   ...routesSchema,
   ...shipmentsSchema,
+  ...shipmentCostsSchema,
+  ...paymentsSchema,
+  ...deliveriesSchema,
   ...announcementsSchema,
 };
 export const db = drizzle(client, { schema });

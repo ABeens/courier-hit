@@ -11,6 +11,7 @@
  * Paqueteria; quien tiene tramite.manage ve los manuales. La API revalida.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { ModalOverlay } from '../components/ModalOverlay';
 import {
   MANUAL_SHIPMENT_TYPES,
   Permission,
@@ -164,8 +165,8 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
   }
 
   return (
-    <div className="overlay" onMouseDown={onClose}>
-      <form className="modal fadeUp" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
+    <ModalOverlay onClose={onClose}>
+      <form className="modal modal-lg fadeUp" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal-head">
           <h3>{mode === 'create' ? 'Nuevo trámite' : `Editar trámite ${row?.code}`}</h3>
           <p>
@@ -175,8 +176,8 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
           </p>
         </div>
 
-        <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
+        <div className="modal-body modal-form">
+          {error && <div className="banner err col-full">{error}</div>}
 
           <div>
             <label className="field-label" htmlFor="t-type">Trámite</label>
@@ -197,7 +198,7 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
           </div>
 
           {mode === 'create' ? (
-            <div>
+            <div className="col-full">
               <label className="field-label" htmlFor="t-client">Cliente</label>
               <input
                 className="input" placeholder="Buscar por nombre, casillero o cédula…"
@@ -217,7 +218,7 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
               </select>
             </div>
           ) : (
-            <div>
+            <div className="col-full">
               <label className="field-label">Cliente</label>
               <div className="input" style={{ background: 'var(--paper-2)' }}>
                 {row?.client.code} — {row?.client.name}
@@ -247,47 +248,43 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
 
           {isPackage ? (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label className="field-label" htmlFor="t-store">Tienda</label>
-                  <select id="t-store" className="input" value={store} onChange={(e) => setStore(e.target.value)}>
-                    <option value="">Elige…</option>
-                    {STORES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="field-label" htmlFor="t-carrier">Transportista</label>
-                  <select id="t-carrier" className="input" value={carrier} onChange={(e) => setCarrier(e.target.value)}>
-                    <option value="">Elige…</option>
-                    {CARRIERS.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
+              <div>
+                <label className="field-label" htmlFor="t-store">Tienda</label>
+                <select id="t-store" className="input" value={store} onChange={(e) => setStore(e.target.value)}>
+                  <option value="">Elige…</option>
+                  {STORES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="field-label" htmlFor="t-carrier">Transportista</label>
+                <select id="t-carrier" className="input" value={carrier} onChange={(e) => setCarrier(e.target.value)}>
+                  <option value="">Elige…</option>
+                  {CARRIERS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label className="field-label" htmlFor="t-hawb">HAWB / HBL</label>
-                  <input
-                    id="t-hawb" className="input" inputMode="numeric" value={hawb}
-                    placeholder="Solo números" onChange={(e) => setHawb(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="field-label" htmlFor="t-weight">Peso (kg)</label>
-                  <input
-                    id="t-weight" className="input" type="number" min="0" step="0.01" value={weight}
-                    onChange={(e) => setWeight(e.target.value)}
-                  />
-                  {weightPreview !== null && (
-                    <div className="field-hint">Se guardará como {weightPreview} kg (siempre redondea hacia arriba).</div>
-                  )}
-                </div>
+              <div>
+                <label className="field-label" htmlFor="t-hawb">HAWB / HBL</label>
+                <input
+                  id="t-hawb" className="input" inputMode="numeric" value={hawb}
+                  placeholder="Solo números" onChange={(e) => setHawb(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="t-weight">Peso (kg)</label>
+                <input
+                  id="t-weight" className="input" type="number" min="0" step="0.01" value={weight}
+                  onChange={(e) => setWeight(e.target.value)}
+                />
+                {weightPreview !== null && (
+                  <div className="field-hint">Se guardará como {weightPreview} kg (siempre redondea hacia arriba).</div>
+                )}
               </div>
             </>
           ) : (
             <>
               {mode === 'edit' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <>
                   <div>
                     <label className="field-label" htmlFor="t-warehouse">Almacén</label>
                     <input
@@ -302,9 +299,9 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
                       onChange={(e) => setDua(e.target.value)}
                     />
                   </div>
-                </div>
+                </>
               )}
-              <div>
+              <div className="col-full">
                 <label className="field-label" htmlFor="t-notes">Notas para facturar</label>
                 <textarea
                   id="t-notes" className="input" rows={3} value={billingNotes}
@@ -312,7 +309,7 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
                 />
               </div>
               {mode === 'create' && (
-                <div className="banner ok" style={{ background: 'var(--paper-2)', color: 'var(--muted)' }}>
+                <div className="banner ok col-full" style={{ background: 'var(--paper-2)', color: 'var(--muted)' }}>
                   El almacén y el DUA se completan al editar el trámite, una vez guardado.
                 </div>
               )}
@@ -329,6 +326,6 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
           </button>
         </div>
       </form>
-    </div>
+    </ModalOverlay>
   );
 }

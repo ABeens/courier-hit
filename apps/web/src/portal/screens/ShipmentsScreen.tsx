@@ -31,6 +31,7 @@ import type { Role, ShipmentDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { formatDate, startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
 import { ShipmentFormModal } from './ShipmentFormModal';
+import { PaymentModal } from './PaymentModal';
 
 /** Que tablero se esta mirando. */
 export type ShipmentView = 'paqueteria' | 'transporte' | 'todos' | 'propios';
@@ -104,6 +105,91 @@ const STATE_TONE: Record<State, Tone> = {
   [State.DevueltoBodega]: 'danger',
 };
 
+interface CardField {
+  label: string;
+  value: string | null;
+  mono?: boolean;
+}
+
+/** Bloque tematico dentro de una ficha. */
+interface CardSection {
+  title: string;
+  fields: CardField[];
+  /** Resalta el bloque como importe a cobrar. */
+  money?: boolean;
+}
+
+/** Etiqueta de la guia segun el tipo: tracking en Paqueteria, AWB/BL en el resto. */
+function trackingField(row: ShipmentDto): CardField {
+  return {
+    label: usesPackageFields(row.shipmentType) ? 'Tracking' : 'Tracking (AWB/BL)',
+    value: row.tracking,
+    mono: true,
+  };
+}
+
+/**
+ * Bloque de facturacion, o `null` si el tramite todavia no tiene costos
+ * aprobados. El manual pide el monto "($ y ₡)": van como dos campos, no como
+ * una cadena, para que cada moneda se lea sola.
+ */
+function moneySection(row: ShipmentDto): CardSection | null {
+  if (row.invoiceTotalUsd == null || row.invoiceTotalCrc == null) return null;
+  return {
+    title: 'Facturación',
+    money: true,
+    fields: [
+      { label: 'Dólares', value: formatMoney(row.invoiceTotalUsd, Currency.USD) },
+      { label: 'Colones', value: formatMoney(row.invoiceTotalCrc, Currency.CRC) },
+    ],
+  };
+}
+
+/**
+ * Secciones de una ficha, a la medida de lo que necesita cada tablero.
+ *
+ * No hay un juego unico de campos: Paqueteria se revisa por compra y guia
+ * (¿de que tienda viene?, ¿que transportista lo trae?, ¿cuanto pesa?), mientras
+ * que Transporte y Agenciamiento se revisan por documentacion aduanal (DUA,
+ * almacen). Los tableros mixtos se quedan con lo comun para no inventar
+ * columnas que la mitad de las filas no tiene.
+ */
+function sectionsFor(row: ShipmentDto, view: ShipmentView): CardSection[] {
+  const money = moneySection(row);
+  const entrega: CardField = {
+    label: 'Ruta',
+    value: row.routeNumber != null ? `Ruta ${row.routeNumber}` : null,
+  };
+
+  if (view === 'paqueteria') {
+    return [
+      { title: 'Guías', fields: [trackingField(row), { label: 'HAWB/HBL', value: row.hawb, mono: true }] },
+      { title: 'Compra', fields: [{ label: 'Tienda', value: row.store }, { label: 'Transportista', value: row.carrier }] },
+      {
+        title: 'Logística',
+        fields: [{ label: 'Peso', value: row.weightKg != null ? `${row.weightKg} kg` : null }, entrega],
+      },
+      ...(money ? [money] : []),
+    ];
+  }
+
+  if (view === 'transporte') {
+    return [
+      { title: 'Guías', fields: [trackingField(row)] },
+      { title: 'Aduana', fields: [{ label: 'DUA', value: row.dua, mono: true }, { label: 'Almacén', value: row.warehouse }] },
+      { title: 'Entrega', fields: [entrega] },
+      ...(money ? [money] : []),
+    ];
+  }
+
+  // 'todos' y 'propios': conviven paquetes y trámites, así que solo lo común.
+  return [
+    { title: 'Guías', fields: [trackingField(row)] },
+    { title: 'Entrega', fields: [entrega] },
+    ...(money ? [money] : []),
+  ];
+}
+
 interface Props {
   role: Role;
   /** Vista inicial; en el tablero de paquetes el usuario puede alternar a "Todos". */
@@ -120,9 +206,11 @@ export function ShipmentsScreen({ role, initialView }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; row: ShipmentDto } | null>(null);
+  const [paying, setPaying] = useState<ShipmentDto | null>(null);
 
   const isOwn = view === 'propios';
   const canWrite = can(role, Permission.PackageWrite) || can(role, Permission.TramiteManage);
+  const canPay = can(role, Permission.PackagePay);
 
   useEffect(() => setView(initialView), [initialView]);
 
@@ -225,9 +313,12 @@ export function ShipmentsScreen({ role, initialView }: Props) {
               <div className="card-item-ident">
                 <span className="card-item-code">{row.code}</span>
                 <div className="card-item-title">{row.description}</div>
+                {/* La fecha de ingreso vive aquí, con la identidad: es cuándo
+                    entró el trámite, no un dato operativo de ningún bloque. */}
                 <div className="card-item-sub">
                   {SHIPMENT_TYPE_LABELS[row.shipmentType]}
                   {!isOwn && ` · ${row.client.code} — ${row.client.name}`}
+                  {` · Ingresó ${formatDate(row.createdAt)}`}
                 </div>
               </div>
               <div className="card-item-aside">
@@ -237,48 +328,45 @@ export function ShipmentsScreen({ role, initialView }: Props) {
                     Editar
                   </button>
                 )}
+                {/* El cobro solo tiene sentido con la factura ya aprobada, que es
+                    justo lo que significa "En bodega - Pendiente pago". */}
+                {canPay && row.state === State.EnBodegaPendientePago && (
+                  <button className="btn btn-primary btn-sm" onClick={() => setPaying(row)}>
+                    Pagar
+                  </button>
+                )}
               </div>
             </div>
 
-            <dl className="card-item-fields">
-              {/* La etiqueta sale del TIPO de la fila, no de la vista: en los
-                  tableros mixtos conviven paquetes y trámites de transporte. */}
-              <Field
-                label={usesPackageFields(row.shipmentType) ? 'Tracking' : 'Tracking (AWB/BL)'}
-                value={row.tracking}
-                mono
-              />
-              {view === 'paqueteria' && (
-                <>
-                  <Field label="Tienda" value={row.store} />
-                  <Field label="Transportista" value={row.carrier} />
-                  <Field label="HAWB/HBL" value={row.hawb} mono />
-                  <Field label="Peso" value={row.weightKg != null ? `${row.weightKg} kg` : null} />
-                </>
-              )}
-              {view === 'transporte' && (
-                <>
-                  <Field label="Almacén" value={row.warehouse} />
-                  <Field label="DUA" value={row.dua} mono />
-                </>
-              )}
-              <Field label="Ruta" value={row.routeNumber != null ? `Ruta ${row.routeNumber}` : null} />
-              {/* Las dos monedas juntas: el manual pide "Monto de Factura ($ y ₡)". */}
-              <Field
-                label="Monto de factura"
-                value={
-                  row.invoiceTotalUsd != null && row.invoiceTotalCrc != null
-                    ? `${formatMoney(row.invoiceTotalUsd, Currency.USD)} · ${formatMoney(row.invoiceTotalCrc, Currency.CRC)}`
-                    : null
-                }
-              />
-              <Field label="Fecha ingreso" value={formatDate(row.createdAt)} />
-            </dl>
+            <div className="card-item-body">
+              {sectionsFor(row, view).map((section) => (
+                <section className={`card-sec${section.money ? ' is-money' : ''}`} key={section.title}>
+                  <div className="card-sec-title">{section.title}</div>
+                  <dl className="card-sec-fields">
+                    {section.fields.map((f) => (
+                      <Field key={f.label} label={f.label} value={f.value} mono={f.mono} />
+                    ))}
+                  </dl>
+                </section>
+              ))}
+            </div>
           </article>
         ))}
       </div>
 
       {data && data.items.length === 0 && <div className="empty">No hay trámites que coincidan.</div>}
+
+      {paying && (
+        <PaymentModal
+          shipment={paying}
+          onClose={() => setPaying(null)}
+          onPaid={() => {
+            setPaying(null);
+            setNotice('Registramos tu pago. Queda pendiente de validación.');
+            void load();
+          }}
+        />
+      )}
 
       {modal && (
         <ShipmentFormModal

@@ -2,19 +2,32 @@
  * Valores fijos que viajan al proveedor Helga y derivacion del correo falso.
  * Fuente: docs/13-integracion-proveedor-helga.md §3.6 (regla dura del proyecto).
  *
- * Regla: el destinatario que registramos en Helga NO son los datos reales del
- * cliente. Es SIEMPRE la direccion de consolidacion de HS Global en Costa Rica,
- * y el correo es inventado a partir del real. El contacto real del cliente vive
- * solo en nuestra BD y jamas se propaga al proveedor.
+ * Regla: hacia Helga viaja la IDENTIDAD real del cliente (nombre, apellidos y
+ * cedula) pero NUNCA su CONTACTO ni su UBICACION. El telefono y la direccion son
+ * siempre los de consolidacion de HS Global en Costa Rica, y el correo es
+ * inventado a partir del real. Telefono, direccion y correo reales viven solo en
+ * nuestra BD y jamas se propagan al proveedor.
+ *
+ * La identidad tiene que ser real por dos razones: el paquete se entrega contra
+ * documento de identidad, y Helga exige que el nombre del destinatario sea unico
+ * dentro de la cuenta (un nombre fijo solo permitiria un cliente).
  */
 import { createHash } from 'node:crypto';
 
 /**
- * Datos de consolidacion de HS Global. Ninguno depende del cliente.
+ * Datos de consolidacion de HS Global: el CONTACTO y la UBICACION que sustituyen
+ * a los del cliente. Ninguno depende del cliente. El nombre y la cedula del
+ * destinatario NO salen de aqui: son los reales del cliente.
  *
- * TODO(13): confirmar contra la captura de la UI del proveedor (los "recuadros
- * en rojo") que esta es la lista completa y que ningun otro campo varia por
- * cliente. Hoy lo unico variable es `email` (ver `helgaEmailFor`).
+ * `firstName`/`lastName` describen a la persona de contacto de HS Global; se
+ * conservan como referencia del dato de negocio, pero la op. D ya no los usa.
+ *
+ * Nota: la ficha real de nuestra cuenta en el proveedor
+ * (`GET /api/casillero/clientes`, 2026-07-20) trae otros valores para algunos
+ * de estos campos: `codigo_casillero: "SJO008835"`, identificacion juridica
+ * `3102869317`, telefono `72023637` y la direccion larga "200 MTS. DE LA
+ * GUARDIA DE ASISTENCIA RURAL RIO SEGUNDO ALAJUELA". Mandan los valores de
+ * negocio de esta constante; la diferencia queda anotada, no aplicada.
  */
 export const HELGA_FIXED_RECIPIENT = {
   name: 'HS GLOBAL SERVICES',
@@ -33,27 +46,70 @@ export const HELGA_FIXED_RECIPIENT = {
 } as const;
 
 /**
+ * Tipo de identificacion de Helga para una persona fisica costarricense
+ * (`tipo_de_identificacion_id: 1` = "CEDULA DE CIUDADANIA" en su catalogo).
+ */
+export const HELGA_ID_TYPE_CEDULA = 1;
+
+/** Nombre partido como lo pide Helga (dos nombres + dos apellidos). */
+export interface SplitName {
+  firstName: string;
+  secondName: string;
+  lastName: string;
+  secondLastName: string;
+}
+
+/**
+ * Parte el `name` de una sola linea de nuestro registro en los cuatro campos de
+ * Helga. Es una heuristica: asume el orden costarricense
+ * `nombre(s) apellido apellido`, que es lo que pide el formulario de alta.
+ *
+ * - 4+ palabras: dos nombres y dos apellidos (el resto se acumula en el segundo
+ *   apellido, para no perder informacion de nombres compuestos largos).
+ * - 3 palabras: un nombre y dos apellidos.
+ * - 2 palabras: un nombre y un apellido.
+ * - 1 palabra: Helga exige `primer_apellido`, asi que se repite la unica que hay.
+ *
+ * TODO(13): si el alta pasa a pedir nombre y apellidos por separado, esta
+ * heuristica sobra y hay que borrarla.
+ */
+export function splitPersonName(fullName: string): SplitName {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  const [first = '', second = '', third = '', ...rest] = parts;
+
+  if (parts.length >= 4) {
+    return { firstName: first, secondName: second, lastName: third, secondLastName: rest.join(' ') };
+  }
+  if (parts.length === 3) {
+    return { firstName: first, secondName: '', lastName: second, secondLastName: third };
+  }
+  if (parts.length === 2) {
+    return { firstName: first, secondName: '', lastName: second, secondLastName: '' };
+  }
+  return { firstName: first, secondName: '', lastName: first, secondLastName: '' };
+}
+
+/**
  * Ids geograficos DE HELGA para la direccion fija. Helga no acepta los codigos
  * del catalogo de Costa Rica de `@courier/shared/geo`: usa su propia tabla.
  * Como la direccion es fija, basta resolverlos una sola vez.
  *
- * TODO(13): resolver contra el proveedor `departamento_id` (Alajuela) y
- * `ciudad_id` (Río Segundo) y fijarlos aqui. Sin ellos la operacion D falla con
- * 422; por eso `HELGA_ENABLED` viene apagado por defecto.
+ * Resueltos en vivo (2026-07-20) desde `GET /api/casillero/clientes`, que
+ * devuelve la ficha de nuestra propia cuenta: Alajuela / Río Segundo.
  */
 export const HELGA_FIXED_GEO = {
-  departamentoId: null as number | null,
-  ciudadId: null as number | null,
+  departamentoId: 163 as number | null,
+  ciudadId: 40933 as number | null,
 };
 
 /**
  * Cuenta de HS Global en Helga bajo la que cuelgan los destinatarios (campo
  * `cliente_id` de la operacion D).
  *
- * TODO(13): confirmar con el proveedor el `cliente_id` que corresponde al
- * casillero `SJO0008835S016`.
+ * Resuelto en vivo (2026-07-20): `GET /api/casillero/clientes` -> `datos.id`.
+ * El proveedor conoce ese casillero como `SJO008835`.
  */
-export const HELGA_ACCOUNT_CLIENT_ID: number | null = null;
+export const HELGA_ACCOUNT_CLIENT_ID: number | null = 7536;
 
 /** Dominio propio sobre el que se inventan los correos que ve el proveedor. */
 export const HELGA_FAKE_EMAIL_DOMAIN = 'hsglobalcliente.com';

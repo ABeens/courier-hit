@@ -25,6 +25,11 @@ const columns = {
   addressLine: clients.addressLine,
   reviewStatus: clients.reviewStatus,
   clientRateName: clientRates.name,
+  clientRateId: clients.clientRateId,
+  creditLimit: clients.creditLimit,
+  creditLimitCurrency: clients.creditLimitCurrency,
+  /** Sub-casillero que asigna el proveedor; es la direccion real en Miami. */
+  helgaSubLocker: clients.helgaSubLocker,
   createdAt: clients.createdAt,
 };
 
@@ -69,9 +74,47 @@ export const clientsRepo = {
     return row ?? null;
   },
 
+  /**
+   * Actualiza el perfil del casillero. `clients` la declara el modulo auth, pero
+   * la edicion comercial (tarifa, limite de credito, flag de revision) es
+   * responsabilidad de este modulo: es quien la expone al panel.
+   */
+  async update(id: string, patch: Partial<typeof clients.$inferInsert>) {
+    await db.update(clients).set(patch).where(eq(clients.id, id));
+  },
+
+  /** Enlace del casillero con el proveedor; null si aun no se registro alli. */
+  async providerLinkFor(clientId: string) {
+    const [row] = await db
+      .select({ helgaClientId: clients.helgaClientId })
+      .from(clients)
+      .where(eq(clients.id, clientId))
+      .limit(1);
+    return row ?? null;
+  },
+
   async count() {
     const [row] = await db.select({ n: count() }).from(clients);
     return row?.n ?? 0;
+  },
+
+  /**
+   * Medios de pago que admite la tarifa del casillero. El manual los trata como
+   * una propiedad de la TARIFA, no del cliente ("Si el cliente esta asociado a
+   * una tarifa que no permite pago por tarjeta de credito no debe mostrar esa
+   * opcion"), asi que se leen de ahi. Null si el casillero quedo sin tarifa.
+   */
+  async paymentOptionsFor(clientId: string) {
+    const [row] = await db
+      .select({
+        allowsCard: clientRates.allowsCard,
+        allowsBankDeposit: clientRates.allowsBankDeposit,
+      })
+      .from(clients)
+      .innerJoin(clientRates, eq(clients.clientRateId, clientRates.id))
+      .where(eq(clients.id, clientId))
+      .limit(1);
+    return row ?? null;
   },
 
   /**

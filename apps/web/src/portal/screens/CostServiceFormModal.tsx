@@ -7,6 +7,7 @@
  * En editar solo envia lo que cambio.
  */
 import { useState } from 'react';
+import { ModalOverlay } from '../components/ModalOverlay';
 import {
   CURRENCY_LABELS,
   Currency,
@@ -118,7 +119,7 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
   }
 
   return (
-    <div className="overlay" onMouseDown={onClose}>
+    <ModalOverlay onClose={onClose}>
       <form className="modal fadeUp" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal-head">
           <h3>{mode === 'create' ? 'Nuevo servicio' : 'Editar servicio'}</h3>
@@ -168,11 +169,7 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
           </div>
 
           {needsValue ? (
-            <div
-              style={
-                needsCurrency ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } : undefined
-              }
-            >
+            <div className={needsCurrency ? 'field-pair' : undefined}>
               <div>
                 <label className="field-label" htmlFor="s-value">
                   {valueType === ServiceValueType.Percentage ? 'Porcentaje por defecto (%)' : 'Monto por defecto'}
@@ -220,6 +217,6 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
           </button>
         </div>
       </form>
-    </div>
+    </ModalOverlay>
   );
 }

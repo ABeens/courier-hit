@@ -4,6 +4,7 @@
  * En editar: envia solo los campos cambiados. El correo es el login: fijo al editar.
  */
 import { useState } from 'react';
+import { ModalOverlay } from '../components/ModalOverlay';
 import { ROLE_LABELS, Role, STAFF_ROLES, createStaffSchema } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import type { StaffRow } from './UsersScreen';
@@ -71,7 +72,7 @@ export function StaffFormModal({ mode, row, onClose, onSaved }: Props) {
   }
 
   return (
-    <div className="overlay" onMouseDown={onClose}>
+    <ModalOverlay onClose={onClose}>
       <form className="modal fadeUp" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal-head">
           <h3>{mode === 'create' ? 'Crear usuario' : 'Editar usuario'}</h3>
@@ -82,8 +83,8 @@ export function StaffFormModal({ mode, row, onClose, onSaved }: Props) {
           </p>
         </div>
 
-        <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
+        <div className="modal-body modal-form">
+          {error && <div className="banner err col-full">{error}</div>}
 
           <div>
             <label className="field-label" htmlFor="f-name">Nombre completo</label>
@@ -122,6 +123,6 @@ export function StaffFormModal({ mode, row, onClose, onSaved }: Props) {
           </button>
         </div>
       </form>
-    </div>
+    </ModalOverlay>
   );
 }

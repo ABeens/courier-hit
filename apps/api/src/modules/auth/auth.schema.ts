@@ -7,6 +7,7 @@ import { sql } from 'drizzle-orm';
 import {
   check,
   date,
+  doublePrecision,
   index,
   integer,
   pgEnum,
@@ -24,6 +25,7 @@ import {
   USER_STATUS_VALUES,
   UserStatus,
 } from '@courier/shared';
+import { currencyEnum } from '../../core/currency.schema';
 import { clientRates } from '../tariffs/tariffs.schema';
 
 export const principalEnum = pgEnum('principal', PRINCIPAL_VALUES);
@@ -88,8 +90,22 @@ export const clients = pgTable('clients', {
    * default, y un casillero sin tarifa es preferible a perder el casillero.
    */
   clientRateId: uuid('client_rate_id').references(() => clientRates.id, { onDelete: 'set null' }),
+  /**
+   * Limite de credito (Parte 3, "Editar Cliente"). Techo de politica comercial,
+   * no un monto transaccional: lleva moneda explicita (regla M2) pero NO tasa de
+   * cambio, igual que `client_rates.price_per_kg`. Ver money-rules.config.json.
+   * `null` = sin limite definido, distinto de 0 (no fiarle nada).
+   */
+  creditLimit: doublePrecision('credit_limit'),
+  creditLimitCurrency: currencyEnum('credit_limit_currency'),
   /** Enlace con el proveedor: id del cliente/destinatario en Helga (docs/13). */
   helgaClientId: text('helga_client_id').unique(),
+  /**
+   * `sub_casillero` que asigna Helga (p. ej. `SJO008835S033`): la direccion con
+   * la que el cliente recibe en Miami. Es lo que debe ver en el portal y usar al
+   * comprar; sin el, su paquete llega a la cuenta de HS Global sin dueño.
+   */
+  helgaSubLocker: text('helga_sub_locker'),
   helgaSyncedAt: timestamp('helga_synced_at', { withTimezone: true }),
   memberSince: date('member_since'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

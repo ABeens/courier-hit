@@ -7,6 +7,7 @@
  * archivo: el contrato con la API es siempre ISO 8601 en UTC.
  */
 import { useState } from 'react';
+import { ModalOverlay } from '../components/ModalOverlay';
 import {
   ANNOUNCEMENT_MESSAGE_MAX,
   ANNOUNCEMENT_TITLE_MAX,
@@ -118,7 +119,7 @@ export function AnnouncementFormModal({ mode, row, onClose, onSaved }: Props) {
   }
 
   return (
-    <div className="overlay" onMouseDown={onClose}>
+    <ModalOverlay onClose={onClose}>
       <form className="modal fadeUp" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal-head">
           <h3>{mode === 'create' ? 'Nuevo anuncio' : 'Editar anuncio'}</h3>
@@ -194,6 +195,6 @@ export function AnnouncementFormModal({ mode, row, onClose, onSaved }: Props) {
           </button>
         </div>
       </form>
-    </div>
+    </ModalOverlay>
   );
 }

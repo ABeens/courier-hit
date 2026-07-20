@@ -6,6 +6,16 @@
 import { z } from 'zod';
 import { isValidLocation } from '../geo/costa-rica';
 
+/** Nombre completo de una persona (cliente o staff). */
+export const nameSchema = z.string().trim().min(1, 'El nombre es obligatorio.');
+
+/** Correo: normalizado a minusculas porque ademas es el usuario de login. */
+export const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .email('Correo electrónico inválido.');
+
 /**
  * Cedula: se guarda normalizada a solo digitos. Costa Rica usa 9 digitos para la
  * cedula fisica, 10 para la juridica y 11-12 para DIMEX/extranjeros, asi que el
@@ -74,9 +84,9 @@ export type DeliveryAddressInput = z.infer<typeof deliveryAddressSchema>;
  */
 export const registerSchema = z
   .object({
-    name: z.string().trim().min(1, 'El nombre es obligatorio.'),
+    name: nameSchema,
     idNumber: idNumberSchema,
-    email: z.string().trim().toLowerCase().email('Correo electrónico inválido.'),
+    email: emailSchema,
     phone: phoneSchema,
     ...deliveryAddressShape,
     password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres.'),
@@ -88,14 +98,14 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 
 /** Confirmacion del codigo de 6 digitos enviado por email. */
 export const verifySchema = z.object({
-  email: z.string().trim().toLowerCase().email('Correo electrónico inválido.'),
+  email: emailSchema,
   code: z.string().regex(/^\d{6}$/, 'El código son 6 dígitos.'),
 });
 export type VerifyInput = z.infer<typeof verifySchema>;
 
 /** Login unico: customer y staff comparten mecanismo (docs/04 §2). */
 export const loginSchema = z.object({
-  email: z.string().trim().toLowerCase().email('Correo electrónico inválido.'),
+  email: emailSchema,
   password: z.string().min(1, 'La contraseña es obligatoria.'),
 });
 export type LoginInput = z.infer<typeof loginSchema>;

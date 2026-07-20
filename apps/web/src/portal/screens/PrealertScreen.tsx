@@ -121,7 +121,7 @@ export function PrealertScreen({ onCreated }: { onCreated?: () => void }) {
         </div>
 
         {isPackage && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="field-pair">
             <div>
               <label className="field-label" htmlFor="p-store">Tienda</label>
               <select id="p-store" className="input" value={store} onChange={(e) => setStore(e.target.value)}>

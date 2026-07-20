@@ -78,6 +78,20 @@
       "when": 1784575016183,
       "tag": "0010_steep_excalibur",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784582463746,
+      "tag": "0011_huge_invisible_woman",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784584670082,
+      "tag": "0012_wealthy_demogoblin",
+      "breakpoints": true
     }
   ]
 }

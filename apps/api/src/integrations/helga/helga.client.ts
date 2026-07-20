@@ -3,10 +3,14 @@
  * interna: nunca se expone al navegador. Todas las llamadas salen del backend,
  * cuya IP esta en la lista blanca del proveedor, con un `Origin` registrado.
  *
- * Implementado hoy: op. D (crear destinatario casillero), que es lo que necesita
- * la creacion de casillero.
- * TODO(13): ops. B (consulta-estado), C (prealertas v2) y E (paqs. disponibles)
- * cuando exista el modulo `packages`.
+ * Operaciones: A (token, en `helga.auth`), B (consulta de estado), C (prealerta
+ * v2), D (crear destinatario casillero) y E (paquetes disponibles).
+ *
+ * TODO(13): B, C y E estan escritas contra los PDF del manual pero NO se han
+ * podido ejercitar: la IP del backend todavia no esta en la lista blanca del
+ * proveedor. Al habilitarla hay que verificar las rutas y los nombres de los
+ * campos contra respuestas reales. Mientras `HELGA_ENABLED` sea false, nada de
+ * esto se invoca y el sistema opera solo con sus propios estados.
  */
 import { config } from '../../core/config';
 import { ProviderErrors } from '../../core/errors';
@@ -15,9 +19,18 @@ import {
   HELGA_ACCOUNT_CLIENT_ID,
   HELGA_FIXED_GEO,
   HELGA_FIXED_RECIPIENT,
+  HELGA_ID_TYPE_CEDULA,
   helgaEmailFor,
+  splitPersonName,
 } from './helga.constants';
-import type { HelgaCreateRecipientRequest, HelgaEnvelope } from './helga.types';
+import type {
+  HelgaCreatePrealertRequest,
+  HelgaCreateRecipientRequest,
+  HelgaEnvelope,
+  HelgaPackage,
+  HelgaPrealertResponse,
+  HelgaRecipientResponse,
+} from './helga.types';
 import { normalizeEnvelope } from './helga.types';
 
 /** True si la integracion esta encendida y configurada. */
@@ -47,12 +60,11 @@ async function post<T>(path: string, body: unknown): Promise<T | undefined> {
         Authorization: `Bearer ${token}`,
         // Sin un Origin registrado, Helga responde 403 "Acceso denegado".
         ...(config.HELGA_ORIGIN ? { Origin: config.HELGA_ORIGIN } : {}),
-        // TODO(13): el manual del proveedor NO documenta cómo viaja el app_id.
-        // Solo lo menciona al describir el 403 ("el app_id no es el correcto o
-        // el Origin no está registrado"), y su bloque de cabeceras únicamente
-        // lista Accept, Authorization y Origin. `X-App-Id` es una SUPOSICIÓN:
-        // hay que confirmar con Helga si es cabecera (y con qué nombre) o si va
-        // en el cuerpo de la petición.
+        // El app_id NO hace falta: verificado en vivo (2026-07-20) que las ops.
+        // B-E responden sin enviarlo. Lo que el proveedor valida es el Origin.
+        // Se sigue mandando si esta configurado, por si alguna ruta lo exige;
+        // el nombre de la cabecera sigue siendo una suposicion (el manual no lo
+        // documenta).
         ...(config.HELGA_APP_ID ? { 'X-App-Id': config.HELGA_APP_ID } : {}),
       },
       body: JSON.stringify(body),
@@ -82,27 +94,36 @@ async function post<T>(path: string, body: unknown): Promise<T | undefined> {
 }
 
 /** Lo que nos importa de la respuesta de la op. D: el id del destinatario. */
-function extractRecipientId(data: unknown): string {
-  if (data && typeof data === 'object') {
-    const record = data as Record<string, unknown>;
-    // Helga no es consistente con la capitalizacion de la clave del id.
-    const raw = record['id'] ?? record['Id'] ?? record['destinatario_id'];
-    if (typeof raw === 'string' && raw.length > 0) return raw;
-    if (typeof raw === 'number') return String(raw);
-  }
+function extractRecipientId(data: HelgaRecipientResponse | undefined): string {
+  // Helga no es consistente con la capitalizacion de la clave del id.
+  const raw = data?.id ?? data?.Id ?? data?.destinatario_id;
+  if (typeof raw === 'string' && raw.length > 0) return raw;
+  if (typeof raw === 'number') return String(raw);
   // Sin id no hay enlace posible con nuestro cliente: es un fallo del proveedor.
   throw ProviderErrors.validation('no devolvió el id del destinatario.');
 }
 
+/** Resultado de la op. D: el id del destinatario y su casillero en Miami. */
+export interface HelgaRecipient {
+  id: string;
+  /** `sub_casillero` del proveedor: la direccion con la que el cliente recibe. */
+  subLocker: string | null;
+}
+
 /**
- * Op. D — registra el casillero de un cliente nuestro en Helga y devuelve el id
- * del proveedor, que guardamos en `clients.helga_client_id`.
+ * Op. D — registra el casillero de un cliente nuestro en Helga.
  *
- * Todos los datos que viajan son los fijos de consolidacion de HS Global; lo
- * unico derivado del cliente es el correo, y es inventado (docs/13 §3.6). Ni la
- * direccion, ni el telefono, ni el correo reales salen de nuestra BD.
+ * Viaja la identidad REAL del cliente (nombre, apellidos, cedula) porque el
+ * paquete se entrega contra documento y porque Helga exige nombre unico dentro
+ * de la cuenta. NO viaja nada de su contacto ni de su ubicacion: el telefono y
+ * la direccion son los fijos de consolidacion de HS Global y el correo es
+ * inventado (docs/13 §3.6).
  */
-export async function createHelgaRecipient(realEmail: string): Promise<string> {
+export async function createHelgaRecipient(params: {
+  fullName: string;
+  idNumber: string;
+  realEmail: string;
+}): Promise<HelgaRecipient> {
   if (HELGA_ACCOUNT_CLIENT_ID === null || HELGA_FIXED_GEO.departamentoId === null || HELGA_FIXED_GEO.ciudadId === null) {
     // Config incompleta (ver TODOs de helga.constants). Fallamos claro en vez de
     // mandar una peticion que el proveedor rechazaria con un 422 opaco.
@@ -110,19 +131,83 @@ export async function createHelgaRecipient(realEmail: string): Promise<string> {
     throw ProviderErrors.unavailable();
   }
 
+  const name = splitPersonName(params.fullName);
   const body: HelgaCreateRecipientRequest = {
     cliente_id: HELGA_ACCOUNT_CLIENT_ID,
-    primer_nombre: HELGA_FIXED_RECIPIENT.firstName,
-    segundo_nombre: '',
-    primer_apellido: HELGA_FIXED_RECIPIENT.lastName,
-    segundo_apellido: '',
+    primer_nombre: name.firstName,
+    segundo_nombre: name.secondName,
+    primer_apellido: name.lastName,
+    segundo_apellido: name.secondLastName,
+    tipo_de_identificacion_id: HELGA_ID_TYPE_CEDULA,
+    numero_de_identificacion: params.idNumber,
     pais_codigo: HELGA_FIXED_RECIPIENT.countryCode,
     departamento_id: HELGA_FIXED_GEO.departamentoId,
     ciudad_id: HELGA_FIXED_GEO.ciudadId,
     telefono_celular: HELGA_FIXED_RECIPIENT.mobilePhone,
     direccion: HELGA_FIXED_RECIPIENT.address,
-    email: helgaEmailFor(realEmail),
+    email: helgaEmailFor(params.realEmail),
   };
 
-  return extractRecipientId(await post('/api/casillero/destinatarios', body));
+  const data = await post<HelgaRecipientResponse>('/api/casillero/destinatarios', body);
+  return { id: extractRecipientId(data), subLocker: data?.sub_casillero ?? null };
+}
+
+/**
+ * Op. C — prealerta un paquete ante el proveedor. Es lo que autoriza al sistema a
+ * empezar a preguntar por su estado: sin prealerta, el paquete no existe del lado
+ * de Helga hasta que llega fisicamente a su bodega.
+ *
+ * Devuelve el id de la prealerta si el proveedor lo da; no es imprescindible,
+ * porque el cruce posterior se hace por tracking.
+ */
+export async function createHelgaPrealert(params: {
+  helgaClientId: string;
+  tracking: string;
+  description: string;
+  store?: string | null;
+}): Promise<string | null> {
+  if (HELGA_ACCOUNT_CLIENT_ID === null) {
+    console.error('[helga] falta cliente_id de la cuenta de HS Global.');
+    throw ProviderErrors.unavailable();
+  }
+
+  const body: HelgaCreatePrealertRequest = {
+    cliente_id: HELGA_ACCOUNT_CLIENT_ID,
+    destinatario_id: params.helgaClientId,
+    tracking: params.tracking,
+    descripcion: params.description,
+    ...(params.store ? { tienda: params.store } : {}),
+  };
+
+  const data = await post<HelgaPrealertResponse>('/api/casillero/prealertas', body);
+  const raw = data?.id ?? data?.prealerta_id;
+  return raw === undefined || raw === null ? null : String(raw);
+}
+
+/**
+ * Op. B — estado actual de los paquetes de un destinatario.
+ *
+ * El proveedor solo expone los paquetes DEL CLIENTE consultado (su API esta
+ * pensada para el casillero de un cliente, no para todo el sistema), asi que la
+ * sincronizacion recorre casillero por casillero en vez de pedir "todo lo nuevo".
+ */
+export async function fetchHelgaPackageStates(helgaClientId: string): Promise<HelgaPackage[]> {
+  const data = await post<HelgaPackage[]>('/api/casillero/consulta-estado', {
+    cliente_id: HELGA_ACCOUNT_CLIENT_ID,
+    destinatario_id: helgaClientId,
+  });
+  return Array.isArray(data) ? data : [];
+}
+
+/**
+ * Op. E — paquetes disponibles en bodega del destinatario, incluidos los que
+ * NUNCA se prealertaron. Es la via para descubrir compras que el cliente no
+ * declaro: el manual pide poder darlas de alta igual.
+ */
+export async function fetchHelgaAvailablePackages(helgaClientId: string): Promise<HelgaPackage[]> {
+  const data = await post<HelgaPackage[]>('/api/casillero/paquetes-disponibles', {
+    cliente_id: HELGA_ACCOUNT_CLIENT_ID,
+    destinatario_id: helgaClientId,
+  });
+  return Array.isArray(data) ? data : [];
 }

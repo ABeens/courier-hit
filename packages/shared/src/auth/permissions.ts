@@ -16,6 +16,16 @@ import { Role } from './roles';
 export enum Resource {
   Prealert = 'prealert',
   Package = 'package',
+  /** Casillero en Miami del titular (Parte 2, "Casillero"). */
+  Locker = 'locker',
+  /** Datos de contacto del propio titular (Parte 2, "Editar Perfil"). */
+  Profile = 'profile',
+  /**
+   * Recepcion en bodega. Es un modulo propio y no una accion sobre Package
+   * porque la matriz de roles lo lista como fila aparte ("Recepción (escaneo/
+   * registro de paquetes)"): tiene su propia pantalla y su propia poblacion.
+   */
+  Reception = 'reception',
   Dashboard = 'dashboard',
   Costs = 'costs',
   CostServices = 'cost_services',
@@ -55,6 +65,8 @@ export enum Permission {
   PrealertCreate = 'prealert.create',
   PackageReadOwn = 'package.read.own',
   PackagePay = 'package.pay',
+  LockerRead = 'locker.read',
+  ProfileWrite = 'profile.write',
 
   // --- Panel administrador (staff) ---
   DashboardRead = 'dashboard.read',
@@ -91,9 +103,11 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   [Permission.PrealertCreate]: { resource: Resource.Prealert, action: Action.Create, scope: Scope.Own },
   [Permission.PackageReadOwn]: { resource: Resource.Package, action: Action.Read, scope: Scope.Own },
   [Permission.PackagePay]: { resource: Resource.Package, action: Action.Pay, scope: Scope.Own },
+  [Permission.LockerRead]: { resource: Resource.Locker, action: Action.Read, scope: Scope.Own },
+  [Permission.ProfileWrite]: { resource: Resource.Profile, action: Action.Write, scope: Scope.Own },
 
   [Permission.DashboardRead]: { resource: Resource.Dashboard, action: Action.Read, scope: Scope.All },
-  [Permission.PackageReceive]: { resource: Resource.Package, action: Action.Receive, scope: Scope.All },
+  [Permission.PackageReceive]: { resource: Resource.Reception, action: Action.Receive, scope: Scope.All },
   [Permission.PackageRead]: { resource: Resource.Package, action: Action.Read, scope: Scope.All },
   [Permission.PackageWrite]: { resource: Resource.Package, action: Action.Write, scope: Scope.All },
   [Permission.PackageReassign]: { resource: Resource.Package, action: Action.Reassign, scope: Scope.All },
@@ -142,7 +156,13 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
 
 /** Relacion Role -> Permission[]. Matriz literal de docs/roles.md §2. */
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
-  [Role.Client]: [Permission.PrealertCreate, Permission.PackageReadOwn, Permission.PackagePay],
+  [Role.Client]: [
+    Permission.PrealertCreate,
+    Permission.PackageReadOwn,
+    Permission.PackagePay,
+    Permission.LockerRead,
+    Permission.ProfileWrite,
+  ],
 
   [Role.Admin]: ADMIN_PERMISSIONS,
 

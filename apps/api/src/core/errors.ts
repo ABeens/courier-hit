@@ -162,6 +162,105 @@ export const ShipmentErrors = {
     ),
 };
 
+/**
+ * Errores de una transicion de estado. La maquina de estados de @courier/shared
+ * decide si el movimiento es legal; estos son los "no" que puede devolver.
+ */
+export const TransitionErrors = {
+  notAllowed: (from: string, to: string) =>
+    new AppError('TRANSITION_NOT_ALLOWED', `Un trámite en "${from}" no puede pasar a "${to}".`, 409),
+  requiresComment: () =>
+    new AppError('TRANSITION_REQUIRES_COMMENT', 'Indica el motivo para avanzar a este estado.', 400),
+  requiresInvoiceAmount: () =>
+    new AppError(
+      'TRANSITION_REQUIRES_INVOICE',
+      'El trámite necesita el monto de factura aprobado antes de avanzar.',
+      409,
+    ),
+  requiresConfirmedPayment: () =>
+    new AppError(
+      'TRANSITION_REQUIRES_PAYMENT',
+      'El trámite no puede salir a entrega sin el pago confirmado.',
+      409,
+    ),
+};
+
+/** Errores del modulo de pagos (Parte 2 "Pagos" y Parte 3 "Informacion de Pago"). */
+export const PaymentErrors = {
+  notFound: () => new AppError('PAYMENT_NOT_FOUND', 'Pago no encontrado.', 404),
+  notPayableState: () =>
+    new AppError(
+      'PAYMENT_NOT_PAYABLE_STATE',
+      'Solo se puede pagar un trámite en "En bodega - Pendiente pago".',
+      409,
+    ),
+  noInvoice: () =>
+    new AppError('PAYMENT_NO_INVOICE', 'El trámite todavía no tiene un monto de factura aprobado.', 409),
+  alreadySettled: () =>
+    new AppError('PAYMENT_ALREADY_SETTLED', 'Este trámite ya está pagado.', 409),
+  alreadyResolved: () =>
+    new AppError('PAYMENT_ALREADY_RESOLVED', 'Este pago ya fue confirmado o rechazado.', 409),
+  methodNotAllowed: () =>
+    new AppError(
+      'PAYMENT_METHOD_NOT_ALLOWED',
+      'Tu tarifa no admite ese medio de pago. Elige otro.',
+      403,
+    ),
+  /**
+   * La pasarela no esta configurada. Es un fallo de configuracion del sistema, no
+   * del cliente: 503, y la web ni siquiera deberia haber ofrecido la opcion.
+   */
+  gatewayUnavailable: () =>
+    new AppError(
+      'PAYMENT_GATEWAY_UNAVAILABLE',
+      'El pago con tarjeta no está disponible en este momento. Usa depósito bancario.',
+      503,
+    ),
+  receiptRequired: () =>
+    new AppError('PAYMENT_RECEIPT_REQUIRED', 'Adjunta el comprobante del depósito.', 400),
+  /**
+   * No se pudo determinar la tasa de cambio a congelar con el pago. Guardar el
+   * monto sin ella violaria la regla M5, asi que se prefiere no cobrar. Es un
+   * fallo de configuracion (factura sin componente en dolares y BCCR apagado),
+   * no del cliente: 503.
+   */
+  exchangeRateUnavailable: () =>
+    new AppError(
+      'PAYMENT_EXCHANGE_RATE_UNAVAILABLE',
+      'No pudimos determinar la tasa de cambio del pago. Intenta más tarde o contacta a soporte.',
+      503,
+    ),
+};
+
+/** Errores del modulo de entregas (Parte 5, rol Mensajeria). */
+export const DeliveryErrors = {
+  notInRoute: () =>
+    new AppError(
+      'DELIVERY_NOT_IN_ROUTE',
+      'Solo se puede registrar la entrega de un trámite en "En ruta de entrega".',
+      409,
+    ),
+  photoRequired: () =>
+    new AppError('DELIVERY_PHOTO_REQUIRED', 'Adjunta la foto del paquete entregado.', 400),
+};
+
+/** Errores de la recepcion en bodega (Parte 4, "Recepción de Paquete"). */
+export const ReceptionErrors = {
+  /**
+   * El tracking no existe en nuestro sistema. NO es un 404 seco: el manual pide
+   * que ese caso derive al alta manual, asi que el codigo es estable y la web
+   * ramifica sobre el para abrir el formulario.
+   */
+  unknownTracking: (tracking: string) =>
+    new AppError(
+      'RECEPTION_UNKNOWN_TRACKING',
+      `No hay ningún trámite con el tracking ${tracking}. Ingrésalo manualmente.`,
+      404,
+    ),
+  alreadyReceived: (state: string) =>
+    new AppError('RECEPTION_ALREADY_RECEIVED', `El trámite ya está en "${state}".`, 409),
+};
+
 /** Errores de los anuncios del portal (docs/manuales/roles.md §3). */
 export const AnnouncementErrors = {
   notFound: () => new AppError('ANNOUNCEMENT_NOT_FOUND', 'Anuncio no encontrado.', 404),

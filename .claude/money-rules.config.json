@@ -111,6 +111,18 @@
       "_doc": "Importe de una linea de costo cargada sobre un tramite (tabla shipment_costs). Este SI es el monto transaccional al que apunta M5: es el punto donde el valor de catalogo se aplica a un paquete concreto, asi que lleva moneda explicita (M2) Y exchangeRate obligatorio > 0 (colones por 1 USD), capturado como snapshot al cargar el costo. Ambas monedas: Transporte y Agenciamiento se factura en colones o dolares. El rango (>= 0) y la tasa (> 0) los acota ademas un CHECK de la BD."
     },
 
+    "payments.amount": {
+      "currencyPolicy": "both",
+      "requireExchangeRate": true,
+      "_doc": "Monto de un abono contra un tramite (tabla payments). Monto TRANSACCIONAL, hermano de shipmentCosts.amount: es dinero que entra en un instante concreto, asi que lleva moneda explicita (M2) Y exchangeRate obligatorio > 0 (colones por 1 USD) capturado al registrarlo (M5). Ambas monedas: el cliente puede depositar en colones o pagar en dolares. El rango (>= 0) y la tasa (> 0) los acota ademas un CHECK de la BD. Cuando el pago lo inicia el CLIENTE el monto no viaja en el cuerpo: lo pone el servidor desde invoiceTotal congelado del tramite; aun asi se persiste con moneda y tasa."
+    },
+
+    "clients.creditLimit": {
+      "currencyPolicy": "both",
+      "requireExchangeRate": false,
+      "_doc": "Limite de credito del casillero (Parte 3, 'Editar Cliente'). Es un TECHO de politica comercial, no un monto transaccional: no existe un instante de cobro cuya tasa haya que congelar, asi que lleva moneda explicita (M2/M6) pero NO exchangeRate — misma naturaleza que clientRates.pricePerKg. Ambas monedas porque el cliente puede tener cupo en dolares (paqueteria) o en colones (transporte/agenciamiento). null = sin limite definido, distinto de 0 (que seria no fiarle nada)."
+    },
+
     "shipments.invoiceTotalUsd": {
       "currencyPolicy": "usd",
       "requireExchangeRate": false,
