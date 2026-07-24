@@ -7,9 +7,10 @@
  *
  * Cuatro decisiones que viven aqui:
  *
- * 1. LA CONSULTA VA POR CASILLERO. El API de Helga esta pensada para el casillero
- *    de UN cliente ("no expone todos los paquetes del sistema"), asi que se
- *    recorre casillero por casillero y no se puede pedir "todo lo nuevo".
+ * 1. LA CONSULTA VA POR TRACKING. La op. B de Helga busca UN paquete por su
+ *    HAWB/tracking, no lista los de un casillero. Asi que la sincronizacion parte
+ *    de NUESTROS envios en tramo y le pregunta a Helga por cada tracking. Un 404
+ *    significa que el paquete aun no llega a bodega (prealerta): no es error.
  * 2. SOLO SE AVANZA, NUNCA SE RETROCEDE. Se aplica `canTransition` como cualquier
  *    otro movimiento: si el proveedor reporta un estado anterior al que ya
  *    tenemos (llega tarde, o es una correccion suya), se ignora.
@@ -19,8 +20,8 @@
  * 4. UN ESTADO DESCONOCIDO SE REGISTRA. No se ignora en silencio: si el proveedor
  *    agrega un estado, preferimos un aviso en el log a paquetes congelados.
  *
- * TODO(13): programarla cada N minutos. Hoy se dispara a mano desde
- * `POST /shipments/sync-provider` (permiso config.manage) para poder probarla.
+ * Se agenda en el scheduler (`core/scheduler/jobs.ts`) cada `PROVIDER_SYNC_INTERVAL`;
+ * tambien se puede disparar a mano desde `POST /shipments/sync-provider`.
  */
 import {
   Flow,
@@ -32,7 +33,7 @@ import {
   roundWeightKg,
 } from '@courier/shared';
 import type { Session } from '@courier/shared';
-import { isHelgaEnabled, fetchHelgaPackageStates } from '../../integrations/helga/helga.client';
+import { isHelgaEnabled, fetchHelgaPackageState } from '../../integrations/helga/helga.client';
 import { notificationsService } from '../notifications/notifications.service';
 import { providerSyncRepo } from './provider-sync.repo';
 import { shipmentsRepo } from './shipments.repo';
@@ -42,6 +43,19 @@ import { shipmentsRepo } from './shipments.repo';
  * tramo del proveedor: mas alla empieza el flujo manual (decision 3).
  */
 const PROVIDER_LAST_STATE = State.EnAduanas;
+
+/** Techo de envios a consultar por corrida (una llamada a Helga por cada uno). */
+const SYNC_BATCH = 200;
+
+/** Helga a veces reporta el peso como cadena ("1.38"); lo normaliza a numero. */
+function toNumber(value: number | string | undefined): number {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
 
 /** Estados que ya pertenecen al flujo manual: el proveedor no los toca. */
 function isBeyondProvider(state: State): boolean {
@@ -64,11 +78,12 @@ export interface SyncReport {
 
 export const providerSyncService = {
   /**
-   * Recorre los casilleros enlazados con el proveedor y actualiza sus paquetes.
+   * Recorre nuestros envios en el tramo del proveedor y le pregunta a Helga por
+   * cada tracking (op. B).
    *
-   * Un fallo con un casillero no aborta el resto: el proveedor puede responder
-   * mal para uno y bien para los demas, y detener toda la pasada por eso dejaria
-   * sin actualizar a clientes que no tienen ningun problema.
+   * Un fallo con un envio no aborta el resto: el proveedor puede responder mal
+   * para uno y bien para los demas, y detener toda la pasada por eso dejaria sin
+   * actualizar a los que no tienen ningun problema.
    */
   async run(session: Session): Promise<SyncReport> {
     const report: SyncReport = { checked: 0, advanced: 0, incidents: [], unknownStates: [] };
@@ -78,54 +93,53 @@ export const providerSyncService = {
       return report;
     }
 
-    const linked = await providerSyncRepo.linkedClients();
+    const pending = await providerSyncRepo.shipmentsInProviderTramo(SYNC_BATCH);
 
-    for (const client of linked) {
-      let packages;
+    for (const shipment of pending) {
+      let pkg;
       try {
-        packages = await fetchHelgaPackageStates(client.helgaClientId);
+        pkg = await fetchHelgaPackageState(shipment.tracking);
       } catch (err) {
-        console.error(`[helga] fallo consultando el casillero ${client.code}:`, err);
+        console.error(`[helga] fallo consultando ${shipment.code} (${shipment.tracking}):`, err);
         continue;
       }
 
-      for (const pkg of packages) {
-        const tracking = (pkg.tracking ?? pkg.guia ?? '').trim().toUpperCase();
-        const rawState = pkg.estado?.trim();
-        if (!tracking || !rawState) continue;
+      // 404: el paquete aun no existe del lado de Helga (prealerta sin llegar).
+      if (!pkg) continue;
 
-        const shipment = await providerSyncRepo.findPackageByTracking(client.id, tracking);
-        if (!shipment) continue;
+      const rawState = pkg.Estado_Envio?.trim();
+      // "NO TIENE ESTADO": el paquete existe pero aun no tiene tracking util; no
+      // hay nada que homologar todavia.
+      if (!rawState || rawState.toUpperCase() === 'NO TIENE ESTADO') continue;
 
-        report.checked += 1;
+      report.checked += 1;
 
-        const mapping = mapProviderState(rawState);
-        if (mapping.kind === 'unknown') {
-          report.unknownStates.push(mapping.providerState);
-          console.warn(`[helga] estado no homologado: "${mapping.providerState}" (${tracking}).`);
-          continue;
-        }
-        if (mapping.kind === 'incident') {
-          report.incidents.push(`${shipment.code}: ${mapping.providerState}`);
-          continue;
-        }
-        if (mapping.kind === 'operational') continue;
-
-        // El peso y el valor que reporta el proveedor son mejores que los que
-        // declaro el cliente al prealertar: se refrescan aunque el estado no
-        // avance, porque de ellos depende el flete.
-        const weight = pkg.peso ?? pkg.peso_lb;
-        if (weight && weight > 0 && shipment.weightKg !== roundWeightKg(weight)) {
-          await shipmentsRepo.update(shipment.id, { weightKg: roundWeightKg(weight) });
-        }
-
-        if (isBeyondProvider(shipment.state)) continue;
-        if (mapping.state === shipment.state) continue;
-
-        const flow = flowForType(shipment.shipmentType);
-        const advanced = await this.advanceTowards(session, shipment, flow, mapping.state);
-        report.advanced += advanced;
+      const mapping = mapProviderState(rawState);
+      if (mapping.kind === 'unknown') {
+        report.unknownStates.push(mapping.providerState);
+        console.warn(`[helga] estado no homologado: "${mapping.providerState}" (${shipment.tracking}).`);
+        continue;
       }
+      if (mapping.kind === 'incident') {
+        report.incidents.push(`${shipment.code}: ${mapping.providerState}`);
+        continue;
+      }
+      if (mapping.kind === 'operational') continue;
+
+      // El peso que reporta el proveedor (kg explicito) es mejor que el que
+      // declaro el cliente al prealertar: se refresca aunque el estado no avance,
+      // porque de el depende el flete.
+      const kg = toNumber(pkg.Peso_kg);
+      if (kg > 0 && shipment.weightKg !== roundWeightKg(kg)) {
+        await shipmentsRepo.update(shipment.id, { weightKg: roundWeightKg(kg) });
+      }
+
+      if (isBeyondProvider(shipment.state)) continue;
+      if (mapping.state === shipment.state) continue;
+
+      const flow = flowForType(shipment.shipmentType);
+      const advanced = await this.advanceTowards(session, shipment, flow, mapping.state);
+      report.advanced += advanced;
     }
 
     return report;

@@ -16,11 +16,14 @@ import {
   MANUAL_SHIPMENT_TYPES,
   Permission,
   SHIPMENT_TYPE_LABELS,
+  ShipmentField,
   ShipmentType,
+  STATE_LABELS,
   STORES,
   CARRIERS,
   can,
   createShipmentSchema,
+  editableFieldsAt,
   updateShipmentSchema,
   usesPackageFields,
 } from '@courier/shared';
@@ -72,6 +75,28 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
   const [busy, setBusy] = useState(false);
 
   const isPackage = usesPackageFields(shipmentType);
+
+  /**
+   * Reja de edicion por estado (misma fuente que la API: `editableFieldsAt`). En
+   * alta todo esta abierto; al editar, el estado del tramite decide que campos
+   * admiten cambios. `can` evita duplicar aqui la regla de la maquina de estados:
+   * si el estado congelo un campo, la API lo rechazaria igual, pero deshabilitarlo
+   * ahorra el viaje y el error.
+   */
+  const editable = mode === 'edit' && row ? editableFieldsAt(row.flow, row.state) : null;
+  const canEdit = (field: ShipmentField) => editable === null || editable.includes(field);
+  const allFrozen = editable !== null && editable.length === 0;
+  /**
+   * El peso alimenta la factura: aunque la maquina lo deje editable en
+   * "Facturación en proceso", si la factura ya se congelo (hay monto aprobado) la
+   * API lo rechaza. Se refleja aqui para no ofrecer un campo que no se puede guardar.
+   */
+  const weightLocked = mode === 'edit' && row != null && row.invoiceTotalUsd != null;
+  // Campos visibles del formulario para este tipo; sirve para avisar si alguno quedo bloqueado.
+  const relevantFields = isPackage
+    ? [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg]
+    : [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Warehouse, ShipmentField.Dua, ShipmentField.BillingNotes];
+  const someFrozen = editable !== null && (weightLocked || relevantFields.some((f) => !editable.includes(f)));
 
   const loadClients = useCallback(async () => {
     if (mode === 'edit') return; // el cliente de un tramite no se reasigna aqui
@@ -178,6 +203,13 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
 
         <div className="modal-body modal-form">
           {error && <div className="banner err col-full">{error}</div>}
+          {mode === 'edit' && someFrozen && row && (
+            <div className="banner col-full" style={{ background: 'var(--paper-2)', color: 'var(--muted)' }}>
+              {allFrozen
+                ? `Con el trámite en «${STATE_LABELS[row.state]}» los datos ya no se pueden modificar, solo avanzar de estado.`
+                : `Algunos campos están bloqueados: el trámite en «${STATE_LABELS[row.state]}» solo admite cambios en los datos aún abiertos.`}
+            </div>
+          )}
 
           <div>
             <label className="field-label" htmlFor="t-type">Trámite</label>
@@ -233,6 +265,7 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
             <input
               id="t-tracking" className="input" value={tracking}
               placeholder={isPackage ? '1Z999AA10123456784' : 'FLO-26-0755'}
+              disabled={!canEdit(ShipmentField.Tracking)}
               onChange={(e) => setTracking(e.target.value)}
             />
           </div>
@@ -242,6 +275,7 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
             <input
               id="t-desc" className="input" value={description}
               placeholder={isPackage ? 'Audífonos bluetooth' : 'CHEVROLET SPARK VIN583378'}
+              disabled={!canEdit(ShipmentField.Description)}
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
@@ -250,14 +284,14 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
             <>
               <div>
                 <label className="field-label" htmlFor="t-store">Tienda</label>
-                <select id="t-store" className="input" value={store} onChange={(e) => setStore(e.target.value)}>
+                <select id="t-store" className="input" value={store} disabled={!canEdit(ShipmentField.Store)} onChange={(e) => setStore(e.target.value)}>
                   <option value="">Elige…</option>
                   {STORES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div>
                 <label className="field-label" htmlFor="t-carrier">Transportista</label>
-                <select id="t-carrier" className="input" value={carrier} onChange={(e) => setCarrier(e.target.value)}>
+                <select id="t-carrier" className="input" value={carrier} disabled={!canEdit(ShipmentField.Carrier)} onChange={(e) => setCarrier(e.target.value)}>
                   <option value="">Elige…</option>
                   {CARRIERS.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
@@ -267,16 +301,20 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
                 <label className="field-label" htmlFor="t-hawb">HAWB / HBL</label>
                 <input
                   id="t-hawb" className="input" inputMode="numeric" value={hawb}
-                  placeholder="Solo números" onChange={(e) => setHawb(e.target.value)}
+                  placeholder="Solo números" disabled={!canEdit(ShipmentField.Hawb)}
+                  onChange={(e) => setHawb(e.target.value)}
                 />
               </div>
               <div>
                 <label className="field-label" htmlFor="t-weight">Peso (kg)</label>
                 <input
                   id="t-weight" className="input" type="number" min="0" step="0.01" value={weight}
+                  disabled={!canEdit(ShipmentField.WeightKg) || weightLocked}
                   onChange={(e) => setWeight(e.target.value)}
                 />
-                {weightPreview !== null && (
+                {weightLocked ? (
+                  <div className="field-hint">La factura ya fue aprobada: el peso no se puede cambiar sin reversar los costos.</div>
+                ) : weightPreview !== null && (
                   <div className="field-hint">Se guardará como {weightPreview} kg (siempre redondea hacia arriba).</div>
                 )}
               </div>
@@ -289,6 +327,7 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
                     <label className="field-label" htmlFor="t-warehouse">Almacén</label>
                     <input
                       id="t-warehouse" className="input" value={warehouse}
+                      disabled={!canEdit(ShipmentField.Warehouse)}
                       onChange={(e) => setWarehouse(e.target.value)}
                     />
                   </div>
@@ -296,6 +335,7 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
                     <label className="field-label" htmlFor="t-dua">DUA</label>
                     <input
                       id="t-dua" className="input" value={dua} placeholder="###-####-######"
+                      disabled={!canEdit(ShipmentField.Dua)}
                       onChange={(e) => setDua(e.target.value)}
                     />
                   </div>
@@ -305,6 +345,7 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
                 <label className="field-label" htmlFor="t-notes">Notas para facturar</label>
                 <textarea
                   id="t-notes" className="input" rows={3} value={billingNotes}
+                  disabled={!canEdit(ShipmentField.BillingNotes)}
                   onChange={(e) => setBillingNotes(e.target.value)}
                 />
               </div>

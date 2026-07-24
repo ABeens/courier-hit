@@ -80,6 +80,27 @@ export function usesPackageFields(type: ShipmentType): boolean {
   return flowForType(type) === Flow.Paqueteria;
 }
 
+/**
+ * Campos de datos editables de un tramite. Nombres de codigo en ingles (no son
+ * dominio): coinciden 1:1 con las claves de `UpdateShipmentInput` y con las
+ * columnas de la tabla. La maquina de estados declara, POR estado, cuales admiten
+ * edicion (`Step.editable`); este enum es el vocabulario de esa regla, para que
+ * API y web la consuman de un solo lugar en vez de duplicar la lista de campos.
+ */
+export enum ShipmentField {
+  Tracking = 'tracking',
+  Description = 'description',
+  // Solo Paqueteria
+  Store = 'store',
+  Carrier = 'carrier',
+  Hawb = 'hawb',
+  WeightKg = 'weightKg',
+  // Solo Transporte y Agenciamiento
+  Warehouse = 'warehouse',
+  Dua = 'dua',
+  BillingNotes = 'billingNotes',
+}
+
 /** Tipos de tramite que el administrador captura y mueve a mano (todo menos Paqueteria). */
 export const MANUAL_SHIPMENT_TYPES: readonly ShipmentType[] = [
   ShipmentType.Aereo,

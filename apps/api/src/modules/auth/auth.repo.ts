@@ -1,7 +1,8 @@
 /**
  * Acceso a datos del modulo auth (Drizzle). Solo toca SUS tablas.
  */
-import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { HelgaSyncStatus } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, emailVerifications, passwordResets, sessions, users } from './auth.schema';
 
@@ -61,6 +62,35 @@ export const authRepo = {
     const [row] = await db.insert(clients).values(values).returning();
     if (!row) throw new Error('No se pudo crear el perfil de casillero.');
     return row;
+  },
+
+  /**
+   * Casilleros que el robot debe reintentar enlazar con el proveedor: los que
+   * quedaron 'pending' (Helga estaba apagado o el casillero aun no se creo alli)
+   * o 'failed' (el proveedor rechazo). Trae la identidad real que necesita el
+   * alta (op. D de Helga). Se ordena por antiguedad y se acota a un lote: cada
+   * corrida drena `limit`, el resto cae en la siguiente.
+   */
+  async findClientsToReconcile(limit: number) {
+    return db
+      .select({
+        id: clients.id,
+        code: clients.code,
+        name: users.name,
+        email: users.email,
+        idNumber: clients.idNumber,
+        attempts: clients.helgaSyncAttempts,
+      })
+      .from(clients)
+      .innerJoin(users, eq(clients.userId, users.id))
+      .where(inArray(clients.helgaSyncStatus, [HelgaSyncStatus.Pending, HelgaSyncStatus.Failed]))
+      .orderBy(clients.createdAt)
+      .limit(limit);
+  },
+
+  /** Sella el resultado del enlace del casillero con el proveedor (reconciliacion). */
+  async updateClientHelgaSync(id: string, patch: Partial<typeof clients.$inferInsert>) {
+    await db.update(clients).set(patch).where(eq(clients.id, id));
   },
 
   /** Siguiente codigo de casillero desde la secuencia (HS-####). */

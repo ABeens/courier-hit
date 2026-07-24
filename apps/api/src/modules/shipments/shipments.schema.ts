@@ -24,7 +24,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { SHIPMENT_TYPE_VALUES, STATE_VALUES } from '@courier/shared';
-import { clients, users } from '../auth/auth.schema';
+import { clients, helgaSyncStatusEnum, users } from '../auth/auth.schema';
 
 export const shipmentTypeEnum = pgEnum('shipment_type', SHIPMENT_TYPE_VALUES);
 export const shipmentStateEnum = pgEnum('shipment_state', STATE_VALUES);
@@ -78,6 +78,22 @@ export const shipments = pgTable(
     invoiceTotalCrc: doublePrecision('invoice_total_crc'),
     costsApprovedAt: timestamp('costs_approved_at', { withTimezone: true }),
     costsApprovedBy: uuid('costs_approved_by').references(() => users.id, { onDelete: 'set null' }),
+
+    // --- Replicacion de la prealerta ante el proveedor (Helga) ---
+    /**
+     * Estado de la replicacion de esta prealerta en Helga. Reusa el enum del
+     * casillero (`helga_sync_status`). `null` = no aplica (solo Paqueteria se
+     * prealerta). Nace 'pending'; el intento inmediato la deja 'synced' o
+     * 'failed', y si el casillero aun no esta enlazado queda 'pending' para que
+     * la reconciliacion la reenvie. La misma red que el casillero, pero por
+     * tramite. Nota: si nunca se replica, la sincronizacion por tracking la
+     * recupera igual cuando el paquete llega a bodega (no es load-bearing).
+     */
+    helgaPrealertStatus: helgaSyncStatusEnum('helga_prealert_status'),
+    /** Intentos de replicacion ya realizados; 0 si nunca se intento. */
+    helgaPrealertAttempts: integer('helga_prealert_attempts').notNull().default(0),
+    /** Ultimo error del proveedor al replicar; para diagnostico de la reconciliacion. */
+    helgaPrealertError: text('helga_prealert_error'),
 
     /** Quien lo dio de alta: el propio cliente (prealerta) o un usuario de staff. */
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),

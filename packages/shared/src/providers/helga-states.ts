@@ -1,8 +1,9 @@
 /**
  * Homologacion de estados del proveedor (Helga) a los de HS Global.
  *
- * Fuente: "Estados de Proveedor + preguntas API" (respuesta del proveedor con
- * los 34 estados fijos del sistema) y la tabla de homologacion acordada.
+ * Fuente: "Estados de Proveedor + preguntas API" (respuesta del proveedor del
+ * 2026-07-21 con los 35 estados fijos del sistema) y la tabla de homologacion
+ * acordada. Documentado en docs/13-integracion-proveedor-helga.md §3.4.
  *
  * La clave del acuerdo: "En Aduanas" es el estado FINAL del tramo del proveedor y
  * absorbe todo lo que pasa desde que el paquete llega a Costa Rica hasta que

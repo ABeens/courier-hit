@@ -92,6 +92,20 @@
       "when": 1784584670082,
       "tag": "0012_wealthy_demogoblin",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784742745201,
+      "tag": "0013_exotic_dark_phoenix",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1784743412896,
+      "tag": "0014_exotic_power_man",
+      "breakpoints": true
     }
   ]
 }

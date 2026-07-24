@@ -2,10 +2,9 @@
  * Lecturas de la sincronizacion con el proveedor. Solo consulta: los cambios de
  * estado los escribe `shipmentsRepo.transition`, que es el punto unico.
  */
-import { and, eq, isNotNull, sql } from 'drizzle-orm';
-import { Flow, ShipmentType, flowForType } from '@courier/shared';
+import { and, asc, inArray, sql } from 'drizzle-orm';
+import { Flow, ShipmentType, State, flowForType } from '@courier/shared';
 import { db } from '../../core/db';
-import { clients } from '../auth/auth.schema';
 import { shipments } from './shipments.schema';
 
 /**
@@ -16,29 +15,34 @@ const PACKAGE_TYPES = Object.values(ShipmentType).filter(
   (t) => flowForType(t) === Flow.Paqueteria,
 ) as [ShipmentType, ...ShipmentType[]];
 
-export const providerSyncRepo = {
-  /** Casilleros ya enlazados con el proveedor; los demas no tienen que consultar. */
-  async linkedClients() {
-    return db
-      .select({
-        id: clients.id,
-        code: clients.code,
-        helgaClientId: sql<string>`${clients.helgaClientId}`,
-      })
-      .from(clients)
-      .where(isNotNull(clients.helgaClientId));
-  },
+/**
+ * Estados del tramo del proveedor que todavia vale la pena consultar. `EnAduanas`
+ * es el ULTIMO estado del proveedor (docs/13 §3.4): al alcanzarlo, el tramite
+ * pasa al flujo manual de HS Global y ya no hay nada que sincronizar, asi que no
+ * se incluye. Un envio en `Prealertado` si se consulta: op. B devuelve 404 hasta
+ * que el paquete llega a bodega, y es justo esa consulta la que detecta la llegada.
+ */
+const PROVIDER_TRAMO_STATES = [
+  State.Prealertado,
+  State.RecibidoBodegaMiami,
+  State.PreparandoEnvio,
+  State.EnTransitoCostaRica,
+] as [State, ...State[]];
 
+export const providerSyncRepo = {
   /**
-   * Paquete de ese casillero con ese tracking. Se acota al casillero a proposito:
-   * el proveedor responde por destinatario, y cruzar solo por tracking podria
-   * pegarle el estado de un cliente al paquete de otro si dos reciclan la guia.
+   * Nuestros envios de Paqueteria que siguen dentro del tramo del proveedor. La
+   * sincronizacion parte de AQUI (no de Helga): la op. B consulta un paquete por
+   * su tracking, asi que se recorre lo que tenemos y se le pregunta a Helga por
+   * cada uno. Se ordena por el mas rezagado (`updatedAt` ascendente) y se acota
+   * con `limit` para acotar cada corrida.
    */
-  async findPackageByTracking(clientId: string, tracking: string) {
-    const [row] = await db
+  async shipmentsInProviderTramo(limit: number) {
+    return db
       .select({
         id: shipments.id,
         code: shipments.code,
+        clientId: shipments.clientId,
         state: shipments.state,
         shipmentType: shipments.shipmentType,
         tracking: shipments.tracking,
@@ -48,12 +52,11 @@ export const providerSyncRepo = {
       .from(shipments)
       .where(
         and(
-          eq(shipments.clientId, clientId),
-          eq(shipments.tracking, tracking),
           sql`${shipments.shipmentType} in ${PACKAGE_TYPES}`,
+          inArray(shipments.state, PROVIDER_TRAMO_STATES),
         ),
       )
-      .limit(1);
-    return row ?? null;
+      .orderBy(asc(shipments.updatedAt))
+      .limit(limit);
   },
 };
