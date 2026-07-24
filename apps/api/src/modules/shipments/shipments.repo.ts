@@ -6,8 +6,9 @@
  * de copiarse a la fila del tramite: si el administrador reasigna la ruta de un
  * distrito, los tramites en curso la reflejan sin migrar datos.
  */
-import { and, desc, eq, gte, ilike, inArray, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
+import { HelgaSyncStatus } from '@courier/shared';
 import type { ListShipmentsQuery, State } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
@@ -31,6 +32,8 @@ const columns = {
   billingNotes: shipments.billingNotes,
   invoiceTotalUsd: shipments.invoiceTotalUsd,
   invoiceTotalCrc: shipments.invoiceTotalCrc,
+  // Marca del congelamiento de factura: el candado de edicion del peso lo consulta.
+  costsApprovedAt: shipments.costsApprovedAt,
   createdAt: shipments.createdAt,
   updatedAt: shipments.updatedAt,
   clientId: clients.id,
@@ -144,6 +147,36 @@ export const shipmentsRepo = {
       .where(eq(shipments.id, id))
       .returning({ id: shipments.id });
     return row ?? null;
+  },
+
+  /**
+   * Prealertas que el robot debe reenviar al proveedor: las que quedaron
+   * 'pending' (Helga apagado o casillero sin enlazar al prealertar) o 'failed', y
+   * cuyo casillero YA esta enlazado (sin `helgaClientId` no hay destinatario a
+   * quien prealertar). Orden por antiguedad y con tope, como el reconcile del
+   * casillero.
+   */
+  async findPrealertsToReconcile(limit: number) {
+    return db
+      .select({
+        id: shipments.id,
+        code: shipments.code,
+        tracking: shipments.tracking,
+        description: shipments.description,
+        store: shipments.store,
+        attempts: shipments.helgaPrealertAttempts,
+        helgaClientId: sql<string>`${clients.helgaClientId}`,
+      })
+      .from(shipments)
+      .innerJoin(clients, eq(shipments.clientId, clients.id))
+      .where(
+        and(
+          inArray(shipments.helgaPrealertStatus, [HelgaSyncStatus.Pending, HelgaSyncStatus.Failed]),
+          isNotNull(clients.helgaClientId),
+        ),
+      )
+      .orderBy(shipments.createdAt)
+      .limit(limit);
   },
 
   /**

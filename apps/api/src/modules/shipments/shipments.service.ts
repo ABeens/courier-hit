@@ -12,9 +12,13 @@
  *    casillero de la SESION, nunca a un clientId del query string.
  */
 import {
+  HelgaSyncStatus,
   Permission,
   Role,
+  STATE_LABELS,
+  ShipmentField,
   can,
+  editableFieldsAt,
   flowForType,
   initialState,
   roundWeightKg,
@@ -37,6 +41,19 @@ import { shipmentsRepo } from './shipments.repo';
 
 /** Fila de la vista de lectura del repo (tramite + cliente + ruta). */
 type ShipmentRowView = Awaited<ReturnType<typeof shipmentsRepo.findById>>;
+
+/** Resumen de una corrida de reconciliacion de prealertas (para el log del robot). */
+interface PrealertReconcileReport {
+  checked: number;
+  synced: number;
+  failed: number;
+}
+
+/**
+ * Cuantas prealertas reenvia el robot por corrida. Acota el trabajo (y las
+ * llamadas al proveedor) de cada pasada; el resto se drena en las siguientes.
+ */
+const PREALERT_RECONCILE_BATCH = 50;
 
 /**
  * Permiso necesario para dar de alta o editar un tramite de ese tipo. Paqueteria
@@ -168,9 +185,14 @@ export const shipmentsService = {
    * deshacer una prealerta ya guardada ni mostrarle un error al cliente por algo
    * que no depende de el.
    *
-   * TODO(13): reintentar las que fallen. Hoy queda el aviso en el log y la
-   * recuperacion depende de que la sincronizacion encuentre el paquete por
-   * tracking cuando llegue a bodega.
+   * El resultado se sella en `helga_prealert_status` del tramite para que la
+   * reconciliacion (pendiente) sepa cuales reenviar:
+   * - integracion apagada o casillero sin enlazar -> queda 'pending' (el default
+   *   del insert); se reintentara cuando Helga este on y el casillero enlazado.
+   * - exito -> 'synced'. fallo del proveedor -> 'failed' con el motivo.
+   *
+   * Aun sin replicar, la sincronizacion por tracking recupera el paquete cuando
+   * llega a bodega: la bandera es una red adelantada, no un requisito.
    */
   async prealertWithProvider(clientId: string, shipment: ShipmentDto): Promise<void> {
     if (!isHelgaEnabled()) return;
@@ -181,6 +203,8 @@ export const shipmentsService = {
       return;
     }
 
+    let status: HelgaSyncStatus;
+    let error: string | null;
     try {
       await createHelgaPrealert({
         helgaClientId: link.helgaClientId,
@@ -188,9 +212,71 @@ export const shipmentsService = {
         description: shipment.description,
         store: shipment.store,
       });
+      status = HelgaSyncStatus.Synced;
+      error = null;
     } catch (err) {
+      status = HelgaSyncStatus.Failed;
+      error = err instanceof Error ? err.message : String(err);
       console.error(`[helga] no se pudo prealertar ${shipment.tracking}:`, err);
     }
+
+    // Sella el estado sin volver a lanzar: la bandera es informativa para la
+    // reconciliacion y no debe tumbar una prealerta ya guardada.
+    try {
+      await shipmentsRepo.update(shipment.id, {
+        helgaPrealertStatus: status,
+        helgaPrealertAttempts: 1,
+        helgaPrealertError: error,
+      });
+    } catch (err) {
+      console.error(`[helga] no se pudo sellar el estado de prealerta de ${shipment.tracking}:`, err);
+    }
+  },
+
+  /**
+   * Tarea del robot: reenvia al proveedor las prealertas que quedaron sin
+   * replicar ('pending' o 'failed') y cuyo casillero YA esta enlazado. Reusa la
+   * misma llamada de la prealerta en vivo (`createHelgaPrealert`) y sella el
+   * resultado en la bandera del tramite, sumando un intento.
+   *
+   * Nunca lanza por una prealerta: un fallo con una no frena las demas. Aun sin
+   * replicar, la sincronizacion por tracking recupera el paquete cuando llega a
+   * bodega, asi que esto es una red adelantada, no un requisito.
+   */
+  async reconcilePrealerts(): Promise<PrealertReconcileReport> {
+    const report: PrealertReconcileReport = { checked: 0, synced: 0, failed: 0 };
+    if (!isHelgaEnabled()) return report;
+
+    const pending = await shipmentsRepo.findPrealertsToReconcile(PREALERT_RECONCILE_BATCH);
+    for (const s of pending) {
+      report.checked += 1;
+
+      let status: HelgaSyncStatus;
+      let error: string | null;
+      try {
+        await createHelgaPrealert({
+          helgaClientId: s.helgaClientId,
+          tracking: s.tracking,
+          description: s.description,
+          store: s.store,
+        });
+        status = HelgaSyncStatus.Synced;
+        error = null;
+        report.synced += 1;
+      } catch (err) {
+        status = HelgaSyncStatus.Failed;
+        error = err instanceof Error ? err.message : String(err);
+        report.failed += 1;
+        console.error(`[helga] reconciliación: no se pudo prealertar ${s.tracking}:`, err);
+      }
+
+      await shipmentsRepo.update(s.id, {
+        helgaPrealertStatus: status,
+        helgaPrealertAttempts: s.attempts + 1,
+        helgaPrealertError: error,
+      });
+    }
+    return report;
   },
 
   /** Alta por un usuario de staff. El permiso depende del tipo de tramite. */
@@ -227,7 +313,15 @@ export const shipmentsService = {
     const code = formatShipmentCode(await shipmentsRepo.nextCodeSequence());
     const state = initialState(flowForType(values.shipmentType));
 
-    const id = await shipmentsRepo.insert({ ...values, code, state, createdBy });
+    // Solo Paqueteria se replica ante el proveedor: los demas tipos nacen sin
+    // bandera (`null` = no aplica). El paquete arranca 'pending' y el intento
+    // inmediato de `prealertWithProvider` la sella; si no se intenta o falla,
+    // queda para la reconciliacion.
+    const helgaPrealertStatus = usesPackageFields(values.shipmentType)
+      ? HelgaSyncStatus.Pending
+      : null;
+
+    const id = await shipmentsRepo.insert({ ...values, code, state, createdBy, helgaPrealertStatus });
     const row = await shipmentsRepo.findById(id);
     if (!row) throw ShipmentErrors.notFound();
     return toDto(row);
@@ -248,6 +342,25 @@ export const shipmentsService = {
       : (['store', 'carrier', 'hawb', 'weightKg'] as const);
     for (const field of notForThisType) {
       if (patch[field] !== undefined && patch[field] !== null) throw ShipmentErrors.fieldNotForType();
+    }
+
+    // Reja por estado: la maquina de estados declara que campos admiten edicion en
+    // el estado actual. Un campo presente en el patch (aunque sea `null` para
+    // limpiarlo) que no este permitido -> 409. Fuente unica; la web deshabilita los
+    // mismos campos con `editableFieldsAt`.
+    const editable = editableFieldsAt(flowForType(current.shipmentType), current.state);
+    for (const field of Object.values(ShipmentField)) {
+      const present = patch[field as keyof UpdateShipmentInput] !== undefined;
+      if (present && !editable.includes(field)) {
+        throw ShipmentErrors.fieldNotEditableInState(STATE_LABELS[current.state]);
+      }
+    }
+
+    // Candado de dinero: el peso alimenta la factura. Una vez congelada (costos
+    // aprobados) no se puede tocar por PATCH aunque el estado siguiera admitiendolo;
+    // corregirlo exige reversar los costos. Depende de la fila, no del estado.
+    if (patch.weightKg !== undefined && current.costsApprovedAt != null) {
+      throw ShipmentErrors.weightLockedAfterInvoice();
     }
 
     if (patch.tracking !== undefined && patch.tracking !== current.tracking) {

@@ -6,11 +6,11 @@
  * Operaciones: A (token, en `helga.auth`), B (consulta de estado), C (prealerta
  * v2), D (crear destinatario casillero) y E (paquetes disponibles).
  *
- * TODO(13): B, C y E estan escritas contra los PDF del manual pero NO se han
- * podido ejercitar: la IP del backend todavia no esta en la lista blanca del
- * proveedor. Al habilitarla hay que verificar las rutas y los nombres de los
- * campos contra respuestas reales. Mientras `HELGA_ENABLED` sea false, nada de
- * esto se invoca y el sistema opera solo con sus propios estados.
+ * Rutas y shapes de B, D y E verificados EN VIVO contra la cuenta SJO008835
+ * (2026-07-23): la IP del backend ya esta en la lista blanca. C (prealerta v2)
+ * usa la ruta correcta `/api/v2/prealertas` pero le faltan campos obligatorios
+ * que el alta todavia no captura (ver TODO en `createHelgaPrealert`). Mientras
+ * `HELGA_ENABLED` sea false, nada de esto se invoca.
  */
 import { config } from '../../core/config';
 import { ProviderErrors } from '../../core/errors';
@@ -24,10 +24,12 @@ import {
   splitPersonName,
 } from './helga.constants';
 import type {
+  HelgaAvailablePackage,
   HelgaCreatePrealertRequest,
   HelgaCreateRecipientRequest,
   HelgaEnvelope,
-  HelgaPackage,
+  HelgaPackageStatus,
+  HelgaPaginator,
   HelgaPrealertResponse,
   HelgaRecipientResponse,
 } from './helga.types';
@@ -49,8 +51,18 @@ function providerError(status: number, message: string | undefined): Error {
 /**
  * POST autenticado contra Helga. Ante un 401 refresca el token y reintenta UNA
  * vez; cualquier otro fallo se traduce y se propaga.
+ *
+ * `allowNotFound`: para la consulta de estado (op. B), un `404` no es un error de
+ * infraestructura sino un caso de negocio esperado (el paquete todavia no existe
+ * del lado de Helga: prealerta que aun no llega). Con la bandera puesta se
+ * devuelve `undefined` en vez de lanzar, y el llamador lo interpreta como "sin
+ * estado por ahora".
  */
-async function post<T>(path: string, body: unknown): Promise<T | undefined> {
+async function post<T>(
+  path: string,
+  body: unknown,
+  opts: { allowNotFound?: boolean } = {},
+): Promise<T | undefined> {
   const send = async (token: string): Promise<Response> =>
     fetch(`${config.HELGA_BASE_URL}${path}`, {
       method: 'POST',
@@ -67,7 +79,8 @@ async function post<T>(path: string, body: unknown): Promise<T | undefined> {
         // documenta).
         ...(config.HELGA_APP_ID ? { 'X-App-Id': config.HELGA_APP_ID } : {}),
       },
-      body: JSON.stringify(body),
+      // Algunas rutas (op. B) no llevan cuerpo: el criterio va en la URL.
+      body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(config.HELGA_TIMEOUT_MS),
     });
 
@@ -89,6 +102,7 @@ async function post<T>(path: string, body: unknown): Promise<T | undefined> {
   const { data, message } = normalizeEnvelope(payload);
   console.info(`[helga] POST ${path} -> ${response.status} (${Date.now() - startedAt}ms)`);
 
+  if (response.status === 404 && opts.allowNotFound) return undefined;
   if (!response.ok) throw providerError(response.status, message);
   return data;
 }
@@ -166,48 +180,65 @@ export async function createHelgaPrealert(params: {
   description: string;
   store?: string | null;
 }): Promise<string | null> {
-  if (HELGA_ACCOUNT_CLIENT_ID === null) {
-    console.error('[helga] falta cliente_id de la cuenta de HS Global.');
-    throw ProviderErrors.unavailable();
-  }
-
   const body: HelgaCreatePrealertRequest = {
-    cliente_id: HELGA_ACCOUNT_CLIENT_ID,
-    destinatario_id: params.helgaClientId,
     tracking: params.tracking,
-    descripcion: params.description,
-    ...(params.store ? { tienda: params.store } : {}),
+    contenido: params.description,
+    // El proveedor exige `tienda`; cuando no se conoce usa este mismo centinela.
+    tienda: params.store?.trim() || 'POR DEFINIR',
+    destinatario_id: params.helgaClientId,
   };
 
-  const data = await post<HelgaPrealertResponse>('/api/casillero/prealertas', body);
-  const raw = data?.id ?? data?.prealerta_id;
+  const data = await post<HelgaPrealertResponse>('/api/v2/prealertas', body);
+  const raw = data?.Id ?? data?.id ?? data?.prealerta_id;
   return raw === undefined || raw === null ? null : String(raw);
 }
 
 /**
- * Op. B — estado actual de los paquetes de un destinatario.
+ * Op. B — estado ACTUAL de UN paquete, buscado por HAWB, tracking de tienda o
+ * guia transportadora. El criterio va en la URL, sin cuerpo.
  *
- * El proveedor solo expone los paquetes DEL CLIENTE consultado (su API esta
- * pensada para el casillero de un cliente, no para todo el sistema), asi que la
- * sincronizacion recorre casillero por casillero en vez de pedir "todo lo nuevo".
+ * Devuelve `null` cuando el proveedor responde `404`: el paquete no existe o no
+ * es de la cuenta. En la practica es una prealerta que todavia no llega a bodega
+ * —Helga aun no la reconoce como paquete y por tanto no tiene estado. No es un
+ * error: la sincronizacion lo trata como "sin estado por ahora".
  */
-export async function fetchHelgaPackageStates(helgaClientId: string): Promise<HelgaPackage[]> {
-  const data = await post<HelgaPackage[]>('/api/casillero/consulta-estado', {
-    cliente_id: HELGA_ACCOUNT_CLIENT_ID,
-    destinatario_id: helgaClientId,
-  });
-  return Array.isArray(data) ? data : [];
+export async function fetchHelgaPackageState(search: string): Promise<HelgaPackageStatus | null> {
+  const data = await post<HelgaPackageStatus>(
+    `/api/casillero/consulta-estado/${encodeURIComponent(search)}`,
+    undefined,
+    { allowNotFound: true },
+  );
+  return data ?? null;
 }
 
 /**
- * Op. E — paquetes disponibles en bodega del destinatario, incluidos los que
- * NUNCA se prealertaron. Es la via para descubrir compras que el cliente no
- * declaro: el manual pide poder darlas de alta igual.
+ * Op. E — paquetes disponibles para despacho de TODA la cuenta consolidada
+ * (paginado). No es por destinatario: cada fila trae su `destinatario_id`. Es la
+ * via para descubrir compras que el cliente no declaro; el manual pide poder
+ * darlas de alta igual. Recorre las paginas hasta agotar el paginador de Laravel.
  */
-export async function fetchHelgaAvailablePackages(helgaClientId: string): Promise<HelgaPackage[]> {
-  const data = await post<HelgaPackage[]>('/api/casillero/paquetes-disponibles', {
-    cliente_id: HELGA_ACCOUNT_CLIENT_ID,
-    destinatario_id: helgaClientId,
-  });
-  return Array.isArray(data) ? data : [];
+export async function fetchHelgaAvailablePackages(params: {
+  pageSize?: number;
+  search?: string;
+} = {}): Promise<HelgaAvailablePackage[]> {
+  const pageSize = params.pageSize ?? 100;
+  const all: HelgaAvailablePackage[] = [];
+  let page = 1;
+  let lastPage = 1;
+
+  do {
+    const body = {
+      pageSize,
+      ...(params.search ? { str_busqueda: params.search } : {}),
+    };
+    const data = await post<HelgaPaginator<HelgaAvailablePackage>>(
+      `/api/casillero/despachos/preliquidaciones/paqsdisponibles?page=${page}`,
+      body,
+    );
+    if (Array.isArray(data?.data)) all.push(...data.data);
+    lastPage = data?.last_page ?? page;
+    page += 1;
+  } while (page <= lastPage);
+
+  return all;
 }

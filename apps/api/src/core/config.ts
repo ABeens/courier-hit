@@ -3,6 +3,7 @@
  * invalido, la API no arranca: fallamos temprano y claro.
  */
 import { z } from 'zod';
+import { isValidDuration } from './scheduler/duration';
 
 /**
  * Variable opcional que puede venir vacia o con un placeholder de plantilla.
@@ -109,6 +110,39 @@ const EnvSchema = z.object({
   BCCR_EMAIL: optionalEnv(),
   BCCR_TOKEN: optionalEnv(),
   BCCR_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
+
+  // --- Robot de tareas programadas (scheduler) ---
+  // Interruptor del robot que corre tareas de fondo cada cierto intervalo. En
+  // desarrollo va apagado: no queremos temporizadores disparando llamadas a
+  // integraciones (Helga) mientras se trabaja en local. Se enciende en el
+  // ambiente que deba operar las tareas de forma desatendida.
+  SCHEDULER_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  // Cada cuanto sincronizar estados con el proveedor. Duracion legible: acepta
+  // cualquier unidad ("30m", "2h", "1d", "90s", "1h30m"). Se valida el formato
+  // aqui para fallar al arrancar, no en la primera corrida.
+  PROVIDER_SYNC_INTERVAL: z
+    .string()
+    .default('15m')
+    .refine(isValidDuration, {
+      message: 'PROVIDER_SYNC_INTERVAL debe ser una duracion valida (p. ej. "30m", "2h", "1d").',
+    }),
+  // Reconciliacion del enlace de casilleros con Helga (reintenta los pending/failed).
+  HELGA_LINK_RECONCILE_INTERVAL: z
+    .string()
+    .default('1h')
+    .refine(isValidDuration, {
+      message: 'HELGA_LINK_RECONCILE_INTERVAL debe ser una duracion valida (p. ej. "1h", "30m").',
+    }),
+  // Reconciliacion de prealertas con Helga (reenvia las pending/failed ya enlazadas).
+  HELGA_PREALERT_RECONCILE_INTERVAL: z
+    .string()
+    .default('30m')
+    .refine(isValidDuration, {
+      message: 'HELGA_PREALERT_RECONCILE_INTERVAL debe ser una duracion valida (p. ej. "30m", "2h").',
+    }),
 }).superRefine((env, ctx) => {
   // OJO: el BCCR NO se valida aqui a proposito. A diferencia de Helga, encenderlo
   // sin credenciales NO tumba el arranque: es un interruptor que se puede prender

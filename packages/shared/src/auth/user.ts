@@ -44,6 +44,30 @@ export const CLIENT_REVIEW_STATUS_VALUES = Object.values(ClientReviewStatus) as 
   ...ClientReviewStatus[],
 ];
 
+/**
+ * Estado del enlace del casillero con el proveedor (Helga). Eje distinto de
+ * `ClientReviewStatus` (revision manual del admin): este lo mueve la integracion.
+ *
+ * - `pending`: aun no enlazado (la integracion estaba apagada, o nunca se
+ *   intento). El proceso de reconciliacion debe reintentarlo.
+ * - `synced`: enlazado; hay `helgaClientId` y `helgaSubLocker`.
+ * - `failed`: se intento y el proveedor rechazo o no respondio. Reintentable.
+ *
+ * Mientras la integracion esta encendida, un customer no ingresa hasta quedar
+ * `synced` (ver login). Con la integracion apagada no hay verificacion posible
+ * y la puerta no aplica.
+ */
+export enum HelgaSyncStatus {
+  Pending = 'pending',
+  Synced = 'synced',
+  Failed = 'failed',
+}
+
+export const HELGA_SYNC_STATUS_VALUES = Object.values(HelgaSyncStatus) as [
+  HelgaSyncStatus,
+  ...HelgaSyncStatus[],
+];
+
 /** Perfil de casillero: extension 1:1 de User cuando principal = Client. */
 export interface ClientProfile {
   userId: string;
@@ -63,5 +87,11 @@ export interface ClientProfile {
    */
   helgaClientId: string | null;
   helgaSyncedAt: Date | null;
+  /** Estado del enlace con el proveedor; gobierna el acceso mientras Helga esta on. */
+  helgaSyncStatus: HelgaSyncStatus;
+  /** Intentos de enlace ya realizados (0 si la integracion estaba apagada). */
+  helgaSyncAttempts: number;
+  /** Ultimo error del proveedor al intentar enlazar; `null` si nunca fallo. */
+  helgaLastError: string | null;
   memberSince: Date | null;
 }

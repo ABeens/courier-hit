@@ -17,6 +17,13 @@ import * as deliveriesSchema from '../modules/deliveries/deliveries.schema';
 
 const client = postgres(config.DATABASE_URL);
 
+/**
+ * Cliente crudo de postgres.js. Casi todo el codigo usa `db` (Drizzle); esto se
+ * exporta solo para lo que necesita una CONEXION dedicada del pool, como los
+ * advisory locks del scheduler (ver `core/scheduler/with-lock.ts`).
+ */
+export const sql = client;
+
 export const schema = {
   ...authSchema,
   ...costServicesSchema,

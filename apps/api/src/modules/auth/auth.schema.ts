@@ -20,6 +20,8 @@ import {
 import {
   CLIENT_REVIEW_STATUS_VALUES,
   ClientReviewStatus,
+  HELGA_SYNC_STATUS_VALUES,
+  HelgaSyncStatus,
   PRINCIPAL_VALUES,
   ROLE_VALUES,
   USER_STATUS_VALUES,
@@ -32,6 +34,7 @@ export const principalEnum = pgEnum('principal', PRINCIPAL_VALUES);
 export const roleEnum = pgEnum('role', ROLE_VALUES);
 export const userStatusEnum = pgEnum('user_status', USER_STATUS_VALUES);
 export const clientReviewStatusEnum = pgEnum('client_review_status', CLIENT_REVIEW_STATUS_VALUES);
+export const helgaSyncStatusEnum = pgEnum('helga_sync_status', HELGA_SYNC_STATUS_VALUES);
 
 /** Secuencia del codigo de casillero: HS-1042, HS-1043, ... */
 export const clientCodeSeq = pgSequence('hs_client_code_seq', { startWith: 1042, increment: 1 });
@@ -107,6 +110,19 @@ export const clients = pgTable('clients', {
    */
   helgaSubLocker: text('helga_sub_locker'),
   helgaSyncedAt: timestamp('helga_synced_at', { withTimezone: true }),
+  /**
+   * Estado del enlace con el proveedor. Nace 'pending': el casillero existe de
+   * nuestro lado aunque aun no este en Helga. La reconciliacion lo llevara a
+   * 'synced' (o 'failed' si el proveedor rechaza). Gobierna el acceso del
+   * cliente mientras la integracion este encendida (ver auth.service login).
+   */
+  helgaSyncStatus: helgaSyncStatusEnum('helga_sync_status')
+    .notNull()
+    .default(HelgaSyncStatus.Pending),
+  /** Intentos de enlace ya realizados; 0 si la integracion estaba apagada. */
+  helgaSyncAttempts: integer('helga_sync_attempts').notNull().default(0),
+  /** Ultimo error del proveedor al intentar enlazar; para diagnostico del robot. */
+  helgaLastError: text('helga_last_error'),
   memberSince: date('member_since'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

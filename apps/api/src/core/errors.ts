@@ -40,6 +40,17 @@ export const AuthErrors = {
     ),
   userInactive: () => new AppError('USER_INACTIVE', 'La cuenta está deshabilitada.', 403),
   emailNotVerified: () => new AppError('EMAIL_NOT_VERIFIED', 'Debes verificar tu correo antes de ingresar.', 403),
+  /**
+   * El casillero aun no esta enlazado con el proveedor (Helga). El cliente no
+   * ingresa hasta que la reconciliacion lo deje `synced`. Solo aplica con la
+   * integracion encendida.
+   */
+  accountPendingVerification: () =>
+    new AppError(
+      'ACCOUNT_PENDING_VERIFICATION',
+      'Estamos verificando tu información. Te avisaremos por correo cuando tu cuenta esté lista para ingresar.',
+      403,
+    ),
   invalidCode: () => new AppError('INVALID_CODE', 'El código es incorrecto o expiró.', 400),
   invalidToken: () => new AppError('INVALID_TOKEN', 'El enlace es inválido o expiró.', 400),
 };
@@ -159,6 +170,27 @@ export const ShipmentErrors = {
       'SHIPMENT_FIELD_NOT_FOR_TYPE',
       'Alguno de los datos enviados no aplica a este tipo de trámite.',
       400,
+    ),
+  /**
+   * El campo enviado no admite edicion con el tramite en su estado actual (la
+   * maquina de estados lo excluye de `editable`). 409: no es un dato invalido,
+   * es que el momento del tramite no permite cambiarlo.
+   */
+  fieldNotEditableInState: (state: string) =>
+    new AppError(
+      'SHIPMENT_FIELD_NOT_EDITABLE',
+      `Alguno de los datos enviados no se puede modificar con el trámite en "${state}".`,
+      409,
+    ),
+  /**
+   * El peso alimenta la factura y esta ya fue congelada (costos aprobados). No se
+   * corrige por PATCH: hay que reversar los costos primero. 409.
+   */
+  weightLockedAfterInvoice: () =>
+    new AppError(
+      'SHIPMENT_WEIGHT_LOCKED',
+      'El peso no se puede cambiar: la factura ya fue aprobada. Reversa los costos del trámite para corregirlo.',
+      409,
     ),
 };
 
