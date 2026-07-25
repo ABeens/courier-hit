@@ -73,8 +73,12 @@ const F = ShipmentField;
 // Paqueteria. El tracking se congela al recibir; los descriptivos y el PESO siguen
 // editables hasta que se aprueban los costos (el peso alimenta la factura); tras el
 // congelamiento, nada.
-const PKG_PREALERT = [F.Tracking, F.Description, F.Store, F.Carrier, F.Hawb, F.WeightKg];
-const PKG_RECEIVED = [F.Description, F.Store, F.Carrier, F.Hawb, F.WeightKg]; // tracking congelado
+// Los valores declarados para el proveedor (comercial, asegurado, arancel, retener)
+// se fijan en la prealerta y el staff los corrige hasta la recepcion; despues son
+// historicos, como la tienda y el transportista.
+const PKG_DECLARED = [F.DeclaredValue, F.InsuredValue, F.TariffPosition, F.Retain];
+const PKG_PREALERT = [F.Tracking, F.Description, F.Store, F.Carrier, F.Hawb, F.WeightKg, ...PKG_DECLARED];
+const PKG_RECEIVED = [F.Description, F.Store, F.Carrier, F.Hawb, F.WeightKg, ...PKG_DECLARED]; // tracking congelado
 const PKG_IN_TRANSIT = [F.Description, F.Hawb, F.WeightKg]; // tienda/transportista ya son historicos
 const PKG_BILLING = [F.Description, F.WeightKg]; // ultimo tramo para el peso (antes de aprobar costos)
 

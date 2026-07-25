@@ -123,6 +123,16 @@
       "_doc": "Limite de credito del casillero (Parte 3, 'Editar Cliente'). Es un TECHO de politica comercial, no un monto transaccional: no existe un instante de cobro cuya tasa haya que congelar, asi que lleva moneda explicita (M2/M6) pero NO exchangeRate — misma naturaleza que clientRates.pricePerKg. Ambas monedas porque el cliente puede tener cupo en dolares (paqueteria) o en colones (transporte/agenciamiento). null = sin limite definido, distinto de 0 (que seria no fiarle nada)."
     },
 
+    "shipments.declaredValueUsd": {
+      "currencyPolicy": "usd",
+      "requireExchangeRate": false,
+      "_doc": "Valor comercial declarado del paquete (lo captura el cliente al prealertar) que viaja como 'valor_comercial' a la prealerta del proveedor Helga. Solo USD: la paqueteria (compras en USA) se cotiza en dolares y la moneda va explicita en el nombre del campo (M2/M6). NO es un monto transaccional: no existe un instante de cobro cuya tasa haya que congelar, asi que NO lleva exchangeRate (M5 no aplica) — misma naturaleza que clients.creditLimit y los valores de catalogo. Rango > 0 validado con Zod en el borde (declaredValueUsdSchema); redondeo a 2 decimales con roundMoney al guardar y al enviar al proveedor."
+    },
+    "shipments.insuredValueUsd": {
+      "currencyPolicy": "usd",
+      "requireExchangeRate": false,
+      "_doc": "Valor asegurado del paquete que viaja como 'valor_asegurado' a la prealerta del proveedor. Solo lo fija el staff; null/ausente = el proveedor asume 0 (HS Global normalmente no asegura). Misma naturaleza que declaredValueUsd: solo USD (M2/M6), sin tasa de cambio (M5 no aplica), rango >= 0 validado con Zod (insuredValueUsdSchema) y redondeo a 2 decimales con roundMoney."
+    },
     "shipments.invoiceTotalUsd": {
       "currencyPolicy": "usd",
       "requireExchangeRate": false,

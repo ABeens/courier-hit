@@ -29,6 +29,7 @@ export function PrealertScreen({ onCreated }: { onCreated?: () => void }) {
   const [description, setDescription] = useState('');
   const [store, setStore] = useState('');
   const [carrier, setCarrier] = useState('');
+  const [declaredValue, setDeclaredValue] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<ShipmentDto | null>(null);
   const [busy, setBusy] = useState(false);
@@ -40,6 +41,7 @@ export function PrealertScreen({ onCreated }: { onCreated?: () => void }) {
     setDescription('');
     setStore('');
     setCarrier('');
+    setDeclaredValue('');
   }
 
   async function submit(e: React.FormEvent) {
@@ -52,7 +54,13 @@ export function PrealertScreen({ onCreated }: { onCreated?: () => void }) {
         shipmentType,
         tracking,
         description,
-        ...(isPackage ? { store: store || undefined, carrier: carrier || undefined } : {}),
+        ...(isPackage
+          ? {
+              store: store || undefined,
+              carrier: carrier || undefined,
+              declaredValueUsd: declaredValue ? Number(declaredValue) : undefined,
+            }
+          : {}),
       });
       if (!parsed.success) {
         setError(parsed.error.issues[0]?.message ?? 'Datos inválidos.');
@@ -136,6 +144,18 @@ export function PrealertScreen({ onCreated }: { onCreated?: () => void }) {
                 {CARRIERS.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
+          </div>
+        )}
+
+        {isPackage && (
+          <div>
+            <label className="field-label" htmlFor="p-value">Valor declarado (USD)</label>
+            <input
+              id="p-value" className="input" type="number" min="0" step="0.01" value={declaredValue}
+              placeholder="Ej: 45.00"
+              onChange={(e) => setDeclaredValue(e.target.value)}
+            />
+            <div className="field-hint">Lo que pagaste por la compra, en dólares. Es obligatorio para la aduana.</div>
           </div>
         )}
 

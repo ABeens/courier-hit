@@ -12,6 +12,7 @@
  *    casillero de la SESION, nunca a un clientId del query string.
  */
 import {
+  Currency,
   HelgaSyncStatus,
   Permission,
   Role,
@@ -21,6 +22,7 @@ import {
   editableFieldsAt,
   flowForType,
   initialState,
+  roundMoney,
   roundWeightKg,
   usesPackageFields,
 } from '@courier/shared';
@@ -99,6 +101,10 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     carrier: row.carrier,
     hawb: row.hawb,
     weightKg: row.weightKg,
+    declaredValueUsd: row.declaredValueUsd,
+    insuredValueUsd: row.insuredValueUsd,
+    tariffPosition: row.tariffPosition,
+    retain: row.retain,
     warehouse: row.warehouse,
     dua: row.dua,
     billingNotes: row.billingNotes,
@@ -170,6 +176,10 @@ export const shipmentsService = {
         description: input.description,
         store: input.store ?? null,
         carrier: input.carrier ?? null,
+        // El cliente solo declara el valor comercial; el asegurado, el arancel y el
+        // retener los completa el staff, asi que aqui nacen null.
+        declaredValueUsd:
+          input.declaredValueUsd === undefined ? null : roundMoney(input.declaredValueUsd, Currency.USD),
       },
       session.userId,
     );
@@ -211,6 +221,10 @@ export const shipmentsService = {
         tracking: shipment.tracking,
         description: shipment.description,
         store: shipment.store,
+        commercialValue: shipment.declaredValueUsd,
+        insuredValue: shipment.insuredValueUsd,
+        tariffPosition: shipment.tariffPosition,
+        retain: shipment.retain,
       });
       status = HelgaSyncStatus.Synced;
       error = null;
@@ -259,6 +273,10 @@ export const shipmentsService = {
           tracking: s.tracking,
           description: s.description,
           store: s.store,
+          commercialValue: s.declaredValueUsd,
+          insuredValue: s.insuredValueUsd,
+          tariffPosition: s.tariffPosition,
+          retain: s.retain,
         });
         status = HelgaSyncStatus.Synced;
         error = null;
@@ -297,6 +315,14 @@ export const shipmentsService = {
         hawb: input.hawb ?? null,
         // Punto unico de redondeo del peso (regla del manual: siempre hacia arriba).
         weightKg: input.weightKg === undefined ? null : roundWeightKg(input.weightKg),
+        // Datos para la prealerta del proveedor. Los importes se redondean a 2
+        // decimales (USD) en este unico punto; retener y arancel viajan tal cual.
+        declaredValueUsd:
+          input.declaredValueUsd === undefined ? null : roundMoney(input.declaredValueUsd, Currency.USD),
+        insuredValueUsd:
+          input.insuredValueUsd === undefined ? null : roundMoney(input.insuredValueUsd, Currency.USD),
+        tariffPosition: input.tariffPosition ?? null,
+        retain: input.retain ?? null,
         billingNotes: input.billingNotes ?? null,
       },
       session.userId,
@@ -339,7 +365,7 @@ export const shipmentsService = {
     const isPackage = usesPackageFields(current.shipmentType);
     const notForThisType = isPackage
       ? (['warehouse', 'dua', 'billingNotes'] as const)
-      : (['store', 'carrier', 'hawb', 'weightKg'] as const);
+      : (['store', 'carrier', 'hawb', 'weightKg', 'declaredValueUsd', 'insuredValueUsd', 'tariffPosition', 'retain'] as const);
     for (const field of notForThisType) {
       if (patch[field] !== undefined && patch[field] !== null) throw ShipmentErrors.fieldNotForType();
     }
@@ -376,6 +402,14 @@ export const shipmentsService = {
       ...(patch.weightKg !== undefined
         ? { weightKg: patch.weightKg === null ? null : roundWeightKg(patch.weightKg) }
         : {}),
+      ...(patch.declaredValueUsd !== undefined
+        ? { declaredValueUsd: patch.declaredValueUsd === null ? null : roundMoney(patch.declaredValueUsd, Currency.USD) }
+        : {}),
+      ...(patch.insuredValueUsd !== undefined
+        ? { insuredValueUsd: patch.insuredValueUsd === null ? null : roundMoney(patch.insuredValueUsd, Currency.USD) }
+        : {}),
+      ...(patch.tariffPosition !== undefined ? { tariffPosition: patch.tariffPosition } : {}),
+      ...(patch.retain !== undefined ? { retain: patch.retain } : {}),
       ...(patch.warehouse !== undefined ? { warehouse: patch.warehouse } : {}),
       ...(patch.dua !== undefined ? { dua: patch.dua } : {}),
       ...(patch.billingNotes !== undefined ? { billingNotes: patch.billingNotes } : {}),

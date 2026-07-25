@@ -12,6 +12,7 @@
  * que el alta todavia no captura (ver TODO en `createHelgaPrealert`). Mientras
  * `HELGA_ENABLED` sea false, nada de esto se invoca.
  */
+import { Currency, roundMoney } from '@courier/shared';
 import { config } from '../../core/config';
 import { ProviderErrors } from '../../core/errors';
 import { getAccessToken, invalidateToken } from './helga.auth';
@@ -167,9 +168,26 @@ export async function createHelgaRecipient(params: {
 }
 
 /**
+ * Normaliza un importe (USD) que viaja al proveedor: descarta valores no finitos o
+ * negativos (que Helga rechazaria) y redondea a 2 decimales en este unico borde de
+ * salida (regla M4). El valor ya suele venir redondeado desde la persistencia; esto
+ * es la red del limite con el proveedor. `null`/ausente -> 0, el default del negocio.
+ */
+function usdAmountFor(value: number | null | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return 0;
+  return roundMoney(value, Currency.USD);
+}
+
+/**
  * Op. C — prealerta un paquete ante el proveedor. Es lo que autoriza al sistema a
  * empezar a preguntar por su estado: sin prealerta, el paquete no existe del lado
  * de Helga hasta que llega fisicamente a su bodega.
+ *
+ * La v2 exige `valor_comercial`, `valor_asegurado` y `retener` (sin ellos responde
+ * 422); `posicion_arancelaria` es opcional y se omite cuando no se conoce. Los
+ * defaults (0 / 0 / false) reflejan la practica real de HS Global —el valor
+ * asegurado casi siempre es 0 y no se retiene—; el valor comercial es el unico
+ * dato real por paquete y llega desde el valor declarado del tramite.
  *
  * Devuelve el id de la prealerta si el proveedor lo da; no es imprescindible,
  * porque el cruce posterior se hace por tracking.
@@ -179,13 +197,27 @@ export async function createHelgaPrealert(params: {
   tracking: string;
   description: string;
   store?: string | null;
+  /** Valor comercial declarado (USD). Ausente/null -> 0. */
+  commercialValue?: number | null;
+  /** Valor asegurado (USD). Ausente/null -> 0. */
+  insuredValue?: number | null;
+  /** Posicion arancelaria. Se omite cuando esta vacia. */
+  tariffPosition?: string | null;
+  /** Retener en bodega del proveedor. Ausente/null -> false. */
+  retain?: boolean | null;
 }): Promise<string | null> {
+  const tariff = params.tariffPosition?.trim();
   const body: HelgaCreatePrealertRequest = {
     tracking: params.tracking,
     contenido: params.description,
     // El proveedor exige `tienda`; cuando no se conoce usa este mismo centinela.
     tienda: params.store?.trim() || 'POR DEFINIR',
     destinatario_id: params.helgaClientId,
+    valor_comercial: usdAmountFor(params.commercialValue),
+    valor_asegurado: usdAmountFor(params.insuredValue),
+    retener: params.retain ?? false,
+    // Opcional: solo se manda si se conoce (como en el export real de HS Global).
+    ...(tariff ? { posicion_arancelaria: tariff } : {}),
   };
 
   const data = await post<HelgaPrealertResponse>('/api/v2/prealertas', body);

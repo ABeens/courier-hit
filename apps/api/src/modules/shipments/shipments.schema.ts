@@ -12,6 +12,7 @@
  */
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   doublePrecision,
   index,
   integer,
@@ -60,6 +61,22 @@ export const shipments = pgTable(
     hawb: text('hawb'),
     /** Peso en kilos, entero: se redondea hacia arriba al guardar (flujo.md L115). */
     weightKg: integer('weight_kg'),
+
+    // --- Datos declarados para la prealerta del proveedor (Helga), solo Paqueteria ---
+    /**
+     * Valor comercial declarado, en USD (moneda explicita en el nombre, regla M2;
+     * la paqueteria se cotiza solo en dolares). Lo captura el cliente al prealertar
+     * y alimenta `valor_comercial` de la prealerta del proveedor. No es un monto
+     * transaccional: no lleva tasa de cambio (M5 no aplica), como invoiceTotalUsd.
+     * doublePrecision por consistencia con el resto de importes del esquema (legado).
+     */
+    declaredValueUsd: doublePrecision('declared_value_usd'),
+    /** Valor asegurado, en USD. Solo staff; null = no indicado (el proveedor asume 0). */
+    insuredValueUsd: doublePrecision('insured_value_usd'),
+    /** Posicion arancelaria del contenido. Solo staff; null = no se conoce (se omite ante el proveedor). */
+    tariffPosition: text('tariff_position'),
+    /** Retener el paquete en la bodega del proveedor. Solo staff; null/false = no retener. */
+    retain: boolean('retain'),
 
     // --- Solo Transporte y Agenciamiento ---
     warehouse: text('warehouse'),

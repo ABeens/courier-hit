@@ -46,6 +46,19 @@ export interface ShipmentDto {
   hawb: string | null;
   /** Peso en kilos, entero (siempre redondeado hacia arriba al guardar). */
   weightKg: number | null;
+  /**
+   * Valor comercial declarado, en USD (moneda explicita en el nombre, regla M2).
+   * Lo captura el cliente en la prealerta y alimenta `valor_comercial` de la
+   * prealerta del proveedor. No es un monto transaccional: no lleva tasa de
+   * cambio (M5 no aplica), como el limite de credito o el total de factura.
+   */
+  declaredValueUsd: number | null;
+  /** Valor asegurado, en USD. Solo lo fija el staff; null = no indicado (el proveedor asume 0). */
+  insuredValueUsd: number | null;
+  /** Posicion arancelaria del contenido. Solo staff; null = no se conoce (se omite ante el proveedor). */
+  tariffPosition: string | null;
+  /** Retener el paquete en la bodega del proveedor. Solo staff; null/false = no retener. */
+  retain: boolean | null;
 
   // --- Solo Transporte y Agenciamiento ---
   warehouse: string | null;
@@ -95,6 +108,14 @@ export enum ShipmentField {
   Carrier = 'carrier',
   Hawb = 'hawb',
   WeightKg = 'weightKg',
+  /** Valor comercial declarado (USD): lo llena el cliente en la prealerta. */
+  DeclaredValue = 'declaredValueUsd',
+  /** Valor asegurado (USD): solo staff. */
+  InsuredValue = 'insuredValueUsd',
+  /** Posicion arancelaria: solo staff. */
+  TariffPosition = 'tariffPosition',
+  /** Retener en bodega del proveedor: solo staff. */
+  Retain = 'retain',
   // Solo Transporte y Agenciamiento
   Warehouse = 'warehouse',
   Dua = 'dua',

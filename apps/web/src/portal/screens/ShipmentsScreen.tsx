@@ -30,7 +30,7 @@ import {
 import type { Role, ShipmentDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { formatDate, startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
-import { ShipmentFormModal } from './ShipmentFormModal';
+import { ShipmentFormModal, allowedTypesFor } from './ShipmentFormModal';
 import { PaymentModal } from './PaymentModal';
 
 /** Que tablero se esta mirando. */
@@ -212,6 +212,14 @@ export function ShipmentsScreen({ role, initialView }: Props) {
   const canWrite = can(role, Permission.PackageWrite) || can(role, Permission.TramiteManage);
   const canPay = can(role, Permission.PackagePay);
 
+  /**
+   * Tipos que se pueden dar de alta DESDE ESTE TABLERO: el alta hereda el filtro
+   * de la vista, porque un trámite creado fuera de el desaparece del listado al
+   * guardar. Si la interseccion con los permisos del rol queda vacia, no hay nada
+   * que crear aqui y el boton no se ofrece.
+   */
+  const creatableTypes = useMemo(() => allowedTypesFor(role, TYPES_BY_VIEW[view]), [role, view]);
+
   useEffect(() => setView(initialView), [initialView]);
 
   /**
@@ -269,9 +277,9 @@ export function ShipmentsScreen({ role, initialView }: Props) {
           <div className="title">{title}</div>
           {data && <div className="count">{data.items.length} trámites</div>}
         </div>
-        {canWrite && !isOwn && (
+        {canWrite && !isOwn && creatableTypes.length > 0 && (
           <button className="btn btn-primary" onClick={() => setModal({ mode: 'create' })}>
-            + Nuevo trámite
+            {view === 'paqueteria' ? '+ Nuevo paquete' : '+ Nuevo trámite'}
           </button>
         )}
       </div>
@@ -316,9 +324,13 @@ export function ShipmentsScreen({ role, initialView }: Props) {
                 {/* La fecha de ingreso vive aquí, con la identidad: es cuándo
                     entró el trámite, no un dato operativo de ningún bloque. */}
                 <div className="card-item-sub">
-                  {SHIPMENT_TYPE_LABELS[row.shipmentType]}
-                  {!isOwn && ` · ${row.client.code} — ${row.client.name}`}
-                  {` · Ingresó ${formatDate(row.createdAt)}`}
+                  <span className="sub-type">{SHIPMENT_TYPE_LABELS[row.shipmentType]}</span>
+                  {!isOwn && (
+                    <span className="sub-client">
+                      {row.client.code} — {row.client.name}
+                    </span>
+                  )}
+                  <span className="sub-date">Ingresó {formatDate(row.createdAt)}</span>
                 </div>
               </div>
               <div className="card-item-aside">
@@ -372,6 +384,7 @@ export function ShipmentsScreen({ role, initialView }: Props) {
         <ShipmentFormModal
           mode={modal.mode}
           role={role}
+          boardTypes={TYPES_BY_VIEW[view]}
           row={modal.mode === 'edit' ? modal.row : undefined}
           onClose={() => setModal(null)}
           onSaved={(message) => {
