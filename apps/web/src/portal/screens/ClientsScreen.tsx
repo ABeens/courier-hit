@@ -40,6 +40,48 @@ export interface ClientRow {
   shipmentCount: number;
 }
 
+/**
+ * Par etiqueta/valor de la ficha (mismo componente que en Paquetería). `empty`
+ * cambia el "—" por un texto propio cuando la ausencia tiene nombre ("Sin
+ * tarifa"), pero conserva el tono tenue de un campo vacío.
+ */
+function Field({
+  label,
+  value,
+  mono,
+  empty,
+}: {
+  label: string;
+  value: string | null;
+  mono?: boolean;
+  empty?: string;
+}) {
+  const isEmpty = value == null;
+  const classes = [mono && !isEmpty ? 'mono' : '', isEmpty ? 'empty-val' : '']
+    .filter(Boolean)
+    .join(' ');
+  return (
+    <div className="card-item-field">
+      <dt>{label}</dt>
+      <dd className={classes || undefined}>{value ?? empty ?? '—'}</dd>
+    </div>
+  );
+}
+
+/**
+ * Tono de la ficha por estado de revisión: un casillero nuevo pide atención
+ * (warn), uno ya revisado descansa en neutro. `--tone` tiñe la píldora igual
+ * que en Paquetería.
+ */
+const CLIENT_TONE: Record<ClientReviewStatus, 'warn' | 'neutral'> = {
+  [ClientReviewStatus.Nuevo]: 'warn',
+  [ClientReviewStatus.Revisado]: 'neutral',
+};
+const CLIENT_STATUS_LABEL: Record<ClientReviewStatus, string> = {
+  [ClientReviewStatus.Nuevo]: 'Nuevo',
+  [ClientReviewStatus.Revisado]: 'Revisado',
+};
+
 export function ClientsScreen({ canWrite }: { canWrite: boolean }) {
   const [items, setItems] = useState<ClientRow[] | null>(null);
   const [q, setQ] = useState('');
@@ -116,65 +158,70 @@ export function ClientsScreen({ canWrite }: { canWrite: boolean }) {
         </select>
       </div>
 
-      <div className="table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Casillero</th>
-              <th>Nombre</th>
-              <th>Cédula</th>
-              <th>Teléfono</th>
-              <th>Correo</th>
-              <th>Dirección</th>
-              <th>Tarifa</th>
-              <th>Límite de crédito</th>
-              <th>Trámites</th>
-              {canWrite && <th style={{ textAlign: 'right' }}>Acciones</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((row) => (
-              <tr key={row.id}>
-                <td>
-                  <div className="cell-name mono">{row.code}</div>
-                  {row.reviewStatus === ClientReviewStatus.Nuevo && (
-                    <span className="spill warn">
-                      <span className="dot" />
-                      Nuevo
-                    </span>
-                  )}
-                </td>
-                <td className="cell-name">{row.name}</td>
-                <td className="mono">{row.idNumber}</td>
-                <td className="mono">{row.phone ?? '—'}</td>
-                <td>{row.email}</td>
-                <td>
-                  <div>{findProvince(row.provinceCode)?.name ?? '—'}</div>
-                  <div className="cell-sub">
-                    {findCanton(row.cantonCode)?.name} · {findDistrict(row.districtCode)?.name}
+      <div className="cards">
+        {visible.map((row) => {
+          const province = findProvince(row.provinceCode)?.name ?? null;
+          const canton = findCanton(row.cantonCode)?.name ?? null;
+          const district = findDistrict(row.districtCode)?.name ?? null;
+          // Un monto sin moneda no significa nada (regla M2): si falta uno, se
+          // trata como "Sin límite", no se inventa la cifra.
+          const credit =
+            row.creditLimit != null && row.creditLimitCurrency
+              ? formatMoney(row.creditLimit, row.creditLimitCurrency)
+              : null;
+          const shipments = `${row.shipmentCount} ${row.shipmentCount === 1 ? 'trámite' : 'trámites'}`;
+          return (
+            <article className={`card-item tone-${CLIENT_TONE[row.reviewStatus]}`} key={row.id}>
+              <div className="card-item-head">
+                <div className="card-item-ident">
+                  <span className="card-item-code">{row.code}</span>
+                  <div className="card-item-title">{row.name}</div>
+                  <div className="card-item-sub">
+                    <span className="sub-type">Cédula {row.idNumber}</span>
+                    <span className="sub-date">{shipments}</span>
                   </div>
-                </td>
-                <td>{row.clientRateName ?? <span className="empty-val">Sin tarifa</span>}</td>
-                <td>
-                  {/* Un monto sin moneda no significa nada (regla M2): si falta, no se inventa. */}
-                  {row.creditLimit != null && row.creditLimitCurrency
-                    ? formatMoney(row.creditLimit, row.creditLimitCurrency)
-                    : <span className="empty-val">Sin límite</span>}
-                </td>
-                <td>{row.shipmentCount}</td>
-                {canWrite && (
-                  <td>
-                    <div className="actions">
-                      <button className="btn btn-ghost btn-sm" onClick={() => setEditing(row)}>
-                        Editar
-                      </button>
-                    </div>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </div>
+                <div className="card-item-aside">
+                  <span className="spill">
+                    <span className="dot" />
+                    {CLIENT_STATUS_LABEL[row.reviewStatus]}
+                  </span>
+                  {canWrite && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => setEditing(row)}>
+                      Editar
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="card-item-body">
+                <section className="card-sec">
+                  <div className="card-sec-title">Contacto</div>
+                  <dl className="card-sec-fields">
+                    <Field label="Teléfono" value={row.phone} mono />
+                    <Field label="Correo" value={row.email} />
+                  </dl>
+                </section>
+                <section className="card-sec">
+                  <div className="card-sec-title">Dirección</div>
+                  <dl className="card-sec-fields">
+                    <Field label="Provincia" value={province} />
+                    <Field label="Cantón" value={canton} />
+                    <Field label="Distrito" value={district} />
+                    <Field label="Señas" value={row.addressLine || null} />
+                  </dl>
+                </section>
+                <section className="card-sec">
+                  <div className="card-sec-title">Cuenta</div>
+                  <dl className="card-sec-fields">
+                    <Field label="Tarifa" value={row.clientRateName} empty="Sin tarifa" />
+                    <Field label="Límite de crédito" value={credit} empty="Sin límite" />
+                  </dl>
+                </section>
+              </div>
+            </article>
+          );
+        })}
       </div>
 
       {items && visible.length === 0 && (

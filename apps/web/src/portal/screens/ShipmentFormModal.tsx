@@ -7,8 +7,9 @@
  *   - Transporte y Ag. -> notas para facturar; almacen y DUA solo al EDITAR,
  *                         porque el manual los pide despues de guardar (L80-83).
  *
- * Los tipos ofrecidos dependen del rol: quien solo tiene package.write ve
- * Paqueteria; quien tiene tramite.manage ve los manuales. La API revalida.
+ * Los tipos ofrecidos dependen del rol (quien solo tiene package.write ve
+ * Paqueteria; quien tiene tramite.manage ve los manuales) Y del tablero desde
+ * el que se abre el modal. La API revalida.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { ModalOverlay } from '../components/ModalOverlay';
@@ -40,21 +41,31 @@ interface ClientOption {
 interface Props {
   mode: 'create' | 'edit';
   role: Role;
+  /** Tipos del tablero desde el que se abre (vacio = tablero mixto, sin acotar). */
+  boardTypes?: readonly ShipmentType[];
   row?: ShipmentDto;
   onClose: () => void;
   onSaved: (message?: string) => void;
 }
 
-/** Tipos que el rol puede dar de alta, en el orden del manual. */
-function allowedTypesFor(role: Role): ShipmentType[] {
+/**
+ * Tipos que se pueden dar de alta aqui, en el orden del manual: los que el rol
+ * tiene permitidos, acotados a los del tablero de origen.
+ *
+ * El tablero manda porque un alta fuera de su filtro desaparece de la lista al
+ * guardar (el listado pide `shipmentType`): crear un aereo desde Paqueteria
+ * dejaba el trámite invisible en la pantalla donde se creo. Tablero mixto
+ * ('todos') no acota nada. La API revalida el permiso por tipo.
+ */
+export function allowedTypesFor(role: Role, boardTypes: readonly ShipmentType[] = []): ShipmentType[] {
   const types: ShipmentType[] = [];
   if (can(role, Permission.PackageWrite)) types.push(ShipmentType.Paqueteria);
   if (can(role, Permission.TramiteManage)) types.push(...MANUAL_SHIPMENT_TYPES);
-  return types;
+  return boardTypes.length > 0 ? types.filter((t) => boardTypes.includes(t)) : types;
 }
 
-export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) {
-  const typeOptions = allowedTypesFor(role);
+export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSaved }: Props) {
+  const typeOptions = allowedTypesFor(role, boardTypes);
 
   const [shipmentType, setShipmentType] = useState<ShipmentType>(
     row?.shipmentType ?? typeOptions[0] ?? ShipmentType.Paqueteria,
@@ -68,6 +79,10 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
   const [carrier, setCarrier] = useState(row?.carrier ?? '');
   const [hawb, setHawb] = useState(row?.hawb ?? '');
   const [weight, setWeight] = useState(row?.weightKg != null ? String(row.weightKg) : '');
+  const [declaredValue, setDeclaredValue] = useState(row?.declaredValueUsd != null ? String(row.declaredValueUsd) : '');
+  const [insuredValue, setInsuredValue] = useState(row?.insuredValueUsd != null ? String(row.insuredValueUsd) : '');
+  const [tariffPosition, setTariffPosition] = useState(row?.tariffPosition ?? '');
+  const [retain, setRetain] = useState(row?.retain ?? false);
   const [billingNotes, setBillingNotes] = useState(row?.billingNotes ?? '');
   const [warehouse, setWarehouse] = useState(row?.warehouse ?? '');
   const [dua, setDua] = useState(row?.dua ?? '');
@@ -94,7 +109,7 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
   const weightLocked = mode === 'edit' && row != null && row.invoiceTotalUsd != null;
   // Campos visibles del formulario para este tipo; sirve para avisar si alguno quedo bloqueado.
   const relevantFields = isPackage
-    ? [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg]
+    ? [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg, ShipmentField.DeclaredValue, ShipmentField.InsuredValue, ShipmentField.TariffPosition, ShipmentField.Retain]
     : [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Warehouse, ShipmentField.Dua, ShipmentField.BillingNotes];
   const someFrozen = editable !== null && (weightLocked || relevantFields.some((f) => !editable.includes(f)));
 
@@ -137,6 +152,10 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
                 carrier: carrier || undefined,
                 hawb: hawb.trim() || undefined,
                 weightKg: weight ? Number(weight) : undefined,
+                declaredValueUsd: declaredValue ? Number(declaredValue) : undefined,
+                insuredValueUsd: insuredValue ? Number(insuredValue) : undefined,
+                tariffPosition: tariffPosition.trim() || undefined,
+                retain,
               }
             : { billingNotes: billingNotes.trim() || undefined }),
         });
@@ -165,6 +184,12 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
         put('hawb', hawb, row.hawb);
         const nextWeight = weight ? Number(weight) : null;
         if (nextWeight !== row.weightKg) patch.weightKg = nextWeight;
+        const nextDeclared = declaredValue ? Number(declaredValue) : null;
+        if (nextDeclared !== row.declaredValueUsd) patch.declaredValueUsd = nextDeclared;
+        const nextInsured = insuredValue ? Number(insuredValue) : null;
+        if (nextInsured !== row.insuredValueUsd) patch.insuredValueUsd = nextInsured;
+        put('tariffPosition', tariffPosition, row.tariffPosition);
+        if (retain !== (row.retain ?? false)) patch.retain = retain;
       } else {
         put('warehouse', warehouse, row.warehouse);
         put('dua', dua, row.dua);
@@ -317,6 +342,43 @@ export function ShipmentFormModal({ mode, role, row, onClose, onSaved }: Props) 
                 ) : weightPreview !== null && (
                   <div className="field-hint">Se guardará como {weightPreview} kg (siempre redondea hacia arriba).</div>
                 )}
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="t-value">Valor declarado (USD)</label>
+                <input
+                  id="t-value" className="input" type="number" min="0" step="0.01" value={declaredValue}
+                  placeholder="Ej: 45.00" disabled={!canEdit(ShipmentField.DeclaredValue)}
+                  onChange={(e) => setDeclaredValue(e.target.value)}
+                />
+                <div className="field-hint">Valor comercial de la compra; va en la prealerta del proveedor.</div>
+              </div>
+              <div>
+                <label className="field-label" htmlFor="t-insured">Valor asegurado (USD)</label>
+                <input
+                  id="t-insured" className="input" type="number" min="0" step="0.01" value={insuredValue}
+                  placeholder="0.00" disabled={!canEdit(ShipmentField.InsuredValue)}
+                  onChange={(e) => setInsuredValue(e.target.value)}
+                />
+                <div className="field-hint">Opcional. Vacío = sin seguro (0).</div>
+              </div>
+              <div>
+                <label className="field-label" htmlFor="t-tariff">Posición arancelaria</label>
+                <input
+                  id="t-tariff" className="input" value={tariffPosition}
+                  placeholder="Opcional" disabled={!canEdit(ShipmentField.TariffPosition)}
+                  onChange={(e) => setTariffPosition(e.target.value)}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'end', paddingBottom: 8 }}>
+                <input
+                  id="t-retain" type="checkbox" checked={retain}
+                  disabled={!canEdit(ShipmentField.Retain)}
+                  onChange={(e) => setRetain(e.target.checked)}
+                />
+                <label htmlFor="t-retain" className="field-label" style={{ margin: 0 }}>
+                  Retener en bodega del proveedor
+                </label>
               </div>
             </>
           ) : (

@@ -77,6 +77,31 @@ const carrierSchema = z.enum(CARRIERS, {
 const warehouseSchema = z.string().trim().min(1).max(100);
 const billingNotesSchema = z.string().trim().min(1).max(500);
 
+/**
+ * Valor comercial declarado, en USD (moneda explicita, regla M2; solo USD como
+ * el resto de la paqueteria). Lo captura el cliente al prealertar: es lo que pago
+ * por la compra y alimenta `valor_comercial` de la prealerta del proveedor.
+ * Positivo (una compra real vale mas que cero); el redondeo a 2 decimales lo hace
+ * el servidor con `roundMoney`, no la UI. No lleva tasa de cambio: es un valor
+ * declarado, no un cobro (M5 no aplica).
+ */
+export const declaredValueUsdSchema = z
+  .number({ invalid_type_error: 'El valor declarado debe ser un número.' })
+  .positive('El valor declarado debe ser mayor que cero.')
+  .max(1_000_000, 'El valor declarado es demasiado grande.');
+
+/**
+ * Valor asegurado, en USD. Solo lo fija el staff; 0 o mas (0 = sin seguro, que es
+ * lo habitual de HS Global). Misma naturaleza que el valor declarado: USD, sin tasa.
+ */
+export const insuredValueUsdSchema = z
+  .number({ invalid_type_error: 'El valor asegurado debe ser un número.' })
+  .nonnegative('El valor asegurado no puede ser negativo.')
+  .max(1_000_000, 'El valor asegurado es demasiado grande.');
+
+/** Posicion arancelaria (codigo aduanero del contenido). Texto corto; solo staff. */
+const tariffPositionSchema = z.string().trim().min(1).max(30);
+
 // ---------------------------------------------------------------------------
 // Coherencia tipo <-> campos
 // ---------------------------------------------------------------------------
@@ -94,6 +119,10 @@ function refineTypeFieldCoherence(
     carrier?: unknown;
     hawb?: unknown;
     weightKg?: unknown;
+    declaredValueUsd?: unknown;
+    insuredValueUsd?: unknown;
+    tariffPosition?: unknown;
+    retain?: unknown;
     warehouse?: unknown;
     dua?: unknown;
     billingNotes?: unknown;
@@ -101,7 +130,16 @@ function refineTypeFieldCoherence(
   ctx: z.RefinementCtx,
 ): void {
   const isPackage = usesPackageFields(data.shipmentType);
-  const packageOnly = ['store', 'carrier', 'hawb', 'weightKg'] as const;
+  const packageOnly = [
+    'store',
+    'carrier',
+    'hawb',
+    'weightKg',
+    'declaredValueUsd',
+    'insuredValueUsd',
+    'tariffPosition',
+    'retain',
+  ] as const;
   const transportOnly = ['warehouse', 'dua', 'billingNotes'] as const;
 
   for (const field of isPackage ? transportOnly : packageOnly) {
@@ -136,6 +174,8 @@ export const prealertShipmentSchema = z
     description: descriptionSchema,
     store: storeSchema.optional(),
     carrier: carrierSchema.optional(),
+    /** Valor comercial declarado (USD). Obligatorio en Paqueteria: lo pide la prealerta del proveedor. */
+    declaredValueUsd: declaredValueUsdSchema.optional(),
   })
   .superRefine((data, ctx) => {
     if (!usesPackageFields(data.shipmentType)) {
@@ -147,6 +187,15 @@ export const prealertShipmentSchema = z
     }
     if (!data.carrier) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['carrier'], message: 'Elige el transportista.' });
+    }
+    // El valor declarado solo lo aporta el cliente (los demas campos del proveedor
+    // —asegurado, arancel, retener— son cosa del staff y no viajan en la prealerta).
+    if (data.declaredValueUsd === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['declaredValueUsd'],
+        message: 'Indica el valor declarado de la compra.',
+      });
     }
   });
 export type PrealertShipmentInput = z.infer<typeof prealertShipmentSchema>;
@@ -174,6 +223,12 @@ export const createShipmentSchema = z
     carrier: carrierSchema.optional(),
     hawb: hawbSchema.optional(),
     weightKg: weightKgSchema.optional(),
+    // Datos para la prealerta del proveedor. El valor declarado es del cliente pero
+    // el staff tambien puede capturarlo al dar el alta; los otros tres son solo suyos.
+    declaredValueUsd: declaredValueUsdSchema.optional(),
+    insuredValueUsd: insuredValueUsdSchema.optional(),
+    tariffPosition: tariffPositionSchema.optional(),
+    retain: z.boolean().optional(),
     // Transporte y Agenciamiento
     billingNotes: billingNotesSchema.optional(),
   })
@@ -185,6 +240,13 @@ export const createShipmentSchema = z
     }
     if (!data.carrier) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['carrier'], message: 'Elige el transportista.' });
+    }
+    if (data.declaredValueUsd === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['declaredValueUsd'],
+        message: 'Indica el valor declarado de la compra.',
+      });
     }
   });
 export type CreateShipmentInput = z.infer<typeof createShipmentSchema>;
@@ -206,6 +268,10 @@ export const updateShipmentSchema = z
     carrier: carrierSchema.nullable().optional(),
     hawb: hawbSchema.nullable().optional(),
     weightKg: weightKgSchema.nullable().optional(),
+    declaredValueUsd: declaredValueUsdSchema.nullable().optional(),
+    insuredValueUsd: insuredValueUsdSchema.nullable().optional(),
+    tariffPosition: tariffPositionSchema.nullable().optional(),
+    retain: z.boolean().nullable().optional(),
     warehouse: warehouseSchema.nullable().optional(),
     dua: duaSchema.nullable().optional(),
     billingNotes: billingNotesSchema.nullable().optional(),

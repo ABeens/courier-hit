@@ -66,12 +66,13 @@ export interface HelgaRecipientResponse {
  * Asocia un tracking a un destinatario ANTES de que el paquete entre a bodega,
  * que es justo lo que permite que el proveedor empiece a reportar su estado.
  *
- * TODO(13): el manual marca ademas como OBLIGATORIOS `valor_comercial`,
- * `valor_asegurado`, `posicion_arancelaria` y `retener`, que el alta todavia no
- * captura. Sin ellos la v2 responde 422 con la lista de faltantes; se cablearan
- * cuando el flujo de prealerta recoja el valor declarado y la posicion
- * arancelaria. NO se inventan aqui: mandar una posicion arancelaria o un valor
- * equivocados crearia una prealerta erronea, peor que fallar de forma visible.
+ * El manual marca como OBLIGATORIOS `valor_comercial`, `valor_asegurado` y
+ * `retener` (sin ellos la v2 responde 422); `posicion_arancelaria` va aparte y es
+ * opcional. Los valores por defecto salen de la practica real de HS Global,
+ * verificada en el export de prealertas (`source_docs/Material/preaalerts.csv`):
+ * el valor asegurado casi siempre es 0, no se retiene y la posicion arancelaria
+ * ni siquiera se registra. El valor comercial (USD) es el unico dato real por
+ * paquete; mientras el alta no lo capture viaja como 0 (ver createHelgaPrealert).
  */
 export interface HelgaCreatePrealertRequest {
   /** Numero de guia del transportista (UPS, Fedex...). Unico del lado de Helga. */
@@ -82,6 +83,21 @@ export interface HelgaCreatePrealertRequest {
   tienda: string;
   /** Id del destinatario en Helga (nuestro `clients.helga_client_id`). */
   destinatario_id: string;
+  /**
+   * Valor comercial declarado, en USD (regla M2: los importes hacia el proveedor
+   * viajan en dolares). Obligatorio en v2; 0 mientras el alta no capture el valor
+   * declarado del paquete.
+   */
+  valor_comercial: number;
+  /** Valor asegurado, en USD. Obligatorio en v2; 0 salvo indicacion (HS Global no asegura). */
+  valor_asegurado: number;
+  /** Retener el paquete en la bodega del proveedor. Obligatorio en v2; false por defecto. */
+  retener: boolean;
+  /**
+   * Posicion arancelaria del contenido. Opcional: se omite cuando no se conoce (el
+   * flujo actual no la captura, igual que el export de referencia de HS Global).
+   */
+  posicion_arancelaria?: string;
 }
 
 /**
