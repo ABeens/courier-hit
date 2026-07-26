@@ -112,6 +112,26 @@ pnpm --filter @courier/api db:seed -- --force
 
 Variables opcionales del seed: `SEED_ADMIN_EMAIL`, `SEED_ADMIN_NAME`, `SEED_ADMIN_PASSWORD`.
 
+### Datos de demo (opcional)
+
+Para ver el sistema lleno en desarrollo hay un segundo seed con datos **falsos**:
+
+```bash
+pnpm --filter @courier/api db:seed:demo
+```
+
+Siembra 7 usuarios de staff (uno por rol), 12 casilleros repartidos por todo el país, el catálogo de servicios de costo, rutas por distrito, anuncios en sus cuatro estados y 38 trámites de los 5 tipos que cubren **todos** los estados de las tres máquinas, con su historial, líneas de costo, pagos (pendiente, rechazado, parcial, pagado) e intentos de entrega. Requiere haber corrido antes `db:seed`, porque toma las tarifas de cliente de ahí.
+
+Todo lo que crea es reconocible por el dominio de correo `@demo.hsglobal.ltd`, y esa marca es la que permite borrarlo sin tocar datos reales:
+
+```bash
+pnpm --filter @courier/api db:seed:demo -- --reset
+```
+
+Todos los usuarios de demo entran con la clave `Demo1234!` (o la de `SEED_DEMO_PASSWORD`). **No lo corras contra producción.**
+
+El detalle de ambos seeds, con todos sus comandos y variables, está en [`docs/seeds.md`](./docs/seeds.md).
+
 ## 6. Levantar el proyecto
 
 Desde la raíz, un solo comando levanta **web y API en paralelo**:
@@ -155,6 +175,7 @@ Si vuelves a correr `pnpm dev` con ese server ya arriba, Astro lo reutiliza en v
 | `pnpm --filter @courier/api db:migrate` | Aplica las migraciones pendientes. |
 | `pnpm --filter @courier/api db:push` | Empuja el esquema sin migración (solo para prototipar). |
 | `pnpm --filter @courier/api db:seed` | Siembra admin y tarifas. |
+| `pnpm --filter @courier/api db:seed:demo` | Siembra datos falsos de demo (`-- --reset` para rehacerlos). |
 
 No hay linter, formateador ni suite de tests configurados en el repo por ahora: la verificación disponible es `typecheck` y el `build`.
 

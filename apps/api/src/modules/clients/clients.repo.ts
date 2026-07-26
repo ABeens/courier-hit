@@ -5,7 +5,7 @@
  * Las tablas `clients`/`users` las declara el modulo auth: este modulo las lee
  * pero no las modifica; su dueño sigue siendo auth.
  */
-import { and, count, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, count, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
@@ -91,6 +91,26 @@ export const clientsRepo = {
       .where(eq(clients.id, clientId))
       .limit(1);
     return row ?? null;
+  },
+
+  /**
+   * Indice INVERSO del enlace: dado un lote de `destinatario_id` de Helga,
+   * devuelve a que casillero nuestro corresponde cada uno.
+   *
+   * Lo usa el descubrimiento de paquetes (flujo 2, docs/13 §3.3): la op. E lista
+   * los paquetes de toda la cuenta consolidada y cada fila trae su
+   * `destinatario_id`, asi que hay que ir de Helga hacia nosotros y no al reves.
+   *
+   * Es una sola consulta por lote a proposito: preguntar por cada fila seria N+1
+   * contra la BD por cada corrida del robot. `helga_client_id` es UNIQUE, asi que
+   * el indice ya existe y no hace falta agregar ninguno.
+   */
+  async findByHelgaClientIds(helgaClientIds: string[]) {
+    if (helgaClientIds.length === 0) return [];
+    return db
+      .select({ id: clients.id, code: clients.code, helgaClientId: clients.helgaClientId })
+      .from(clients)
+      .where(inArray(clients.helgaClientId, helgaClientIds));
   },
 
   async count() {

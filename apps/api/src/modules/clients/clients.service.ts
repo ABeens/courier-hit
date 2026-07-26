@@ -14,12 +14,19 @@
  * 2. CAMBIAR EL CORREO OBLIGA A VERIFICARLO. El correo es el usuario de login;
  *    aceptarlo sin comprobar que existe dejaria al cliente fuera de su cuenta y a
  *    nosotros escribiendo a una direccion equivocada.
+ *
+ *    TEMPORAL: por eso mismo el cambio esta BLOQUEADO en `updateProfile`. Hoy no
+ *    hay transporte de correo real ni pantalla para verificar una direccion fuera
+ *    del registro, asi que aceptarlo dejaria la cuenta sin verificar, sin sesion y
+ *    sin ruta de regreso. La logica de reverificacion queda comentada en su sitio
+ *    para reactivarla cuando el flujo tenga su paso de verificacion.
  */
 import { ClientReviewStatus, lockerAddressFor } from '@courier/shared';
 import type { Session, UpdateClientInput, UpdateProfileInput } from '@courier/shared';
 import { AuthErrors, ShipmentErrors } from '../../core/errors';
 import { authRepo } from '../auth/auth.repo';
-import { authService } from '../auth/auth.service';
+// TODO(correo): vuelve al reactivar el cambio de correo (reemite el codigo).
+// import { authService } from '../auth/auth.service';
 import { clientsRepo } from './clients.repo';
 
 /** Casillero tal como lo ve el panel administrador. */
@@ -125,11 +132,21 @@ export const clientsService = {
     const current = await clientsRepo.findById(session.clientId);
     if (!current) throw ShipmentErrors.missingClientProfile();
 
+    // BLOQUEADO (temporal). Ver el bloque comentado abajo y AuthErrors.emailChangeDisabled.
+    if (input.email !== undefined && input.email !== current.email) {
+      throw AuthErrors.emailChangeDisabled();
+    }
+
+    /* TODO(correo): reactivar el cambio de correo cuando el flujo tenga su paso de
+       verificacion. Descomentar este bloque, el de mas abajo y el campo en
+       ProfileScreen; el resto (reemision del codigo, corte de sesion) ya funciona.
+
     const emailChanged = input.email !== undefined && input.email !== current.email;
     if (emailChanged) {
       const clash = await authRepo.findUserByEmail(input.email!);
       if (clash) throw AuthErrors.emailInUse();
     }
+    */
 
     if (input.idNumber !== undefined && input.idNumber !== current.idNumber) {
       const clash = await authRepo.findClientByIdNumber(input.idNumber);
@@ -140,8 +157,10 @@ export const clientsService = {
     await authRepo.updateUser(session.userId, {
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.phone !== undefined ? { phone: input.phone } : {}),
-      ...(emailChanged ? { email: input.email, emailVerifiedAt: null } : {}),
+      // ...(emailChanged ? { email: input.email, emailVerifiedAt: null } : {}),
     });
+
+    /* TODO(correo): parte 2 del bloqueo de arriba. Va tal cual al reactivarlo.
 
     if (emailChanged) {
       await authService.issueVerificationCode(session.userId, input.email!);
@@ -149,7 +168,10 @@ export const clientsService = {
       // ella contradiria la barrera del login.
       await authRepo.deleteSessionsByUser(session.userId);
     }
+    */
 
-    return { emailChanged };
+    // Se mantiene en la respuesta para no cambiar el contrato: hoy siempre false
+    // porque el cambio de correo no se acepta.
+    return { emailChanged: false };
   },
 };

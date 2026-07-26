@@ -10,7 +10,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:seed": "tsx --env-file=.env src/seed.ts"
+    "db:seed": "tsx --env-file=.env src/seed.ts",
+    "db:seed:demo": "tsx --env-file=.env src/seed-demo.ts"
   },
   "dependencies": {
     "@courier/shared": "workspace:*",

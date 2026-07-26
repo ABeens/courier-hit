@@ -59,4 +59,26 @@ export const providerSyncRepo = {
       .orderBy(asc(shipments.updatedAt))
       .limit(limit);
   },
+
+  /**
+   * De un lote de trackings, cuales YA tienen un tramite activo nuestro. Lo usa el
+   * descubrimiento (flujo 2, docs/13 §3.3) para descartar de una sola consulta lo
+   * que ya entro por el flujo 1.
+   *
+   * El criterio es "activo" (`state <> 'entregado'`), el MISMO del indice unico
+   * parcial `shipments_active_tracking`. Cruzar contra el historico completo seria
+   * un error: los transportistas reciclan numeros de guia, asi que un tracking ya
+   * entregado puede pertenecer a un paquete nuevo y legitimo, y descartarlo lo
+   * dejaria fuera del sistema para siempre.
+   */
+  async activeTrackings(trackings: string[]): Promise<Set<string>> {
+    if (trackings.length === 0) return new Set();
+    const rows = await db
+      .select({ tracking: shipments.tracking })
+      .from(shipments)
+      .where(
+        and(inArray(shipments.tracking, trackings), sql`${shipments.state} <> 'entregado'`),
+      );
+    return new Set(rows.map((r) => r.tracking));
+  },
 };
