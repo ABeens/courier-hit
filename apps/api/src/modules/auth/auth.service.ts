@@ -73,7 +73,9 @@ export const authService = {
    * Lo que si sigue siendo bloqueante y va ANTES de escribir: unicidad de
    * email/cedula y existencia de tarifa por defecto.
    */
-  async register(input: RegisterInput): Promise<{ userId: string; code: string }> {
+  async register(
+    input: RegisterInput,
+  ): Promise<{ userId: string; code: string; verificationCode?: string }> {
     const existing = await authRepo.findUserByEmail(input.email);
     if (existing) throw AuthErrors.emailInUse();
 
@@ -125,8 +127,10 @@ export const authService = {
       helgaLastError: link.error,
     });
 
-    await this.issueVerificationCode(user.id, user.email);
-    return { userId: user.id, code };
+    // En dev se devuelve el codigo para mostrarlo en la UI (sin SMTP). En prod
+    // issueVerificationCode devuelve null: el codigo solo viaja por correo.
+    const verificationCode = await this.issueVerificationCode(user.id, user.email);
+    return { userId: user.id, code, verificationCode: verificationCode ?? undefined };
   },
 
   /**
@@ -215,8 +219,14 @@ export const authService = {
     return report;
   },
 
-  /** Genera y guarda (hasheado) un codigo de 6 digitos; "envia" por email. */
-  async issueVerificationCode(userId: string, email: string): Promise<void> {
+  /**
+   * Genera y guarda (hasheado) un codigo de 6 digitos; "envia" por email.
+   *
+   * Devuelve el codigo en desarrollo y null en produccion, igual que
+   * `issueInvitation` con el enlace de staff: mientras no hay SMTP, el llamador
+   * puede mostrarlo en la UI en vez de obligar a leer el log.
+   */
+  async issueVerificationCode(userId: string, email: string): Promise<string | null> {
     const code = newVerificationCode();
     const expiresAt = new Date(Date.now() + config.EMAIL_CODE_TTL_MINUTES * 60_000);
     await authRepo.deleteVerifications(userId); // invalida codigos anteriores
@@ -237,6 +247,9 @@ export const authService = {
         'Equipo HS Global',
       ].join('\n'),
     });
+
+    // En produccion NUNCA sale del servidor: el codigo viaja solo por correo.
+    return isProd ? null : code;
   },
 
   /** Confirma el codigo y activa la cuenta (sella email_verified_at). */

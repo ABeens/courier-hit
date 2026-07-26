@@ -1,12 +1,13 @@
 /**
  * Pantalla "Mi perfil" — Requerimientos Parte 2, "Editar Perfil".
  *
- * Se editan los cuatro campos del manual: nombre, cédula, teléfono y correo.
+ * Se editan tres de los cuatro campos del manual: nombre, cédula y teléfono.
  *
- * El correo se avisa aparte y con claridad: cambiarlo cambia el usuario de login
- * y obliga a verificar la nueva dirección, lo que cierra la sesión. Descubrirlo
- * después de guardar sería una sorpresa desagradable, así que la advertencia
- * aparece en cuanto el campo se toca.
+ * El correo está TEMPORALMENTE bloqueado (se muestra, no se edita): cambiarlo
+ * cambia el usuario de login y obliga a verificar la nueva dirección, y hoy no
+ * existe pantalla para hacerlo fuera del registro. Todo lo que sostenía ese
+ * cambio (aviso, envío del patch, cierre de sesión) queda comentado en su sitio
+ * para reactivarlo junto con el paso de verificación. Ver `clients.service.ts`.
  *
  * La dirección se muestra pero no se edita: el distrito determina la ruta de
  * reparto, así que moverla es una gestión operativa que pasa por soporte.
@@ -52,7 +53,9 @@ export function ProfileScreen({ onLoggedOut }: { onLoggedOut: () => void }) {
       );
   }, []);
 
+  /* TODO(correo): vuelve cuando el cambio de correo se reactive (ver clients.service.ts).
   const emailChanged = profile != null && email.trim().toLowerCase() !== profile.email;
+  */
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -67,7 +70,7 @@ export function ProfileScreen({ onLoggedOut }: { onLoggedOut: () => void }) {
     if (name !== profile.name) patch.name = name;
     if (idNumber !== profile.idNumber) patch.idNumber = idNumber;
     if (phone !== (profile.phone ?? '')) patch.phone = phone;
-    if (emailChanged) patch.email = email;
+    // if (emailChanged) patch.email = email;
 
     if (Object.keys(patch).length === 0) {
       setNotice('No hay cambios que guardar.');
@@ -76,6 +79,12 @@ export function ProfileScreen({ onLoggedOut }: { onLoggedOut: () => void }) {
     }
 
     try {
+      await api.patch('/clients/me', patch);
+
+      /* TODO(correo): parte del cambio de correo bloqueado. Hoy el servidor
+         siempre responde emailChanged: false, así que no hay nada que ramificar
+         (y por eso `onLoggedOut` queda sin uso mientras el bloqueo esté puesto).
+
       const result = await api.patch<{ emailChanged: boolean }>('/clients/me', patch);
       if (result.emailChanged) {
         // La sesión ya está invalidada del lado del servidor: se sale para no
@@ -83,6 +92,8 @@ export function ProfileScreen({ onLoggedOut }: { onLoggedOut: () => void }) {
         onLoggedOut();
         return;
       }
+      */
+
       setNotice('Perfil actualizado.');
       setProfile({ ...profile, name, idNumber, phone });
     } catch (err) {
@@ -133,6 +144,13 @@ export function ProfileScreen({ onLoggedOut }: { onLoggedOut: () => void }) {
 
           <div>
             <label className="field-label" htmlFor="p-email">Correo electrónico</label>
+            {/* Bloqueado temporalmente: falta el paso de verificación en el flujo. */}
+            <input id="p-email" className="input" type="email" value={email} disabled />
+            <div className="field-hint">
+              Para cambiar tu correo, contáctanos: es el usuario con el que ingresas.
+            </div>
+
+            {/* TODO(correo): al reactivar, volver a poner onChange y esta advertencia.
             <input
               id="p-email" className="input" type="email" value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -143,6 +161,7 @@ export function ProfileScreen({ onLoggedOut }: { onLoggedOut: () => void }) {
                 verificar la nueva dirección.
               </div>
             )}
+            */}
           </div>
 
           <div className="card-sec">

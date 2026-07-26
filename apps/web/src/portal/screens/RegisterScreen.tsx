@@ -61,6 +61,8 @@ export default function RegisterScreen() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [code, setCode] = useState<string[]>(Array<string>(CODE_LENGTH).fill(''));
   const [lockerCode, setLockerCode] = useState('');
+  // Solo llega fuera de produccion: la API no lo expone con NODE_ENV=production.
+  const [devCode, setDevCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const codeRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -89,8 +91,12 @@ export default function RegisterScreen() {
 
     setBusy(true);
     try {
-      const created = await api.post<{ userId: string; code: string }>('/auth/register', parsed.data);
+      const created = await api.post<{ userId: string; code: string; verificationCode?: string }>(
+        '/auth/register',
+        parsed.data,
+      );
       setLockerCode(created.code);
+      setDevCode(created.verificationCode ?? '');
       setStep(1);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo crear el casillero.');
@@ -136,15 +142,20 @@ export default function RegisterScreen() {
     if (e.key === 'Backspace' && !code[index] && index > 0) codeRefs.current[index - 1]?.focus();
   }
 
+  /** Reparte un código completo entre las casillas y deja el foco al final. */
+  function fillCode(digits: string): void {
+    const next = Array<string>(CODE_LENGTH).fill('');
+    for (let i = 0; i < digits.length; i += 1) next[i] = digits[i] ?? '';
+    setCode(next);
+    codeRefs.current[Math.min(digits.length, CODE_LENGTH - 1)]?.focus();
+  }
+
   /** Pegar el código completo desde el correo llena las 6 casillas de una vez. */
   function onCodePaste(e: React.ClipboardEvent<HTMLInputElement>): void {
     const digits = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, CODE_LENGTH);
     if (!digits) return;
     e.preventDefault();
-    const next = Array<string>(CODE_LENGTH).fill('');
-    for (let i = 0; i < digits.length; i += 1) next[i] = digits[i] ?? '';
-    setCode(next);
-    codeRefs.current[Math.min(digits.length, CODE_LENGTH - 1)]?.focus();
+    fillCode(digits);
   }
 
   return (
@@ -295,6 +306,25 @@ export default function RegisterScreen() {
               Enviamos un código de {CODE_LENGTH} dígitos a <strong>{form.email}</strong>. Ingrésalo para activar tu
               cuenta.
             </p>
+
+            {/* Muleta de desarrollo: mientras no hay SMTP, el código no llega a
+                ningún lado salvo el log. La API solo lo manda fuera de producción. */}
+            {devCode && (
+              <div className="banner warn" style={{ marginTop: 16 }}>
+                Código de verificación (dev):{' '}
+                <strong style={{ fontFamily: 'var(--font-mono)', letterSpacing: '.08em' }}>{devCode}</strong>{' '}
+                <button
+                  type="button"
+                  onClick={() => fillCode(devCode)}
+                  style={{
+                    background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                    color: 'inherit', font: 'inherit', textDecoration: 'underline', fontWeight: 700,
+                  }}
+                >
+                  Usarlo
+                </button>
+              </div>
+            )}
 
             <div className="code-inputs">
               {code.map((digit, i) => (

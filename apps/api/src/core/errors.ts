@@ -38,6 +38,18 @@ export const AuthErrors = {
       'No hay una tarifa por defecto configurada. Contacta a soporte.',
       500,
     ),
+  /**
+   * Cambio de correo bloqueado a proposito (temporal): sin transporte de correo
+   * real ni pantalla de verificacion fuera del registro, cambiarlo dejaria al
+   * cliente sin verificar, sin sesion y sin forma de recuperar la cuenta.
+   * TODO(correo): quitar al sumar la verificacion al flujo de perfil.
+   */
+  emailChangeDisabled: () =>
+    new AppError(
+      'EMAIL_CHANGE_DISABLED',
+      'Por ahora el correo no se puede cambiar desde el portal. Contacta a soporte.',
+      403,
+    ),
   userInactive: () => new AppError('USER_INACTIVE', 'La cuenta está deshabilitada.', 403),
   emailNotVerified: () => new AppError('EMAIL_NOT_VERIFIED', 'Debes verificar tu correo antes de ingresar.', 403),
   /**

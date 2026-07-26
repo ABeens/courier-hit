@@ -143,6 +143,16 @@ const EnvSchema = z.object({
     .refine(isValidDuration, {
       message: 'HELGA_PREALERT_RECONCILE_INTERVAL debe ser una duracion valida (p. ej. "30m", "2h").',
     }),
+  // Descubrimiento de paquetes creados directamente en Helga (flujo 2, docs/13 §3.3).
+  // OJO: la op. E solo lista paquetes en DIGITADO; en cuanto avanzan salen del
+  // listado y se pierden para el robot. Este intervalo tiene que ser MAS CORTO que
+  // el tiempo tipico que tarda un paquete en pasar de DIGITADO a AGRUPADA.
+  HELGA_DISCOVERY_INTERVAL: z
+    .string()
+    .default('15m')
+    .refine(isValidDuration, {
+      message: 'HELGA_DISCOVERY_INTERVAL debe ser una duracion valida (p. ej. "15m", "1h").',
+    }),
 }).superRefine((env, ctx) => {
   // OJO: el BCCR NO se valida aqui a proposito. A diferencia de Helga, encenderlo
   // sin credenciales NO tumba el arranque: es un interruptor que se puede prender

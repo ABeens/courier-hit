@@ -47,8 +47,12 @@ const PROVIDER_LAST_STATE = State.EnAduanas;
 /** Techo de envios a consultar por corrida (una llamada a Helga por cada uno). */
 const SYNC_BATCH = 200;
 
-/** Helga a veces reporta el peso como cadena ("1.38"); lo normaliza a numero. */
-function toNumber(value: number | string | undefined): number {
+/**
+ * Helga a veces reporta el peso como cadena ("1.38"); lo normaliza a numero.
+ * Exportado porque el descubrimiento (flujo 2) lee los mismos campos del mismo
+ * proveedor: dos copias de esta normalizacion podrian divergir.
+ */
+export function toNumber(value: number | string | undefined): number {
   if (typeof value === 'number') return value;
   if (typeof value === 'string') {
     const n = Number(value);
