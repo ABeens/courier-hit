@@ -9,15 +9,21 @@
  * Rutas y shapes de B, D y E verificados EN VIVO contra la cuenta SJO008835
  * (2026-07-23): la IP del backend ya esta en la lista blanca. C (prealerta v2)
  * usa la ruta correcta `/api/v2/prealertas` pero le faltan campos obligatorios
- * que el alta todavia no captura (ver TODO en `createHelgaPrealert`). Mientras
- * `HELGA_ENABLED` sea false, nada de esto se invoca.
+ * que el alta todavia no captura (ver TODO en `createHelgaPrealert`).
+ *
+ * TRES MODOS (`helgaMode`, en `core/config`): `live` sale a la red, `simulated`
+ * responde desde `helga.mock` sin salir del proceso, y `off` no invoca nada de
+ * este archivo. La simulacion se sustituye en el TRANSPORTE, dentro de `request`:
+ * todo lo demas de este modulo (armado del cuerpo, envoltura, errores, paginado)
+ * corre igual en los dos modos, que es justamente lo que se quiere probar.
  */
 import { Currency, roundMoney } from '@courier/shared';
-import { config } from '../../core/config';
+import { config, helgaMode } from '../../core/config';
 import { ProviderErrors } from '../../core/errors';
 import { getAccessToken, invalidateToken } from './helga.auth';
 import {
   HELGA_ACCOUNT_CLIENT_ID,
+  HELGA_DEFAULT_TARIFF_POSITION,
   HELGA_FIXED_GEO,
   HELGA_FIXED_RECIPIENT,
   HELGA_ID_TYPE_CEDULA,
@@ -35,10 +41,21 @@ import type {
   HelgaRecipientResponse,
 } from './helga.types';
 import { normalizeEnvelope } from './helga.types';
+import { mockHelgaRequest } from './helga.mock';
 
-/** True si la integracion esta encendida y configurada. */
+/**
+ * True si el sistema debe hablar con el proveedor, de verdad o simulado. Es lo que
+ * miran los servicios y el scheduler: para ellos la simulacion es una integracion
+ * encendida, y esa es la gracia (el flujo completo se ejercita sin credenciales).
+ * Quien necesite distinguir el modo usa `isHelgaSimulated`.
+ */
 export function isHelgaEnabled(): boolean {
-  return config.HELGA_ENABLED;
+  return helgaMode !== 'off';
+}
+
+/** True si las respuestas del proveedor las produce el simulador en proceso. */
+export function isHelgaSimulated(): boolean {
+  return helgaMode === 'simulated';
 }
 
 /** Traduce el status del proveedor a nuestro contrato de errores (docs/13 §3.5). */
@@ -59,14 +76,15 @@ function providerError(status: number, message: string | undefined): Error {
  * devuelve `undefined` en vez de lanzar, y el llamador lo interpreta como "sin
  * estado por ahora".
  */
-async function post<T>(
+async function request<T>(
+  method: 'POST' | 'DELETE',
   path: string,
   body: unknown,
   opts: { allowNotFound?: boolean } = {},
 ): Promise<T | undefined> {
   const send = async (token: string): Promise<Response> =>
     fetch(`${config.HELGA_BASE_URL}${path}`, {
-      method: 'POST',
+      method,
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
@@ -86,26 +104,43 @@ async function post<T>(
     });
 
   const startedAt = Date.now();
+  const tag = isHelgaSimulated() ? '[helga:sim]' : '[helga]';
   let response: Response;
   try {
-    response = await send(await getAccessToken());
-    if (response.status === 401) {
-      invalidateToken();
+    if (isHelgaSimulated()) {
+      // El simulador devuelve un `Response` real: de aqui hacia abajo no hay
+      // ninguna diferencia con el proveedor. Tampoco pide token, porque en este
+      // modo no hay credenciales que pedir.
+      response = await mockHelgaRequest(method, path, body);
+    } else {
       response = await send(await getAccessToken());
+      if (response.status === 401) {
+        invalidateToken();
+        response = await send(await getAccessToken());
+      }
     }
   } catch (err) {
     // Timeout o fallo de red. El detalle va al log, no al cliente.
-    console.error(`[helga] POST ${path} falló tras ${Date.now() - startedAt}ms:`, err);
+    console.error(`${tag} ${method} ${path} falló tras ${Date.now() - startedAt}ms:`, err);
     throw ProviderErrors.unavailable();
   }
 
   const payload = (await response.json().catch(() => ({}))) as HelgaEnvelope<T>;
   const { data, message } = normalizeEnvelope(payload);
-  console.info(`[helga] POST ${path} -> ${response.status} (${Date.now() - startedAt}ms)`);
+  console.info(`${tag} ${method} ${path} -> ${response.status} (${Date.now() - startedAt}ms)`);
 
   if (response.status === 404 && opts.allowNotFound) return undefined;
   if (!response.ok) throw providerError(response.status, message);
   return data;
+}
+
+/** Atajo para el caso normal: casi todas las rutas del proveedor son POST. */
+function post<T>(
+  path: string,
+  body: unknown,
+  opts: { allowNotFound?: boolean } = {},
+): Promise<T | undefined> {
+  return request<T>('POST', path, body, opts);
 }
 
 /** Lo que nos importa de la respuesta de la op. D: el id del destinatario. */
@@ -183,11 +218,19 @@ function usdAmountFor(value: number | null | undefined): number {
  * empezar a preguntar por su estado: sin prealerta, el paquete no existe del lado
  * de Helga hasta que llega fisicamente a su bodega.
  *
- * La v2 exige `valor_comercial`, `valor_asegurado` y `retener` (sin ellos responde
- * 422); `posicion_arancelaria` es opcional y se omite cuando no se conoce. Los
- * defaults (0 / 0 / false) reflejan la practica real de HS Global —el valor
- * asegurado casi siempre es 0 y no se retiene—; el valor comercial es el unico
- * dato real por paquete y llega desde el valor declarado del tramite.
+ * La v2 exige `valor_comercial`, `valor_asegurado` y `posicion_arancelaria`; sin
+ * cualquiera de los tres responde 422. Los defaults (0 / 0 / COURIER) reflejan la
+ * practica real de HS Global: el valor asegurado casi siempre es 0 y el arancel
+ * especifico no se conoce al prealertar. El valor comercial es el unico dato real
+ * por paquete y llega desde el valor declarado del tramite.
+ *
+ * OJO con `posicion_arancelaria`: no basta con mandarla, tiene que ser un
+ * `codigo_arancelario` que exista en el catalogo del proveedor (si no, 422 "No se
+ * encontro la posicion arancelaria") y tiene que ser CADENA (el id numerico da
+ * "must be a string"). Por eso lo que no venga validado cae al default en vez de
+ * viajar tal cual.
+ *
+ * Verificado en vivo el 2026-07-26: responde `201` con `data.Id`.
  *
  * Devuelve el id de la prealerta si el proveedor lo da; no es imprescindible,
  * porque el cruce posterior se hace por tracking.
@@ -206,7 +249,6 @@ export async function createHelgaPrealert(params: {
   /** Retener en bodega del proveedor. Ausente/null -> false. */
   retain?: boolean | null;
 }): Promise<string | null> {
-  const tariff = params.tariffPosition?.trim();
   const body: HelgaCreatePrealertRequest = {
     tracking: params.tracking,
     contenido: params.description,
@@ -216,13 +258,39 @@ export async function createHelgaPrealert(params: {
     valor_comercial: usdAmountFor(params.commercialValue),
     valor_asegurado: usdAmountFor(params.insuredValue),
     retener: params.retain ?? false,
-    // Opcional: solo se manda si se conoce (como en el export real de HS Global).
-    ...(tariff ? { posicion_arancelaria: tariff } : {}),
+    // Obligatoria. Sin arancel conocido va la generica de paqueteria (COURIER):
+    // omitirla haria fallar TODA prealerta del portal, donde el cliente no captura
+    // este campo.
+    posicion_arancelaria: params.tariffPosition?.trim() || HELGA_DEFAULT_TARIFF_POSITION,
   };
 
   const data = await post<HelgaPrealertResponse>('/api/v2/prealertas', body);
   const raw = data?.Id ?? data?.id ?? data?.prealerta_id;
   return raw === undefined || raw === null ? null : String(raw);
+}
+
+/**
+ * Op. F — elimina una prealerta del proveedor.
+ *
+ * NO esta en el manual: se descubrio probando (2026-07-26). La ruta correcta es
+ * `/api/casillero/prealertas/{id}`; bajo `/api/v2/prealertas/{id}` da 404 aunque
+ * ese sea el prefijo con el que se CREA.
+ *
+ * Solo acepta el `Id` que devolvio la op. C, y por eso lo persistimos: su API no
+ * ofrece forma de encontrar una prealerta por tracking, asi que sin ese id la
+ * prealerta es imborrable.
+ *
+ * Devuelve `true` si el proveedor la elimino y `false` si ya no existia (404).
+ * Ese caso NO es un error: significa que el estado deseado ya se cumple.
+ */
+export async function deleteHelgaPrealert(prealertId: string): Promise<boolean> {
+  const data = await request<boolean>(
+    'DELETE',
+    `/api/casillero/prealertas/${encodeURIComponent(prealertId)}`,
+    undefined,
+    { allowNotFound: true },
+  );
+  return data !== undefined;
 }
 
 /**

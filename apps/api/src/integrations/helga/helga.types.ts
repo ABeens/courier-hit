@@ -94,10 +94,14 @@ export interface HelgaCreatePrealertRequest {
   /** Retener el paquete en la bodega del proveedor. Obligatorio en v2; false por defecto. */
   retener: boolean;
   /**
-   * Posicion arancelaria del contenido. Opcional: se omite cuando no se conoce (el
-   * flujo actual no la captura, igual que el export de referencia de HS Global).
+   * Posicion arancelaria del contenido, como `codigo_arancelario` del catalogo del
+   * proveedor (p. ej. `98.07.20.00.00` = COURIER).
+   *
+   * OBLIGATORIA y de tipo CADENA: verificado en vivo (2026-07-26) que sin ella la
+   * v2 responde 422, y que el id numerico se rechaza con "must be a string". El
+   * codigo ademas tiene que existir en su catalogo, que no expone por API.
    */
-  posicion_arancelaria?: string;
+  posicion_arancelaria: string;
 }
 
 /**
@@ -177,6 +181,12 @@ export interface HelgaAvailablePackage {
   peso?: number;
   peso_kg?: number | string;
   peso_lb?: number | string;
+  /** Peso volumetrico. Llega en 0 cuando el proveedor no midio el paquete. */
+  volumen_peso?: number | string;
+  /** Dimensiones en cm. Como el peso volumetrico, 0 significa "sin medir". */
+  alto?: number | string;
+  ancho?: number | string;
+  largo?: number | string;
   valor_declarado?: number;
   valor_asegurado?: number;
   fecha_recibido?: string;

@@ -10,10 +10,16 @@
  * pasos. El abono queda PENDIENTE hasta que el staff lo valida — subir una foto
  * no es haber pagado, y decirle lo contrario al cliente sería mentirle.
  *
- * Tarjeta: TODO(09/onvo). La estructura está lista de punta a punta (el servidor
- * crea el intento de cobro y devuelve el `clientSecret`), pero falta montar el
- * SDK de Onvo Pay aquí. Mientras la pasarela esté apagada, la API no ofrece este
- * medio y el bloque no se llega a mostrar.
+ * Tarjeta: el servidor crea el intento de cobro y devuelve con qué abrir el
+ * formulario. De ahí salen dos caminos:
+ *
+ *   - PASARELA SIMULADA (`intent.simulated`): no hay SDK que montar. Se muestran
+ *     dos botones para aprobar o rechazar el cobro, que es lo que permite recorrer
+ *     el flujo completo sin credenciales de Onvo.
+ *   - PASARELA REAL: TODO(09/onvo) montar el SDK web de Onvo con `publicKey` y
+ *     `paymentIntentId`. Quien confirma el pago NO es el navegador sino el webhook,
+ *     así que al terminar hay que volver a consultar el pago en vez de darlo por
+ *     bueno con el callback del SDK.
  */
 import { useEffect, useState } from 'react';
 import {
@@ -26,7 +32,7 @@ import {
   PaymentStatus,
   formatMoney,
 } from '@courier/shared';
-import type { PaymentDto, ShipmentDto } from '@courier/shared';
+import type { PaymentDto, PaymentIntentDto, ShipmentDto } from '@courier/shared';
 import { API_BASE, ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { formatDate } from '../lib/datetime';
@@ -62,6 +68,14 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  /**
+   * Cobro con tarjeta ya iniciado, a la espera de resolverse. Mientras exista, el
+   * formulario cede el paso al bloque de la pasarela: el pago ya está creado en el
+   * servidor y volver a enviarlo abriría un segundo cobro por el mismo saldo.
+   */
+  const [cardIntent, setCardIntent] = useState<{ paymentId: string; intent: PaymentIntentDto } | null>(
+    null,
+  );
 
   useEffect(() => {
     Promise.all([
@@ -85,7 +99,10 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
     setSaving(true);
 
     try {
-      const { payment } = await api.post<{ payment: PaymentDto }>('/payments', {
+      const { payment, intent } = await api.post<{
+        payment: PaymentDto;
+        intent: PaymentIntentDto | null;
+      }>('/payments', {
         shipmentId: shipment.id,
         method,
         ...(method === PaymentMethod.DepositoBancario
@@ -97,6 +114,14 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
             }
           : {}),
       });
+
+      // Tarjeta: el pago queda PENDIENTE hasta que la pasarela lo resuelva. No se
+      // avisa de nada todavia ni se cierra el modal; el cobro aun no ocurrio.
+      if (method === PaymentMethod.Tarjeta && intent) {
+        setCardIntent({ paymentId: payment.id, intent });
+        setSaving(false);
+        return;
+      }
 
       // El comprobante va en una segunda petición porque es multipart: mezclarlo
       // con el JSON obligaría a validar abono y archivo en la misma transacción.
@@ -124,6 +149,33 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
       onPaid();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo registrar el pago.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /**
+   * Resuelve el cobro SIMULADO. Solo aparece con la pasarela de pruebas; contra la
+   * pasarela real este endpoint responde 404 y quien confirma es el webhook.
+   */
+  async function simulate(approve: boolean) {
+    if (!cardIntent) return;
+    setError(null);
+    setSaving(true);
+    try {
+      const updated = await api.post<PaymentDto>(`/payments/${cardIntent.paymentId}/simulate`, {
+        approve,
+      });
+      setPayments((prev) => [updated, ...prev.filter((p) => p.id !== updated.id)]);
+      setCardIntent(null);
+      setNotice(
+        approve
+          ? 'Pago aprobado (simulado). El trámite queda cubierto.'
+          : 'Pago rechazado (simulado). Puedes intentarlo de nuevo.',
+      );
+      onPaid();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo simular el cobro.');
     } finally {
       setSaving(false);
     }
@@ -182,7 +234,7 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
             </div>
           )}
 
-          {quote && !quote.settled && quote.availableMethods.length > 0 && (
+          {quote && !quote.settled && quote.availableMethods.length > 0 && !cardIntent && (
             <div>
               <span className="field-label">Medio de pago</span>
               {quote.availableMethods.map((m) => (
@@ -257,9 +309,46 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
             </>
           )}
 
-          {method === PaymentMethod.Tarjeta && (
+          {method === PaymentMethod.Tarjeta && !cardIntent && quote && !quote.settled && (
             <div className="banner">
               Al continuar abriremos el formulario seguro de pago con tarjeta.
+            </div>
+          )}
+
+          {/* Cobro ya iniciado: manda la pasarela, el formulario de arriba ya no. */}
+          {cardIntent?.intent.simulated && (
+            <div className="card-sec">
+              <div className="card-sec-title">Pasarela simulada</div>
+              <div className="banner warn">
+                Modo de pruebas: no se cobra nada real. Elige cómo debe responder la
+                pasarela para seguir el flujo.
+              </div>
+              <div className="modal-foot">
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={saving}
+                  onClick={() => simulate(false)}
+                >
+                  Rechazar cobro
+                </button>
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={saving}
+                  onClick={() => simulate(true)}
+                >
+                  Aprobar cobro
+                </button>
+              </div>
+            </div>
+          )}
+
+          {cardIntent && !cardIntent.intent.simulated && (
+            <div className="banner">
+              Abriendo el formulario seguro de pago con tarjeta. El cobro queda
+              confirmado cuando la pasarela nos lo notifique.
+              {/* TODO(09/onvo): montar aquí el SDK web con publicKey y paymentIntentId. */}
             </div>
           )}
 
@@ -293,7 +382,11 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cerrar
           </button>
-          {quote && !quote.settled && method && (
+          {/*
+            Con un cobro ya iniciado el botón desaparece: el pago existe en el
+            servidor y volver a enviarlo abriría un segundo cobro por el mismo saldo.
+          */}
+          {quote && !quote.settled && method && !cardIntent && (
             <button type="submit" className="btn btn-primary" disabled={saving}>
               {saving ? 'Registrando…' : 'Registrar pago'}
             </button>

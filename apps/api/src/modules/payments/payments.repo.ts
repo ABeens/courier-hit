@@ -63,6 +63,42 @@ export const paymentsRepo = {
   },
 
   /**
+   * Pago por la referencia de la pasarela. Es la unica via que tiene el webhook
+   * para saber a que abono se refiere el cobro: Onvo conoce su id de intento, no
+   * el nuestro.
+   */
+  async findByGatewayReference(reference: string) {
+    const [row] = await baseQuery().where(eq(payments.gatewayReference, reference)).limit(1);
+    return row ?? null;
+  },
+
+  /**
+   * Confirma o rechaza un pago SOLO si sigue pendiente, en una sola sentencia.
+   *
+   * Es la idempotencia del webhook. Onvo reintenta las entregas fallidas y su
+   * evento no trae id propio, asi que el mismo cobro puede llegar dos veces; leer y
+   * despues escribir dejaria una ventana para aplicarlo dos veces. El `WHERE
+   * status = pendiente` hace que la segunda pasada no toque ninguna fila y devuelva
+   * null, que el servicio lee como "ya estaba resuelto".
+   */
+  async resolveIfPending(
+    id: string,
+    patch: { status: PaymentStatus; note?: string | null; confirmedAt: Date },
+  ) {
+    const [row] = await db
+      .update(payments)
+      .set(patch)
+      .where(and(eq(payments.id, id), eq(payments.status, PaymentStatus.Pendiente)))
+      .returning({ id: payments.id });
+    return row ?? null;
+  },
+
+  /** Borra un pago. Solo para deshacer uno que nunca llego a existir de verdad. */
+  async remove(id: string) {
+    await db.delete(payments).where(eq(payments.id, id));
+  },
+
+  /**
    * Solo lo necesario para decidir si un tramite esta cubierto: monto, moneda,
    * tasa y situacion. La suma la hace `isSettled` de @courier/shared, que es el
    * punto unico de esa cuenta.

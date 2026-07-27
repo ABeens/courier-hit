@@ -51,6 +51,24 @@ export const HELGA_FIXED_RECIPIENT = {
  */
 export const HELGA_ID_TYPE_CEDULA = 1;
 
+/**
+ * Posicion arancelaria por defecto de la prealerta (op. C).
+ *
+ * NO es opcional: verificado en vivo (2026-07-26) que la v2 responde 422
+ * "The posicion arancelaria field is required" si falta, y "must be a string" si
+ * se manda el id numerico. Lo que espera es el `codigo_arancelario` del catalogo
+ * del proveedor.
+ *
+ * `98.07.20.00.00` es "COURIER" (id 1 en su catalogo), la posicion generica de
+ * paqueteria y la que el propio proveedor usa en los paquetes de la cuenta. Es el
+ * default correcto para nuestro negocio: el arancel especifico casi nunca se
+ * conoce al prealertar, y el operador lo reclasifica en aduanas si hace falta.
+ *
+ * El proveedor no expone catalogo de posiciones por API (todas las rutas
+ * candidatas dan 404), asi que cualquier otro valor tiene que venir del staff.
+ */
+export const HELGA_DEFAULT_TARIFF_POSITION = '98.07.20.00.00';
+
 /** Nombre partido como lo pide Helga (dos nombres + dos apellidos). */
 export interface SplitName {
   firstName: string;

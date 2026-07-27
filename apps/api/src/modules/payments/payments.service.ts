@@ -37,7 +37,12 @@ import type {
 } from '@courier/shared';
 import { PaymentErrors, ShipmentErrors } from '../../core/errors';
 import { storage } from '../../core/storage';
-import { isOnvoEnabled, onvoClient } from '../../integrations/onvo/onvo.client';
+import {
+  isOnvoEnabled,
+  isOnvoSimulated,
+  onvoClient,
+} from '../../integrations/onvo/onvo.client';
+import type { GatewayOutcome } from '../../integrations/onvo/onvo.client';
 import { clientsRepo } from '../clients/clients.repo';
 import { exchangeRateProvider } from '../costs/exchange-rate';
 import { shipmentsRepo } from '../shipments/shipments.repo';
@@ -226,12 +231,24 @@ export const paymentsService = {
 
     let intent = null;
     if (isCard) {
-      intent = await onvoClient.createPaymentIntent({
-        amount,
-        currency: Currency.CRC,
-        paymentId: id,
-        description: `${shipment.code} — ${shipment.description}`,
-      });
+      /**
+       * Si la pasarela falla, el pago que acabamos de insertar se borra. Dejarlo
+       * seria peor que no haberlo creado: nace PENDIENTE, asi que aparecería en la
+       * bandeja de validacion del staff como un deposito por revisar que nadie
+       * puede resolver, y ademas sin comprobante. No hay rastro que perder porque
+       * ese abono nunca existio: el cobro no llego a intentarse.
+       */
+      try {
+        intent = await onvoClient.createPaymentIntent({
+          amount,
+          currency: Currency.CRC,
+          paymentId: id,
+          description: `${shipment.code} — ${shipment.description}`,
+        });
+      } catch (err) {
+        await paymentsRepo.remove(id);
+        throw err;
+      }
       await paymentsRepo.update(id, { gatewayReference: intent.reference });
     }
 
@@ -305,6 +322,87 @@ export const paymentsService = {
       confirmedBy: session.userId,
       confirmedAt: new Date(),
     });
+
+    const updated = await paymentsRepo.findById(paymentId);
+    if (!updated) throw PaymentErrors.notFound();
+    return toDto(updated);
+  },
+
+  /**
+   * Confirma o rechaza un pago con tarjeta por orden de la PASARELA, no de una
+   * persona. Lo llama el webhook de Onvo y el flujo simulado.
+   *
+   * Va aparte de `resolve` por tres razones, y las tres importan:
+   *
+   * 1. NO HAY SESION. `resolve` sella `confirmedBy` con el usuario que valida; aqui
+   *    no hay usuario. `confirmedBy` queda en null y la nota dice de donde vino.
+   * 2. NO HAY PERMISO QUE COMPROBAR. La autorizacion la dio el header del webhook
+   *    antes de llegar aqui; repetir una comprobacion de rol no tendria a quien
+   *    preguntarle.
+   * 3. TIENE QUE SER IDEMPOTENTE. Onvo reintenta las entregas y su evento no trae
+   *    id propio, asi que el mismo cobro puede llegar dos veces. `resolveIfPending`
+   *    resuelve en una sola sentencia condicionada; la repeticion no encuentra fila
+   *    y se ignora en silencio, que es lo correcto: no es un error del emisor.
+   *
+   * Devuelve que paso, para que quien llame pueda registrarlo sin volver a leer.
+   */
+  async confirmByGateway(
+    outcome: GatewayOutcome,
+  ): Promise<{ applied: boolean; reason: 'ok' | 'unknown_reference' | 'already_resolved' }> {
+    const payment = await paymentsRepo.findByGatewayReference(outcome.reference);
+    if (!payment) {
+      // Puede ser un cobro de otra cuenta o de otro entorno apuntando al mismo
+      // webhook. Se registra y se ignora: no es motivo para responder un error.
+      console.warn(`[payments] webhook con referencia desconocida: ${outcome.reference}`);
+      return { applied: false, reason: 'unknown_reference' };
+    }
+
+    const note = outcome.approved
+      ? 'Cobro aprobado por la pasarela.'
+      : `Cobro rechazado por la pasarela.${outcome.detail ? ` ${outcome.detail}` : ''}`;
+
+    const updated = await paymentsRepo.resolveIfPending(payment.id, {
+      status: outcome.approved ? PaymentStatus.Confirmado : PaymentStatus.Rechazado,
+      note,
+      confirmedAt: new Date(),
+    });
+
+    if (!updated) return { applied: false, reason: 'already_resolved' };
+    return { applied: true, reason: 'ok' };
+  },
+
+  /**
+   * Flujo de PRUEBA: resuelve un pago con tarjeta simulado sin pasar por Onvo.
+   *
+   * Existe para que la ausencia de credenciales no bloquee las pruebas del flujo
+   * completo. Tres cerrojos, porque un endpoint que confirma pagos sin cobrar es
+   * exactamente lo que un atacante querria:
+   *
+   *   - solo con la pasarela en modo simulado (en produccion ni siquiera arranca);
+   *   - solo sobre un pago cuya referencia nacio simulada, para que no pueda tocar
+   *     un cobro real que quedo pendiente;
+   *   - solo sobre un tramite del propio cliente (misma regla de siempre).
+   */
+  async simulateGatewayOutcome(
+    session: Session,
+    paymentId: string,
+    approve: boolean,
+  ): Promise<PaymentDto> {
+    if (!isOnvoSimulated()) throw PaymentErrors.simulationNotAllowed();
+
+    const payment = await paymentsRepo.findById(paymentId);
+    if (!payment) throw PaymentErrors.notFound();
+    if (!payment.gatewayReference || !onvoClient.isSimulatedReference(payment.gatewayReference)) {
+      throw PaymentErrors.simulationNotAllowed();
+    }
+
+    const shipment = await shipmentsRepo.findById(payment.shipmentId);
+    if (!shipment) throw ShipmentErrors.notFound();
+    assertOwnership(session, shipment);
+
+    await paymentsService.confirmByGateway(
+      onvoClient.simulateOutcome(payment.gatewayReference, approve),
+    );
 
     const updated = await paymentsRepo.findById(paymentId);
     if (!updated) throw PaymentErrors.notFound();

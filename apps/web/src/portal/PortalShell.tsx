@@ -22,6 +22,7 @@ import { ShipmentsScreen } from './screens/ShipmentsScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { DeliveriesScreen } from './screens/DeliveriesScreen';
 import { ClientsScreen } from './screens/ClientsScreen';
+import { ProviderLinksScreen } from './screens/ProviderLinksScreen';
 import { ReportsScreen } from './screens/ReportsScreen';
 import { ReceptionScreen } from './screens/ReceptionScreen';
 import { LockerScreen } from './screens/LockerScreen';
@@ -200,6 +201,11 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
             <CostServicesScreen />
           ) : current === Resource.Costs ? (
             <CostsScreen />
+          ) : current === Resource.Config ? (
+            // Configuración es hoy el enlace con el operador de Miami: es lo único
+            // que un Admin necesita administrar aquí. Cuando entren más ajustes,
+            // esta pantalla pasa a ser una pestaña más.
+            <ProviderLinksScreen />
           ) : current === Resource.Routes ? (
             <RoutesScreen />
           ) : current === Resource.Prealert ? (

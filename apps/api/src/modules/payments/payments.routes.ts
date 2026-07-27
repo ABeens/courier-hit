@@ -16,6 +16,7 @@ import {
   listPaymentsQuerySchema,
   recordPaymentSchema,
   resolvePaymentSchema,
+  simulatePaymentSchema,
   startPaymentSchema,
 } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
@@ -30,20 +31,36 @@ export const paymentsRoutes = new Hono<AppEnv>();
 
 /**
  * Webhook de Onvo. Se monta ANTES de `requireSession` porque no viene de un
- * navegador: no hay cookie que validar, la autenticidad la da la firma.
+ * navegador: no hay cookie que validar, la autenticidad la da el secreto del
+ * header.
  *
- * TODO(09/onvo): cuando `verifyWebhookSignature` este implementado, confirmar el
- * pago con `parseWebhookEvent` y llamar a `paymentsService.resolve`. Hoy la firma
- * nunca valida, asi que todo webhook se rechaza: preferimos ignorar cobros reales
- * a aceptar uno falso.
+ * Onvo NO firma el cuerpo: manda el secreto tal cual en `X-Webhook-Secret`. Sin
+ * `ONVO_WEBHOOK_SECRET` configurado la verificacion falla siempre, asi que todo
+ * webhook se rechaza; preferimos ignorar cobros reales a aceptar uno falso.
+ *
+ * Se responde 200 en cuanto el evento queda aplicado (o descartado por conocido):
+ * Onvo marca la entrega como fallida con cualquier otro codigo y la reintenta. Por
+ * eso un evento que no nos concierne tambien responde 200, no un error.
  */
 paymentsRoutes.post('/webhook/onvo', async (c) => {
   const raw = await c.req.text();
-  const signature = c.req.header('onvo-signature') ?? '';
-  if (!onvoClient.verifyWebhookSignature(raw, signature)) {
+  if (!onvoClient.verifyWebhookSecret(c.req.header('x-webhook-secret') ?? '')) {
     return c.json({ error: { code: 'INVALID_SIGNATURE', message: 'Firma inválida.' } }, 401);
   }
-  return c.json({ received: true });
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    return c.json({ error: { code: 'INVALID_PAYLOAD', message: 'Cuerpo ilegible.' } }, 400);
+  }
+
+  const outcome = onvoClient.parseWebhookEvent(payload);
+  // Evento que no resuelve nada (un cobro diferido, u otro tipo): recibido y ya.
+  if (!outcome) return c.json({ received: true, applied: false });
+
+  const result = await paymentsService.confirmByGateway(outcome);
+  return c.json({ received: true, applied: result.applied });
 });
 
 paymentsRoutes.use('*', requireSession());
@@ -78,6 +95,28 @@ paymentsRoutes.post(
   async (c) => {
     const result = await paymentsService.start(c.get('session'), c.req.valid('json'));
     return c.json(result, 201);
+  },
+);
+
+/**
+ * Flujo de PRUEBA: resuelve un cobro simulado sin pasar por Onvo, para poder
+ * recorrer el pago con tarjeta sin credenciales.
+ *
+ * Lleva sesion y permiso como cualquier otra ruta del cliente, aunque el cerrojo
+ * de verdad es el modo de la pasarela: fuera de `simulated` el servicio responde
+ * 404, y en produccion la API ni siquiera arranca con la simulacion encendida.
+ */
+paymentsRoutes.post(
+  '/:id/simulate',
+  requirePermission(Permission.PackagePay),
+  zValidator('json', simulatePaymentSchema),
+  async (c) => {
+    const updated = await paymentsService.simulateGatewayOutcome(
+      c.get('session'),
+      c.req.param('id'),
+      c.req.valid('json').approve,
+    );
+    return c.json(updated);
   },
 );
 

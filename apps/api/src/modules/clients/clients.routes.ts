@@ -14,11 +14,18 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { Permission, updateClientSchema, updateProfileSchema } from '@courier/shared';
+import {
+  Permission,
+  listProviderLinksSchema,
+  updateClientSchema,
+  updateProfileSchema,
+  updateProviderLinkSchema,
+} from '@courier/shared';
 import type { AppEnv } from '../../core/http';
 import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
 import { clientsService } from './clients.service';
+import { providerLinkService } from './provider-link.service';
 
 export const clientsRoutes = new Hono<AppEnv>();
 
@@ -38,6 +45,41 @@ clientsRoutes.get('/me', async (c) => {
 clientsRoutes.patch('/me', zValidator('json', updateProfileSchema), async (c) => {
   return c.json(await clientsService.updateProfile(c.get('session'), c.req.valid('json')));
 });
+
+// --- Panel administrador: enlace con el proveedor (docs/13) ---
+//
+// Van ANTES de `/:id` por la misma razon que `/me/...`: "provider-links" encajaria
+// en el patron del detalle y Hono lo resolveria como un casillero con ese id.
+//
+// Permiso `config.manage` (solo Admin), no `clients.write`: corregir el enlace a
+// mano puede abrirle el portal a un cliente que el proveedor no reconoce.
+
+/** Casilleros con problema de enlace. Sin filtro: los que no estan `synced`. */
+clientsRoutes.get(
+  '/provider-links',
+  requirePermission(Permission.ConfigManage),
+  zValidator('query', listProviderLinksSchema),
+  async (c) => {
+    return c.json(await providerLinkService.list(c.req.valid('query')));
+  },
+);
+
+/** Enlace de un casillero con su bitacora completa (pantalla de diagnostico). */
+clientsRoutes.get('/:id/provider-link', requirePermission(Permission.ConfigManage), async (c) => {
+  return c.json(await providerLinkService.get(c.req.param('id')));
+});
+
+/** Correccion manual del enlace (estado, id de Helga, sub-casillero). */
+clientsRoutes.patch(
+  '/:id/provider-link',
+  requirePermission(Permission.ConfigManage),
+  zValidator('json', updateProviderLinkSchema),
+  async (c) => {
+    return c.json(
+      await providerLinkService.update(c.get('session'), c.req.param('id'), c.req.valid('json')),
+    );
+  },
+);
 
 // --- Panel administrador ---
 

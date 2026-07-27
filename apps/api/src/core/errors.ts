@@ -132,9 +132,11 @@ export const ClientRateErrors = {
 };
 
 /**
- * Errores de la integracion con el proveedor Helga (docs/13 §3.5). El registro
- * de un casillero BLOQUEA si el proveedor falla: no queremos clientes que
- * existan de nuestro lado y no del suyo.
+ * Errores de la integracion con el proveedor Helga (docs/13 §3.5).
+ *
+ * El registro NO bloquea si el proveedor falla: el casillero nace igual, marcado
+ * `pending`/`failed`, y el robot lo reintenta. La puerta de "no queremos clientes
+ * que existan de nuestro lado y no del suyo" vive en el login (`auth.service`).
  */
 export const ProviderErrors = {
   unavailable: () =>
@@ -155,6 +157,22 @@ export const ProviderErrors = {
     new AppError('PROVIDER_FORBIDDEN', 'El operador en Miami rechazó la conexión (lista blanca).', 502),
   unauthenticated: () =>
     new AppError('PROVIDER_UNAUTHENTICATED', 'No pudimos autenticarnos con el operador en Miami.', 502),
+};
+
+/**
+ * Errores de la correccion MANUAL del enlace de un casillero (panel de
+ * administracion). Distintos de `ProviderErrors`: aqui el proveedor no
+ * interviene, el que se equivoca es quien corrige.
+ */
+export const ProviderLinkErrors = {
+  unchanged: () =>
+    new AppError('PROVIDER_LINK_UNCHANGED', 'Los datos enviados son los que ya tenía el casillero.', 409),
+  needsHelgaId: () =>
+    new AppError(
+      'PROVIDER_LINK_NEEDS_HELGA_ID',
+      'No se puede marcar el casillero como enlazado sin el id de destinatario de Helga.',
+      409,
+    ),
 };
 
 /** Errores del modulo de tramites (docs/manuales/flujo.md L30-145). */
@@ -260,6 +278,22 @@ export const PaymentErrors = {
       'El pago con tarjeta no está disponible en este momento. Usa depósito bancario.',
       503,
     ),
+  /**
+   * La pasarela esta configurada pero fallo (cayo, tardo demasiado, respondio algo
+   * que no entendemos). Se separa de `gatewayUnavailable` porque aqui el cliente SI
+   * puede reintentar: el problema es del momento, no de la configuracion. El
+   * detalle real queda en el log; al pagador no le sirve y puede filtrar datos de
+   * la cuenta.
+   */
+  gatewayError: () =>
+    new AppError(
+      'PAYMENT_GATEWAY_ERROR',
+      'No pudimos comunicarnos con la pasarela de pago. Intenta de nuevo en unos minutos.',
+      502,
+    ),
+  /** El flujo simulado solo existe fuera de produccion (ver `onvoMode`). */
+  simulationNotAllowed: () =>
+    new AppError('PAYMENT_SIMULATION_NOT_ALLOWED', 'La simulación de pagos no está habilitada.', 404),
   receiptRequired: () =>
     new AppError('PAYMENT_RECEIPT_REQUIRED', 'Adjunta el comprobante del depósito.', 400),
   /**

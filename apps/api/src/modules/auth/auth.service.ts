@@ -9,6 +9,7 @@ import {
   ClientReviewStatus,
   HelgaSyncStatus,
   Principal,
+  ProviderLinkSource,
   Role,
   UserStatus,
   principalForRole,
@@ -19,6 +20,9 @@ import { AuthErrors } from '../../core/errors';
 import { mailer } from '../../core/mailer';
 import type { HelgaRecipient } from '../../integrations/helga/helga.client';
 import { createHelgaRecipient, isHelgaEnabled } from '../../integrations/helga/helga.client';
+// La bitacora del enlace la declara el modulo de casilleros (es donde vive el
+// panel que la consulta); aqui solo se ESCRIBE desde los caminos automaticos.
+import { providerLinkRepo } from '../clients/provider-link.repo';
 import { tariffsRepo } from '../tariffs/tariffs.repo';
 import { authRepo } from './auth.repo';
 import type { UserRow } from './auth.schema';
@@ -108,7 +112,7 @@ export const authService = {
     // El casillero (HS-####) se asigna ya; el login queda bloqueado hasta
     // verificar el correo y, con Helga encendido, hasta quedar `synced`.
     const code = await authRepo.nextClientCode();
-    await authRepo.insertClient({
+    const clientRow = await authRepo.insertClient({
       userId: user.id,
       code,
       idNumber: input.idNumber,
@@ -125,6 +129,15 @@ export const authService = {
       helgaSyncStatus: link.status,
       helgaSyncAttempts: link.attempts,
       helgaLastError: link.error,
+    });
+
+    // Primer evento de la bitacora del enlace. Sin el, un casillero que nace
+    // 'failed' no tendria rastro del motivo original: solo del ultimo reintento.
+    await providerLinkRepo.addEvent({
+      clientId: clientRow.id,
+      source: ProviderLinkSource.Registro,
+      status: link.status,
+      detail: link.error ?? (link.recipient ? `Destinatario ${link.recipient.id}.` : 'Integración apagada.'),
     });
 
     // En dev se devuelve el codigo para mostrarlo en la UI (sin SMTP). En prod
@@ -211,6 +224,19 @@ export const authService = {
         helgaSyncStatus: link.status,
         helgaSyncAttempts: client.attempts + 1,
         helgaLastError: link.error,
+      });
+
+      // Bitacora del intento. Es lo que permite distinguir "falló una vez" de
+      // "lleva 40 intentos con el mismo error", que es la diferencia entre esperar
+      // al robot y corregirlo a mano.
+      await providerLinkRepo.addEvent({
+        clientId: client.id,
+        source: ProviderLinkSource.Reconciliacion,
+        status: link.status,
+        detail: link.error ?? (link.recipient ? `Destinatario ${link.recipient.id}.` : null),
+        changes: link.recipient
+          ? { helgaClientId: { from: null, to: link.recipient.id } }
+          : null,
       });
 
       if (link.status === HelgaSyncStatus.Synced) report.synced += 1;

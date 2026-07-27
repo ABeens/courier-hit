@@ -118,6 +118,28 @@ export const resolvePaymentSchema = z
   });
 export type ResolvePaymentInput = z.infer<typeof resolvePaymentSchema>;
 
+/**
+ * Desenlace SIMULADO de un cobro con tarjeta, para el flujo de prueba que corre
+ * sin credenciales de la pasarela. Solo existe fuera de produccion.
+ */
+export const simulatePaymentSchema = z.object({
+  approve: z.boolean(),
+});
+export type SimulatePaymentInput = z.infer<typeof simulatePaymentSchema>;
+
+/**
+ * Lo que el navegador necesita para abrir el formulario de tarjeta, tal como lo
+ * devuelve `POST /payments`. Onvo no usa un secreto de un solo uso: el SDK web se
+ * inicializa con la llave publicable y el ID del intento.
+ */
+export interface PaymentIntentDto {
+  paymentIntentId: string;
+  publicKey: string;
+  customerId: string | null;
+  /** True si lo produjo la pasarela simulada; la web entonces no carga el SDK. */
+  simulated: boolean;
+}
+
 /** Filtros del listado de pagos (bandeja de validacion del staff). */
 export const listPaymentsQuerySchema = z.object({
   shipmentId: z.string().uuid().optional(),
