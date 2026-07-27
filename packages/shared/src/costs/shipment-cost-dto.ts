@@ -94,9 +94,8 @@ export interface CostLineDto {
 }
 
 /**
- * Linea sugerida al abrir la pantalla: el flete calculado de Paqueteria y los
- * servicios habilitados del catalogo. NO esta guardada; el operador la acepta,
- * la ajusta o la descarta.
+ * Linea propuesta al abrir la pantalla: el flete calculado de Paqueteria y los
+ * servicios habilitados del catalogo. NO esta guardada todavia.
  */
 export interface SuggestedCostLine {
   costServiceId: string | null;
@@ -106,8 +105,14 @@ export interface SuggestedCostLine {
   /** Importe sugerido; null cuando el servicio es de valor manual. */
   amount: number | null;
   currency: Currency;
-  /** Por que se sugiere (p. ej. "3 kg × $13.45"). Solo informativo. */
+  /** Por que se propone (p. ej. "3 kg × $13.45"). Solo informativo. */
   detail: string | null;
+  /**
+   * `true` = la linea se aplica SOLA (el flete: sale de la tarifa del casillero
+   * y es el cobro base del servicio, no una opcion). La UI la precarga y la API
+   * la reinyecta si falta al guardar. `false` = el operador la agrega si aplica.
+   */
+  auto: boolean;
 }
 
 /** Respuesta de `GET /api/shipments/:id/costs`. */

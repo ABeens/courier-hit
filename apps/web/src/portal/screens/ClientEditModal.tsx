@@ -21,6 +21,7 @@ interface Rate {
   name: string;
   pricePerKg: number;
   currency: Currency;
+  isDefault: boolean;
 }
 
 interface Props {
@@ -41,11 +42,18 @@ export function ClientEditModal({ row, onClose, onSaved }: Props) {
 
   // El selector de tarifas se carga al abrir: son pocas y cambian poco, pero
   // tienen que ser las vigentes, no una copia que traiga la fila del listado.
+  // Si la carga falla se dice: un combo vacio en silencio se lee como "no hay
+  // tarifas" y lleva a guardar el cliente sin tocar la que tenia.
   useEffect(() => {
     void api
-      .get<{ items: Rate[] }>('/tariffs')
+      .get<{ items: Rate[] }>('/tariffs/client-rates')
       .then((data) => setRates(data.items))
-      .catch(() => setRates([]));
+      .catch((err) => {
+        setRates([]);
+        setError(
+          err instanceof ApiError ? err.message : 'No se pudieron cargar las tarifas disponibles.',
+        );
+      });
   }, []);
 
   async function submit(e: React.FormEvent) {
@@ -95,15 +103,30 @@ export function ClientEditModal({ row, onClose, onSaved }: Props) {
               id="c-rate"
               className="input"
               value={clientRateId}
+              disabled={rates === null}
               onChange={(e) => setClientRateId(e.target.value)}
             >
-              <option value="">— Sin cambiar —</option>
+              {/*
+                La opcion vacia solo aparece si el casillero llego sin tarifa: en
+                ese caso hay algo que decir (con cual se le factura mientras
+                tanto). Si ya tiene una, ofrecer "sin cambiar" solo duplicaria la
+                opcion que ya viene seleccionada.
+              */}
+              {!row.clientRateId && <option value="">— Sin tarifa (se factura con la por defecto) —</option>}
               {rates?.map((rate) => (
                 <option key={rate.id} value={rate.id}>
-                  {rate.name}
+                  {rate.name} · {rate.pricePerKg} {rate.currency}/kg
+                  {rate.isDefault ? ' (por defecto)' : ''}
                 </option>
               ))}
             </select>
+            <div className="field-hint">
+              {rates === null
+                ? 'Cargando tarifas…'
+                : rates.length === 0
+                  ? 'No hay tarifas configuradas. Créalas en el módulo de Tarifas.'
+                  : 'Define el precio por kg del flete que se le cobra al casillero.'}
+            </div>
           </div>
 
           <div className="field-pair">

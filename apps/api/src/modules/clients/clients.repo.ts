@@ -119,40 +119,55 @@ export const clientsRepo = {
   },
 
   /**
-   * Medios de pago que admite la tarifa del casillero. El manual los trata como
-   * una propiedad de la TARIFA, no del cliente ("Si el cliente esta asociado a
-   * una tarifa que no permite pago por tarjeta de credito no debe mostrar esa
-   * opcion"), asi que se leen de ahi. Null si el casillero quedo sin tarifa.
+   * Tarifa EFECTIVA del casillero: la asignada o, si quedo sin ninguna (el FK
+   * queda en null al borrar una tarifa), la tarifa por defecto del sistema.
+   *
+   * Punto unico de resolucion: de aqui salen tanto el precio por kg del flete
+   * como los medios de pago admitidos, asi un casillero nunca se queda sin
+   * tarifa a efectos de facturacion. Null solo si el casillero no existe o si
+   * el sistema se quedo sin tarifa por defecto (estado invalido, lo impide el
+   * modulo de tarifas).
    */
-  async paymentOptionsFor(clientId: string) {
-    const [row] = await db
-      .select({
-        allowsCard: clientRates.allowsCard,
-        allowsBankDeposit: clientRates.allowsBankDeposit,
-      })
+  async rateFor(clientId: string) {
+    const rateColumns = {
+      rateId: clientRates.id,
+      rateName: clientRates.name,
+      pricePerKg: clientRates.pricePerKg,
+      currency: clientRates.currency,
+      allowsCard: clientRates.allowsCard,
+      allowsBankDeposit: clientRates.allowsBankDeposit,
+    };
+
+    const [assigned] = await db
+      .select(rateColumns)
       .from(clients)
       .innerJoin(clientRates, eq(clients.clientRateId, clientRates.id))
       .where(eq(clients.id, clientId))
       .limit(1);
-    return row ?? null;
+    if (assigned) return { ...assigned, isFallback: false };
+
+    // Sin tarifa asignada: se factura con la por defecto, pero se avisa (isFallback)
+    // para que la UI lo muestre en vez de hacerlo pasar por una eleccion comercial.
+    const [exists] = await db.select({ id: clients.id }).from(clients).where(eq(clients.id, clientId)).limit(1);
+    if (!exists) return null;
+
+    const [fallback] = await db
+      .select(rateColumns)
+      .from(clientRates)
+      .where(eq(clientRates.isDefault, true))
+      .limit(1);
+    return fallback ? { ...fallback, isFallback: true } : null;
   },
 
   /**
-   * Tarifa preferencial asignada al casillero (precio por kg + su moneda). La usa
-   * el modulo de costos para sugerir el flete de Paqueteria. Null si el casillero
-   * no existe o quedo sin tarifa (la tarifa borrada deja el FK en null).
+   * Medios de pago que admite la tarifa del casillero. El manual los trata como
+   * una propiedad de la TARIFA, no del cliente ("Si el cliente esta asociado a
+   * una tarifa que no permite pago por tarjeta de credito no debe mostrar esa
+   * opcion"), asi que se leen de ahi (con el mismo fallback que `rateFor`).
    */
-  async rateFor(clientId: string) {
-    const [row] = await db
-      .select({
-        rateName: clientRates.name,
-        pricePerKg: clientRates.pricePerKg,
-        currency: clientRates.currency,
-      })
-      .from(clients)
-      .innerJoin(clientRates, eq(clients.clientRateId, clientRates.id))
-      .where(eq(clients.id, clientId))
-      .limit(1);
-    return row ?? null;
+  async paymentOptionsFor(clientId: string) {
+    const rate = await this.rateFor(clientId);
+    if (!rate) return null;
+    return { allowsCard: rate.allowsCard, allowsBankDeposit: rate.allowsBankDeposit };
   },
 };

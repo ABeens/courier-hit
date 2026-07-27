@@ -89,30 +89,47 @@ function toLineDto(row: Awaited<ReturnType<typeof costsRepo.listLines>>[number])
 }
 
 /**
- * Sugerencias al abrir la pantalla: el flete calculado (solo Paqueteria) y los
- * servicios habilitados del catalogo que aplican al tipo de tramite.
+ * Linea de flete de Paqueteria: peso x precio por kg de la TARIFA EFECTIVA del
+ * casillero (la asignada o, si quedo sin ninguna, la por defecto; lo resuelve
+ * `clientsRepo.rateFor`).
  *
- * El flete es peso x precio por kg de la TARIFA DEL CLIENTE. Si el tramite aun no
- * tiene peso, o el casillero quedo sin tarifa, simplemente no se sugiere: el
- * operador puede cargar la linea a mano.
+ * Se marca `auto: true` porque NO es una opcion del catalogo: es el cobro base
+ * del servicio y entra solo en la factura. Null solo si el tramite todavia no
+ * tiene peso (sin peso no hay flete que calcular) o si no hubo tarifa alguna.
+ */
+async function buildFreight(
+  row: ShipmentRow,
+): Promise<(SuggestedCostLine & { amount: number }) | null> {
+  if (!row.weightKg) return null;
+
+  const rate = await clientsRepo.rateFor(row.clientId);
+  if (!rate) return null;
+
+  const detail = `${row.weightKg} kg × ${rate.pricePerKg} ${rate.currency}/kg`;
+  return {
+    costServiceId: null,
+    label: `Flete (${rate.rateName})`,
+    source: CostLineSource.Freight,
+    percentage: null,
+    amount: roundMoney(row.weightKg * rate.pricePerKg, rate.currency),
+    currency: rate.currency,
+    detail: rate.isFallback ? `${detail} · tarifa por defecto` : detail,
+    auto: true,
+  };
+}
+
+/**
+ * Sugerencias al abrir la pantalla: el flete calculado (solo Paqueteria, y va
+ * primero porque se aplica solo) y los servicios habilitados del catalogo que
+ * aplican al tipo de tramite, que el operador agrega si corresponden.
  */
 async function buildSuggestions(row: ShipmentRow): Promise<SuggestedCostLine[]> {
   const flow = flowForType(row.shipmentType);
   const suggestions: SuggestedCostLine[] = [];
 
-  if (flow === Flow.Paqueteria && row.weightKg) {
-    const rate = await clientsRepo.rateFor(row.clientId);
-    if (rate) {
-      suggestions.push({
-        costServiceId: null,
-        label: `Flete (${rate.rateName})`,
-        source: CostLineSource.Freight,
-        percentage: null,
-        amount: roundMoney(row.weightKg * rate.pricePerKg, rate.currency),
-        currency: rate.currency,
-        detail: `${row.weightKg} kg × ${rate.pricePerKg} ${rate.currency}/kg`,
-      });
-    }
+  if (flow === Flow.Paqueteria) {
+    const freight = await buildFreight(row);
+    if (freight) suggestions.push(freight);
   }
 
   const services = await costServicesRepo.list({ kind: serviceKindFor(flow), enabled: true });
@@ -128,10 +145,43 @@ async function buildSuggestions(row: ShipmentRow): Promise<SuggestedCostLine[]> 
       // es manual y sin moneda, asi que se propone colones y el operador decide.
       currency: service.currency ?? (flow === Flow.Paqueteria ? Currency.USD : Currency.CRC),
       detail: isPercentage && service.defaultValue !== null ? `${service.defaultValue}% del subtotal` : null,
+      auto: false,
     });
   }
 
   return suggestions;
+}
+
+/**
+ * Garantiza el flete en el juego de lineas de Paqueteria: si el cuerpo no trae
+ * ninguna linea de flete, se antepone la calculada desde la tarifa del casillero.
+ *
+ * Es la contraparte en servidor de que el flete sea un cobro fijo: el cliente no
+ * decide si se cobra el peso, solo puede AJUSTAR el importe (linea Freight que si
+ * viene se respeta tal cual). Se reutiliza la tasa de cambio que el operador ya
+ * digito en el resto de las lineas (regla M5: la tasa no la inventa el servidor),
+ * asi que un cuerpo vacio se guarda vacio.
+ */
+async function withFreight(row: ShipmentRow, input: CostLineInput[]): Promise<CostLineInput[]> {
+  if (flowForType(row.shipmentType) !== Flow.Paqueteria) return input;
+  if (input.length === 0) return input;
+  if (input.some((l) => l.source === CostLineSource.Freight)) return input;
+
+  const freight = await buildFreight(row);
+  if (!freight) return input;
+
+  return [
+    {
+      costServiceId: null,
+      label: freight.label,
+      source: CostLineSource.Freight,
+      percentage: null,
+      amount: freight.amount,
+      currency: freight.currency,
+      exchangeRate: input[0]!.exchangeRate,
+    },
+    ...input,
+  ];
 }
 
 /**
@@ -217,11 +267,11 @@ export const costsService = {
     shipmentId: string,
     input: SaveShipmentCostsInput,
   ): Promise<ShipmentCostsDto> {
-    await this.loadShipment(session, shipmentId);
+    const shipment = await this.loadShipment(session, shipmentId);
     const approval = await costsRepo.approval(shipmentId);
     if (approval?.approvedAt) throw CostErrors.alreadyApproved();
 
-    const lines = resolveLines(input.lines).map((l) => ({
+    const lines = resolveLines(await withFreight(shipment, input.lines)).map((l) => ({
       ...l,
       shipmentId,
       createdBy: session.userId,
