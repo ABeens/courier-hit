@@ -19,10 +19,19 @@ export const MASTER_LOCKER_ID = 'SJO008835';
 /**
  * Direccion fisica de la bodega en Miami.
  *
- * TODO(casillero): confirmar los datos reales con HS Global — el manual lo deja
- * pendiente de forma explicita ("confirmar datos con el cliente"). Mientras
- * tanto se muestran estos valores, que son los del prototipo. Cuando lleguen los
- * definitivos se cambian AQUI y toda la web los toma.
+ * TODO(casillero): SIGUEN SIENDO VALORES DE RELLENO. Confirmar con HS Global; el
+ * manual lo deja pendiente de forma explicita ("confirmar datos con el cliente").
+ * Cuando lleguen los definitivos se cambian AQUI y toda la web los toma.
+ *
+ * Dos avisos, porque esta es la direccion que el cliente copia al comprar y un
+ * error aqui manda paquetes a ninguna parte:
+ *
+ * 1. NO se puede sacar del API del proveedor. Comprobado el 2026-07-26: su ficha
+ *    de cuenta solo trae la direccion de Costa Rica y no expone ninguna ruta de
+ *    oficinas ni bodegas (docs/13 §6).
+ * 2. Estos valores NO COINCIDEN con los del prototipo, que decia
+ *    "8200 NW 27th St, Suite 140". Al menos uno de los dos esta mal, y el
+ *    telefono es de relleno en ambos.
  */
 export const MIAMI_WAREHOUSE = {
   addressLine1: '8200 NW 30th Terrace',

@@ -3,7 +3,7 @@
  * invalido, la API no arranca: fallamos temprano y claro.
  */
 import { z } from 'zod';
-import { isValidDuration } from './scheduler/duration';
+import { isValidDuration, parseDuration } from './scheduler/duration';
 
 /**
  * Variable opcional que puede venir vacia o con un placeholder de plantilla.
@@ -44,22 +44,45 @@ const EnvSchema = z.object({
   UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024),
 
   // --- Correo saliente (verificacion, invitaciones, avisos de estado) ---
-  // Apagado en desarrollo: sin transporte real, `mailer` escribe el mensaje en la
-  // consola y sigue. Asi los flujos que disparan correo se pueden probar enteros.
-  // TODO(correo): implementar el transporte SES y encenderlo en produccion.
+  // Apagado mientras no exista el servidor en AWS. Con el interruptor en false,
+  // `mailer` escribe el mensaje completo en la consola: los flujos que disparan
+  // correo se pueden probar enteros sin SES.
   MAIL_ENABLED: z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
   MAIL_FROM: z.string().default('HS Global Courier <no-reply@hsglobalcr.com>'),
+  /** Region de SES. Obligatoria con MAIL_ENABLED=true (ver superRefine). */
+  AWS_REGION: optionalEnv(),
+  /**
+   * Credenciales de SES. OPCIONALES a proposito: en EC2/ECS lo correcto es el rol
+   * de instancia, y el SDK lo resuelve solo cuando estas no estan. Se declaran
+   * para poder probar desde fuera de AWS sin cambiar codigo.
+   */
+  SES_ACCESS_KEY_ID: optionalEnv(),
+  SES_SECRET_ACCESS_KEY: optionalEnv(),
+  /** Configuration set de SES (metricas y manejo de rebotes). Opcional. */
+  SES_CONFIGURATION_SET: optionalEnv(),
 
   // --- Pasarela de pago: Onvo Pay ---
   // Apagada mientras no existan credenciales. Con la pasarela apagada el pago con
   // tarjeta no se ofrece y el cliente paga por deposito bancario, que es un flujo
   // completo y no depende de terceros.
-  // TODO(09/onvo): implementar el cliente de Onvo Pay (crear intento de pago,
-  // confirmar contra el webhook) en `integrations/onvo/`.
   ONVO_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  /**
+   * Pasarela SIMULADA: ofrece el pago con tarjeta sin llamar a Onvo ni tener
+   * credenciales. Existe para que la ausencia de la pasarela deje de bloquear las
+   * pruebas: el flujo completo (crear el intento, confirmarlo, ver el tramite
+   * pagado) se puede recorrer con `ONVO_ENABLED=false`.
+   *
+   * NUNCA en produccion: una pasarela simulada da por cobrado dinero que nadie
+   * pago. El arranque falla si se enciende ahi (ver `loadConfig`), en vez de
+   * ignorarla en silencio.
+   */
+  ONVO_SIMULATE: z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
@@ -93,6 +116,40 @@ const EnvSchema = z.object({
   // Origin registrado en la lista blanca; Helga responde 403 si no coincide.
   HELGA_ORIGIN: optionalEnv(),
   HELGA_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  /**
+   * Proveedor SIMULADO: responde las cinco operaciones de Helga sin red ni
+   * credenciales (`integrations/helga/helga.mock.ts`). Existe porque con la
+   * integracion apagada NADA del flujo se puede probar: los casilleros quedan
+   * 'pending', las prealertas no salen y el robot ni siquiera agenda sus tareas.
+   *
+   * La sustitucion ocurre en el transporte (el `fetch`), no en los servicios: el
+   * armado de cada peticion, el parseo de la envoltura y el avance de estados
+   * corren igual que en produccion.
+   *
+   * NUNCA en produccion: daria por enlazados casilleros que el proveedor no
+   * conoce y por prealertados paquetes que nadie espera en Miami. El arranque
+   * falla si se enciende ahi (ver mas abajo), no se degrada en silencio.
+   */
+  HELGA_MOCK: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  /**
+   * Cuanto tarda el paquete simulado en pasar de un estado del proveedor al
+   * siguiente. Son 8 pasos hasta el final del tramo, asi que con "2m" el recorrido
+   * completo dura 16 minutos.
+   *
+   * Comparalo con `PROVIDER_SYNC_INTERVAL`: si el paso es MAS CORTO que el
+   * intervalo, el paquete salta varios estados entre corridas y se ejercita el
+   * avance paso a paso de `provider-sync` (el caso realista). Si es mas largo, se
+   * ve un estado por corrida, que es comodo para mirar el timeline del portal.
+   */
+  HELGA_MOCK_STEP: z
+    .string()
+    .default('2m')
+    .refine(isValidDuration, {
+      message: 'HELGA_MOCK_STEP debe ser una duracion valida (p. ej. "30s", "2m", "1h").',
+    }),
 
   // --- Tasa de cambio sugerida: web service de indicadores del BCCR ---
   // Solo SUGIERE la tasa del dia en la pantalla de costos; el operador es quien
@@ -158,6 +215,16 @@ const EnvSchema = z.object({
   // sin credenciales NO tumba el arranque: es un interruptor que se puede prender
   // y apagar mientras se consiguen las credenciales. Ver `bccrReady` mas abajo.
 
+  // Correo: con el interruptor encendido la region deja de ser opcional. Va ANTES
+  // del early return de Helga, que solo mira su propia integracion.
+  if (env.MAIL_ENABLED === true && !env.AWS_REGION) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['AWS_REGION'],
+      message: 'AWS_REGION es obligatoria con MAIL_ENABLED=true (region de SES).',
+    });
+  }
+
   // Si la integracion esta encendida, sus credenciales dejan de ser opcionales:
   // preferimos no arrancar a descubrirlo en el primer registro de un cliente.
   if (!(env.HELGA_ENABLED === true)) return;
@@ -202,6 +269,17 @@ function loadConfig(): Config {
 export const config = loadConfig();
 export const isProd = config.NODE_ENV === 'production';
 
+// Una pasarela simulada en produccion daria por cobrado dinero que nadie pago:
+// los pagos con tarjeta se confirmarian solos. No se degrada a apagada en
+// silencio, se rechaza el arranque, porque un despliegue con esto encendido es un
+// error que hay que ver antes de recibir el primer pedido.
+if (config.ONVO_SIMULATE && isProd) {
+  throw new Error(
+    'Configuración de entorno inválida:\n  - ONVO_SIMULATE: la pasarela simulada no puede ' +
+      'usarse con NODE_ENV=production. Apágala y configura las credenciales reales de Onvo.',
+  );
+}
+
 /**
  * True solo si el BCCR esta ENCENDIDO **y** tiene con que llamar.
  *
@@ -212,19 +290,84 @@ export const isProd = config.NODE_ENV === 'production';
  * igual y la pantalla de costos simplemente pide la tasa a mano.
  */
 /**
- * True solo si la pasarela esta ENCENDIDA **y** tiene con que cobrar. Misma
- * separacion que `bccrReady`: la bandera la mueve quien opera, las credenciales
- * dependen del alta comercial con Onvo. Mientras no este lista, la web no ofrece
- * el pago con tarjeta y el cliente usa deposito bancario.
+ * En que modo puede cobrar el sistema con tarjeta:
+ *
+ *   - `live`      — Onvo de verdad: bandera encendida Y credenciales completas.
+ *   - `simulated` — pasarela de mentira para probar sin credenciales. Nunca en
+ *                   produccion (el arranque lo impide arriba).
+ *   - `off`       — no se ofrece tarjeta; el cliente paga por deposito bancario.
+ *
+ * `live` gana sobre `simulated`: si hay credenciales reales, se cobra de verdad.
+ * Dejar que la simulacion pisara una pasarela configurada convertiria un olvido en
+ * el .env en pagos fantasma.
  */
-export const onvoReady =
+export type OnvoMode = 'off' | 'simulated' | 'live';
+
+const onvoLive =
   config.ONVO_ENABLED &&
   Boolean(config.ONVO_BASE_URL && config.ONVO_SECRET_KEY && config.ONVO_PUBLIC_KEY);
 
-if (config.ONVO_ENABLED && !onvoReady) {
+export const onvoMode: OnvoMode = onvoLive ? 'live' : config.ONVO_SIMULATE ? 'simulated' : 'off';
+
+/**
+ * True si el sistema puede cobrar con tarjeta HOY, de verdad o simulado. Es lo que
+ * mira el modulo de pagos para ofrecer el medio; quien necesite distinguir el modo
+ * (por ejemplo para no llamar a Onvo) usa `onvoMode`.
+ */
+export const onvoReady = onvoMode !== 'off';
+
+if (config.ONVO_ENABLED && !onvoLive) {
   console.warn(
     '[config] ONVO_ENABLED=true pero faltan credenciales (ONVO_BASE_URL, ONVO_SECRET_KEY, ' +
       'ONVO_PUBLIC_KEY). El pago con tarjeta seguirá deshabilitado.',
+  );
+}
+
+if (onvoMode === 'simulated') {
+  console.warn(
+    '[config] Pasarela de pago SIMULADA (ONVO_SIMULATE=true). Los pagos con tarjeta se ' +
+      'confirman sin cobrar nada real. Solo para desarrollo y pruebas.',
+  );
+}
+
+/**
+ * Como habla el sistema con el proveedor de casillero:
+ *
+ *   - `live`      — Helga de verdad: bandera encendida y credenciales completas.
+ *   - `simulated` — proveedor de mentira en proceso, para probar el flujo entero
+ *                   sin red ni credenciales. Nunca en produccion.
+ *   - `off`       — no se llama a nadie: los casilleros quedan 'pending', las
+ *                   prealertas no salen y el robot no agenda sus tareas.
+ *
+ * `live` gana sobre `simulated`, por la misma razon que en Onvo: si la integracion
+ * real esta configurada, un olvido en el .env no debe convertirla en simulacion.
+ */
+export type HelgaMode = 'off' | 'simulated' | 'live';
+
+export const helgaMode: HelgaMode = config.HELGA_ENABLED
+  ? 'live'
+  : config.HELGA_MOCK
+    ? 'simulated'
+    : 'off';
+
+// Un proveedor simulado en produccion daria por enlazados casilleros que Helga no
+// conoce y por prealertados paquetes que nadie espera en Miami. Igual que con la
+// pasarela: se rechaza el arranque en vez de ignorarlo en silencio.
+if (helgaMode === 'simulated' && isProd) {
+  throw new Error(
+    'Configuración de entorno inválida:\n  - HELGA_MOCK: el proveedor simulado no puede ' +
+      'usarse con NODE_ENV=production. Apágalo y configura las credenciales reales de Helga.',
+  );
+}
+
+/** Duracion de un paso de la linea de tiempo simulada, en milisegundos. */
+export const helgaMockStepMs = parseDuration(config.HELGA_MOCK_STEP);
+
+if (helgaMode === 'simulated') {
+  console.warn(
+    `[config] Proveedor Helga SIMULADO (HELGA_MOCK=true), paso de ${config.HELGA_MOCK_STEP}. ` +
+      'Ninguna llamada sale a la red y los ids del proveedor son inventados. ' +
+      'Panel de control en /api/dev/helga. Solo para desarrollo y pruebas.',
   );
 }
 

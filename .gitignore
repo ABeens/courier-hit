@@ -16,6 +16,9 @@ yarn.lock
 .env.*
 !.env.example
 
+# Mundo del proveedor Helga simulado (HELGA_MOCK=true)
+.helga-mock.json
+
 # Sistema
 .DS_Store
 Thumbs.db

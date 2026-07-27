@@ -62,6 +62,26 @@ export const shipments = pgTable(
     /** Peso en kilos, entero: se redondea hacia arriba al guardar (flujo.md L115). */
     weightKg: integer('weight_kg'),
 
+    /**
+     * Dimensiones en centimetros, tal como las reporta el proveedor (op. B
+     * `Largo_cm`/`Ancho_cm`/`Alto_cm`, op. E `largo`/`ancho`/`alto`). Solo
+     * informativas hoy: NO entran en ningun calculo de factura.
+     *
+     * Se guardan porque el proveedor ya las manda en cada consulta y descartarlas
+     * significaba no tenerlas el dia que la tarifa las necesite: el historico no
+     * se puede reconstruir hacia atras, la op. B solo responde por el paquete
+     * mientras esta en su tramo.
+     */
+    lengthCm: doublePrecision('length_cm'),
+    widthCm: doublePrecision('width_cm'),
+    heightCm: doublePrecision('height_cm'),
+    /**
+     * Peso volumetrico en kilos (`Peso_volumen` de la op. B). Decimal, a
+     * diferencia de `weightKg`: es un calculo del proveedor, no el peso de bascula
+     * que redondeamos para facturar. Informativo, como las dimensiones.
+     */
+    volumetricWeightKg: doublePrecision('volumetric_weight_kg'),
+
     // --- Datos declarados para la prealerta del proveedor (Helga), solo Paqueteria ---
     /**
      * Valor comercial declarado, en USD (moneda explicita en el nombre, regla M2;
@@ -107,6 +127,16 @@ export const shipments = pgTable(
      * recupera igual cuando el paquete llega a bodega (no es load-bearing).
      */
     helgaPrealertStatus: helgaSyncStatusEnum('helga_prealert_status'),
+    /**
+     * Id de la prealerta EN Helga (`data.Id` de la op. C). Es lo unico que permite
+     * BORRARLA alli (op. F, `DELETE /api/casillero/prealertas/{id}`): su API no
+     * tiene forma de encontrar una prealerta por tracking.
+     *
+     * Sin esto, cambiar el tracking de un tramite dejaba una prealerta huerfana en
+     * el proveedor para siempre. Texto y no entero: el resto de ids del proveedor
+     * se guardan asi (`clients.helga_client_id`) y nunca hacemos aritmetica con el.
+     */
+    helgaPrealertId: text('helga_prealert_id'),
     /** Intentos de replicacion ya realizados; 0 si nunca se intento. */
     helgaPrealertAttempts: integer('helga_prealert_attempts').notNull().default(0),
     /** Ultimo error del proveedor al replicar; para diagnostico de la reconciliacion. */

@@ -47,6 +47,16 @@ export interface ShipmentDto {
   /** Peso en kilos, entero (siempre redondeado hacia arriba al guardar). */
   weightKg: number | null;
   /**
+   * Medidas que reporta el operador de Miami: centimetros y peso volumetrico en
+   * kilos. Solo INFORMATIVAS, no entran en la factura (que se calcula con
+   * `weightKg`). Nulas mientras el proveedor no las haya reportado; llegan con la
+   * sincronizacion, no las digita nadie.
+   */
+  lengthCm: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
+  volumetricWeightKg: number | null;
+  /**
    * Valor comercial declarado, en USD (moneda explicita en el nombre, regla M2).
    * Lo captura el cliente en la prealerta y alimenta `valor_comercial` de la
    * prealerta del proveedor. No es un monto transaccional: no lleva tasa de

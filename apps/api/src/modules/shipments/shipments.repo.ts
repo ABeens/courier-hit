@@ -36,8 +36,15 @@ const columns = {
   billingNotes: shipments.billingNotes,
   invoiceTotalUsd: shipments.invoiceTotalUsd,
   invoiceTotalCrc: shipments.invoiceTotalCrc,
+  // Dimensiones que reporta el proveedor. Informativas: no entran en la factura.
+  lengthCm: shipments.lengthCm,
+  widthCm: shipments.widthCm,
+  heightCm: shipments.heightCm,
+  volumetricWeightKg: shipments.volumetricWeightKg,
   // Marca del congelamiento de factura: el candado de edicion del peso lo consulta.
   costsApprovedAt: shipments.costsApprovedAt,
+  // Id de la prealerta en Helga: lo necesita el rehacer por cambio de tracking.
+  helgaPrealertId: shipments.helgaPrealertId,
   createdAt: shipments.createdAt,
   updatedAt: shipments.updatedAt,
   clientId: clients.id,

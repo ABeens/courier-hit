@@ -2,9 +2,10 @@
  * Lecturas de la sincronizacion con el proveedor. Solo consulta: los cambios de
  * estado los escribe `shipmentsRepo.transition`, que es el punto unico.
  */
-import { and, asc, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { Flow, ShipmentType, State, flowForType } from '@courier/shared';
 import { db } from '../../core/db';
+import { clients } from '../auth/auth.schema';
 import { shipments } from './shipments.schema';
 
 /**
@@ -48,8 +49,16 @@ export const providerSyncRepo = {
         tracking: shipments.tracking,
         description: shipments.description,
         weightKg: shipments.weightKg,
+        lengthCm: shipments.lengthCm,
+        widthCm: shipments.widthCm,
+        heightCm: shipments.heightCm,
+        volumetricWeightKg: shipments.volumetricWeightKg,
+        // Sub-casillero del dueño: con el se comprueba que el paquete que devuelve
+        // el proveedor es de este cliente y no de otro (`checkLockerMatch`).
+        clientSubLocker: clients.helgaSubLocker,
       })
       .from(shipments)
+      .innerJoin(clients, eq(shipments.clientId, clients.id))
       .where(
         and(
           sql`${shipments.shipmentType} in ${PACKAGE_TYPES}`,

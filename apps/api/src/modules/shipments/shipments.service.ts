@@ -37,7 +37,11 @@ import type {
 } from '@courier/shared';
 import { AuthErrors, ShipmentErrors } from '../../core/errors';
 import { formatShipmentCode } from '@courier/shared';
-import { createHelgaPrealert, isHelgaEnabled } from '../../integrations/helga/helga.client';
+import {
+  createHelgaPrealert,
+  deleteHelgaPrealert,
+  isHelgaEnabled,
+} from '../../integrations/helga/helga.client';
 import { clientsRepo } from '../clients/clients.repo';
 import { shipmentsRepo } from './shipments.repo';
 
@@ -101,6 +105,10 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     carrier: row.carrier,
     hawb: row.hawb,
     weightKg: row.weightKg,
+    lengthCm: row.lengthCm,
+    widthCm: row.widthCm,
+    heightCm: row.heightCm,
+    volumetricWeightKg: row.volumetricWeightKg,
     declaredValueUsd: row.declaredValueUsd,
     insuredValueUsd: row.insuredValueUsd,
     tariffPosition: row.tariffPosition,
@@ -215,8 +223,9 @@ export const shipmentsService = {
 
     let status: HelgaSyncStatus;
     let error: string | null;
+    let prealertId: string | null = null;
     try {
-      await createHelgaPrealert({
+      prealertId = await createHelgaPrealert({
         helgaClientId: link.helgaClientId,
         tracking: shipment.tracking,
         description: shipment.description,
@@ -241,6 +250,7 @@ export const shipmentsService = {
         helgaPrealertStatus: status,
         helgaPrealertAttempts: 1,
         helgaPrealertError: error,
+        helgaPrealertId: prealertId,
       });
     } catch (err) {
       console.error(`[helga] no se pudo sellar el estado de prealerta de ${shipment.tracking}:`, err);
@@ -267,8 +277,9 @@ export const shipmentsService = {
 
       let status: HelgaSyncStatus;
       let error: string | null;
+      let prealertId: string | null = null;
       try {
-        await createHelgaPrealert({
+        prealertId = await createHelgaPrealert({
           helgaClientId: s.helgaClientId,
           tracking: s.tracking,
           description: s.description,
@@ -292,6 +303,9 @@ export const shipmentsService = {
         helgaPrealertStatus: status,
         helgaPrealertAttempts: s.attempts + 1,
         helgaPrealertError: error,
+        // Solo se pisa si el proveedor dio uno: en un fallo hay que conservar el
+        // id anterior, que sigue siendo el unico modo de borrar esa prealerta.
+        ...(prealertId ? { helgaPrealertId: prealertId } : {}),
       });
     }
     return report;
@@ -417,6 +431,47 @@ export const shipmentsService = {
 
     const updated = await shipmentsRepo.findById(id);
     if (!updated) throw ShipmentErrors.notFound();
-    return toDto(updated);
+    const dto = toDto(updated);
+
+    // El tracking es la LLAVE con la que el proveedor identifica el paquete: si
+    // cambia, la prealerta vieja apunta a un envio que ya no existe y la nueva no
+    // existe todavia. Se rehace despues de guardar, con el tracking ya persistido.
+    if (isPackage && patch.tracking !== undefined && patch.tracking !== current.tracking) {
+      await this.reprealertAfterTrackingChange(dto, current.helgaPrealertId);
+    }
+
+    return dto;
+  },
+
+  /**
+   * Rehace la prealerta cuando cambia el tracking: borra la anterior en Helga
+   * (op. F) y crea una nueva con el tracking corregido.
+   *
+   * NUNCA lanza. Corregir un tracking mal digitado es una operacion de bodega que
+   * no puede fallar porque el proveedor no responda; si algo sale mal, el tramite
+   * queda 'failed' y la reconciliacion lo reintenta.
+   *
+   * El borrado va PRIMERO y su fallo no impide crear la nueva: quedarse sin
+   * prealerta valida seria peor que dejar una huerfana. Un `false` (404) tampoco
+   * es error: la prealerta ya no estaba, que es justo lo que se buscaba.
+   */
+  async reprealertAfterTrackingChange(
+    shipment: ShipmentDto,
+    previousPrealertId: string | null,
+  ): Promise<void> {
+    if (!isHelgaEnabled()) return;
+
+    if (previousPrealertId) {
+      try {
+        const removed = await deleteHelgaPrealert(previousPrealertId);
+        if (!removed) {
+          console.warn(`[helga] la prealerta ${previousPrealertId} ya no existía al cambiar el tracking.`);
+        }
+      } catch (err) {
+        console.error(`[helga] no se pudo borrar la prealerta ${previousPrealertId}:`, err);
+      }
+    }
+
+    await this.prealertWithProvider(shipment.client.id, shipment);
   },
 };

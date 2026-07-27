@@ -20,8 +20,10 @@ import { Principal, Role, UserStatus } from '@courier/shared';
 import type { Session } from '@courier/shared';
 import { config } from '../config';
 import { db } from '../db';
+import { isHelgaEnabled } from '../../integrations/helga/helga.client';
 import { users } from '../../modules/auth/auth.schema';
 import { authService } from '../../modules/auth/auth.service';
+import { providerDiscoveryService } from '../../modules/shipments/provider-discovery.service';
 import { providerSyncService } from '../../modules/shipments/provider-sync.service';
 import { shipmentsService } from '../../modules/shipments/shipments.service';
 import { Scheduler } from './scheduler';
@@ -37,8 +39,8 @@ const JobLock = {
   ProviderSync: 4801,
   ClientLinkReconcile: 4802,
   PrealertReconcile: 4803,
-  // Reservados para las 2 tareas de sincronizacion pendientes de definir:
-  // Task4: 4804,
+  ProviderDiscovery: 4804,
+  // Reservado para la tarea de sincronizacion pendiente de definir:
   // Task5: 4805,
 } as const;
 
@@ -99,7 +101,12 @@ async function resolveSystemSession(): Promise<Session | null> {
 export function registerJobs(scheduler: Scheduler): void {
   // --- Sincronizacion de estados con el proveedor Helga (docs/13) ---
   // Reemplaza el disparo manual de POST /shipments/sync-provider.
-  if (config.HELGA_ENABLED) {
+  //
+  // La condicion es `isHelgaEnabled()`, no `HELGA_ENABLED`: con el proveedor
+  // SIMULADO estas cuatro tareas tambien tienen que correr, porque el robot es
+  // justamente lo que se quiere probar. Con la integracion en `off` no se agendan,
+  // que correrian en vacio ensuciando el log cada intervalo.
+  if (isHelgaEnabled()) {
     registerSyncJob(scheduler, {
       name: 'provider-sync',
       every: config.PROVIDER_SYNC_INTERVAL,
@@ -113,7 +120,8 @@ export function registerJobs(scheduler: Scheduler): void {
         const r = await providerSyncService.run(session);
         console.log(
           `[scheduler] provider-sync: revisados=${r.checked} avanzados=${r.advanced} ` +
-            `incidencias=${r.incidents.length} desconocidos=${r.unknownStates.length}`,
+            `incidencias=${r.incidents.length} desconocidos=${r.unknownStates.length} ` +
+            `casillero_no_coincide=${r.lockerMismatches.length}`,
         );
       },
     });
@@ -147,9 +155,35 @@ export function registerJobs(scheduler: Scheduler): void {
         );
       },
     });
+
+    // --- Descubrimiento de paquetes creados directo en Helga (flujo 2, docs/13 §3.3) ---
+    // El camino inverso al resto: los demas jobs empujan hacia el proveedor o
+    // preguntan por lo que ya conocemos; este trae lo que NO conocemos.
+    //
+    // OJO CON EL INTERVALO: la op. E solo lista paquetes en DIGITADO. Lo que
+    // avance antes de una corrida sale del listado y ya no se puede recuperar
+    // (hay que cargarlo a mano). Si `creados` sube y baja de forma erratica o
+    // aparecen reclamos de paquetes que nunca entraron, el intervalo es largo.
+    registerSyncJob(scheduler, {
+      name: 'helga-discovery',
+      every: config.HELGA_DISCOVERY_INTERVAL,
+      lockKey: JobLock.ProviderDiscovery,
+      run: async () => {
+        const session = await resolveSystemSession();
+        if (!session) {
+          console.warn('[scheduler] helga-discovery: no hay staff activo; se omite.');
+          return;
+        }
+        const r = await providerDiscoveryService.run(session);
+        console.log(
+          `[scheduler] helga-discovery: listados=${r.fetched} creados=${r.created} ` +
+            `conocidos=${r.known} ajenos=${r.foreign} sin_tracking=${r.invalid} fallidos=${r.failed}`,
+        );
+      },
+    });
   }
 
-  // --- Faltan 2 tareas de sincronizacion por definir (las indicara el usuario) ---
+  // --- Falta 1 tarea de sincronizacion por definir (la indicara el usuario) ---
 }
 
 /**

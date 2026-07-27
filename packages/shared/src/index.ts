@@ -20,6 +20,7 @@ export * from './deliveries/delivery';
 export * from './deliveries/dto';
 export * from './clients/locker';
 export * from './clients/dto';
+export * from './clients/provider-link';
 export * from './announcements/announcement';
 export * from './announcements/dto';
 export * from './geo/costa-rica';

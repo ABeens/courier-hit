@@ -113,6 +113,20 @@
       "when": 1784934369642,
       "tag": "0015_illegal_blazing_skull",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785129000210,
+      "tag": "0016_moaning_mathemanic",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785133592795,
+      "tag": "0017_cooing_dark_beast",
+      "breakpoints": true
     }
   ]
 }

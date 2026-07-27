@@ -33,6 +33,7 @@ import {
   roundWeightKg,
 } from '@courier/shared';
 import type { Session } from '@courier/shared';
+import type { HelgaPackageStatus } from '../../integrations/helga/helga.types';
 import { isHelgaEnabled, fetchHelgaPackageState } from '../../integrations/helga/helga.client';
 import { notificationsService } from '../notifications/notifications.service';
 import { providerSyncRepo } from './provider-sync.repo';
@@ -78,6 +79,8 @@ export interface SyncReport {
   advanced: number;
   incidents: string[];
   unknownStates: string[];
+  /** Paquetes cuyo casillero no coincide con el del tramite (ver `checkLockerMatch`). */
+  lockerMismatches: string[];
 }
 
 export const providerSyncService = {
@@ -90,7 +93,13 @@ export const providerSyncService = {
    * actualizar a los que no tienen ningun problema.
    */
   async run(session: Session): Promise<SyncReport> {
-    const report: SyncReport = { checked: 0, advanced: 0, incidents: [], unknownStates: [] };
+    const report: SyncReport = {
+      checked: 0,
+      advanced: 0,
+      incidents: [],
+      unknownStates: [],
+      lockerMismatches: [],
+    };
 
     if (!isHelgaEnabled()) {
       console.warn('[helga] sincronización omitida: la integración está apagada.');
@@ -130,12 +139,19 @@ export const providerSyncService = {
       }
       if (mapping.kind === 'operational') continue;
 
+      // Control de identidad: el proveedor dice de QUE casillero es el paquete.
+      // Si no coincide con el nuestro, el tracking apunta a un paquete ajeno y
+      // avanzarlo movería el trámite equivocado.
+      this.checkLockerMatch(shipment, pkg, report);
+
       // El peso que reporta el proveedor (kg explicito) es mejor que el que
       // declaro el cliente al prealertar: se refresca aunque el estado no avance,
-      // porque de el depende el flete.
-      const kg = toNumber(pkg.Peso_kg);
-      if (kg > 0 && shipment.weightKg !== roundWeightKg(kg)) {
-        await shipmentsRepo.update(shipment.id, { weightKg: roundWeightKg(kg) });
+      // porque de el depende el flete. Las medidas viajan en la misma escritura:
+      // son informativas, pero pedirlas de nuevo mas tarde es imposible (la op. B
+      // solo responde mientras el paquete esta en el tramo del proveedor).
+      const patch = this.measurementsPatch(shipment, pkg);
+      if (Object.keys(patch).length > 0) {
+        await shipmentsRepo.update(shipment.id, patch);
       }
 
       if (isBeyondProvider(shipment.state)) continue;
@@ -147,6 +163,72 @@ export const providerSyncService = {
     }
 
     return report;
+  },
+
+  /**
+   * Avisa si el paquete que devolvio el proveedor NO es del casillero que
+   * esperabamos.
+   *
+   * `datos.cliente[].codigo_casillero` es el sub-casillero del dueño segun Helga.
+   * Comparado con el nuestro detecta el caso peligroso: un tracking mal digitado,
+   * o reciclado por el transportista, que apunta al paquete de otra persona. Sin
+   * este control la sincronizacion avanzaria el tramite equivocado y el cliente
+   * veria moverse un paquete que no es suyo.
+   *
+   * SOLO AVISA, no bloquea. Hoy no hay certeza de que el proveedor llene siempre
+   * ese campo (`cliente` puede venir vacio) ni de que el sub-casillero de un
+   * paquete recibido antes del enlace coincida; convertirlo en bloqueo dejaria
+   * paquetes legitimos congelados. Cuando el log confirme que no hay falsos
+   * positivos, esto puede pasar a frenar el avance.
+   */
+  checkLockerMatch(
+    shipment: { code: string; tracking: string; clientSubLocker: string | null },
+    pkg: { cliente?: Array<{ codigo_casillero?: string }> },
+    report: SyncReport,
+  ): void {
+    const expected = shipment.clientSubLocker?.trim().toUpperCase();
+    if (!expected) return; // casillero aun sin enlazar: no hay contra que comparar
+
+    const reported = pkg.cliente
+      ?.map((c) => c.codigo_casillero?.trim().toUpperCase())
+      .filter((c): c is string => Boolean(c));
+    if (!reported?.length) return; // el proveedor no lo informo
+
+    if (reported.includes(expected)) return;
+
+    const detail = `${shipment.code} (${shipment.tracking}): esperado ${expected}, reportado ${reported.join(', ')}`;
+    report.lockerMismatches.push(detail);
+    console.warn(`[helga] el paquete no coincide con el casillero del trámite -> ${detail}`);
+  },
+
+  /**
+   * Campos de medida a actualizar. Devuelve solo lo que CAMBIA: una escritura por
+   * paquete y por corrida, cuando de verdad hay algo nuevo, en vez de una por
+   * campo o una siempre.
+   */
+  measurementsPatch(
+    shipment: { weightKg: number | null; lengthCm: number | null; widthCm: number | null; heightCm: number | null; volumetricWeightKg: number | null },
+    pkg: HelgaPackageStatus,
+  ): Record<string, number> {
+    const patch: Record<string, number> = {};
+
+    const kg = toNumber(pkg.Peso_kg);
+    if (kg > 0 && shipment.weightKg !== roundWeightKg(kg)) patch.weightKg = roundWeightKg(kg);
+
+    // Las dimensiones NO se redondean: son informativas y el redondeo hacia arriba
+    // del peso existe por una regla de facturacion que aqui no aplica.
+    const dims = [
+      ['lengthCm', toNumber(pkg.Largo_cm), shipment.lengthCm],
+      ['widthCm', toNumber(pkg.Ancho_cm), shipment.widthCm],
+      ['heightCm', toNumber(pkg.Alto_cm), shipment.heightCm],
+      ['volumetricWeightKg', toNumber(pkg.Peso_volumen), shipment.volumetricWeightKg],
+    ] as const;
+    for (const [field, value, current] of dims) {
+      // El proveedor manda 0 cuando no midio el paquete: no es una medida.
+      if (value > 0 && current !== value) patch[field] = value;
+    }
+
+    return patch;
   },
 
   /**
