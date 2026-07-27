@@ -72,21 +72,30 @@ export function CostsEditorModal({ shipment, onClose, onApproved }: Props) {
     try {
       const dto = await api.get<ShipmentCostsDto>(`/costs/${shipment.id}`);
       setData(dto);
-      setLines(
-        dto.lines.map((l) => ({
-          key: nextKey(),
-          costServiceId: l.costServiceId,
-          label: l.label,
-          source: l.source,
-          percentage: l.percentage !== null ? String(l.percentage) : '',
-          amount: String(l.amount),
-          currency: l.currency,
-        })),
-      );
+      const savedLines = dto.lines.map((l) => ({
+        key: nextKey(),
+        costServiceId: l.costServiceId,
+        label: l.label,
+        source: l.source,
+        percentage: l.percentage !== null ? String(l.percentage) : '',
+        amount: String(l.amount),
+        currency: l.currency,
+      }));
+      /**
+       * El flete no se "agrega": es el cobro base del tramite y sale de la tarifa
+       * del casillero, asi que entra solo mientras no este ya guardado. El resto
+       * del catalogo sigue siendo eleccion del operador.
+       */
+      const autoLines = dto.approved
+        ? []
+        : dto.suggestions
+            .filter((s) => s.auto && !savedLines.some((l) => l.source === s.source))
+            .map(fromSuggestion);
+      setLines([...autoLines, ...savedLines]);
       // La tasa guardada manda sobre la sugerida: si el tramite ya se cargo con
       // una tasa, cambiarla en silencio movería una factura ya cotizada.
-      const saved = dto.lines[0]?.exchangeRate;
-      setRate(String(saved ?? dto.suggestedExchangeRate ?? ''));
+      const savedRate = dto.lines[0]?.exchangeRate;
+      setRate(String(savedRate ?? dto.suggestedExchangeRate ?? ''));
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudieron cargar los costos.');
@@ -100,6 +109,12 @@ export function CostsEditorModal({ shipment, onClose, onApproved }: Props) {
   const approved = data?.approved ?? false;
   const parsedRate = Number(rate);
   const rateOk = Number.isFinite(parsedRate) && parsedRate > 0;
+
+  /** Solo lo que el operador elige: el flete ya viene aplicado como linea. */
+  const catalog = (data?.suggestions ?? []).filter((s) => !s.auto);
+  /** De donde sale el flete ("3 kg × 13.45 USD/kg"), para mostrarlo bajo su nombre. */
+  const freightDetail =
+    data?.suggestions.find((s) => s.source === CostLineSource.Freight)?.detail ?? null;
 
   /**
    * Totales de la vista previa. Se calculan con el MISMO helper del dominio que
@@ -241,10 +256,18 @@ export function CostsEditorModal({ shipment, onClose, onApproved }: Props) {
                 {lines.map((line) => (
                   <tr key={line.key}>
                     <td>
-                      <input
-                        className="input" value={line.label} disabled={approved}
-                        onChange={(e) => patchLine(line.key, { label: e.target.value })}
-                      />
+                      {/* El flete se nombra desde la tarifa del casillero: se muestra, no se digita. */}
+                      {line.source === CostLineSource.Freight ? (
+                        <>
+                          <strong>{line.label}</strong>
+                          {freightDetail && <div className="field-hint">{freightDetail}</div>}
+                        </>
+                      ) : (
+                        <input
+                          className="input" value={line.label} disabled={approved}
+                          onChange={(e) => patchLine(line.key, { label: e.target.value })}
+                        />
+                      )}
                     </td>
                     <td>
                       {line.source === CostLineSource.Percentage ? (
@@ -279,7 +302,8 @@ export function CostsEditorModal({ shipment, onClose, onApproved }: Props) {
                       )}
                     </td>
                     <td>
-                      {!approved && (
+                      {/* El flete es cobro fijo del servicio: se ajusta el monto, no se quita. */}
+                      {!approved && line.source !== CostLineSource.Freight && (
                         <button
                           className="btn btn-ghost btn-sm"
                           onClick={() => setLines((prev) => prev.filter((l) => l.key !== line.key))}
@@ -296,11 +320,11 @@ export function CostsEditorModal({ shipment, onClose, onApproved }: Props) {
 
           {lines.length === 0 && <div className="empty">Aún no hay líneas de costo.</div>}
 
-          {!approved && (data?.suggestions.length ?? 0) > 0 && (
+          {!approved && catalog.length > 0 && (
             <div>
               <div className="field-label">Agregar del catálogo</div>
               <div className="actions" style={{ flexWrap: 'wrap' }}>
-                {data!.suggestions.map((s, i) => (
+                {catalog.map((s, i) => (
                   <button
                     key={`${s.costServiceId ?? 'freight'}-${i}`}
                     className="btn btn-ghost btn-sm"
