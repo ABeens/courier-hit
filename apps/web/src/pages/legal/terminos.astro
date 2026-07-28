@@ -1,0 +1,34 @@
+---
+/*
+  /legal/terminos — Términos de uso del sitio público.
+
+  El contenido vive en `data/legal.ts` (TERMS) y la maquetación en
+  `components/legal/LegalDoc.astro`, compartida con /legal/privacidad.
+*/
+import Base from '../../layouts/Base.astro';
+import Nav from '../../components/landing/Nav.astro';
+import PageHead from '../../components/landing/PageHead.astro';
+import Footer from '../../components/landing/Footer.astro';
+import LegalDoc from '../../components/legal/LegalDoc.astro';
+import LegalUpdated from '../../components/legal/LegalUpdated.astro';
+import { TERMS, TERMS_UPDATED } from '../../data/legal';
+---
+<Base
+  title="Términos de uso · HS Global Courier"
+  description="Condiciones del servicio de casillero en Miami, transporte internacional, aduana y seguro de carga de HS Global Courier."
+>
+  <Nav />
+  <main>
+    <PageHead
+      eyebrow="Legal"
+      icon="file"
+      title="Términos de uso"
+      sub="Las condiciones bajo las que prestamos el servicio de casillero, transporte internacional, gestión aduanera y seguro de carga."
+    >
+      <LegalUpdated date={TERMS_UPDATED} />
+    </PageHead>
+
+    <LegalDoc sections={TERMS} />
+  </main>
+  <Footer />
+</Base>

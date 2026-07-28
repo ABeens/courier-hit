@@ -1,0 +1,23 @@
+---
+/*
+  LegalUpdated — línea de "última actualización" de los documentos legales.
+  Va dentro del slot del PageHead, debajo del subtítulo.
+*/
+import Icon from '../ui/Icon.astro';
+
+interface Props {
+  date: string;
+}
+const { date } = Astro.props;
+---
+<p class="lg-updated">
+  <Icon name="clock" size={14} color="var(--brand)" />
+  Última actualización: {date}
+</p>
+
+<style>
+  .lg-updated {
+    display: inline-flex; align-items: center; gap: 7px;
+    margin-top: 20px; font-size: 13.5px; color: var(--muted);
+  }
+</style>

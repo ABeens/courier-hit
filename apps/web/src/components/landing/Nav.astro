@@ -18,8 +18,10 @@ const links = [
 ];
 
 const path = Astro.url.pathname;
-/* Los enlaces con ancla (/#quienes-somos) apuntan a una sección del landing,
-   no a una ruta: nunca se marcan como activos. */
+/* Estado inicial (render del servidor): solo se conoce la ruta, así que los
+   enlaces con ancla (/#quienes-somos) salen inactivos y en el landing gana
+   "Inicio", que es la sección en la que se abre la página. A partir de ahí el
+   scrollspy del <script> lo reasigna según la sección visible. */
 const isActive = (href: string) =>
   href.includes('#') ? false : href === '/' ? path === '/' : path.startsWith(href);
 ---
@@ -178,6 +180,95 @@ const isActive = (href: string) =>
     });
   }
 
+  // Scrollspy: resalta el enlace de la sección que se está viendo. Sin esto el
+  // resaltado se queda clavado en "Inicio" mientras se recorre el landing,
+  // porque el render del servidor solo conoce la ruta y no la posición del
+  // scroll. Solo actúa sobre los enlaces que apuntan a la página actual; en el
+  // resto de rutas (p. ej. /contacto) no hay anclas y manda el estado del HTML.
+  let teardownScrollSpy: (() => void) | null = null;
+
+  function initScrollSpy() {
+    teardownScrollSpy?.();
+    teardownScrollSpy = null;
+
+    const nav = document.querySelector<HTMLElement>('[data-nav]');
+    if (!nav) return;
+
+    // Escritorio y móvil comparten los mismos destinos: se marcan a la vez.
+    const inPage = Array.from(
+      nav.querySelectorAll<HTMLAnchorElement>('.nav__link, .nav__mobile-link'),
+    ).filter((a) => new URL(a.href).pathname === location.pathname);
+
+    const homeLinks = inPage.filter((a) => !a.hash);
+
+    const byHash = new Map<string, HTMLAnchorElement[]>();
+    for (const a of inPage) {
+      if (!a.hash) continue;
+      const list = byHash.get(a.hash) ?? [];
+      list.push(a);
+      byHash.set(a.hash, list);
+    }
+
+    const sections = [...byHash]
+      .map(([hash, links]) => ({
+        el: document.getElementById(decodeURIComponent(hash.slice(1))),
+        links,
+      }))
+      .filter((s): s is { el: HTMLElement; links: HTMLAnchorElement[] } => s.el !== null);
+
+    if (sections.length === 0) return;
+
+    const managed = [...homeLinks, ...sections.flatMap((s) => s.links)];
+    const topOf = (s: { el: HTMLElement }) => s.el.getBoundingClientRect().top - nav.offsetHeight - 1;
+
+    const update = () => {
+      // Sección activa = la última cuyo borde superior ya pasó por debajo del
+      // nav sticky. Si ninguna lo pasó, seguimos en el hero: gana "Inicio".
+      let current: (typeof sections)[number] | null = null;
+      let closest = -Infinity;
+      for (const s of sections) {
+        const top = topOf(s);
+        if (top <= 0 && top > closest) {
+          closest = top;
+          current = s;
+        }
+      }
+
+      // Al final del documento la última sección puede no llegar a cruzar la
+      // línea (la tapan el CTA y el footer): se le adjudica igualmente.
+      const doc = document.documentElement;
+      if (window.innerHeight + window.scrollY >= doc.scrollHeight - 2) {
+        current = sections.reduce((a, b) => (topOf(b) > topOf(a) ? b : a));
+      }
+
+      const active = current ? current.links : homeLinks;
+      for (const a of managed) a.classList.toggle('is-active', active.includes(a));
+    };
+
+    let queued = false;
+    const onScroll = () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        update();
+      });
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    update();
+
+    teardownScrollSpy = () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }
+
   initNav();
-  document.addEventListener('astro:after-swap', initNav);
+  initScrollSpy();
+  document.addEventListener('astro:after-swap', () => {
+    initNav();
+    initScrollSpy();
+  });
 </script>

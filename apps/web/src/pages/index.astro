@@ -1,11 +1,12 @@
 ---
 /*
   Landing público — compone las secciones modulares.
-  100% estático: cero JavaScript en el cliente.
+  Estático: el único JS que se envía es el del Nav (menú móvil y scrollspy).
 */
 import Base from '../layouts/Base.astro';
 import Nav from '../components/landing/Nav.astro';
 import Hero from '../components/landing/Hero.astro';
+import HowItWorks from '../components/landing/HowItWorks.astro';
 import ServicesPreview from '../components/landing/ServicesPreview.astro';
 import About from '../components/landing/About.astro';
 import CTA from '../components/landing/CTA.astro';
@@ -15,6 +16,7 @@ import Footer from '../components/landing/Footer.astro';
   <Nav />
   <main>
     <Hero />
+    <HowItWorks />
     <ServicesPreview />
     <About />
     <CTA />
