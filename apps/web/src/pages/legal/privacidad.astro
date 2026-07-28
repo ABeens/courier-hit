@@ -1,0 +1,34 @@
+---
+/*
+  /legal/privacidad — Política de privacidad del sitio público.
+
+  El contenido vive en `data/legal.ts` (PRIVACY) y la maquetación en
+  `components/legal/LegalDoc.astro`, compartida con /legal/terminos.
+*/
+import Base from '../../layouts/Base.astro';
+import Nav from '../../components/landing/Nav.astro';
+import PageHead from '../../components/landing/PageHead.astro';
+import Footer from '../../components/landing/Footer.astro';
+import LegalDoc from '../../components/legal/LegalDoc.astro';
+import LegalUpdated from '../../components/legal/LegalUpdated.astro';
+import { PRIVACY, PRIVACY_UPDATED } from '../../data/legal';
+---
+<Base
+  title="Política de privacidad · HS Global Courier"
+  description="Qué datos personales recoge HS Global Courier, para qué los usa, con quién los comparte y cómo ejercer tus derechos."
+>
+  <Nav />
+  <main>
+    <PageHead
+      eyebrow="Legal"
+      icon="lock"
+      title="Política de privacidad"
+      sub="Qué datos tuyos tratamos, para qué, con quién los compartimos y cómo puedes acceder a ellos, corregirlos o eliminarlos."
+    >
+      <LegalUpdated date={PRIVACY_UPDATED} />
+    </PageHead>
+
+    <LegalDoc sections={PRIVACY} />
+  </main>
+  <Footer />
+</Base>

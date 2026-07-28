@@ -20,9 +20,14 @@ import Footer from '../components/landing/Footer.astro';
 import Icon from '../components/ui/Icon.astro';
 
 const contact = [
-  { icon: 'mail', label: 'Correo', value: 'info@hsgloballtd.com', href: 'mailto:info@hsgloballtd.com' },
-  { icon: 'whatsapp', label: 'WhatsApp', value: '+1 (555) 010-0000', href: 'https://wa.me/15550100000' },
-  { icon: 'pin', label: 'Oficinas', value: 'Miami, EE. UU. · Bogotá, Colombia', href: null },
+  {
+    icon: 'mail',
+    label: 'Correo',
+    value: 'servicioalcliente@hsglobal-services.com',
+    href: 'mailto:servicioalcliente@hsglobal-services.com',
+  },
+  { icon: 'whatsapp', label: 'WhatsApp', value: '+506 7019 6535', href: 'https://wa.me/50670196535' },
+  { icon: 'pin', label: 'Oficinas', value: 'Costa Rica, Alajuela, Alajuela, Río Segundo', href: null },
 ];
 ---
 <Base
@@ -59,8 +64,7 @@ const contact = [
             })}
           </ul>
           <p class="ctc__info-note muted">
-            Respondemos en horario laboral (Miami · Bogotá). Para cotizar, incluye
-            los detalles de tu envío en el mensaje.
+            Para cotizar, incluye los detalles de tu envío en el mensaje.
           </p>
         </aside>
 
@@ -79,7 +83,7 @@ const contact = [
 
           <div class="ctc__f">
             <label class="field-label" for="ctc-phone">Teléfono <span class="faint">(opcional)</span></label>
-            <input class="input" id="ctc-phone" name="phone" type="tel" autocomplete="tel" placeholder="+57 300 000 0000" />
+            <input class="input" id="ctc-phone" name="phone" type="tel" autocomplete="tel" placeholder="8888 8888" />
           </div>
 
           <div class="ctc__f">
@@ -191,7 +195,7 @@ const contact = [
         form.reset();
         setStatus('¡Gracias! Recibimos tu mensaje y te contactaremos pronto.', 'ok');
       } catch {
-        setStatus('No pudimos enviar tu mensaje. Escríbenos a info@hsgloballtd.com.', 'error');
+        setStatus('No pudimos enviar tu mensaje. Escríbenos a servicioalcliente@hsglobal-services.com.', 'error');
       } finally {
         if (submit) submit.disabled = false;
       }
