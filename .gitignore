@@ -16,7 +16,7 @@ yarn.lock
 .env.*
 !.env.example
 
-# Mundo del proveedor Helga simulado (HELGA_MOCK=true)
+# Mundo del proveedor Helga simulado (HELGA_MODE=simulated)
 .helga-mock.json
 
 # Sistema

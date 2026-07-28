@@ -20,7 +20,7 @@
  * 4. UN ESTADO DESCONOCIDO SE REGISTRA. No se ignora en silencio: si el proveedor
  *    agrega un estado, preferimos un aviso en el log a paquetes congelados.
  *
- * Se agenda en el scheduler (`core/scheduler/jobs.ts`) cada `PROVIDER_SYNC_INTERVAL`;
+ * Se agenda en el scheduler (`core/scheduler/jobs.ts`) cada `ROBOT_PROVIDER_SYNC_EVERY`;
  * tambien se puede disparar a mano desde `POST /shipments/sync-provider`.
  */
 import {

@@ -169,7 +169,7 @@ export const authService = {
   }> {
     const { email } = input;
     if (!isHelgaEnabled()) {
-      // TODO(13): encender HELGA_ENABLED cuando la IP fija del backend este en
+      // TODO(13): poner HELGA_MODE=on cuando la IP fija del backend este en
       // la whitelist. Mientras, el casillero queda 'pending' y la reconciliacion
       // enlazara los creados en este periodo cuando la integracion se encienda.
       if (!isProd) console.log(`[auth] Helga deshabilitado: casillero de ${email} queda pending.`);
