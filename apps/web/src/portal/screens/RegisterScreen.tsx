@@ -30,6 +30,14 @@ const MIAMI_ADDRESS = ['8200 NW 27th St, Suite 140', 'Doral, Miami, FL 33122', '
 
 const CODE_LENGTH = 6;
 
+/**
+ * Marca de campo obligatorio. Es puramente visual (`aria-hidden`): a la
+ * tecnología asistiva el dato se lo da el `aria-required` del propio control.
+ */
+const Req = (): React.ReactElement => (
+  <span className="req" aria-hidden="true">*</span>
+);
+
 interface FormState {
   name: string;
   idNumber: string;
@@ -181,44 +189,47 @@ export default function RegisterScreen() {
         {step === 0 && (
           <form className="fadeIn" onSubmit={submitData}>
             <h1>Crea tu casillero gratis</h1>
-            <p className="sub">Tu dirección de Miami estará lista en segundos.</p>
+            <p className="sub">
+              Tu dirección de Miami estará lista en segundos. Los campos con{' '}
+              <span className="req">*</span> son obligatorios.
+            </p>
 
             <fieldset className="form-section">
               <legend>Tus datos</legend>
               <div className="form-grid">
                 <div className="col-full">
-                  <label className="field-label" htmlFor="name">Nombre completo</label>
+                  <label className="field-label" htmlFor="name">Nombre completo <Req /></label>
                   <input
-                    id="name" className="input" autoComplete="name"
+                    id="name" className="input" autoComplete="name" aria-required
                     value={form.name} onChange={(e) => set('name', e.target.value)}
                     placeholder="Ej. Ana María Rodríguez"
                   />
                 </div>
                 <div>
-                  <label className="field-label" htmlFor="idNumber">Cédula</label>
+                  <label className="field-label" htmlFor="idNumber">Cédula <Req /></label>
                   <input
-                    id="idNumber" className="input" inputMode="numeric"
+                    id="idNumber" className="input" inputMode="numeric" aria-required
                     value={form.idNumber} onChange={(e) => set('idNumber', e.target.value)} placeholder="1-2345-6789"
                   />
                 </div>
                 <div>
-                  <label className="field-label" htmlFor="phone">Teléfono</label>
+                  <label className="field-label" htmlFor="phone">Teléfono <Req /></label>
                   <input
-                    id="phone" className="input" type="tel" inputMode="tel" autoComplete="tel"
+                    id="phone" className="input" type="tel" inputMode="tel" autoComplete="tel" aria-required
                     value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="8888 8888"
                   />
                 </div>
                 <div>
-                  <label className="field-label" htmlFor="email">Correo electrónico</label>
+                  <label className="field-label" htmlFor="email">Correo electrónico <Req /></label>
                   <input
-                    id="email" className="input" type="email" autoComplete="email"
+                    id="email" className="input" type="email" autoComplete="email" aria-required
                     value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="tu@correo.com"
                   />
                 </div>
                 <div>
-                  <label className="field-label" htmlFor="password">Contraseña</label>
+                  <label className="field-label" htmlFor="password">Contraseña <Req /></label>
                   <PasswordField
-                    id="password" autoComplete="new-password"
+                    id="password" autoComplete="new-password" ariaRequired
                     value={form.password} onChange={(v) => set('password', v)}
                     placeholder="Mínimo 6 caracteres"
                   />
@@ -230,9 +241,9 @@ export default function RegisterScreen() {
               <legend>Dirección de entrega</legend>
               <div className="form-grid cols-3">
                 <div>
-                  <label className="field-label" htmlFor="provinceCode">Provincia</label>
+                  <label className="field-label" htmlFor="provinceCode">Provincia <Req /></label>
                   <select
-                    id="provinceCode" className="input"
+                    id="provinceCode" className="input" aria-required
                     value={form.provinceCode} onChange={(e) => setProvince(e.target.value)}
                   >
                     <option value="">Elige…</option>
@@ -242,9 +253,9 @@ export default function RegisterScreen() {
                   </select>
                 </div>
                 <div>
-                  <label className="field-label" htmlFor="cantonCode">Cantón</label>
+                  <label className="field-label" htmlFor="cantonCode">Cantón <Req /></label>
                   <select
-                    id="cantonCode" className="input" disabled={!form.provinceCode}
+                    id="cantonCode" className="input" disabled={!form.provinceCode} aria-required
                     value={form.cantonCode} onChange={(e) => setCanton(e.target.value)}
                   >
                     <option value="">Elige…</option>
@@ -254,9 +265,9 @@ export default function RegisterScreen() {
                   </select>
                 </div>
                 <div>
-                  <label className="field-label" htmlFor="districtCode">Distrito</label>
+                  <label className="field-label" htmlFor="districtCode">Distrito <Req /></label>
                   <select
-                    id="districtCode" className="input" disabled={!form.cantonCode}
+                    id="districtCode" className="input" disabled={!form.cantonCode} aria-required
                     value={form.districtCode} onChange={(e) => set('districtCode', e.target.value)}
                   >
                     <option value="">Elige…</option>
@@ -266,9 +277,9 @@ export default function RegisterScreen() {
                   </select>
                 </div>
                 <div className="col-full">
-                  <label className="field-label" htmlFor="addressLine">Otras señas</label>
+                  <label className="field-label" htmlFor="addressLine">Otras señas <Req /></label>
                   <textarea
-                    id="addressLine" className="input" rows={3} autoComplete="street-address"
+                    id="addressLine" className="input" rows={3} autoComplete="street-address" aria-required
                     value={form.addressLine} onChange={(e) => set('addressLine', e.target.value)}
                     placeholder="Del super La Central 200 m norte, casa color celeste a mano derecha."
                   />

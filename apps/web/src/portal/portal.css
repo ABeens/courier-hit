@@ -152,6 +152,8 @@
 .form-grid > .col-full { grid-column: 1 / -1; }
 /* La rejilla separa con gap: el margen superior del label sobra aqui. */
 .register-card .form-grid .field-label { margin-top: 0; }
+/* Asterisco de campo obligatorio. */
+.req { color: var(--danger); font-weight: 700; }
 
 /* Pie del formulario: terminos y boton. En ancho se ponen lado a lado. */
 .form-actions {
