@@ -18,7 +18,7 @@
  *    la idempotencia no puede apoyarse en un id de evento: se apoya en el id del
  *    intento (nuestro `gateway_reference`) y en que el pago siga pendiente.
  *
- * Modo SIMULADO: con `ONVO_SIMULATE=true` este mismo contrato responde sin salir a
+ * Modo SIMULADO: con `ONVO_MODE=simulated` este mismo contrato responde sin salir a
  * internet, para poder recorrer el flujo de pago con tarjeta sin credenciales. La
  * decision de que modo corre vive en `core/config` (`onvoMode`), no aqui.
  */

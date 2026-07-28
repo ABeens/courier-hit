@@ -11,7 +11,7 @@
  * usa la ruta correcta `/api/v2/prealertas` pero le faltan campos obligatorios
  * que el alta todavia no captura (ver TODO en `createHelgaPrealert`).
  *
- * TRES MODOS (`helgaMode`, en `core/config`): `live` sale a la red, `simulated`
+ * TRES MODOS (`helgaMode`, en `core/config`): `on` sale a la red, `simulated`
  * responde desde `helga.mock` sin salir del proceso, y `off` no invoca nada de
  * este archivo. La simulacion se sustituye en el TRANSPORTE, dentro de `request`:
  * todo lo demas de este modulo (armado del cuerpo, envoltura, errores, paginado)

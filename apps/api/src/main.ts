@@ -35,8 +35,8 @@ app.route('/api/deliveries', deliveriesRoutes);
 app.route('/api/reports', reportsRoutes);
 app.route('/api/dashboard', dashboardRoutes);
 
-// Panel de control del proveedor simulado. Solo existe con HELGA_MOCK=true, modo
-// que el arranque prohibe en produccion: no es parte de la API del producto.
+// Panel de control del proveedor simulado. Solo existe con HELGA_MODE=simulated,
+// modo que el arranque prohibe en produccion: no es parte de la API del producto.
 if (helgaMode === 'simulated') {
   app.route('/api/dev/helga', helgaMockRoutes);
 }

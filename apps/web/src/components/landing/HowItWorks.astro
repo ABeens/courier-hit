@@ -23,7 +23,7 @@ const steps = [
   <div class="how__grid">
     {steps.map((s, i) => (
       <article class="card how__card">
-        <span class="how__num mono">0{i + 1}</span>
+        <span class="how__num mono">{i + 1}</span>
         <span class="how__ic"><Icon name={s.icon} size={22} color="#fff" /></span>
         <div class="how__card-title">{s.title}</div>
         <p class="muted how__card-desc">{s.desc}</p>

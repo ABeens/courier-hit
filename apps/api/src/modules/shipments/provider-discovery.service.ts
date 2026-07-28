@@ -10,7 +10,7 @@
  * disponibles de toda la cuenta consolidada, cada fila con su `destinatario_id`.
  *
  * LO INICIA EL ROBOT, NUNCA UNA PERSONA. No hay endpoint ni pantalla: se agenda en
- * `core/scheduler/jobs.ts` cada `HELGA_DISCOVERY_INTERVAL`.
+ * `core/scheduler/jobs.ts` cada `ROBOT_PACKAGE_DISCOVERY_EVERY`.
  *
  * Cinco decisiones que viven aqui:
  *

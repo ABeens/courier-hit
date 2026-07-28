@@ -14,12 +14,12 @@
  * alguien escriba. El mundo guarda el instante en que arranco el reloj
  * (`startedAt`, sellado al prealertar) y el estado se CALCULA al consultarlo:
  *
- *     paso = floor((ahora - startedAt) / HELGA_MOCK_STEP)
+ *     paso = floor((ahora - startedAt) / HELGA_SIMULATED_STEP)
  *     paso 0        -> 404 (aun no llega a bodega: prealerta sin recibir)
  *     paso 1..8     -> TIMELINE[paso - 1]
  *     paso > 8      -> se queda en el ultimo
  *
- * Con `HELGA_MOCK_STEP` corto el paquete salta varios estados entre corridas del
+ * Con `HELGA_SIMULATED_STEP` corto el paquete salta varios estados entre corridas del
  * robot, que es el caso realista (Helga tambien lo hace) y el que ejercita el
  * avance paso a paso de `provider-sync`.
  *
@@ -27,12 +27,12 @@
  * sobrevivir a los reinicios de `tsx watch`. Borrar el archivo, o llamar a
  * `POST /api/dev/helga/reset`, deja el mundo limpio.
  *
- * NUNCA EN PRODUCCION: el arranque falla si `HELGA_MOCK=true` con
+ * NUNCA EN PRODUCCION: el arranque falla si `HELGA_MODE=simulated` con
  * `NODE_ENV=production` (ver `core/config.ts`).
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { helgaMockStepMs } from '../../core/config';
+import { helgaSimulatedStepMs } from '../../core/config';
 import { HELGA_DEFAULT_TARIFF_POSITION } from './helga.constants';
 
 /** Archivo donde vive el mundo simulado, relativo al cwd de la API (apps/api). */
@@ -196,7 +196,7 @@ function measuresFor(tracking: string): MockMeasures {
 export function currentStep(pkg: MockPackage): number {
   const elapsed = Date.now() - pkg.startedAt;
   if (elapsed < 0) return 0;
-  return Math.floor(elapsed / helgaMockStepMs);
+  return Math.floor(elapsed / helgaSimulatedStepMs);
 }
 
 /**
@@ -224,7 +224,7 @@ function trackingEvents(pkg: MockPackage): Array<{
     estado: entry.estado,
     lugar: entry.lugar,
     // Fechas en UTC (regla del repo): la presentacion las convierte.
-    fecha: new Date(pkg.startedAt + (i + 1) * helgaMockStepMs).toISOString(),
+    fecha: new Date(pkg.startedAt + (i + 1) * helgaSimulatedStepMs).toISOString(),
     observacion: 'Movimiento simulado.',
     visible: true,
   }));
@@ -577,7 +577,7 @@ export async function mockHelgaRequest(
 export function mockSnapshot() {
   const w = getWorld();
   return {
-    stepMs: helgaMockStepMs,
+    stepMs: helgaSimulatedStepMs,
     recipients: w.recipients,
     packages: w.packages.map((p) => ({
       ...p,
@@ -627,7 +627,7 @@ export function mockInjectPackage(input: {
     prealertId: null,
     // El reloj arranca un paso atras para que ya este en DIGITADO y la op. E lo
     // liste en la proxima corrida del descubrimiento.
-    startedAt: Date.now() - helgaMockStepMs,
+    startedAt: Date.now() - helgaSimulatedStepMs,
     pinnedState: input.hold ? DISCOVERY_STATE : null,
     reportedLocker: null,
   };
@@ -655,7 +655,7 @@ export function mockAdvancePackage(input: {
   if (input.state !== undefined) pkg.pinnedState = input.state?.trim() || null;
   if (input.locker !== undefined) pkg.reportedLocker = input.locker?.trim() || null;
   // Adelantar N pasos = retroceder el arranque del reloj N pasos.
-  if (input.steps) pkg.startedAt -= input.steps * helgaMockStepMs;
+  if (input.steps) pkg.startedAt -= input.steps * helgaSimulatedStepMs;
 
   saveWorld();
   return pkg;

@@ -102,14 +102,15 @@ export function registerJobs(scheduler: Scheduler): void {
   // --- Sincronizacion de estados con el proveedor Helga (docs/13) ---
   // Reemplaza el disparo manual de POST /shipments/sync-provider.
   //
-  // La condicion es `isHelgaEnabled()`, no `HELGA_ENABLED`: con el proveedor
-  // SIMULADO estas cuatro tareas tambien tienen que correr, porque el robot es
-  // justamente lo que se quiere probar. Con la integracion en `off` no se agendan,
-  // que correrian en vacio ensuciando el log cada intervalo.
+  // La condicion es `isHelgaEnabled()` (o sea, `HELGA_MODE` distinto de `off`) y
+  // no solo el modo `on`: con el proveedor SIMULADO estas cuatro tareas tambien
+  // tienen que correr, porque el robot es justamente lo que se quiere probar. Con
+  // `HELGA_MODE=off` no se agendan, que correrian en vacio ensuciando el log cada
+  // intervalo.
   if (isHelgaEnabled()) {
     registerSyncJob(scheduler, {
       name: 'provider-sync',
-      every: config.PROVIDER_SYNC_INTERVAL,
+      every: config.ROBOT_PROVIDER_SYNC_EVERY,
       lockKey: JobLock.ProviderSync,
       run: async () => {
         const session = await resolveSystemSession();
@@ -131,7 +132,7 @@ export function registerJobs(scheduler: Scheduler): void {
     // (el registro no bloquea si el proveedor falla) y actualiza la bandera.
     registerSyncJob(scheduler, {
       name: 'helga-link-reconcile',
-      every: config.HELGA_LINK_RECONCILE_INTERVAL,
+      every: config.ROBOT_LOCKER_LINK_RETRY_EVERY,
       lockKey: JobLock.ClientLinkReconcile,
       run: async () => {
         const r = await authService.reconcileProviderLinks();
@@ -146,7 +147,7 @@ export function registerJobs(scheduler: Scheduler): void {
     // enlazado, y actualiza la bandera.
     registerSyncJob(scheduler, {
       name: 'helga-prealert-reconcile',
-      every: config.HELGA_PREALERT_RECONCILE_INTERVAL,
+      every: config.ROBOT_PREALERT_RETRY_EVERY,
       lockKey: JobLock.PrealertReconcile,
       run: async () => {
         const r = await shipmentsService.reconcilePrealerts();
@@ -166,7 +167,7 @@ export function registerJobs(scheduler: Scheduler): void {
     // aparecen reclamos de paquetes que nunca entraron, el intervalo es largo.
     registerSyncJob(scheduler, {
       name: 'helga-discovery',
-      every: config.HELGA_DISCOVERY_INTERVAL,
+      every: config.ROBOT_PACKAGE_DISCOVERY_EVERY,
       lockKey: JobLock.ProviderDiscovery,
       run: async () => {
         const session = await resolveSystemSession();
@@ -191,13 +192,16 @@ export function registerJobs(scheduler: Scheduler): void {
  * agendar (o el robot esta apagado). `main.ts` decide si arrancarlo.
  */
 export function createScheduler(): Scheduler | null {
-  if (!config.SCHEDULER_ENABLED) {
+  if (!config.ROBOT_ENABLED) {
     return null;
   }
   const scheduler = new Scheduler();
   registerJobs(scheduler);
   if (scheduler.size === 0) {
-    console.warn('[scheduler] encendido pero sin tareas activas (revisa la config).');
+    console.warn(
+      '[scheduler] ROBOT_ENABLED=true pero no hay ninguna tarea que agendar. Hoy todas las ' +
+        'tareas son del proveedor, así que esto suele significar HELGA_MODE=off.',
+    );
     return null;
   }
   return scheduler;
