@@ -10,9 +10,18 @@ interface Props {
   onChange: (value: string) => void;
   placeholder?: string;
   autoComplete?: string;
+  /** Solo anuncia el campo como obligatorio: la validación real sigue siendo la del esquema. */
+  ariaRequired?: boolean;
 }
 
-export function PasswordField({ id, value, onChange, placeholder, autoComplete = 'current-password' }: Props) {
+export function PasswordField({
+  id,
+  value,
+  onChange,
+  placeholder,
+  autoComplete = 'current-password',
+  ariaRequired,
+}: Props) {
   const [visible, setVisible] = useState(false);
 
   return (
@@ -25,6 +34,7 @@ export function PasswordField({ id, value, onChange, placeholder, autoComplete =
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-required={ariaRequired}
       />
       <button
         type="button"
