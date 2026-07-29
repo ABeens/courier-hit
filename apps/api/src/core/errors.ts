@@ -113,6 +113,32 @@ export const CostErrors = {
   /** El flow no tiene paso de facturacion: es un fallo de configuracion, no del usuario. */
   notBillable: () =>
     new AppError('COSTS_FLOW_NOT_BILLABLE', 'Este tipo de trámite no admite carga de costos.', 500),
+  notApproved: () =>
+    new AppError(
+      'COSTS_NOT_APPROVED',
+      'Los costos de este trámite no están aprobados: no hay nada que reversar.',
+      409,
+    ),
+  /**
+   * Espejo de `notBillableState`. Reversar mas adelante dejaria al cliente con el
+   * boton de pagar sobre una factura recien borrada: primero se corrige el estado.
+   */
+  notReversibleState: () =>
+    new AppError(
+      'COSTS_NOT_REVERSIBLE_STATE',
+      'Solo se puede reversar la factura de un trámite en "Facturación en proceso". Corrige antes el estado del trámite.',
+      409,
+    ),
+  /**
+   * Reversar con dinero ya recibido dejaria al cliente pagando contra una factura
+   * que dejo de existir. Primero se resuelve el pago, despues se desarma el cobro.
+   */
+  settledCannotReverse: () =>
+    new AppError(
+      'COSTS_SETTLED_CANNOT_REVERSE',
+      'El trámite ya tiene pagos confirmados. Resuelve los pagos antes de reversar la factura.',
+      409,
+    ),
 };
 
 /** Errores de las tarifas preferenciales de cliente. */
@@ -245,6 +271,15 @@ export const TransitionErrors = {
       'El trámite no puede salir a entrega sin el pago confirmado.',
       409,
     ),
+  /** La correccion solo alcanza estados de la maquina del propio tramite. */
+  stateNotInFlow: (state: string) =>
+    new AppError(
+      'TRANSITION_STATE_NOT_IN_FLOW',
+      `"${state}" no es un estado de este tipo de trámite.`,
+      409,
+    ),
+  sameState: () =>
+    new AppError('TRANSITION_SAME_STATE', 'El trámite ya está en ese estado.', 409),
 };
 
 /** Errores del modulo de pagos (Parte 2 "Pagos" y Parte 3 "Informacion de Pago"). */

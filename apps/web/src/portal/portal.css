@@ -428,6 +428,20 @@ select.input { cursor: pointer; padding-right: 30px; }
 .card-item-sub .sub-date { color: var(--faint); }
 .card-item-aside { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
+/* Bandera de cobro. NO usa `--tone` como la pildora de estado: el pago es una
+   dimension distinta del estado del tramite (uno "pendiente pago" puede estar ya
+   cobrado), asi que lleva su propio color y no el del estado de la ficha. */
+.pay-flag {
+  display: inline-flex; align-items: center;
+  font-size: 12px; font-weight: 800; letter-spacing: .02em;
+  padding: 5px 11px; border-radius: var(--r-pill); white-space: nowrap;
+  background: var(--ok-soft); color: var(--ok);
+}
+.pay-flag.is-due { background: var(--warn-soft); color: var(--warn); }
+/* En validacion: el cliente ya pago y espera. No es ambar (no le falta hacer
+   nada) ni verde (todavia no es dinero recibido); es el azul de "en curso". */
+.pay-flag.is-review { background: var(--info-soft); color: var(--info); }
+
 /* Cuerpo seccionado. Los campos NO van en una lista plana: cada flujo agrupa lo
    suyo en bloques con sentido operativo (guias, compra, aduana, facturacion),
    porque quien revisa la lista busca un bloque concreto, no un campo suelto.

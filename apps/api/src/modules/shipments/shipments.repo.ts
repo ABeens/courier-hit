@@ -12,6 +12,7 @@ import { HelgaSyncStatus } from '@courier/shared';
 import type { ListShipmentsQuery, State } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
+import { settlementColumn } from '../payments/settlement';
 import { districtRoutes } from '../routes/district-route.schema';
 import { shipmentEvents, shipments } from './shipments.schema';
 
@@ -36,6 +37,12 @@ const columns = {
   billingNotes: shipments.billingNotes,
   invoiceTotalUsd: shipments.invoiceTotalUsd,
   invoiceTotalCrc: shipments.invoiceTotalCrc,
+  /**
+   * Abonos del tramite, para derivar la bandera de pago sin una consulta por
+   * fila. Viajan crudos: la suma y el "ya esta cubierto" los resuelve el servicio
+   * con las funciones de @courier/shared. Ver `payments/settlement.ts`.
+   */
+  settlement: settlementColumn,
   // Dimensiones que reporta el proveedor. Informativas: no entran en la factura.
   lengthCm: shipments.lengthCm,
   widthCm: shipments.widthCm,

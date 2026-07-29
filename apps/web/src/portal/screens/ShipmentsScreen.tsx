@@ -24,13 +24,17 @@ import {
   State,
   can,
   formatMoney,
+  outstandingCrc,
   statesOf,
   usesPackageFields,
 } from '@courier/shared';
 import type { Role, ShipmentDto } from '@courier/shared';
+import { PayFlag, awaitingValidation } from '../components/PayFlag';
 import { ApiError, api } from '../lib/api';
 import { formatDate, startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
 import { ShipmentFormModal, allowedTypesFor } from './ShipmentFormModal';
+import { StateAdvanceModal, reachableStates } from './StateAdvanceModal';
+import { StateCorrectModal } from './StateCorrectModal';
 import { PaymentModal } from './PaymentModal';
 
 /** Que tablero se esta mirando. */
@@ -141,6 +145,16 @@ function moneySection(row: ShipmentDto): CardSection | null {
     fields: [
       { label: 'Dólares', value: formatMoney(row.invoiceTotalUsd, Currency.USD) },
       { label: 'Colones', value: formatMoney(row.invoiceTotalCrc, Currency.CRC) },
+      /**
+       * El cobro va junto a la factura, no en un bloque aparte: quien mira este
+       * bloque pregunta "cuánto es y ya lo pagó". La bandera de la cabecera da la
+       * respuesta de un vistazo; estas dos líneas, la cifra exacta.
+       */
+      { label: 'Abonado', value: formatMoney(row.settledCrc, Currency.CRC) },
+      {
+        label: 'Saldo',
+        value: formatMoney(outstandingCrc(row.settledCrc, row.invoiceTotalCrc), Currency.CRC),
+      },
     ],
   };
 }
@@ -206,11 +220,18 @@ export function ShipmentsScreen({ role, initialView }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; row: ShipmentDto } | null>(null);
+  const [advancing, setAdvancing] = useState<ShipmentDto | null>(null);
+  const [correcting, setCorrecting] = useState<ShipmentDto | null>(null);
   const [paying, setPaying] = useState<ShipmentDto | null>(null);
 
   const isOwn = view === 'propios';
   const canWrite = can(role, Permission.PackageWrite) || can(role, Permission.TramiteManage);
   const canPay = can(role, Permission.PackagePay);
+  /**
+   * Corregir aplica a los TRES flujos, no solo a los manuales: un paquete de
+   * Paquetería mal avanzado por el robot o por la bodega tampoco tenía arreglo.
+   */
+  const canCorrect = can(role, Permission.ShipmentCorrect);
 
   /**
    * Tipos que se pueden dar de alta DESDE ESTE TABLERO: el alta hereda el filtro
@@ -334,18 +355,62 @@ export function ShipmentsScreen({ role, initialView }: Props) {
                 </div>
               </div>
               <div className="card-item-aside">
+                {/* Antes de la píldora de estado: el operador que barre la lista
+                    busca primero si el trámite se puede mover, y eso depende del
+                    cobro. Sin factura aprobada no pinta nada. */}
+                <PayFlag
+                  invoiceTotalCrc={row.invoiceTotalCrc}
+                  settledCrc={row.settledCrc}
+                  settled={row.settled}
+                  pendingCrc={row.pendingCrc}
+                />
                 <span className="spill"><span className="dot" />{STATE_LABELS[row.state]}</span>
                 {canWrite && !isOwn && (
                   <button className="btn btn-ghost btn-sm" onClick={() => setModal({ mode: 'edit', row })}>
                     Editar
                   </button>
                 )}
-                {/* El cobro solo tiene sentido con la factura ya aprobada, que es
-                    justo lo que significa "En bodega - Pendiente pago". */}
-                {canPay && row.state === State.EnBodegaPendientePago && (
-                  <button className="btn btn-primary btn-sm" onClick={() => setPaying(row)}>
-                    Pagar
+                {/* Avance manual, en los TRES flujos. La frontera no es el tipo
+                    de trámite sino quién reporta el hecho: `reachableStates` ya
+                    descarta los estados que mueve el proveedor, así que en
+                    Paquetería el botón aparece de facturación en adelante y calla
+                    mientras el paquete está en manos de Helga. Antes se vetaba
+                    Paquetería entera y esos estados solo se movían de rebote
+                    desde recepción, costos o rutas: no había forma de avanzar
+                    un paquete desde el tablero. */}
+                {canWrite && !isOwn && reachableStates(row, role).length > 0 && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => setAdvancing(row)}>
+                    Avanzar
                   </button>
+                )}
+                {canCorrect && !isOwn && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => setCorrecting(row)}>
+                    Corregir
+                  </button>
+                )}
+                {/*
+                  El cobro solo tiene sentido con la factura ya aprobada, que es
+                  justo lo que significa "En bodega - Pendiente pago".
+
+                  Pero el estado NO alcanza como condición: el pago no mueve el
+                  trámite, así que uno ya cobrado se queda en "Pendiente pago"
+                  hasta que la operación lo despacha. Con solo el estado, el
+                  cliente seguía viendo "Pagar" después de pagar.
+
+                  Con el saldo cubierto no se ofrece nada; con el comprobante en
+                  revisión se ofrece "Ver pago", que abre el mismo modal para
+                  consultar sin empujar a pagar de nuevo.
+                */}
+                {canPay && row.state === State.EnBodegaPendientePago && !row.settled && (
+                  awaitingValidation(row) ? (
+                    <button className="btn btn-ghost btn-sm" onClick={() => setPaying(row)}>
+                      Ver pago
+                    </button>
+                  ) : (
+                    <button className="btn btn-primary btn-sm" onClick={() => setPaying(row)}>
+                      Pagar
+                    </button>
+                  )
                 )}
               </div>
             </div>
@@ -368,13 +433,55 @@ export function ShipmentsScreen({ role, initialView }: Props) {
 
       {data && data.items.length === 0 && <div className="empty">No hay trámites que coincidan.</div>}
 
+      {advancing && (
+        <StateAdvanceModal
+          row={advancing}
+          role={role}
+          onClose={() => setAdvancing(null)}
+          onSaved={(message) => {
+            setAdvancing(null);
+            setNotice(message);
+            setError(null);
+            void load();
+          }}
+        />
+      )}
+
+      {correcting && (
+        <StateCorrectModal
+          row={correcting}
+          onClose={() => setCorrecting(null)}
+          onSaved={(message) => {
+            setCorrecting(null);
+            setNotice(message);
+            setError(null);
+            void load();
+          }}
+        />
+      )}
+
       {paying && (
         <PaymentModal
           shipment={paying}
-          onClose={() => setPaying(null)}
-          onPaid={() => {
+          /*
+            Recargar tambien al cerrar: dentro del modal se puede haber rechazado
+            un cobro con tarjeta sin llegar a `onPaid`, y la ficha de atras
+            quedaria mostrando un estado de pago viejo.
+          */
+          onClose={() => {
             setPaying(null);
-            setNotice('Registramos tu pago. Queda pendiente de validación.');
+            void load();
+          }}
+          /*
+            El mensaje lo pone el modal, no esta pantalla: solo el modal sabe si
+            fue un deposito (queda por validar) o una tarjeta aprobada (ya esta
+            cobrado). Anunciar "pendiente de validación" para los dos casos era
+            justo lo que hacia dudar al cliente de un pago que ya paso.
+          */
+          onPaid={(message) => {
+            setPaying(null);
+            setNotice(message);
+            setError(null);
             void load();
           }}
         />

@@ -27,8 +27,14 @@ import {
   flowForType,
   isSettled,
   permissionFor,
+  statesOf,
 } from '@courier/shared';
-import type { Session, State, TransitionShipmentInput } from '@courier/shared';
+import type {
+  CorrectStateInput,
+  Session,
+  State,
+  TransitionShipmentInput,
+} from '@courier/shared';
 import { AuthErrors, ShipmentErrors, TransitionErrors } from '../../core/errors';
 import { notificationsService } from '../notifications/notifications.service';
 import { paymentsRepo } from '../payments/payments.repo';
@@ -107,6 +113,62 @@ export const transitionsService = {
     // 4. Efectos: el evento y las automatizaciones del estado.
     await shipmentsRepo.transition(id, to, session.userId, input.note);
     await notificationsService.onStateChange(row, to);
+
+    const updated = await shipmentsRepo.findById(id);
+    if (!updated) throw ShipmentErrors.notFound();
+    return updated;
+  },
+
+  /**
+   * Corrige el estado de un tramite fuera de la maquina: la unica via para
+   * retroceder o saltar, y existe porque hasta ahora un error de operacion no
+   * tenia arreglo (el flujo es de un solo sentido en los tres flows).
+   *
+   * Se salta la barrera 1 (LEGALIDAD) a proposito: corregir es justamente ir a
+   * donde la maquina no deja. Y no dispara la barrera 4 (efectos): una correccion
+   * no le manda al cliente un correo diciendo que su paquete retrocedio. El
+   * evento si se escribe.
+   *
+   * De la barrera 3 (CONDICIONES) se conserva UNA, la del monto de factura, y la
+   * linea entre las que se saltan y esa no es arbitraria:
+   *   - `RequiresConfirmedPayment` es POLITICA de proceso ("no despachar sin
+   *     cobrar"). Un admin que corrige la realidad —el paquete salio a ruta y
+   *     nadie lo marco— tiene que poder pasar por encima de ella.
+   *   - `RequiresInvoiceAmount` es INTEGRIDAD de datos. "En bodega - Pendiente
+   *     pago" le pinta al cliente un boton de pagar; sin monto, ese boton apunta
+   *     a nada y devuelve un error. Saltarla no corrige un error, fabrica otro.
+   *   - `RequiresComment` ya se cumple siempre: la nota es obligatoria aqui.
+   *
+   * Lo que NO hace, por decision de producto: tocar la factura. Si los costos ya
+   * se aprobaron siguen congelados aunque el tramite vuelva antes de facturacion;
+   * liberarlos es un acto aparte (`costsService.reverse`), con su propia guarda de
+   * pagos. Corregir el estado y desarmar una factura son dos errores distintos.
+   *
+   * El permiso (`shipment.correct`, solo admin) lo aplica el middleware de la ruta.
+   */
+  async correct(session: Session, id: string, input: CorrectStateInput) {
+    const row = await shipmentsRepo.findById(id);
+    if (!row) throw ShipmentErrors.notFound();
+
+    const flow = flowForType(row.shipmentType);
+    const to = input.state;
+
+    // Unica barrera que se conserva: el destino tiene que pertenecer a ESTA
+    // maquina. Un estado de otro flow dejaria el tramite en un limbo del que ni
+    // la correccion podria sacarlo (no aparece en `statesOf`, asi que no habria
+    // camino de vuelta).
+    if (!statesOf(flow).includes(to)) throw TransitionErrors.stateNotInFlow(STATE_LABELS[to]);
+    if (to === row.state) throw TransitionErrors.sameState();
+
+    // Integridad, no politica (ver cabecera): sin monto no se entra a un estado
+    // que se lo muestra al cliente como cobrable.
+    if (conditionsFor(flow, to).includes(Condition.RequiresInvoiceAmount) && row.invoiceTotalCrc == null) {
+      throw TransitionErrors.requiresInvoiceAmount();
+    }
+
+    // El prefijo hace que el historial distinga una correccion de un avance real:
+    // sin el, el timeline del tramite mentiria sobre como llego a ese estado.
+    await shipmentsRepo.transition(id, to, session.userId, `Corrección: ${input.note}`);
 
     const updated = await shipmentsRepo.findById(id);
     if (!updated) throw ShipmentErrors.notFound();

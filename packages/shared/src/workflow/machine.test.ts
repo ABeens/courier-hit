@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { Flow } from './shipment-type';
 import { State } from './states';
 import { ShipmentField } from '../shipments/shipment';
-import { canEditField, editableFieldsAt, statesOf } from './machine';
+import { canEditField, editableFieldsAt, nextStates, statesOf } from './machine';
 
 /** Campos exclusivos de cada familia de tramite (coherencia tipo <-> campo). */
 const PACKAGE_ONLY = [ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg];
@@ -112,4 +112,29 @@ test('editableFieldsAt es vacio para un estado ajeno al flow', () => {
   // ProcesoAduanas no pertenece a Paqueteria; RecibidoBodegaMiami no pertenece a Transporte.
   assert.equal(editableFieldsAt(Flow.Paqueteria, State.ProcesoAduanas).length, 0);
   assert.equal(editableFieldsAt(Flow.Transporte, State.RecibidoBodegaMiami).length, 0);
+});
+
+/**
+ * La maquina no retrocede NUNCA. Es la invariante que obliga a que la enmienda de
+ * un error viva FUERA de ella (`transitionsService.correct`): si algun dia una
+ * arista permitiera volver atras, este test cae y toca revisar si la correccion
+ * administrativa sigue haciendo falta.
+ *
+ * Excepcion declarada: el reintento de entrega de Paqueteria (Devuelto a bodega
+ * -> En ruta de entrega). No es un retroceso por error sino una rama del dominio
+ * (el mensajero vuelve a salir), y por eso se nombra aqui en vez de relajar la regla.
+ */
+test('Invariante: ningun flow permite retroceder por la maquina de estados', () => {
+  const retryDelivery = `${Flow.Paqueteria}:${State.DevueltoBodega}->${State.EnRutaEntrega}`;
+
+  for (const flow of Object.values(Flow)) {
+    const order = statesOf(flow);
+    for (const [i, state] of order.entries()) {
+      for (const next of nextStates(flow, state)) {
+        if (`${flow}:${state}->${next}` === retryDelivery) continue;
+        const j = order.indexOf(next);
+        assert.ok(j > i, `${flow}: ${state} -> ${next} retrocede (de ${i} a ${j})`);
+      }
+    }
+  }
 });

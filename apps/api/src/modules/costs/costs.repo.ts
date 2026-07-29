@@ -64,6 +64,28 @@ export const costsRepo = {
       .where(eq(shipments.id, shipmentId));
   },
 
+  /**
+   * Descongela la factura: deja el tramite como si nunca se hubieran aprobado los
+   * costos. Es el inverso exacto de `freezeInvoice`, y limpia los CINCO campos que
+   * aquella escribe: dejar `costsApprovedBy` o una sola de las dos monedas daria
+   * un tramite medio aprobado, que ninguna consulta sabe leer.
+   *
+   * Las lineas de costo NO se borran: se conservan para que el operador vea que
+   * habia cargado y corrija en vez de rehacer desde cero.
+   */
+  async releaseInvoice(shipmentId: string) {
+    await db
+      .update(shipments)
+      .set({
+        invoiceTotalUsd: null,
+        invoiceTotalCrc: null,
+        costsApprovedAt: null,
+        costsApprovedBy: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(shipments.id, shipmentId));
+  },
+
   /** Estado de aprobacion del tramite (con el nombre de quien aprobo). */
   async approval(shipmentId: string) {
     const [row] = await db

@@ -9,6 +9,7 @@ import { State } from '@courier/shared';
 import type { ListDeliveryQueueQuery } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
+import { settlementColumn } from '../payments/settlement';
 import { districtRoutes } from '../routes/district-route.schema';
 import { shipments } from '../shipments/shipments.schema';
 import { deliveryAttempts } from './deliveries.schema';
@@ -51,6 +52,12 @@ export const deliveriesRepo = {
         addressLine: clients.addressLine,
         routeNumber: districtRoutes.routeNumber,
         invoiceTotalCrc: shipments.invoiceTotalCrc,
+        /**
+         * Abonos del tramite: el mensajero tiene que ver si sale con un paquete
+         * sin cobrar. Crudos, como en el listado de tramites; la suma la hace el
+         * servicio con @courier/shared (ver `payments/settlement.ts`).
+         */
+        settlement: settlementColumn,
         updatedAt: shipments.updatedAt,
       })
       .from(shipments)

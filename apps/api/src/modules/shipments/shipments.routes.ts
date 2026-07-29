@@ -14,6 +14,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import {
   Permission,
+  correctStateSchema,
   createShipmentSchema,
   listShipmentsQuerySchema,
   prealertShipmentSchema,
@@ -112,3 +113,22 @@ shipmentsRoutes.post('/:id/transition', zValidator('json', transitionShipmentSch
   );
   return c.json(toDto(row));
 });
+
+/**
+ * Correccion administrativa del estado (retroceder o saltar). Al reves que
+ * `/transition`, aqui SI hay un permiso fijo: no depende del destino porque no se
+ * esta operando el proceso sino enmendandolo, y eso solo lo hace `admin`.
+ */
+shipmentsRoutes.post(
+  '/:id/correct-state',
+  requirePermission(Permission.ShipmentCorrect),
+  zValidator('json', correctStateSchema),
+  async (c) => {
+    const row = await transitionsService.correct(
+      c.get('session'),
+      c.req.param('id'),
+      c.req.valid('json'),
+    );
+    return c.json(toDto(row));
+  },
+);

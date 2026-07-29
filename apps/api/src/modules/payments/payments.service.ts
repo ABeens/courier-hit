@@ -25,6 +25,7 @@ import {
   Role,
   State,
   isSettled,
+  outstandingCrc,
   roundMoney,
   settledAmount,
 } from '@courier/shared';
@@ -147,7 +148,7 @@ export const paymentsService = {
       settledUsd,
       settledCrc,
       /** Saldo pendiente en colones; nunca negativo (un sobrepago no genera deuda). */
-      dueCrc: roundMoney(Math.max(0, (shipment.invoiceTotalCrc ?? 0) - settledCrc), Currency.CRC),
+      dueCrc: outstandingCrc(settledCrc, shipment.invoiceTotalCrc),
       settled: isSettled(paid, shipment.invoiceTotalCrc),
       availableMethods: methods,
       /** Datos de la cuenta para el deposito; los muestra la pantalla de pago. */
@@ -207,11 +208,7 @@ export const paymentsService = {
      * sin que la cifra cambie sola.
      */
     const suggestion = await exchangeRateProvider.suggest();
-    const settledCrc = settledAmount(paid, Currency.CRC);
-    const amount = roundMoney(
-      Math.max(0, (shipment.invoiceTotalCrc ?? 0) - settledCrc),
-      Currency.CRC,
-    );
+    const amount = outstandingCrc(settledAmount(paid, Currency.CRC), shipment.invoiceTotalCrc);
 
     const isCard = input.method === PaymentMethod.Tarjeta;
     const id = await paymentsRepo.insert({

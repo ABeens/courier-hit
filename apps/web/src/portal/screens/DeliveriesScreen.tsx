@@ -20,6 +20,7 @@ import {
   findProvince,
 } from '@courier/shared';
 import type { ShipmentType } from '@courier/shared';
+import { PayFlag } from '../components/PayFlag';
 import { API_BASE, ApiError, api } from '../lib/api';
 import { DeliveryConfirmModal } from './DeliveryConfirmModal';
 
@@ -37,6 +38,15 @@ export interface DeliveryQueueRow {
   addressLine: string;
   routeNumber: number | null;
   invoiceTotalCrc: number | null;
+  /**
+   * Estado del cobro, derivado por la API de los pagos confirmados. En esta
+   * pantalla no es un dato mas: la guarda de la maquina de estados exige el pago
+   * antes de sacar el paquete a ruta, asi que un saldo aqui significa que alguien
+   * adelanto el trámite a mano y el mensajero va a llegar a cobrar.
+   */
+  settledCrc: number;
+  settled: boolean;
+  pendingCrc: number;
   updatedAt: string;
 }
 
@@ -113,6 +123,15 @@ export function DeliveriesScreen() {
                 </div>
               </div>
               <div className="card-item-aside">
+                {/* El mensajero tiene que saber ANTES de tocar el timbre si el
+                    paquete lleva saldo: es lo único de esta tarjeta que cambia lo
+                    que hace al llegar. */}
+                <PayFlag
+                  invoiceTotalCrc={row.invoiceTotalCrc}
+                  settledCrc={row.settledCrc}
+                  settled={row.settled}
+                  pendingCrc={row.pendingCrc}
+                />
                 <span className="spill">
                   <span className="dot" />
                   {row.routeNumber != null ? `Ruta ${row.routeNumber}` : 'Sin ruta'}

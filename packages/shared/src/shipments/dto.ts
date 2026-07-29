@@ -301,6 +301,30 @@ export const transitionShipmentSchema = z.object({
 export type TransitionShipmentInput = z.infer<typeof transitionShipmentSchema>;
 
 /**
+ * Correccion administrativa del estado: la unica via para retroceder o saltar.
+ *
+ * No es una transicion, es una ENMIENDA. La maquina de estados describe el
+ * proceso normal y por eso prohibe volver atras (`Restriction.NoRollback`);
+ * meterle marcha atras la dejaria sin decir cual es el camino. La correccion
+ * vive fuera de ella: se salta `canTransition`, no dispara automatizaciones y
+ * queda marcada como tal en el historial.
+ *
+ * A diferencia del avance, la nota es OBLIGATORIA: una corrección sin motivo es
+ * indistinguible de un error nuevo cuando alguien lea el historial en seis meses.
+ */
+export const correctStateSchema = z.object({
+  state: z.nativeEnum(State, {
+    errorMap: () => ({ message: 'Elige un estado válido.' }),
+  }),
+  note: z
+    .string()
+    .trim()
+    .min(1, 'Indica el motivo de la corrección.')
+    .max(500, 'El comentario es demasiado largo.'),
+});
+export type CorrectStateInput = z.infer<typeof correctStateSchema>;
+
+/**
  * Recepcion en bodega por tracking (Parte 4, "Recepción de Paquete"). El operador
  * escanea o digita el tracking y el sistema resuelve el resto: si el tramite
  * existe lo mueve a "Facturación en proceso"; si no, responde con un codigo

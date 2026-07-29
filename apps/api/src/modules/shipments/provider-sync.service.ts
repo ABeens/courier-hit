@@ -29,6 +29,7 @@ import {
   State,
   canTransition,
   flowForType,
+  isProviderDrivenState,
   mapProviderState,
   roundWeightKg,
 } from '@courier/shared';
@@ -62,16 +63,16 @@ export function toNumber(value: number | string | undefined): number {
   return 0;
 }
 
-/** Estados que ya pertenecen al flujo manual: el proveedor no los toca. */
+/**
+ * Estados que ya pertenecen al flujo manual: el proveedor no los toca.
+ *
+ * La frontera sale de `isProviderDrivenState` (shared) para no tener dos copias
+ * de la misma linea: la web decide con ella que avances manuales ofrecer, y si
+ * aqui se listara aparte, una tarea podria avanzar lo que alla se ofrece a mano.
+ * Prealertado se suma porque es el punto de partida, todavia dentro del tramo.
+ */
 function isBeyondProvider(state: State): boolean {
-  const path = [
-    State.Prealertado,
-    State.RecibidoBodegaMiami,
-    State.PreparandoEnvio,
-    State.EnTransitoCostaRica,
-    State.EnAduanas,
-  ];
-  return !path.includes(state);
+  return state !== State.Prealertado && !isProviderDrivenState(Flow.Paqueteria, state);
 }
 
 export interface SyncReport {
