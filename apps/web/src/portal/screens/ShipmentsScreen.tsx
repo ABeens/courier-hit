@@ -252,6 +252,14 @@ export function ShipmentsScreen({ role, initialView }: Props) {
     if (view === 'transporte') {
       return [...new Set([...statesOf(Flow.Transporte), ...statesOf(Flow.Agenciamiento)])];
     }
+    /**
+     * En la vista del cliente se cae "En bodega - Pendiente pago", por lo mismo
+     * que no se pinta su píldora en la ficha: ofrecerla en el filtro seria
+     * enseñarle por la puerta de atras la etiqueta que se le oculta.
+     */
+    if (view === 'propios') {
+      return Object.values(State).filter((s) => s !== State.EnBodegaPendientePago);
+    }
     return Object.values(State);
   }, [view]);
 
@@ -364,7 +372,18 @@ export function ShipmentsScreen({ role, initialView }: Props) {
                   settled={row.settled}
                   pendingCrc={row.pendingCrc}
                 />
-                <span className="spill"><span className="dot" />{STATE_LABELS[row.state]}</span>
+                {/*
+                  Al cliente NO se le muestra "En bodega - Pendiente pago". Es la
+                  etiqueta operativa de que la factura ya está aprobada y el
+                  paquete espera en bodega; junto al botón "Pagar" le dice dos
+                  veces lo mismo, y sigue diciéndolo después de pagar —el pago no
+                  mueve el trámite—, que es justo cuando le hace dudar de si su
+                  pago entró. Lo que le importa de ese momento ya se lo cuenta la
+                  bandera de cobro: saldo, en validación o pagado.
+                */}
+                {!(isOwn && row.state === State.EnBodegaPendientePago) && (
+                  <span className="spill"><span className="dot" />{STATE_LABELS[row.state]}</span>
+                )}
                 {canWrite && !isOwn && (
                   <button className="btn btn-ghost btn-sm" onClick={() => setModal({ mode: 'edit', row })}>
                     Editar
