@@ -66,7 +66,7 @@ export function LockerScreen() {
 
       {locker && (
         <>
-          <div className="banner" style={{ marginBottom: 16 }}>
+          <div className="banner info" style={{ marginBottom: 16 }}>
             Incluye <strong>siempre</strong> el identificador del casillero en el nombre y en la
             línea de suite. Sin él no podemos saber que el paquete es tuyo.
           </div>
@@ -87,7 +87,7 @@ export function LockerScreen() {
             <div className="locker-title">Dirección en Miami</div>
             <div className="cards" style={{ gap: 8 }}>
               {locker.lines.map((line) => (
-                <div className="card-item-field" key={line.label}>
+                <div className="locker-line" key={line.label}>
                   <span className="field-label">{line.label}</span>
                   <span className="locker-address" style={{ flex: 1 }}>{line.value}</span>
                   <button className="btn btn-ghost btn-sm" onClick={() => copy(line)}>
