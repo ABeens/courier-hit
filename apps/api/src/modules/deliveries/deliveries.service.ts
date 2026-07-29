@@ -13,7 +13,16 @@
  *    autorizacion: al mensajero ya se le exigio delivery.manage para llegar aqui.
  *    Las guardas de DATOS de la maquina se aplican igual.
  */
-import { DeliveryOutcome, State, proofRequirementFor, stateForOutcome } from '@courier/shared';
+import {
+  Currency,
+  DeliveryOutcome,
+  State,
+  isSettled,
+  pendingAmount,
+  proofRequirementFor,
+  settledAmount,
+  stateForOutcome,
+} from '@courier/shared';
 import type {
   DeliveryAttemptDto,
   ListDeliveryQueueQuery,
@@ -44,8 +53,16 @@ export const deliveriesService = {
   async queue(query: ListDeliveryQueueQuery) {
     const rows = await deliveriesRepo.queue(query);
     return {
-      items: rows.map((row) => ({
+      /**
+       * `settlement` no sale a la respuesta: son los abonos crudos, que el
+       * mensajero no necesita (y que incluyen datos del cobro). Se reemplazan por
+       * las dos cifras derivadas, las mismas que lleva el listado de tramites.
+       */
+      items: rows.map(({ settlement, ...row }) => ({
         ...row,
+        settledCrc: settledAmount(settlement, Currency.CRC),
+        settled: isSettled(settlement, row.invoiceTotalCrc),
+        pendingCrc: pendingAmount(settlement, Currency.CRC),
         updatedAt: row.updatedAt.toISOString(),
       })),
     };

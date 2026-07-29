@@ -15,6 +15,7 @@ import { zValidator } from '@hono/zod-validator';
 import { Permission, saveShipmentCostsSchema } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
 import { requireAnyPermission } from '../../core/middleware/requireAnyPermission';
+import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
 import { costsService } from './costs.service';
 
@@ -49,3 +50,20 @@ costsRoutes.put('/:shipmentId', zValidator('json', saveShipmentCostsSchema), asy
 costsRoutes.post('/:shipmentId/approve', async (c) => {
   return c.json(await costsService.approve(c.get('session'), c.req.param('shipmentId')));
 });
+
+/**
+ * Reversar: descongela la factura para poder corregir los costos. No mueve el
+ * estado del tramite.
+ *
+ * Lleva permiso propio ENCIMA de la barrera de costos del modulo: cargar y
+ * aprobar es operar; deshacer una aprobacion es enmendar, y eso solo lo hace
+ * `admin`. Sin este middleware, cualquiera con `costs.manage` (Operativo, entre
+ * otros) podria desarmar una factura ya emitida.
+ */
+costsRoutes.post(
+  '/:shipmentId/reverse',
+  requirePermission(Permission.ShipmentCorrect),
+  async (c) => {
+    return c.json(await costsService.reverse(c.get('session'), c.req.param('shipmentId')));
+  },
+);

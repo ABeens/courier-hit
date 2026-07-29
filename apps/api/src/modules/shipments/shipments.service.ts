@@ -22,8 +22,11 @@ import {
   editableFieldsAt,
   flowForType,
   initialState,
+  isSettled,
+  pendingAmount,
   roundMoney,
   roundWeightKg,
+  settledAmount,
   usesPackageFields,
 } from '@courier/shared';
 import type {
@@ -119,6 +122,16 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     routeNumber: row.routeNumber,
     invoiceTotalUsd: row.invoiceTotalUsd,
     invoiceTotalCrc: row.invoiceTotalCrc,
+    /**
+     * Bandera de cobro, derivada aqui en cada lectura a partir de los abonos que
+     * trajo la consulta. Las dos cifras salen de las funciones compartidas, las
+     * mismas que usan la cotizacion del cliente, el reporte financiero y la
+     * guarda Condition.RequiresConfirmedPayment: si algun dia discrepan es que
+     * alguien sumo por su cuenta, no que haya dos reglas.
+     */
+    settledCrc: settledAmount(row.settlement, Currency.CRC),
+    settled: isSettled(row.settlement, row.invoiceTotalCrc),
+    pendingCrc: pendingAmount(row.settlement, Currency.CRC),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

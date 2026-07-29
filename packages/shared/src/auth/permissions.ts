@@ -52,6 +52,12 @@ export enum Action {
   Manage = 'manage',
   Validate = 'validate',
   Generate = 'generate',
+  /**
+   * Enmendar un dato ya asentado, fuera del flujo normal. Se distingue de Write
+   * y Manage porque no es operar el proceso sino arreglar el resultado de haberlo
+   * operado mal: no la tiene quien ejecuta, solo quien responde por el sistema.
+   */
+  Correct = 'correct',
 }
 
 /** Alcance: sobre lo propio (cliente) o sobre todo (staff). */
@@ -75,6 +81,13 @@ export enum Permission {
   PackageWrite = 'package.write',
   PackageReassign = 'package.reassign',
   TramiteManage = 'tramite.manage',
+  /**
+   * Corregir el estado de un tramite fuera de la maquina (retroceder o saltar) y
+   * reversar unos costos ya aprobados. Son las dos unicas puertas para enmendar
+   * un error, y ninguna forma parte del proceso: por eso van juntas en un permiso
+   * aparte que solo tiene `admin`. Ver `transitionsService.correct`.
+   */
+  ShipmentCorrect = 'shipment.correct',
   CostsManage = 'costs.manage',
   CostsTramiteManage = 'costs.tramite.manage',
   CostServicesManage = 'cost_services.manage',
@@ -112,6 +125,9 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   [Permission.PackageWrite]: { resource: Resource.Package, action: Action.Write, scope: Scope.All },
   [Permission.PackageReassign]: { resource: Resource.Package, action: Action.Reassign, scope: Scope.All },
   [Permission.TramiteManage]: { resource: Resource.Tramite, action: Action.Manage, scope: Scope.All },
+  // Resource.Package y no uno nuevo: corregir no es un modulo del menu, es una
+  // accion excepcional sobre el tramite (de cualquier tipo).
+  [Permission.ShipmentCorrect]: { resource: Resource.Package, action: Action.Correct, scope: Scope.All },
   [Permission.CostsManage]: { resource: Resource.Costs, action: Action.Manage, scope: Scope.All },
   [Permission.CostsTramiteManage]: { resource: Resource.Costs, action: Action.Manage, scope: Scope.All },
   [Permission.CostServicesManage]: { resource: Resource.CostServices, action: Action.Manage, scope: Scope.All },
@@ -137,6 +153,8 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   Permission.PackageWrite,
   Permission.PackageReassign,
   Permission.TramiteManage,
+  // Solo admin: es la puerta para deshacer, no para operar.
+  Permission.ShipmentCorrect,
   Permission.CostsManage,
   Permission.CostsTramiteManage,
   Permission.CostServicesManage,

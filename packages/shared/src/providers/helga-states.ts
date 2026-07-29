@@ -21,6 +21,7 @@
  *     ahora tampoco lo mueven; se marcan para que la operacion los atienda.
  */
 import { State } from '../workflow/states';
+import { Flow } from '../workflow/shipment-type';
 
 /**
  * Estado del proveedor -> estado de HS Global. Las claves son los valores
@@ -61,6 +62,32 @@ export const HELGA_STATE_MAP: Record<string, State> = {
   ENTREGADA: State.EnAduanas,
   'ENTREGADA A DESTINATARIO': State.EnAduanas,
 };
+
+/**
+ * Estados nuestros que MUEVE el proveedor. Se derivan de la tabla de arriba, no
+ * se listan a mano: si manana Helga homologa un estado mas, esta lista lo
+ * incluye sola.
+ *
+ * Es la frontera entre lo automatico y lo manual, y por eso vive en shared: la
+ * sincronizacion la usa para saber donde parar, y la web para saber que avances
+ * ofrecer. Un paquete no se empuja a mano a "Recibido bodega Miami" porque ese
+ * hecho lo reporta el proveedor; si se ofreciera el boton, la operacion estaria
+ * adivinando un dato que llega solo.
+ */
+export const PROVIDER_DRIVEN_STATES: readonly State[] = [
+  ...new Set(Object.values(HELGA_STATE_MAP)),
+];
+
+/**
+ * True si el proveedor es quien lleva el tramite a ese estado.
+ *
+ * Se pregunta por flow porque el acuerdo con Helga cubre SOLO Paqueteria:
+ * Transporte y Agenciamiento no tienen bodega de Miami ni sincronizacion, asi
+ * que ninguno de sus estados es del proveedor aunque se llamara igual.
+ */
+export function isProviderDrivenState(flow: Flow, state: State): boolean {
+  return flow === Flow.Paqueteria && PROVIDER_DRIVEN_STATES.includes(state);
+}
 
 /**
  * Estados operativos internos del proveedor. No representan avance fisico del

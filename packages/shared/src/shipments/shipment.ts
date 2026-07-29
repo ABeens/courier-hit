@@ -93,6 +93,32 @@ export interface ShipmentDto {
   invoiceTotalUsd: number | null;
   invoiceTotalCrc: number | null;
 
+  /**
+   * Estado del COBRO, derivado en cada lectura de los pagos confirmados del
+   * tramite. No existe una columna `pagado` en la tabla: la decision 3 de
+   * `payments/payment.ts` es justamente que "pagado" no se guarda, para que no
+   * pueda quedar desfasada respecto de los abonos reales (un pago rechazado
+   * despues de confirmarse, una linea de costo reabierta, un deposito validado
+   * a mano). Se paga el precio de calcularlo al leer a cambio de que no mienta.
+   *
+   * `settledCrc` es la suma de los abonos CONFIRMADOS reexpresada en colones,
+   * cada uno con SU propia tasa (regla M5). `settled` es si esa suma cubre
+   * `invoiceTotalCrc`: la misma respuesta que da `isSettled` y que exige
+   * Condition.RequiresConfirmedPayment para sacar el paquete a ruta.
+   *
+   * Sin factura aprobada: 0 y false. No hay nada que cubrir todavia.
+   */
+  settledCrc: number;
+  settled: boolean;
+  /**
+   * Abonos EN VALIDACION, en colones: comprobantes que el cliente ya subio y que
+   * el staff todavia no resolvio. No cuentan como pagados y no entran en
+   * `settled`, pero sin este dato la pantalla no puede distinguir "no ha pagado"
+   * de "pago y lo estamos revisando", que para el cliente son cosas muy
+   * distintas: la primera lo lleva a pagar otra vez.
+   */
+  pendingCrc: number;
+
   /** Instantes en UTC, ISO 8601. La hora local se arma en la presentacion. */
   createdAt: string;
   updatedAt: string;

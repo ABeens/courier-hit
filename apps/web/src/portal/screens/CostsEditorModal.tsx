@@ -16,17 +16,20 @@ import {
   CURRENCY_LABELS,
   CostLineSource,
   Currency,
+  Permission,
   STATE_LABELS,
   State,
+  can,
   computeTotals,
   formatMoney,
 } from '@courier/shared';
-import type { ShipmentCostsDto, ShipmentDto, SuggestedCostLine } from '@courier/shared';
+import type { Role, ShipmentCostsDto, ShipmentDto, SuggestedCostLine } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { formatDate } from '../lib/datetime';
 
 interface Props {
   shipment: ShipmentDto;
+  role: Role;
   onClose: () => void;
   /** Se llama tras aprobar (el tramite cambio de estado y sale de la cola). */
   onApproved: (message: string) => void;
@@ -60,7 +63,7 @@ function fromSuggestion(s: SuggestedCostLine): DraftLine {
   };
 }
 
-export function CostsEditorModal({ shipment, onClose, onApproved }: Props) {
+export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props) {
   const [data, setData] = useState<ShipmentCostsDto | null>(null);
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [rate, setRate] = useState('');
@@ -107,6 +110,15 @@ export function CostsEditorModal({ shipment, onClose, onApproved }: Props) {
   }, [load]);
 
   const approved = data?.approved ?? false;
+  /**
+   * Reversar exige lo mismo que la API: factura congelada, tramite todavia en
+   * "Facturación en proceso" y permiso de enmienda. Si el tramite ya avanzo, el
+   * camino es corregir primero el estado desde el tablero.
+   */
+  const canReverse =
+    approved &&
+    shipment.state === State.FacturacionEnProceso &&
+    can(role, Permission.ShipmentCorrect);
   const parsedRate = Number(rate);
   const rateOk = Number.isFinite(parsedRate) && parsedRate > 0;
 
@@ -205,6 +217,31 @@ export function CostsEditorModal({ shipment, onClose, onApproved }: Props) {
     setBusy(false);
   }
 
+  /**
+   * Reversar descongela la factura para poder corregir los costos. No mueve el
+   * estado: si el tramite ya avanzo, hay que corregirlo aparte desde el tablero.
+   * Se avisa aqui para que nadie espere que un solo boton deshaga las dos cosas.
+   */
+  async function onReverse() {
+    const confirmed = window.confirm(
+      `Se liberará la factura de ${shipment.code} y los costos volverán a ser editables. ` +
+        `El estado del trámite NO cambia: si hace falta, corrígelo desde el tablero. ¿Continuar?`,
+    );
+    if (!confirmed) return;
+
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.post<ShipmentCostsDto>(`/costs/${shipment.id}/reverse`);
+      await load();
+      setNotice('Factura reversada. Los costos vuelven a ser editables.');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo reversar la factura.');
+    }
+    setBusy(false);
+  }
+
   return (
     <ModalOverlay onClose={onClose}>
       <div className="modal modal-wide fadeUp" onMouseDown={(e) => e.stopPropagation()}>
@@ -223,6 +260,13 @@ export function CostsEditorModal({ shipment, onClose, onApproved }: Props) {
             <div className="banner ok">
               Aprobado el {formatDate(data!.approvedAt!)}
               {data!.approvedByName ? ` por ${data!.approvedByName}` : ''}. La factura quedó congelada.
+              {approved && !canReverse && can(role, Permission.ShipmentCorrect) && (
+                <>
+                  {' '}
+                  Para corregirla, primero devuelve el trámite a «
+                  {STATE_LABELS[State.FacturacionEnProceso]}» con «Corregir» en el tablero.
+                </>
+              )}
             </div>
           )}
 
@@ -355,6 +399,14 @@ export function CostsEditorModal({ shipment, onClose, onApproved }: Props) {
           <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
             {approved ? 'Cerrar' : 'Cancelar'}
           </button>
+          {/* Reversar solo aparece con la factura ya congelada, con el tramite
+              todavia en facturacion (misma guarda que la API) y solo para quien
+              puede enmendar: cargar y aprobar es operar, deshacer es corregir. */}
+          {canReverse && (
+            <button type="button" className="btn btn-ghost" onClick={onReverse} disabled={busy}>
+              {busy ? 'Reversando…' : 'Reversar factura'}
+            </button>
+          )}
           {!approved && (
             <>
               <button type="button" className="btn btn-ghost" onClick={onSave} disabled={busy}>

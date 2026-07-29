@@ -23,6 +23,7 @@ import {
   Flow,
   ServiceKind,
   State,
+  PaymentStatus,
   applyPercentage,
   can,
   canTransition,
@@ -43,6 +44,7 @@ import type {
 import { AuthErrors, CostErrors, ShipmentErrors } from '../../core/errors';
 import { clientsRepo } from '../clients/clients.repo';
 import { costServicesRepo } from '../cost-services/cost-services.repo';
+import { paymentsRepo } from '../payments/payments.repo';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { transitionsService } from '../shipments/transitions.service';
 import { costsRepo } from './costs.repo';
@@ -322,6 +324,43 @@ export const costsService = {
       { skipPermission: true },
     );
 
+    return this.get(session, shipmentId);
+  },
+
+  /**
+   * Reversa una aprobacion: descongela la factura para que los costos se puedan
+   * corregir y volver a aprobar. Es la accion que `ShipmentErrors
+   * .weightLockedAfterInvoice` lleva pidiendo desde siempre ("Reversa los costos
+   * del trámite para corregirlo") y que hasta ahora no existia, dejando sin
+   * arreglo cualquier paquete facturado con el peso mal.
+   *
+   * NO toca el estado del tramite. Va aparte de `transitionsService.correct` a
+   * proposito: son dos errores distintos (haber avanzado mal y haber cobrado mal)
+   * y juntarlos obligaria a deshacer uno para arreglar el otro. El orden habitual
+   * es corregir el estado primero y reversar despues, pero ninguno exige al otro.
+   *
+   * Dos guardas:
+   *   ESTADO — espejo de `approve`: solo desde "Facturacion en proceso". Mas
+   *     adelante el tramite ya se le mostro al cliente como cobrable, y borrarle
+   *     la factura le dejaria el boton de pagar apuntando a nada. Volver primero
+   *     el estado (con la correccion) es lo que hace segura la reversion.
+   *   DINERO — con un pago confirmado, borrar la factura dejaria un abono contra
+   *     algo que no existe. Los pendientes o rechazados no bloquean: aun no son
+   *     dinero.
+   */
+  async reverse(session: Session, shipmentId: string): Promise<ShipmentCostsDto> {
+    const shipment = await this.loadShipment(session, shipmentId);
+
+    const approval = await costsRepo.approval(shipmentId);
+    if (!approval?.approvedAt) throw CostErrors.notApproved();
+    if (shipment.state !== State.FacturacionEnProceso) throw CostErrors.notReversibleState();
+
+    const payments = await paymentsRepo.settlementView(shipmentId);
+    if (payments.some((p) => p.status === PaymentStatus.Confirmado)) {
+      throw CostErrors.settledCannotReverse();
+    }
+
+    await costsRepo.releaseInvoice(shipmentId);
     return this.get(session, shipmentId);
   },
 

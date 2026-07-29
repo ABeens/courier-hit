@@ -31,6 +31,7 @@ import {
   PaymentMethod,
   PaymentStatus,
   formatMoney,
+  pendingAmount,
 } from '@courier/shared';
 import type { PaymentDto, PaymentIntentDto, ShipmentDto } from '@courier/shared';
 import { API_BASE, ApiError, api } from '../lib/api';
@@ -54,7 +55,16 @@ interface Quote {
 interface Props {
   shipment: ShipmentDto;
   onClose: () => void;
-  onPaid: () => void;
+  /**
+   * Cierra el modal anunciando lo que PASO. El mensaje viaja desde aqui porque
+   * solo este componente distingue un deposito registrado (queda por validar) de
+   * un cobro con tarjeta ya aprobado (el tramite queda cubierto), y decirle al
+   * cliente que su pago "queda pendiente" cuando ya se cobro es lo que le hace
+   * pensar que no paso nada.
+   *
+   * Un cobro RECHAZADO no llama aqui: el modal se queda abierto para reintentar.
+   */
+  onPaid: (message: string) => void;
 }
 
 export function PaymentModal({ shipment, onClose, onPaid }: Props) {
@@ -76,6 +86,14 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
   const [cardIntent, setCardIntent] = useState<{ paymentId: string; intent: PaymentIntentDto } | null>(
     null,
   );
+
+  /**
+   * Lo ya abonado y sin validar. Sale de la lista de pagos que esta pantalla ya
+   * tiene, no de una consulta nueva, y con la misma funcion compartida que usa la
+   * bandera del listado: dos cifras distintas para el mismo hecho serian dos
+   * respuestas a "¿mi pago llegó?".
+   */
+  const pendingCrc = pendingAmount(payments, Currency.CRC);
 
   useEffect(() => {
     Promise.all([
@@ -143,10 +161,7 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
         }
       }
 
-      setNotice(
-        'Registramos tu depósito. Queda pendiente de validación por nuestro equipo.',
-      );
-      onPaid();
+      onPaid('Registramos tu depósito. Queda pendiente de validación por nuestro equipo.');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo registrar el pago.');
     } finally {
@@ -168,12 +183,20 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
       });
       setPayments((prev) => [updated, ...prev.filter((p) => p.id !== updated.id)]);
       setCardIntent(null);
-      setNotice(
-        approve
-          ? 'Pago aprobado (simulado). El trámite queda cubierto.'
-          : 'Pago rechazado (simulado). Puedes intentarlo de nuevo.',
-      );
-      onPaid();
+
+      if (approve) {
+        onPaid('Pago aprobado. El trámite queda cubierto.');
+        return;
+      }
+
+      /**
+       * Rechazado: el modal NO se cierra. Cerrarlo dejaba al cliente en el
+       * listado sin nada que hacer con un trámite que sigue sin pagar; aqui puede
+       * reintentar de una vez. Se recarga la cotización porque el saldo lo manda
+       * el servidor y este intento no lo movió.
+       */
+      setNotice('La pasarela rechazó el cobro. Puedes intentarlo de nuevo.');
+      setQuote(await api.get<Quote>(`/payments/quote/${shipment.id}`));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo simular el cobro.');
     } finally {
@@ -226,6 +249,19 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
 
           {quote?.settled && (
             <div className="banner ok">Este trámite ya está pagado.</div>
+          )}
+
+          {/*
+            Un abono ya subido y sin resolver. Se dice explícitamente porque el
+            saldo de arriba sigue completo —un comprobante sin validar no es
+            dinero recibido— y sin este aviso el cliente lee ese saldo como que
+            su depósito nunca llegó.
+          */}
+          {quote && !quote.settled && pendingCrc > 0 && (
+            <div className="banner">
+              Recibimos {formatMoney(pendingCrc, Currency.CRC)} y estamos validando el
+              comprobante. Te avisaremos apenas quede confirmado.
+            </div>
           )}
 
           {quote && !quote.settled && quote.availableMethods.length === 0 && (

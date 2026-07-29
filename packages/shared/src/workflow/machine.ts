@@ -227,6 +227,48 @@ export function conditionsFor(flow: Flow, state: State): readonly Condition[] {
   return stepOf(flow, state)?.conditions ?? [];
 }
 
+/**
+ * Los datos del tramite que responden a las guardas. Se declara como forma
+ * minima, no como `ShipmentDto`, para que la API pueda evaluarlas con la fila de
+ * la base y la web con el DTO sin que ninguna de las dos dependa de la otra.
+ */
+export interface GuardData {
+  /** Monto de factura en colones; null mientras los costos no esten aprobados. */
+  invoiceTotalCrc: number | null;
+  /** Si los abonos confirmados cubren ese monto (la respuesta de `isSettled`). */
+  settled: boolean;
+}
+
+/**
+ * Guardas del estado destino que el tramite NO cumple todavia. Vacio = el avance
+ * puede ejecutarse ya.
+ *
+ * Existe para que la UI pueda dejar de ofrecer un avance imposible ANTES de
+ * enviarlo: sin esto, "En bodega - Pendiente pago" ofrecia salir a ruta con la
+ * factura sin cobrar y el operador se enteraba por un error del servidor.
+ *
+ * `RequiresComment` nunca sale aqui, y no es un olvido: no es un dato del
+ * tramite sino algo que el usuario escribe en el mismo formulario del avance, asi
+ * que evaluarla contra la fila la daria por incumplida siempre. La valida el
+ * formulario (y la API con la nota recibida).
+ */
+export function unmetConditions(
+  flow: Flow,
+  state: State,
+  data: GuardData,
+): readonly Condition[] {
+  return conditionsFor(flow, state).filter((condition) => {
+    switch (condition) {
+      case Condition.RequiresInvoiceAmount:
+        return data.invoiceTotalCrc == null;
+      case Condition.RequiresConfirmedPayment:
+        return !data.settled;
+      case Condition.RequiresComment:
+        return false;
+    }
+  });
+}
+
 /** Restrictions estructurales del estado. */
 export function restrictionsOf(flow: Flow, state: State): readonly Restriction[] {
   return stepOf(flow, state)?.restrictions ?? [];

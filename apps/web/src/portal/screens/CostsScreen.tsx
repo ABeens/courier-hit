@@ -18,7 +18,8 @@ import {
   State,
   formatMoney,
 } from '@courier/shared';
-import type { ShipmentDto } from '@courier/shared';
+import type { Role, ShipmentDto } from '@courier/shared';
+import { PayFlag } from '../components/PayFlag';
 import { ApiError, api } from '../lib/api';
 import { formatDate } from '../lib/datetime';
 import { CostsEditorModal } from './CostsEditorModal';
@@ -41,7 +42,7 @@ function invoiceLabel(row: ShipmentDto): string {
   return `${formatMoney(row.invoiceTotalUsd, Currency.USD)} · ${formatMoney(row.invoiceTotalCrc, Currency.CRC)}`;
 }
 
-export function CostsScreen() {
+export function CostsScreen({ role }: { role: Role }) {
   const [view, setView] = useState<View>('pendientes');
   const [data, setData] = useState<ListResponse | null>(null);
   const [q, setQ] = useState('');
@@ -103,6 +104,10 @@ export function CostsScreen() {
               <th>Descripción (REF)</th>
               <th>Estado</th>
               <th>Monto de factura</th>
+              {/* Solo tiene sentido sobre lo ya facturado: en la cola de "por
+                  facturar" todavía no hay monto que cobrar y la columna saldría
+                  vacía en todas las filas. */}
+              {view === 'facturados' && <th>Pago</th>}
               <th>Fecha ingreso</th>
               <th style={{ textAlign: 'right' }}>Acciones</th>
             </tr>
@@ -121,6 +126,16 @@ export function CostsScreen() {
                   <span className="spill"><span className="dot" />{STATE_LABELS[row.state]}</span>
                 </td>
                 <td>{invoiceLabel(row)}</td>
+                {view === 'facturados' && (
+                  <td>
+                    <PayFlag
+                      invoiceTotalCrc={row.invoiceTotalCrc}
+                      settledCrc={row.settledCrc}
+                      settled={row.settled}
+                      pendingCrc={row.pendingCrc}
+                    />
+                  </td>
+                )}
                 <td>{formatDate(row.createdAt)}</td>
                 <td>
                   <div className="actions">
@@ -146,6 +161,7 @@ export function CostsScreen() {
       {editing && (
         <CostsEditorModal
           shipment={editing}
+          role={role}
           onClose={() => {
             setEditing(null);
             void load();

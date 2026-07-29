@@ -200,7 +200,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
           ) : current === Resource.CostServices ? (
             <CostServicesScreen />
           ) : current === Resource.Costs ? (
-            <CostsScreen />
+            <CostsScreen role={me.role} />
           ) : current === Resource.Config ? (
             // Configuración es hoy el enlace con el operador de Miami: es lo único
             // que un Admin necesita administrar aquí. Cuando entren más ajustes,

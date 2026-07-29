@@ -104,8 +104,30 @@ type Settleable = Pick<PaymentDto, 'amount' | 'currency' | 'exchangeRate' | 'sta
  * abonado en dos dias distintos sigue cuadrando.
  */
 export function settledAmount(payments: readonly Settleable[], target: Currency): number {
+  return sumByStatus(payments, target, PaymentStatus.Confirmado);
+}
+
+/**
+ * Suma de los pagos EN VALIDACION (subidos por el cliente, sin resolver todavia).
+ *
+ * NO es dinero recibido y no cuenta para `isSettled`: eso lo decide `settledAmount`
+ * y nada mas. Existe para lo que la pantalla necesita decirle al cliente, que es
+ * otra pregunta: "tu comprobante llego y lo estamos revisando". Sin esto, quien
+ * acaba de subir un deposito ve el saldo intacto y un boton de pagar, y paga dos
+ * veces por el mismo tramite.
+ */
+export function pendingAmount(payments: readonly Settleable[], target: Currency): number {
+  return sumByStatus(payments, target, PaymentStatus.Pendiente);
+}
+
+/** Suma en `target` de los pagos en una situacion dada. Punto unico de la conversion. */
+function sumByStatus(
+  payments: readonly Settleable[],
+  target: Currency,
+  status: PaymentStatus,
+): number {
   const total = payments
-    .filter((p) => p.status === PaymentStatus.Confirmado)
+    .filter((p) => p.status === status)
     .reduce((sum, p) => sum + convertMoney(p.amount, p.currency, target, p.exchangeRate), 0);
   return roundMoney(total, target);
 }
@@ -125,6 +147,22 @@ export function isSettled(
 ): boolean {
   if (invoiceTotalCrc == null) return false;
   return settledAmount(payments, Currency.CRC) >= invoiceTotalCrc;
+}
+
+/**
+ * Saldo pendiente en colones: lo facturado menos lo ya abonado, nunca negativo
+ * (un sobrepago no genera deuda a favor del cliente).
+ *
+ * Punto UNICO de esa resta. La cotizacion que ve el cliente al pagar, el importe
+ * que se le cobra a la tarjeta y la bandera que ve el operador en la ficha del
+ * tramite tienen que dar la misma cifra; con la resta escrita en tres lados,
+ * tarde o temprano no la dan.
+ *
+ * Sin monto de factura todavia no hay nada que cobrar -> 0.
+ */
+export function outstandingCrc(settledCrc: number, invoiceTotalCrc: number | null): number {
+  if (invoiceTotalCrc == null) return 0;
+  return roundMoney(Math.max(0, invoiceTotalCrc - settledCrc), Currency.CRC);
 }
 
 /** Valores para construir los enums de la BD (Drizzle pgEnum), sin repetirlos. */
