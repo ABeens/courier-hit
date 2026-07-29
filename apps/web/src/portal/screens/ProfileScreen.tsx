@@ -116,7 +116,7 @@ export function ProfileScreen({ onLoggedOut }: { onLoggedOut: () => void }) {
       {notice && <div className="banner ok" style={{ marginBottom: 14 }}>{notice}</div>}
 
       {profile && (
-        <form className="form-grid" onSubmit={submit} style={{ maxWidth: 620 }}>
+        <form className="form-stack" onSubmit={submit} style={{ maxWidth: 620 }}>
           <div>
             <label className="field-label" htmlFor="p-name">Nombre completo</label>
             <input

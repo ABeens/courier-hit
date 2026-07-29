@@ -95,7 +95,7 @@ export function PrealertScreen({ onCreated }: { onCreated?: () => void }) {
         </div>
       )}
 
-      <form className="card" onSubmit={submit} style={{ maxWidth: 620, display: 'grid', gap: 14 }}>
+      <form className="card form-stack" onSubmit={submit} style={{ maxWidth: 620 }}>
         <div>
           <label className="field-label" htmlFor="p-type">Trámite</label>
           <select
@@ -159,7 +159,7 @@ export function PrealertScreen({ onCreated }: { onCreated?: () => void }) {
           </div>
         )}
 
-        <div>
+        <div className="form-actions">
           <button type="submit" className="btn btn-primary" disabled={busy}>
             {busy ? 'Registrando…' : 'Prealertar'}
           </button>

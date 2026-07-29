@@ -202,6 +202,12 @@
 .locker-card .locker-address {
   font-family: var(--font-mono); font-size: 14px; line-height: 1.7; color: var(--ink);
 }
+/* Cada renglon de la direccion: la etiqueta ocupa su propia linea y debajo van
+   el valor y el boton Copiar, con el boton anclado a la derecha. Sin el flex
+   aqui el `flex: 1` del valor no hace nada y el boton queda pegado al texto. */
+.locker-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.locker-line .field-label { width: 100%; margin-bottom: 0; }
+.locker-line .locker-address { word-break: break-word; }
 
 .auth-alt { text-align: center; margin-top: 16px; font-size: 14px; color: var(--muted); }
 .auth-alt a { color: var(--brand); font-weight: 700; }
@@ -593,6 +599,21 @@ select.input { cursor: pointer; padding-right: 30px; }
 .btn-danger-ghost:hover { background: var(--danger-soft); }
 /* Contador de caracteres alineado a la derecha de su etiqueta. */
 .field-label .field-count { float: right; color: var(--faint); font-weight: 500; }
+/* Formulario que vive suelto en una pantalla, no dentro de un modal (prealerta,
+   mi perfil). Columna unica: los campos que van juntos se agrupan con
+   .field-pair, igual que en los modales. No usar .form-grid aqui: esa rejilla
+   reparte a DOS columnas desde tablet y exige marcar .col-full campo a campo. */
+.form-stack { display: grid; gap: 16px; }
+/* Variante enmarcada. El atomo .card solo pinta fondo, borde y sombra: el aire
+   lo pone el modificador, misma convencion que .svc/.how__card en el sitio
+   publico. Sin esto los campos quedan pegados al borde de la tarjeta.
+   Se reusa el ritmo de .modal-body para que un formulario se lea igual en una
+   pantalla que dentro de un modal. */
+.card.form-stack { padding: 22px 24px; }
+@media (max-width: 560px) {
+  .card.form-stack { padding: 18px; }
+}
+
 /* Pareja (o trio) de campos en una fila. Dentro de un modal responde al ancho
    del propio modal; fuera, al de la ventana. Por debajo del umbral se apilan. */
 .field-pair { display: grid; grid-template-columns: 1fr; gap: 14px; }
