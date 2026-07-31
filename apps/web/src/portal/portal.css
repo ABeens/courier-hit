@@ -202,12 +202,75 @@
 .locker-card .locker-address {
   font-family: var(--font-mono); font-size: 14px; line-height: 1.7; color: var(--ink);
 }
-/* Cada renglon de la direccion: la etiqueta ocupa su propia linea y debajo van
-   el valor y el boton Copiar, con el boton anclado a la derecha. Sin el flex
-   aqui el `flex: 1` del valor no hace nada y el boton queda pegado al texto. */
-.locker-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
-.locker-line .field-label { width: 100%; margin-bottom: 0; }
-.locker-line .locker-address { word-break: break-word; }
+/* ---- Panel de la direccion de Miami (pantalla "Mi casillero") ----
+   Tarjeta sobre `surface` en vez del cuadro gris: cabecera tenida de marca y
+   una fila por campo separada por hairline. La accion de copiar es solo el
+   icono de libreta; con cinco campos, cinco botones con texto se comian la
+   tarjeta y competian con la direccion, que es lo que hay que leer. */
+.locker-panel {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--sh-1); overflow: hidden;
+}
+.locker-panel-head {
+  display: flex; align-items: center; gap: 12px; padding: 16px 20px;
+  background: linear-gradient(180deg, var(--brand-softer), var(--surface));
+  border-bottom: 1px solid var(--line);
+}
+.locker-panel-icon {
+  flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center;
+  border-radius: var(--r-sm); background: var(--brand-soft); color: var(--brand-600);
+}
+.locker-panel-icon svg { width: 20px; height: 20px; }
+.locker-panel-title {
+  font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--ink);
+}
+.locker-panel-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.locker-code {
+  margin-left: auto; padding: 6px 12px; border-radius: var(--r-pill);
+  font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+  color: var(--brand-700); background: var(--brand-soft); white-space: nowrap;
+}
+
+.locker-rows { margin: 0; padding: 0; }
+/* La etiqueta y el valor van apilados en la columna 1; el boton ocupa la
+   columna 2 completa, centrado frente a las dos filas. */
+.locker-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 12px;
+  align-items: center; padding: 13px 20px; border-top: 1px solid var(--line-2);
+  transition: background .15s;
+}
+.locker-row:first-child { border-top: 0; }
+.locker-row:hover { background: var(--paper); }
+.locker-row dt {
+  grid-column: 1; font-size: 11px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--faint);
+}
+.locker-row dd {
+  grid-column: 1; margin: 0; font-family: var(--font-mono); font-size: 14.5px;
+  line-height: 1.5; color: var(--ink); word-break: break-word;
+}
+.locker-copy {
+  grid-column: 2; grid-row: 1 / span 2; width: 36px; height: 36px; padding: 0;
+  display: grid; place-items: center; border-radius: var(--r-sm);
+  border: 1px solid transparent; color: var(--faint);
+  transition: color .15s, background .15s, border-color .15s;
+}
+.locker-copy svg { width: 17px; height: 17px; }
+.locker-copy:hover { color: var(--brand-600); background: var(--brand-soft); }
+.locker-copy:focus-visible { color: var(--brand-600); border-color: var(--brand); outline: none; }
+.locker-copy.is-copied { color: var(--ok); background: var(--ok-soft); }
+
+@media (max-width: 560px) {
+  .locker-panel-head { flex-wrap: wrap; }
+  .locker-code { margin-left: 0; }
+  .locker-row, .locker-panel-head { padding-left: 16px; padding-right: 16px; }
+}
+
+/* Texto solo para lectores de pantalla (avisos aria-live). */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 
 .auth-alt { text-align: center; margin-top: 16px; font-size: 14px; color: var(--muted); }
 .auth-alt a { color: var(--brand); font-weight: 700; }
