@@ -21,7 +21,7 @@ const currencySchema = z.nativeEnum(Currency, {
  * incluso en las de dolares: es el testigo de con que tasa se emitio la factura.
  * El tope alto solo ataja dedazos (una tasa de 5 digitos no es una tasa real).
  */
-const exchangeRateSchema = z
+export const costLineExchangeRateSchema = z
   .number({ invalid_type_error: 'Digita la tasa de cambio del día.' })
   .positive('La tasa de cambio debe ser mayor que cero.')
   .max(99_999, 'Esa tasa de cambio no parece válida.');
@@ -51,7 +51,7 @@ export const costLineInputSchema = z
       .optional(),
     amount: amountSchema.optional(),
     currency: currencySchema,
-    exchangeRate: exchangeRateSchema,
+    exchangeRate: costLineExchangeRateSchema,
   })
   .superRefine((line, ctx) => {
     if (line.source === CostLineSource.Percentage) {
@@ -127,6 +127,15 @@ export interface ShipmentCostsDto {
   approved: boolean;
   approvedAt: string | null;
   approvedByName: string | null;
-  /** Tasa sugerida del dia (BCCR); null si la integracion esta apagada o falló. */
-  suggestedExchangeRate: number | null;
+  /**
+   * Tasa VIGENTE del sistema, la que fijo quien tiene `exchange_rate.write` en
+   * Configuración. Es el valor por defecto del formulario; null si todavia nadie
+   * la fijo (y entonces no se puede cargar costos).
+   */
+  globalExchangeRate: number | null;
+  /**
+   * Lo que publica el BCCR hoy. Solo REFERENCIA para el administrador: nunca se
+   * guarda un monto con este valor. Null si la integracion esta apagada o falló.
+   */
+  referenceExchangeRate: number | null;
 }

@@ -26,3 +26,6 @@ Thumbs.db
 # Documentación (no versionada por ahora)
 docs/
 source_docs/
+
+# Configuración local de Claude Code
+.claude/

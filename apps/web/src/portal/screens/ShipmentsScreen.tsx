@@ -32,6 +32,7 @@ import type { Role, ShipmentDto } from '@courier/shared';
 import { PayFlag, awaitingValidation } from '../components/PayFlag';
 import { ApiError, api } from '../lib/api';
 import { formatDate, startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
+import { STATE_TONE } from '../lib/tone';
 import { ShipmentFormModal, allowedTypesFor } from './ShipmentFormModal';
 import { StateAdvanceModal, reachableStates } from './StateAdvanceModal';
 import { StateCorrectModal } from './StateCorrectModal';
@@ -72,42 +73,6 @@ function Field({ label, value, mono }: { label: string; value: string | null; mo
     </div>
   );
 }
-
-/** Familias de color de la ficha, mapeadas a los tokens semanticos del tema. */
-type Tone = 'neutral' | 'info' | 'warn' | 'ok' | 'danger';
-
-/**
- * Tono de cada estado, para que al recorrer la lista se distinga de un vistazo
- * lo que avanza (info) de lo que espera una accion (warn) o ya cerro (ok).
- * El Record es exhaustivo a proposito: agregar un State obliga a decidir su tono.
- */
-const STATE_TONE: Record<State, Tone> = {
-  [State.Prealertado]: 'neutral',
-
-  // En curso: el trámite se está moviendo, nadie tiene que hacer nada.
-  [State.RecibidoBodegaMiami]: 'info',
-  [State.PreparandoEnvio]: 'info',
-  [State.EnTransitoCostaRica]: 'info',
-  [State.RecoleccionEnProceso]: 'info',
-  [State.ProcesoExportacion]: 'info',
-  [State.EnTransitoDestino]: 'info',
-  [State.ArriboDestino]: 'info',
-  [State.RevisionDocumentos]: 'info',
-  [State.ExamenPrevio]: 'info',
-  [State.InspeccionDekra]: 'info',
-  [State.PreparandoBorradorDua]: 'info',
-  [State.EnRutaEntrega]: 'info',
-
-  // Retenido o a la espera de alguien: aduana, facturación o pago del cliente.
-  [State.EnAduanas]: 'warn',
-  [State.ProcesoAduanas]: 'warn',
-  [State.FacturacionEnProceso]: 'warn',
-  [State.EnBodegaPendientePago]: 'warn',
-  [State.PendienteAdelantoImpuestos]: 'warn',
-
-  [State.Entregado]: 'ok',
-  [State.DevueltoBodega]: 'danger',
-};
 
 interface CardField {
   label: string;
@@ -208,13 +173,20 @@ interface Props {
   role: Role;
   /** Vista inicial; en el tablero de paquetes el usuario puede alternar a "Todos". */
   initialView: ShipmentView;
+  /**
+   * Filtros precargados cuando se llega desde otra pantalla (`NavIntent`): el
+   * Resumen abre este tablero YA acotado a la cola o al trámite que se pulsó.
+   * Solo son el punto de partida; el usuario los cambia como cualquier otro.
+   */
+  initialState?: State;
+  initialQuery?: string;
 }
 
-export function ShipmentsScreen({ role, initialView }: Props) {
+export function ShipmentsScreen({ role, initialView, initialState, initialQuery }: Props) {
   const [view, setView] = useState<ShipmentView>(initialView);
   const [data, setData] = useState<ListResponse | null>(null);
-  const [q, setQ] = useState('');
-  const [state, setState] = useState('');
+  const [q, setQ] = useState(initialQuery ?? '');
+  const [state, setState] = useState<string>(initialState ?? '');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -335,7 +307,10 @@ export function ShipmentsScreen({ role, initialView }: Props) {
           className="input" type="date" value={to} aria-label="Hasta"
           onChange={(e) => setTo(e.target.value)}
         />
-        {initialView === 'paqueteria' && (
+        {/* Alternador del tablero de paquetes. Tambien cuando se llega con
+            'todos' precargado desde el Resumen: es el mismo tablero abierto en
+            su vista amplia, y sin el selector no habria forma de volver. */}
+        {(initialView === 'paqueteria' || initialView === 'todos') && (
           <select className="input" value={view} onChange={(e) => setView(e.target.value as ShipmentView)}>
             <option value="paqueteria">Solo paquetería</option>
             <option value="todos">Todos los trámites</option>

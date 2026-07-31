@@ -24,6 +24,8 @@ import {
   PaymentStatus,
   Role,
   State,
+  canSetExchangeRate,
+  exchangeRateSchema,
   isSettled,
   outstandingCrc,
   roundMoney,
@@ -45,7 +47,7 @@ import {
 } from '../../integrations/onvo/onvo.client';
 import type { GatewayOutcome } from '../../integrations/onvo/onvo.client';
 import { clientsRepo } from '../clients/clients.repo';
-import { exchangeRateProvider } from '../costs/exchange-rate';
+import { settingsRepo } from '../settings/settings.repo';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { paymentsRepo } from './payments.repo';
 
@@ -84,16 +86,26 @@ function toDto(row: NonNullable<PaymentRowView>): PaymentDto {
  * exactamente la porcion en dolares de la factura— mientras que tomar la tasa de
  * hoy dejaria una diferencia de centimos entre lo facturado y lo cobrado.
  *
- * El BCCR es el respaldo para el caso raro de una factura sin componente en
- * dolares (cociente indefinido). Si tampoco hay, no se inventa: se falla, porque
- * guardar un monto sin tasa es justo lo que la regla prohibe.
+ * El respaldo para el caso raro de una factura sin componente en dolares
+ * (cociente indefinido) es la tasa GLOBAL del sistema, la que fijo quien tiene
+ * `exchange_rate.write`. No el BCCR: ese dato es referencia para decidir la
+ * global, no un valor con el que se guarde un monto. Si tampoco hay global, no
+ * se inventa: se falla, porque guardar un monto sin tasa es justo lo que la
+ * regla prohibe.
+ *
+ * Salga de donde salga, el valor pasa por el MISMO esquema que exige el cuerpo
+ * (`exchangeRateSchema`): una tasa que impone el servidor no puede entrar por una
+ * puerta con menos validacion que la que digita una persona. El cociente de la
+ * factura no trae techo por si solo.
  */
-function invoiceExchangeRate(row: ShipmentRow, suggested: number | null): number {
+function invoiceExchangeRate(row: ShipmentRow, globalRate: number | null): number {
   const usd = row.invoiceTotalUsd ?? 0;
   const crc = row.invoiceTotalCrc ?? 0;
-  if (usd > 0 && crc > 0) return crc / usd;
-  if (suggested && suggested > 0) return suggested;
-  throw PaymentErrors.exchangeRateUnavailable();
+  const rate = usd > 0 && crc > 0 ? crc / usd : globalRate;
+
+  const checked = exchangeRateSchema.safeParse(rate);
+  if (!checked.success) throw PaymentErrors.exchangeRateUnavailable();
+  return checked.data;
 }
 
 /**
@@ -207,7 +219,7 @@ export const paymentsService = {
      * relea al mostrar, es lo que permite reexpresar el abono en dolares mañana
      * sin que la cifra cambie sola.
      */
-    const suggestion = await exchangeRateProvider.suggest();
+    const globalRate = await settingsRepo.currentExchangeRate();
     const amount = outstandingCrc(settledAmount(paid, Currency.CRC), shipment.invoiceTotalCrc);
 
     const isCard = input.method === PaymentMethod.Tarjeta;
@@ -219,7 +231,7 @@ export const paymentsService = {
       status: PaymentStatus.Pendiente,
       amount,
       currency: Currency.CRC,
-      exchangeRate: invoiceExchangeRate(shipment, suggestion.rate),
+      exchangeRate: invoiceExchangeRate(shipment, globalRate),
       bankAccount: input.bankAccount ?? null,
       receiptNumber: input.receiptNumber ?? null,
       depositedAt: input.depositedAt ? new Date(input.depositedAt) : null,
@@ -280,7 +292,17 @@ export const paymentsService = {
    * Nace CONFIRMADO: quien lo digita es quien lo vio en el estado de cuenta.
    */
   async record(session: Session, input: RecordPaymentInput): Promise<PaymentDto> {
-    await loadBillableShipment(input.shipmentId);
+    const shipment = await loadBillableShipment(input.shipmentId);
+
+    /**
+     * La tasa es un valor general del sistema (ver `canSetExchangeRate`): quien
+     * no puede fijarla registra el deposito con la de la factura, que es ademas
+     * la que cuadra el abono con lo cobrado. Sin esta guarda, el permiso seria
+     * cosmetico: `payments.validate` alcanza este endpoint y el cuerpo trae tasa.
+     */
+    const exchangeRate = canSetExchangeRate(session.role)
+      ? input.exchangeRate
+      : invoiceExchangeRate(shipment, await settingsRepo.currentExchangeRate());
 
     const id = await paymentsRepo.insert({
       shipmentId: input.shipmentId,
@@ -288,7 +310,7 @@ export const paymentsService = {
       status: PaymentStatus.Confirmado,
       amount: roundMoney(input.amount, input.currency),
       currency: input.currency,
-      exchangeRate: input.exchangeRate,
+      exchangeRate,
       bankAccount: input.bankAccount,
       receiptNumber: input.receiptNumber,
       depositedAt: new Date(input.depositedAt),

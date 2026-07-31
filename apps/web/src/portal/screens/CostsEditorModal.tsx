@@ -2,9 +2,10 @@
  * Editor de costos de un tramite (permiso costs.manage / costs.tramite.manage).
  *
  * Tres reglas que se ven en pantalla:
- *   - La TASA DE CAMBIO la digita el operador. El sistema la sugiere (BCCR) pero
- *     el campo es editable y obligatorio: es la tasa que queda guardada en cada
- *     linea (regla M5). Sin tasa no se guarda.
+ *   - La TASA DE CAMBIO es un valor general del sistema: se muestra siempre (es
+ *     la que queda guardada en cada linea, regla M5) pero solo la edita quien
+ *     tiene `exchange_rate.write`. Al resto le sale bloqueada. Sin tasa vigente
+ *     no se guarda, y quien no puede fijarla tiene que pedirsela a un admin.
  *   - Las lineas de PORCENTAJE no llevan monto: el importe lo calcula la API
  *     sobre el subtotal de las demas. Aqui solo se muestra la estimacion.
  *   - APROBAR CONGELA. Guarda, fija el monto de factura y avanza el tramite a
@@ -20,6 +21,7 @@ import {
   STATE_LABELS,
   State,
   can,
+  canSetExchangeRate,
   computeTotals,
   formatMoney,
 } from '@courier/shared';
@@ -95,10 +97,12 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
             .filter((s) => s.auto && !savedLines.some((l) => l.source === s.source))
             .map(fromSuggestion);
       setLines([...autoLines, ...savedLines]);
-      // La tasa guardada manda sobre la sugerida: si el tramite ya se cargo con
-      // una tasa, cambiarla en silencio movería una factura ya cotizada.
+      // La tasa guardada manda sobre la vigente del sistema: si el tramite ya se
+      // cargo con una tasa, cambiarla en silencio movería una factura ya cotizada.
+      // Solo en la primera carga se toma la global (nunca la del BCCR, que es
+      // referencia). Es el mismo orden que aplica la API en `resolveExchangeRate`.
       const savedRate = dto.lines[0]?.exchangeRate;
-      setRate(String(savedRate ?? dto.suggestedExchangeRate ?? ''));
+      setRate(String(savedRate ?? dto.globalExchangeRate ?? ''));
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudieron cargar los costos.');
@@ -121,6 +125,11 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
     can(role, Permission.ShipmentCorrect);
   const parsedRate = Number(rate);
   const rateOk = Number.isFinite(parsedRate) && parsedRate > 0;
+  /**
+   * Fijar la tasa es de admin: al resto se le muestra la vigente en solo lectura.
+   * Es espejo de la API, que le impone esa misma tasa aunque el cuerpo traiga otra.
+   */
+  const canEditRate = canSetExchangeRate(role);
 
   /** Solo lo que el operador elige: el flete ya viene aplicado como linea. */
   const catalog = (data?.suggestions ?? []).filter((s) => !s.auto);
@@ -159,7 +168,11 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
   async function save(): Promise<boolean> {
     setError(null);
     if (!rateOk) {
-      setError('Digita la tasa de cambio del día (colones por 1 dólar).');
+      setError(
+        canEditRate
+          ? 'Digita la tasa de cambio (colones por 1 dólar) o fíjala en Configuración.'
+          : 'No hay tasa de cambio vigente. Pide a un administrador que la registre en Configuración.',
+      );
       return false;
     }
     const payload = {
@@ -272,17 +285,25 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
 
           <div>
             <label className="field-label" htmlFor="c-rate">
-              Tasa de cambio del día (colones por 1 dólar)
+              Tasa de cambio (colones por 1 dólar)
             </label>
             <input
               id="c-rate" className="input" type="number" min="0" step="0.01"
-              value={rate} disabled={approved} placeholder="512.75"
+              value={rate} disabled={approved || !canEditRate} placeholder="512.75"
               onChange={(e) => setRate(e.target.value)}
             />
+            {/* La vigente es la que manda; la del BCCR se nombra como lo que es,
+                una referencia, para que nadie la lea como "la tasa del sistema". */}
             <div className="field-hint">
-              {data?.suggestedExchangeRate != null
-                ? `Sugerida por el BCCR: ${data.suggestedExchangeRate}. Puedes ajustarla.`
-                : 'Se guarda junto a cada línea, así la factura queda trazable.'}
+              {!canEditRate
+                ? 'La tasa de cambio es un valor general del sistema: solo un administrador puede modificarla, en Configuración.'
+                : `Viene de la tasa vigente del sistema${
+                    data?.globalExchangeRate != null ? ` (${data.globalExchangeRate})` : ''
+                  }; puedes ajustarla solo para este trámite.${
+                    data?.referenceExchangeRate != null
+                      ? ` Referencia del BCCR hoy: ${data.referenceExchangeRate}.`
+                      : ''
+                  }`}
             </div>
           </div>
 
@@ -390,7 +411,9 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
                 {!approved && <span className="muted"> (estimado hasta guardar)</span>}
               </>
             ) : (
-              'Digita la tasa de cambio para ver el total.'
+              canEditRate
+                ? 'Digita la tasa de cambio para ver el total.'
+                : 'Sin tasa de cambio vigente no se puede calcular el total.'
             )}
           </div>
         </div>

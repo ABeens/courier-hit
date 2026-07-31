@@ -28,7 +28,7 @@
  * Requiere haber corrido antes `db:seed` (necesita las tarifas de cliente).
  */
 import { hash } from '@node-rs/argon2';
-import { inArray, like, sql } from 'drizzle-orm';
+import { eq, inArray, like, sql } from 'drizzle-orm';
 import {
   AnnouncementType,
   BankAccount,
@@ -73,7 +73,20 @@ import { deliveryAttempts } from './modules/deliveries/deliveries.schema';
 import { payments } from './modules/payments/payments.schema';
 import { districtRoutes } from './modules/routes/district-route.schema';
 import { shipmentEvents, shipments } from './modules/shipments/shipments.schema';
+import { SETTINGS_ROW_ID, appSettings, exchangeRateHistory } from './modules/settings/settings.schema';
 import { clientRates } from './modules/tariffs/tariffs.schema';
+
+/**
+ * Tasa que fija la demo si el sistema no tiene ninguna (colones por 1 USD). Es
+ * la que se congela en TODO el dinero sembrado: en produccion la tasa es un
+ * valor unico que fija quien tiene `exchange_rate.write`, asi que sembrar una
+ * distinta por tramite mostraria un sistema que no existe. Si ya habia una tasa
+ * vigente, manda esa y este valor no se usa.
+ */
+const DEMO_EXCHANGE_RATE = 512.75;
+
+/** Marca del registro de historial que siembra este archivo (lo borra `--reset`). */
+const DEMO_RATE_NOTE = 'Tasa inicial de la demo.';
 
 /** Dominio de correo que marca a un usuario como sembrado por esta demo. */
 const DEMO_DOMAIN = 'demo.hsglobal.ltd';
@@ -620,6 +633,10 @@ async function resetDemo(tx: Tx): Promise<void> {
     await tx.delete(users).where(inArray(users.id, userIds));
   }
 
+  // La tasa vigente (`app_settings`) NO se toca: es una fila unica del sistema y
+  // la demo solo la crea cuando no existia, asi que aqui no hay nada que devolver
+  // a su valor anterior. Del historial si se limpia lo que sembro este archivo.
+  await tx.delete(exchangeRateHistory).where(eq(exchangeRateHistory.note, DEMO_RATE_NOTE));
   await tx.delete(costServices).where(inArray(costServices.name, SERVICES.map((s) => s.name)));
   await tx.delete(announcements).where(inArray(announcements.title, ANNOUNCEMENTS.map((a) => a.title)));
   await tx
@@ -785,6 +802,51 @@ async function seed(tx: Tx): Promise<void> {
   // --- Anuncios ---
   await tx.insert(announcements).values(ANNOUNCEMENTS.map((a) => ({ ...a })));
 
+  /**
+   * Tasa de cambio vigente del sistema. Sin ella la demo no deja cargar costos a
+   * nadie salvo a quien puede fijarla, que es la regla real (`resolveExchangeRate`)
+   * pero no lo que se quiere mostrar.
+   *
+   * Solo se siembra si NO habia ninguna: la tasa es un valor unico del sistema y
+   * pisar la que un administrador ya fijo seria cambiarle el dinero, no sembrar
+   * datos de demo. Si se siembra, va con su registro en el historial: aqui no
+   * existe una tasa vigente sin el rastro de quien la puso.
+   */
+  const rateSetAt = daysAgo(1);
+  const seededRate = await tx
+    .insert(appSettings)
+    .values({
+      id: SETTINGS_ROW_ID,
+      exchangeRate: DEMO_EXCHANGE_RATE,
+      exchangeRateSetBy: adminId,
+      exchangeRateSetAt: rateSetAt,
+      updatedAt: rateSetAt,
+    })
+    .onConflictDoNothing()
+    .returning({ id: appSettings.id });
+  if (seededRate.length > 0) {
+    await tx.insert(exchangeRateHistory).values({
+      rate: DEMO_EXCHANGE_RATE,
+      previousRate: null,
+      note: DEMO_RATE_NOTE,
+      setBy: adminId,
+      setAt: rateSetAt,
+    });
+  }
+
+  /**
+   * Tasa con la que se siembra TODO el dinero de la demo. Es la vigente del
+   * sistema: la que acaba de sembrarse o, si ya habia una, esa. Una sola para
+   * todos los tramites, igual que en produccion, donde el numero no lo elige
+   * cada quien al cargar sino quien tiene `exchange_rate.write`.
+   */
+  const [currentRate] = await tx
+    .select({ rate: appSettings.exchangeRate })
+    .from(appSettings)
+    .where(eq(appSettings.id, SETTINGS_ROW_ID))
+    .limit(1);
+  const exchangeRate = currentRate?.rate ?? DEMO_EXCHANGE_RATE;
+
   // --- Tramites, con su historial, costos, pagos y entregas ---
   const scenarios = buildScenarios();
   const codes = await nextSequence(tx, 'hs_shipment_code_seq', scenarios.length);
@@ -814,9 +876,10 @@ async function seed(tx: Tx): Promise<void> {
     };
     const reached = (state: State): boolean => sc.path.includes(state);
 
-    // Tasa de cambio del dia del tramite (colones por 1 USD). Se congela con
-    // cada monto que se guarde debajo (regla M5).
-    const exchangeRate = roundMoney(505 + (i % 9) * 2.5, Currency.CRC);
+    // La tasa (`exchangeRate`, colones por 1 USD) es la VIGENTE del sistema, la
+    // misma para todos los tramites: la fija quien tiene `exchange_rate.write`,
+    // no se elige al cargar cada uno. Se congela igual con cada monto que se
+    // guarde debajo (regla M5).
 
     const item = PACKAGE_ITEMS[i % PACKAGE_ITEMS.length]!;
     const cargo = CARGO_ITEMS[i % CARGO_ITEMS.length]!;

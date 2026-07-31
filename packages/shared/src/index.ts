@@ -5,6 +5,9 @@ export * from './auth/permissions';
 export * from './auth/user';
 export * from './auth/session';
 export * from './auth/dto';
+// Despues de auth/*: depende del RBAC (quien puede fijar la tasa).
+export * from './money/exchange-rate';
+export * from './settings/exchange-rate-dto';
 export * from './users/dto';
 export * from './tariffs/dto';
 export * from './costs/cost-service';

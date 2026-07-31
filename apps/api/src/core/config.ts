@@ -165,10 +165,11 @@ const EnvSchema = z.object({
       message: 'HELGA_SIMULATED_STEP debe ser una duracion valida (p. ej. "30s", "2m", "1h").',
     }),
 
-  // --- Tasa de cambio sugerida: web service de indicadores del BCCR ---
-  // Solo SUGIERE la tasa del dia en la pantalla de costos; el operador es quien
-  // la digita y esa es la que se guarda. Por eso la integracion es opcional y
-  // apagarla no degrada ninguna funcion: el campo simplemente arranca vacio.
+  // --- Tasa de cambio de referencia: web service de indicadores del BCCR ---
+  // Solo INFORMA el tipo de cambio del dia; la tasa que usa el sistema es la que
+  // el administrador fija en Configuración, y ningun monto se guarda con este
+  // valor. Por eso la integracion es opcional y apagarla no degrada ninguna
+  // funcion: simplemente deja de verse la referencia.
   BCCR_ENABLED: z
     .enum(['true', 'false'])
     .default('false')
@@ -411,11 +412,11 @@ if (helgaMode === 'simulated') {
 /**
  * True solo si el BCCR esta ENCENDIDO **y** tiene con que llamar.
  *
- * Es el interruptor efectivo del modulo de costos. Se separa de `BCCR_ENABLED`
+ * Es el interruptor efectivo de la referencia. Se separa de `BCCR_ENABLED`
  * porque son dos preguntas distintas: "¿lo queremos usar?" (bandera, la mueve
  * quien opera) y "¿ya podemos?" (credenciales, dependen de un tramite externo).
  * Mientras llegan, la bandera se puede prender sin romper nada: la API arranca
- * igual y la pantalla de costos simplemente pide la tasa a mano.
+ * igual y quien fija la tasa simplemente la decide sin ese dato al lado.
  *
  * Por eso el BCCR sigue siendo un booleano y no un modo de tres posiciones como
  * Helga y Onvo: aqui la degradacion silenciosa es la funcionalidad, no un bug.
@@ -427,10 +428,10 @@ export const bccrReady =
   Boolean(config.BCCR_BASE_URL && config.BCCR_NAME && config.BCCR_EMAIL && config.BCCR_TOKEN);
 
 // Aviso al arrancar: encendido pero sin credenciales es un estado legitimo y
-// temporal, pero silencioso seria confuso ("¿por que no me sugiere la tasa?").
+// temporal, pero silencioso seria confuso ("¿por que no veo la referencia?").
 if (config.BCCR_ENABLED && !bccrReady) {
   console.warn(
     '[config] BCCR_ENABLED=true pero faltan credenciales (BCCR_BASE_URL, BCCR_NAME, ' +
-      'BCCR_EMAIL, BCCR_TOKEN). La tasa de cambio se seguirá digitando a mano.',
+      'BCCR_EMAIL, BCCR_TOKEN). No se mostrará la tasa de referencia del BCCR.',
   );
 }

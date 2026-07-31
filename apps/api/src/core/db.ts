@@ -14,6 +14,7 @@ import * as shipmentsSchema from '../modules/shipments/shipments.schema';
 import * as shipmentCostsSchema from '../modules/costs/shipment-cost.schema';
 import * as paymentsSchema from '../modules/payments/payments.schema';
 import * as deliveriesSchema from '../modules/deliveries/deliveries.schema';
+import * as settingsSchema from '../modules/settings/settings.schema';
 
 const client = postgres(config.DATABASE_URL);
 
@@ -34,6 +35,7 @@ export const schema = {
   ...paymentsSchema,
   ...deliveriesSchema,
   ...announcementsSchema,
+  ...settingsSchema,
 };
 export const db = drizzle(client, { schema });
 export type Db = typeof db;

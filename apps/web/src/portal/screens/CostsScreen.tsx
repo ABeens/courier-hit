@@ -29,9 +29,9 @@ interface ListResponse {
 }
 
 /** Que cola se esta mirando. */
-type View = 'pendientes' | 'facturados';
+export type CostsView = 'pendientes' | 'facturados';
 
-const VIEW_STATE: Record<View, State> = {
+const VIEW_STATE: Record<CostsView, State> = {
   pendientes: State.FacturacionEnProceso,
   facturados: State.EnBodegaPendientePago,
 };
@@ -42,8 +42,13 @@ function invoiceLabel(row: ShipmentDto): string {
   return `${formatMoney(row.invoiceTotalUsd, Currency.USD)} · ${formatMoney(row.invoiceTotalCrc, Currency.CRC)}`;
 }
 
-export function CostsScreen({ role }: { role: Role }) {
-  const [view, setView] = useState<View>('pendientes');
+/**
+ * `initialView` solo fija la cola de arranque: se usa al llegar desde el
+ * Resumen (`NavIntent`), donde el cuadro pulsado ya dice cual de las dos
+ * interesa. El selector sigue mandando a partir de ahi.
+ */
+export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; initialView?: CostsView }) {
+  const [view, setView] = useState<CostsView>(initialView);
   const [data, setData] = useState<ListResponse | null>(null);
   const [q, setQ] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +93,7 @@ export function CostsScreen({ role }: { role: Role }) {
           className="input search" placeholder="Buscar por consecutivo, tracking, descripción o cliente…"
           value={q} onChange={(e) => setQ(e.target.value)}
         />
-        <select className="input" value={view} onChange={(e) => setView(e.target.value as View)}>
+        <select className="input" value={view} onChange={(e) => setView(e.target.value as CostsView)}>
           <option value="pendientes">Por facturar</option>
           <option value="facturados">Ya facturados</option>
         </select>
