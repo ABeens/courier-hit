@@ -19,7 +19,7 @@ import { Flow, ShipmentType, flowForType } from '../workflow/shipment-type';
  */
 export interface ShipmentClientRef {
   id: string;
-  /** Codigo de casillero, `HS-1042`. */
+  /** Codigo de casillero, `HS-1000`. */
   code: string;
   name: string;
 }
@@ -27,7 +27,7 @@ export interface ShipmentClientRef {
 /** Tramite tal como lo devuelve la API. */
 export interface ShipmentDto {
   id: string;
-  /** Consecutivo de negocio `HS000001000` (docs/manuales/flujo.md L92). */
+  /** Consecutivo de negocio `HSX000001000` (ver `formatShipmentCode`). */
   code: string;
   shipmentType: ShipmentType;
   /** Derivado de `shipmentType`; viaja en la respuesta para no recalcularlo en la UI. */
@@ -176,10 +176,17 @@ export function roundWeightKg(weight: number): number {
 }
 
 /**
- * Formato del consecutivo de negocio: `HS` + 9 digitos (docs/manuales/flujo.md
- * L92, ejemplo HS000001000). El numero sale de una secuencia de Postgres; aqui
- * vive el formato para que API y web lo interpreten igual.
+ * Formato del consecutivo de negocio: `HSX` + 9 digitos (ejemplo HSX000001000).
+ * El numero sale de una secuencia de Postgres; aqui vive el formato para que API
+ * y web lo interpreten igual.
+ *
+ * La `X` distingue el tramite del casillero, que usa el mismo prefijo `HS` y la
+ * misma numeracion arrancando en 1000 (`formatLockerCode`). Sin ella,
+ * `HS0001000` y `HS000001000` solo se diferencian por el ancho del relleno, que
+ * es justo la clase de detalle que nadie mira al leer un codigo en voz alta o al
+ * pegarlo en el buscador. El manual usaba `HS` para el tramite
+ * (docs/manuales/flujo.md L92); esto lo corrige a peticion del negocio.
  */
 export function formatShipmentCode(sequence: number | string): string {
-  return `HS${String(sequence).padStart(9, '0')}`;
+  return `HSX${String(sequence).padStart(9, '0')}`;
 }

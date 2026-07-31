@@ -31,8 +31,8 @@ export const shipmentTypeEnum = pgEnum('shipment_type', SHIPMENT_TYPE_VALUES);
 export const shipmentStateEnum = pgEnum('shipment_state', STATE_VALUES);
 
 /**
- * Secuencia del consecutivo de negocio. Arranca en 1000 para que el primer
- * tramite sea HS000001000, el ejemplo literal del manual (flujo.md L92).
+ * Secuencia del consecutivo de negocio. Arranca en 1000, igual que la del
+ * casillero (`hs_client_code_seq`): el primer tramite es HSX000001000.
  */
 export const shipmentCodeSeq = pgSequence('hs_shipment_code_seq', { startWith: 1000, increment: 1 });
 
@@ -40,7 +40,7 @@ export const shipments = pgTable(
   'shipments',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    /** Consecutivo `HS000001000` (clave de negocio, nunca se usa como FK). */
+    /** Consecutivo `HSX000001000` (clave de negocio, nunca se usa como FK). */
     code: text('code').notNull().unique(),
     clientId: uuid('client_id')
       .notNull()

@@ -32,7 +32,7 @@ import { clientsRepo } from './clients.repo';
 /** Casillero tal como lo ve el panel administrador. */
 export interface ClientListItem {
   id: string;
-  /** Codigo de casillero `HS-1042`. */
+  /** Codigo de casillero `HS-1000`. */
   code: string;
   name: string;
   email: string;

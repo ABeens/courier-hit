@@ -51,7 +51,7 @@ export const MIAMI_WAREHOUSE = {
  * Identificador del casillero del cliente en el formato del manual: `HS` + 7
  * digitos (su ejemplo literal es HS0000001).
  *
- * El codigo que guarda la BD es `HS-1042` (con guion, sin relleno) porque es la
+ * El codigo que guarda la BD es `HS-1000` (con guion, sin relleno) porque es la
  * clave de negocio interna. Esta funcion solo cambia su PRESENTACION para la
  * etiqueta de envio, donde el formato importa: se toman los digitos del codigo y
  * se rellenan. Nada se migra en BD.
@@ -69,7 +69,7 @@ export interface LockerAddressLine {
 
 /**
  * Identificador que el cliente escribe al comprar: SIEMPRE el codigo de HS
- * Global (`HS0001042`), nunca el `sub_casillero` del proveedor
+ * Global (`HS0001000`), nunca el `sub_casillero` del proveedor
  * (`SJO008835S033`).
  *
  * Es una decision de producto: de cara al usuario final el casillero es el

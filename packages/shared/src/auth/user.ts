@@ -71,7 +71,7 @@ export const HELGA_SYNC_STATUS_VALUES = Object.values(HelgaSyncStatus) as [
 /** Perfil de casillero: extension 1:1 de User cuando principal = Client. */
 export interface ClientProfile {
   userId: string;
-  code: string; // 'HS-1042' — clave de negocio, visible al cliente
+  code: string; // 'HS-1000' — clave de negocio, visible al cliente
   idNumber: string; // cedula normalizada a solo digitos; unica en el sistema
   /** Direccion de entrega en Costa Rica (codigos del catalogo `geo`). */
   provinceCode: string;
