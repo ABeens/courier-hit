@@ -27,14 +27,8 @@ costsRoutes.use(
   requireAnyPermission(Permission.CostsManage, Permission.CostsTramiteManage),
 );
 
-/**
- * Tasa de cambio sugerida del dia (BCCR). El operador la confirma o la cambia.
- * Va ANTES de `/:shipmentId` para que la ruta estatica gane al parametro.
- */
-costsRoutes.get('/exchange-rate', async (c) => {
-  return c.json(await costsService.suggestedRate());
-});
-
+// La tasa de cambio ya no se consulta aqui: es un ajuste general del sistema y
+// vive en `GET /api/settings/exchange-rate`. Este modulo solo la USA.
 costsRoutes.get('/:shipmentId', async (c) => {
   return c.json(await costsService.get(c.get('session'), c.req.param('shipmentId')));
 });

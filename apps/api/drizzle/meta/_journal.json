@@ -127,6 +127,13 @@
       "when": 1785133592795,
       "tag": "0017_cooing_dark_beast",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785483143240,
+      "tag": "0018_slow_nextwave",
+      "breakpoints": true
     }
   ]
 }

@@ -35,6 +35,12 @@ export enum Resource {
   Reports = 'reports',
   Clients = 'clients',
   Config = 'config',
+  /**
+   * Ajustes generales del sistema (pantalla "Configuración"). Son los valores
+   * que el sistema aplica IGUAL a todos los tramites, no datos de uno: hoy solo
+   * la tasa de cambio, y es el cajon donde entraran los que vengan.
+   */
+  Settings = 'settings',
   Tariffs = 'tariffs',
   Routes = 'routes',
   Users = 'users',
@@ -90,6 +96,17 @@ export enum Permission {
   ShipmentCorrect = 'shipment.correct',
   CostsManage = 'costs.manage',
   CostsTramiteManage = 'costs.tramite.manage',
+  /**
+   * Fijar la tasa de cambio del sistema. La tasa es un VALOR GENERAL, no un dato
+   * de cada tramite: quien carga costos la USA, no la decide. Por eso va aparte
+   * de `costs.manage`. Ver `EXCHANGE_RATE_IS_GLOBAL`.
+   *
+   * Hoy solo lo tiene `admin`, pero nada en el codigo lo ata a ese rol: todo el
+   * sistema pregunta por el PERMISO (`canSetExchangeRate`), asi que sumarlo a
+   * otro rol le abre la pantalla de Configuración y le desbloquea el campo sin
+   * tocar una linea mas.
+   */
+  ExchangeRateWrite = 'exchange_rate.write',
   CostServicesManage = 'cost_services.manage',
   PaymentsValidate = 'payments.validate',
   DeliveryManage = 'delivery.manage',
@@ -130,6 +147,9 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   [Permission.ShipmentCorrect]: { resource: Resource.Package, action: Action.Correct, scope: Scope.All },
   [Permission.CostsManage]: { resource: Resource.Costs, action: Action.Manage, scope: Scope.All },
   [Permission.CostsTramiteManage]: { resource: Resource.Costs, action: Action.Manage, scope: Scope.All },
+  // Resource.Settings: fijar la tasa SI abre un modulo del menu (Configuración),
+  // que es donde se decide el valor general. La pantalla de costos solo lo usa.
+  [Permission.ExchangeRateWrite]: { resource: Resource.Settings, action: Action.Write, scope: Scope.All },
   [Permission.CostServicesManage]: { resource: Resource.CostServices, action: Action.Manage, scope: Scope.All },
   [Permission.PaymentsValidate]: { resource: Resource.Payments, action: Action.Validate, scope: Scope.All },
   [Permission.DeliveryManage]: { resource: Resource.Delivery, action: Action.Manage, scope: Scope.All },
@@ -157,6 +177,8 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   Permission.ShipmentCorrect,
   Permission.CostsManage,
   Permission.CostsTramiteManage,
+  // Solo admin: la tasa es un valor general del sistema, no un dato del tramite.
+  Permission.ExchangeRateWrite,
   Permission.CostServicesManage,
   Permission.PaymentsValidate,
   Permission.DeliveryManage,

@@ -10,8 +10,12 @@
  * 2. LOS PORCENTAJES LOS CALCULA LA API. El cliente manda el porcentaje; el
  *    importe lo resuelve el servidor sobre la base de las lineas que NO son
  *    porcentaje. Un porcentaje que llegue con importe se ignora.
- * 3. LA TASA LA DIGITA EL OPERADOR. El BCCR solo SUGIERE (`exchangeRateProvider`);
- *    lo que se guarda en cada linea es lo que vino en el cuerpo (regla M5).
+ * 3. LA TASA LA FIJA EL ADMINISTRADOR EN CONFIGURACIÓN. Es un valor general del
+ *    sistema, no un dato del tramite: solo `exchange_rate.write` decide su valor
+ *    y al resto se le impone la vigente (`resolveExchangeRate`). Lo que publica
+ *    el BCCR viaja al lado como referencia y nunca se guarda solo. Lo que queda
+ *    en la BD sigue siendo un snapshot por linea (regla M5); lo que cambia es
+ *    quien elige ese numero y donde.
  * 4. APROBAR CONGELA Y AVANZA. Al aprobar se totaliza en ambas monedas, se fija
  *    el monto de factura en el tramite y este pasa a "En bodega - Pendiente pago"
  *    (que es justo lo que exige Condition.RequiresInvoiceAmount). Desde ahi las
@@ -26,8 +30,10 @@ import {
   PaymentStatus,
   applyPercentage,
   can,
+  canSetExchangeRate,
   canTransition,
   computeTotals,
+  costLineExchangeRateSchema,
   flowForType,
   percentageBase,
   permissionFor,
@@ -47,8 +53,9 @@ import { costServicesRepo } from '../cost-services/cost-services.repo';
 import { paymentsRepo } from '../payments/payments.repo';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { transitionsService } from '../shipments/transitions.service';
+import { exchangeRateReference } from '../settings/bccr-reference';
+import { settingsRepo } from '../settings/settings.repo';
 import { costsRepo } from './costs.repo';
-import { exchangeRateProvider } from './exchange-rate';
 
 /** Fila del tramite tal como la devuelve el repo de tramites. */
 type ShipmentRow = NonNullable<Awaited<ReturnType<typeof shipmentsRepo.findById>>>;
@@ -187,6 +194,46 @@ async function withFreight(row: ShipmentRow, input: CostLineInput[]): Promise<Co
 }
 
 /**
+ * Tasa que se va a guardar en TODAS las lineas del tramite.
+ *
+ * La tasa es un valor general del sistema: solo quien tiene `exchange_rate.write`
+ * elige su valor, y lo hace en Configuración. Al resto se le IGNORA la que venga
+ * en el cuerpo y se le impone la vigente, en este orden:
+ *   1. la que ya quedo guardada en el tramite (una factura en curso no se
+ *      recotiza sola porque el administrador haya movido la tasa entre dos
+ *      guardados), y
+ *   2. si es la primera carga, la tasa global del sistema.
+ * El BCCR NO entra en esta cadena: es referencia para decidir la global, no un
+ * valor con el que se guarde un monto. Sin ninguna de las dos no se guarda: una
+ * linea sin tasa valida rompe la regla M5 y dejaria la factura sin testigo de
+ * conversion.
+ *
+ * Se ignora en silencio en vez de responder 403 a proposito: el cuerpo lleva la
+ * tasa en cada linea, asi que un guardado normal de quien no puede fijarla la
+ * reenvia tal como se la mostro la pantalla. Fallar ahi seria castigar el caso
+ * corriente; lo que importa es que ese valor no mande.
+ */
+async function resolveExchangeRate(
+  session: Session,
+  shipmentId: string,
+  input: CostLineInput[],
+): Promise<number> {
+  // Con permiso manda lo digitado; el esquema Zod ya valido rango y signo. La
+  // pantalla se lo precarga con la global, asi que lo normal es que sean iguales:
+  // este es el caso del ajuste puntual sobre un tramite.
+  if (canSetExchangeRate(session.role)) return input[0]!.exchangeRate;
+
+  const [saved] = await costsRepo.listLines(shipmentId);
+  const current = saved?.exchangeRate ?? (await settingsRepo.currentExchangeRate());
+
+  // Mismo rango que exige el cuerpo: una tasa impuesta por el servidor no puede
+  // entrar por una puerta con menos validacion que la que digita el admin.
+  const checked = costLineExchangeRateSchema.safeParse(current);
+  if (!checked.success) throw CostErrors.noExchangeRate();
+  return checked.data;
+}
+
+/**
  * Resuelve el juego completo de lineas a guardar. Dos pasadas, en este orden:
  * primero las que tienen importe propio, luego los porcentajes sobre esa base.
  * Un porcentaje NUNCA se calcula sobre otro porcentaje (ver `percentageBase`).
@@ -240,13 +287,18 @@ export const costsService = {
     return row;
   },
 
-  /** Lineas guardadas + sugerencias + totales + tasa sugerida del dia. */
+  /** Lineas guardadas + sugerencias + totales + tasa vigente y referencia. */
   async get(session: Session, shipmentId: string): Promise<ShipmentCostsDto> {
     const shipment = await this.loadShipment(session, shipmentId);
-    const [rows, approval, suggestion] = await Promise.all([
+    const [rows, approval, globalRate, reference] = await Promise.all([
       costsRepo.listLines(shipmentId),
       costsRepo.approval(shipmentId),
-      exchangeRateProvider.suggest(),
+      settingsRepo.currentExchangeRate(),
+      // La referencia del BCCR solo le sirve a quien puede cambiar la tasa; al
+      // resto le sale el campo bloqueado. Pedirsela igual metería la latencia de
+      // un servicio externo en cada apertura de la pantalla, a cambio de un dato
+      // que esa persona no puede usar.
+      canSetExchangeRate(session.role) ? exchangeRateReference.suggest() : null,
     ]);
 
     const approved = approval?.approvedAt != null;
@@ -259,7 +311,8 @@ export const costsService = {
       approved,
       approvedAt: approval?.approvedAt?.toISOString() ?? null,
       approvedByName: approval?.approvedByName ?? null,
-      suggestedExchangeRate: suggestion.rate,
+      globalExchangeRate: globalRate,
+      referenceExchangeRate: reference?.rate ?? null,
     };
   },
 
@@ -273,7 +326,19 @@ export const costsService = {
     const approval = await costsRepo.approval(shipmentId);
     if (approval?.approvedAt) throw CostErrors.alreadyApproved();
 
-    const lines = resolveLines(await withFreight(shipment, input.lines)).map((l) => ({
+    /**
+     * La tasa se resuelve UNA vez y se estampa en todo el juego: quien no puede
+     * fijarla no la mueve, y de paso el trámite no puede quedar con dos tasas
+     * distintas entre sus líneas. Sin líneas no hay nada que cotizar (guardar
+     * vacío es borrar), así que ahí ni se consulta.
+     */
+    let inputLines = input.lines;
+    if (inputLines.length > 0) {
+      const rate = await resolveExchangeRate(session, shipmentId, inputLines);
+      inputLines = inputLines.map((l) => ({ ...l, exchangeRate: rate }));
+    }
+
+    const lines = resolveLines(await withFreight(shipment, inputLines)).map((l) => ({
       ...l,
       shipmentId,
       createdBy: session.userId,
@@ -362,10 +427,5 @@ export const costsService = {
 
     await costsRepo.releaseInvoice(shipmentId);
     return this.get(session, shipmentId);
-  },
-
-  /** Tasa sugerida del dia (para precargar el formulario). */
-  async suggestedRate() {
-    return exchangeRateProvider.suggest();
   },
 };

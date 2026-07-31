@@ -95,7 +95,7 @@ export const clientsService = {
       clientCode: row.code,
       /** Sub-casillero del proveedor; `null` si el casillero aun no se sincronizo. */
       subLocker: row.helgaSubLocker,
-      lines: lockerAddressFor(row.name, row.code, row.helgaSubLocker),
+      lines: lockerAddressFor(row.name, row.code),
     };
   },
 

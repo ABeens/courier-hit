@@ -5,15 +5,17 @@
  * La pantalla activa va en la URL (/app/<slug>, portal/routes.ts): deep-links,
  * recarga y botones atras/adelante funcionan.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Permission, ROLE_LABELS, Resource, Role, can, resourcesFor } from '@courier/shared';
 import type { Me } from './PortalApp';
 import { api } from './lib/api';
+import type { NavIntent } from './lib/nav';
 import { pathForResource, resourceFromPath } from './routes';
 import { AnnouncementBanners } from './components/AnnouncementBanners';
 import { AnnouncementsScreen } from './screens/AnnouncementsScreen';
 import { UsersScreen } from './screens/UsersScreen';
 import { CostServicesScreen } from './screens/CostServicesScreen';
+import { SettingsScreen } from './screens/SettingsScreen';
 import { CostsScreen } from './screens/CostsScreen';
 import { TariffsScreen } from './screens/TariffsScreen';
 import { RoutesScreen } from './screens/RoutesScreen';
@@ -68,7 +70,11 @@ const STAFF_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
       { resource: Resource.Tariffs, label: 'Tarifas' },
       { resource: Resource.CostServices, label: 'Servicios de costos' },
       { resource: Resource.Routes, label: 'Rutas' },
-      { resource: Resource.Config, label: 'Configuración' },
+      // El recurso se llama `config` por el permiso (config.manage cubre mas
+      // automatizacion), pero la pantalla es solo el enlace con Miami: la
+      // etiqueta nombra lo que el usuario encuentra al entrar, no el permiso.
+      { resource: Resource.Config, label: 'Enlace con Miami' },
+      { resource: Resource.Settings, label: 'Configuración' },
       { resource: Resource.Users, label: 'Usuarios' },
       { resource: Resource.Announcements, label: 'Anuncios' },
     ],
@@ -97,11 +103,26 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
   });
   const [navOpen, setNavOpen] = useState(false);
 
+  /**
+   * Con que filtros se abre la pantalla destino cuando se llega a ella desde
+   * otra (hoy, desde los cuadros del Resumen). `key` cambia en cada salto para
+   * REMONTAR la pantalla: sin eso, saltar dos veces al mismo tablero con
+   * filtros distintos dejaria los del primer salto, porque el estado inicial de
+   * un componente ya montado no se vuelve a leer.
+   *
+   * No viaja en la URL a proposito: es el punto de partida de una consulta, no
+   * una pantalla distinta. Recargar deja el tablero sin filtrar, que es lo
+   * esperable de un atajo.
+   */
+  const [nav, setNav] = useState<{ intent: NavIntent; key: string } | null>(null);
+  const navSeq = useRef(0);
+
   // Botones atras/adelante del navegador.
   useEffect(() => {
     function onPopState() {
       const fromUrl = resourceFromPath(window.location.pathname);
       setCurrent(fromUrl && allowed.has(fromUrl) ? fromUrl : defaultResource);
+      setNav(null);
     }
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -113,8 +134,13 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
     if (window.location.pathname !== path) window.history.replaceState(null, '', path);
   }, [current]);
 
-  function selectResource(resource: Resource) {
+  /**
+   * `intent` solo lo manda quien navega desde otra pantalla; el menu lateral
+   * abre siempre la pantalla limpia.
+   */
+  function selectResource(resource: Resource, intent?: NavIntent) {
     setCurrent(resource);
+    setNav(intent ? { intent, key: `nav-${(navSeq.current += 1)}` } : null);
     setNavOpen(false); // en móvil, cerrar el drawer al navegar
     const path = pathForResource(resource);
     if (window.location.pathname !== path) window.history.pushState(null, '', path);
@@ -190,7 +216,11 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
         {/* Avisos del portal del cliente: fuera de <section.content> para que la
             pila quede sticky bajo el topbar en todas las pantallas (§3.4.1). */}
         <AnnouncementBanners enabled={me.role === Role.Client} />
-        <section className="content">
+        {/* El Resumen es lo unico que no es una pantalla de trabajo sobre un
+            listado: reparte paneles a lo ancho, asi que se le suelta el ancho de
+            lectura de 1100px que rige al resto (una columna de texto y campos
+            mas ancha que eso se lee peor, un tablero no). */}
+        <section className={`content${current === Resource.Dashboard ? ' content-wide' : ''}`}>
           {current === Resource.Announcements ? (
             <AnnouncementsScreen />
           ) : current === Resource.Users ? (
@@ -200,12 +230,18 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
           ) : current === Resource.CostServices ? (
             <CostServicesScreen />
           ) : current === Resource.Costs ? (
-            <CostsScreen role={me.role} />
+            <CostsScreen key={nav?.key} role={me.role} initialView={nav?.intent.costsView} />
           ) : current === Resource.Config ? (
-            // Configuración es hoy el enlace con el operador de Miami: es lo único
-            // que un Admin necesita administrar aquí. Cuando entren más ajustes,
-            // esta pantalla pasa a ser una pestaña más.
+            // El recurso `config` es hoy el enlace con el operador de Miami: es lo
+            // único que un Admin necesita administrar aquí. Cuando entren más
+            // ajustes, esta pantalla pasa a ser una pestaña más (y ahí sí toca
+            // volver a llamar "Configuración" al ítem del menú).
             <ProviderLinksScreen />
+          ) : current === Resource.Settings ? (
+            // Hoy la pantalla es solo la tasa de cambio, pero el recurso es
+            // "ajustes generales": lo que se sume despues entra aqui, no en una
+            // entrada de menu nueva por cada valor.
+            <SettingsScreen canEdit={can(me.role, Permission.ExchangeRateWrite)} />
           ) : current === Resource.Routes ? (
             <RoutesScreen />
           ) : current === Resource.Prealert ? (
@@ -213,11 +249,23 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
           ) : current === Resource.Package ? (
             // Para el cliente, "sus" tramites (la API ya acota el listado);
             // para staff, el tablero de Paqueteria con opcion de ver todos.
-            <ShipmentsScreen role={me.role} initialView={isClient ? 'propios' : 'paqueteria'} />
+            <ShipmentsScreen
+              key={nav?.key}
+              role={me.role}
+              initialView={nav?.intent.view ?? (isClient ? 'propios' : 'paqueteria')}
+              initialState={nav?.intent.state}
+              initialQuery={nav?.intent.q}
+            />
           ) : current === Resource.Tramite ? (
-            <ShipmentsScreen role={me.role} initialView="transporte" />
+            <ShipmentsScreen
+              key={nav?.key}
+              role={me.role}
+              initialView="transporte"
+              initialState={nav?.intent.state}
+              initialQuery={nav?.intent.q}
+            />
           ) : current === Resource.Dashboard ? (
-            <DashboardScreen />
+            <DashboardScreen allowed={allowed} onNavigate={selectResource} />
           ) : current === Resource.Reception ? (
             <ReceptionScreen />
           ) : current === Resource.Delivery ? (
@@ -266,7 +314,10 @@ function NavIcon({ resource }: { resource: Resource }) {
     [Resource.Clients]: <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13A4 4 0 0116 11" />,
     [Resource.Tramite]: <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M9 13h6M9 17h6" />,
     [Resource.Reports]: <path d="M3 3v18h18M18 17V9M13 17V5M8 17v-3" />,
-    [Resource.Config]: <path d="M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-2.82 1.17V21a2 2 0 11-4 0v-.09A1.65 1.65 0 007 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 14 1.65 1.65 0 003 12.09V12a2 2 0 110-4h.09A1.65 1.65 0 004.6 7a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.14.31.22.66.22 1.02" />,
+    // Eslabones: la pantalla es el enlace con el operador, no ajustes del sistema.
+    [Resource.Config]: <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />,
+    // Engranaje: ajustes del sistema (a diferencia del eslabon de Resource.Config).
+    [Resource.Settings]: <path d="M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />,
     [Resource.Users]: <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13A4 4 0 0116 11" />,
     [Resource.Announcements]: <path d="M3 11l18-5v12L3 13v-2zM11.6 16.8a3 3 0 11-5.8-1.6" />,
   };

@@ -1,16 +1,18 @@
 /**
- * Tasa de cambio SUGERIDA del dia (BCCR, indicador de tipo de cambio de venta).
+ * Tasa de cambio de REFERENCIA del dia (BCCR, indicador de tipo de cambio de
+ * venta).
  *
- * Regla del negocio: el sistema sugiere, el operador digita. La tasa que queda
- * guardada en cada linea de costo es SIEMPRE la que el operador confirmo en el
- * formulario, nunca esta: por eso todo fallo aqui devuelve `null` en vez de
- * lanzar. Una caida del servicio del BCCR no puede impedir facturar.
+ * Regla del negocio: el BCCR informa, el administrador decide. Ningun monto se
+ * guarda con este valor: la tasa que usa el sistema es la que alguien con
+ * `exchange_rate.write` fijo en Configuración (`settingsRepo`), y esto solo se
+ * muestra al lado para ayudar a decidirla. Por eso todo fallo aqui devuelve
+ * `null` en vez de lanzar: una caida del BCCR no puede impedir facturar.
  *
  * Convencion del sistema: la tasa es COLONES POR 1 USD.
  */
 import { bccrReady, config } from '../../core/config';
 
-/** Sugerencia de tasa: el valor y de donde salio (para poder mostrarlo). */
+/** Referencia del dia: el valor y de donde salio (para poder mostrarlo). */
 export interface ExchangeRateSuggestion {
   /** Colones por 1 USD, o null si no se pudo obtener. */
   rate: number | null;
@@ -40,10 +42,11 @@ function parseRate(xml: string): number | null {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
-export const exchangeRateProvider = {
+export const exchangeRateReference = {
   /**
-   * Tasa sugerida para hoy. Devuelve `NO_RATE` (sin lanzar) si la integracion
-   * esta apagada, si el BCCR responde mal o si la llamada se pasa del timeout.
+   * Referencia del BCCR para hoy. Devuelve `NO_RATE` (sin lanzar) si la
+   * integracion esta apagada, si el BCCR responde mal o si la llamada se pasa
+   * del timeout.
    */
   async suggest(now = new Date()): Promise<ExchangeRateSuggestion> {
     // `bccrReady` = bandera encendida Y credenciales cargadas. Encendida sin
@@ -71,9 +74,9 @@ export const exchangeRateProvider = {
       if (rate === null) return NO_RATE;
       return { rate, source: 'bccr', date: now.toISOString() };
     } catch (err) {
-      // Sugerir una tasa es opcional; que falle no debe ensuciar el log de errores
-      // reales ni romper la pantalla de costos.
-      console.warn('[costos] no se pudo obtener la tasa del BCCR:', (err as Error).message);
+      // La referencia es opcional; que falle no debe ensuciar el log de errores
+      // reales ni romper la pantalla que la muestra.
+      console.warn('[settings] no se pudo obtener la tasa del BCCR:', (err as Error).message);
       return NO_RATE;
     }
   },

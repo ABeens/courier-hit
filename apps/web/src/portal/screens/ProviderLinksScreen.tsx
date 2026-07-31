@@ -23,7 +23,8 @@ import { ProviderLinkEditModal } from './ProviderLinkEditModal';
 
 /**
  * Tono de la ficha. El rechazado va en `danger` porque pide una decisión humana;
- * el pendiente en `warn` porque el robot todavía puede resolverlo solo.
+ * el que está en proceso va en `warn` porque el robot todavía puede resolverlo
+ * solo.
  */
 const LINK_TONE: Record<HelgaSyncStatus, 'danger' | 'warn' | 'ok'> = {
   [HelgaSyncStatus.Failed]: 'danger',
@@ -118,7 +119,7 @@ export function ProviderLinksScreen() {
           value={status}
           onChange={(e) => setStatus(e.target.value as HelgaSyncStatus | '')}
         >
-          <option value="">Con problema (pendientes y rechazados)</option>
+          <option value="">Sin enlazar (en proceso y rechazados)</option>
           {Object.values(HelgaSyncStatus).map((s) => (
             <option key={s} value={s}>
               Solo {HELGA_SYNC_STATUS_LABELS[s].toLowerCase()}
@@ -186,7 +187,7 @@ export function ProviderLinksScreen() {
         <div className="empty">
           {status || q
             ? 'No hay casilleros que coincidan.'
-            : 'Ningún casillero tiene problemas de enlace.'}
+            : 'Todos los casilleros están enlazados.'}
         </div>
       )}
 

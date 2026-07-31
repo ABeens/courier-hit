@@ -72,14 +72,15 @@ export function LockerScreen() {
           </div>
 
           {/*
-            Sin sub-casillero la dirección lleva un identificador que nuestra
-            bodega de Miami todavía no reconoce, así que el paquete puede llegar
-            sin dueño. Es mejor decirlo que dejar que el cliente compre a ciegas.
+            La dirección ya no depende del proveedor (siempre lleva el código
+            HS), pero un casillero sin enlazar todavía no existe para nuestra
+            bodega de Miami: el paquete llegaría sin dueño. Es mejor decirlo que
+            dejar que el cliente compre a ciegas.
           */}
           {!locker.subLocker && (
             <div className="banner warn" style={{ marginBottom: 16 }}>
               Tu casillero aún se está activando con nuestra bodega de Miami.
-              Escríbenos antes de hacer tu primera compra para confirmar la dirección.
+              Escríbenos antes de hacer tu primera compra para que no se retrase tu entrega.
             </div>
           )}
 

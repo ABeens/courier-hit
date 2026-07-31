@@ -13,6 +13,10 @@
 /**
  * Identificador del casillero maestro de HS Global ante el proveedor. Constante
  * del negocio ("El identificador único del casillero siempre es: SJO008835").
+ *
+ * NO se le muestra al cliente: la dirección que él pega en el checkout lleva
+ * nuestro código `HS…` (ver `lockerIdFor`). Esta constante queda para lo que
+ * mira hacia el proveedor.
  */
 export const MASTER_LOCKER_ID = 'SJO008835';
 
@@ -64,21 +68,21 @@ export interface LockerAddressLine {
 }
 
 /**
- * Identificador que el cliente escribe al comprar.
+ * Identificador que el cliente escribe al comprar: SIEMPRE el codigo de HS
+ * Global (`HS0001042`), nunca el `sub_casillero` del proveedor
+ * (`SJO008835S033`).
  *
- * El bueno es el `sub_casillero` que asigna el proveedor (`SJO008835S033`): es
- * el unico que su operador reconoce para saber de quien es cada paquete dentro
- * de la cuenta consolidada de HS Global.
+ * Es una decision de producto: de cara al usuario final el casillero es el
+ * nuestro. El codigo del proveedor es un detalle de la cuenta consolidada que el
+ * cliente no tiene por que conocer, y mostrarle dos identificadores distintos
+ * (uno en el portal, otro en los correos o en el mostrador) es justo lo que hace
+ * que pegue el equivocado en el checkout.
  *
- * El compuesto `SJO008835 HS0001042` es un FALLBACK para los casilleros creados
- * mientras la integracion estuvo apagada, que aun no tienen sub-casillero. No es
- * equivalente: el proveedor no conoce nuestro codigo interno.
- *
- * TODO(13): cuando todos los casilleros esten sincronizados, este fallback
- * sobra y `subLocker` pasa a ser obligatorio.
+ * El `sub_casillero` sigue guardado y sigue siendo la llave contra Helga: lo usa
+ * la sincronizacion y el panel, no la etiqueta de envio.
  */
-function lockerIdFor(clientCode: string, subLocker?: string | null): string {
-  return subLocker ?? `${MASTER_LOCKER_ID} ${formatLockerCode(clientCode)}`;
+function lockerIdFor(clientCode: string): string {
+  return formatLockerCode(clientCode);
 }
 
 /**
@@ -86,12 +90,8 @@ function lockerIdFor(clientCode: string, subLocker?: string | null): string {
  * formulario de compra en USA. Punto UNICO donde se arma esa direccion: la usan
  * la pantalla de Casillero y cualquier correo que la incluya.
  */
-export function lockerAddressFor(
-  clientName: string,
-  clientCode: string,
-  subLocker?: string | null,
-): LockerAddressLine[] {
-  const locker = lockerIdFor(clientCode, subLocker);
+export function lockerAddressFor(clientName: string, clientCode: string): LockerAddressLine[] {
+  const locker = lockerIdFor(clientCode);
   return [
     { label: 'Nombre', value: `${clientName} — ${locker}` },
     { label: 'Dirección', value: MIAMI_WAREHOUSE.addressLine1 },

@@ -288,6 +288,10 @@
   background: rgba(20, 24, 40, .42); backdrop-filter: blur(2px);
 }
 .content { padding: 28px 32px; max-width: 1100px; }
+/* Pantallas que reparten paneles a lo ancho (el Resumen). El limite de 1100px
+   es un ancho de LECTURA: bueno para una columna de campos o una tabla, malo
+   para un tablero, que ahi solo deja medio monitor sin usar. */
+.content-wide { max-width: 1560px; padding: 22px 26px; }
 
 /* ---- Placeholder de pantallas por construir ---- */
 .stub {
@@ -402,14 +406,21 @@ select.input { cursor: pointer; padding-right: 30px; }
 }
 .card-item:hover { border-color: var(--line); box-shadow: var(--sh-2); transform: translateY(-1px); }
 
-/* Tono por estado del tramite. `--tone` tiñe la barra lateral y la pildora. */
-.card-item.tone-neutral { --tone: var(--faint);  --tone-soft: var(--paper-2); }
-.card-item.tone-info    { --tone: var(--info);   --tone-soft: var(--info-soft); }
-.card-item.tone-warn    { --tone: var(--warn);   --tone-soft: var(--warn-soft); }
-.card-item.tone-ok      { --tone: var(--ok);     --tone-soft: var(--ok-soft); }
-.card-item.tone-danger  { --tone: var(--danger); --tone-soft: var(--danger-soft); }
+/* Tono semantico, compartido por todo el portal: `--tone` es el trazo (barra,
+   texto, icono) y `--tone-soft` el fondo. Lo declara cualquier bloque que se
+   tiña por estado —ficha de trámite, cuadro del Resumen, evento de la bitácora—
+   para que el mismo estado tenga el mismo color en todas las pantallas. */
+.tone-neutral { --tone: var(--faint);  --tone-soft: var(--paper-2); }
+.tone-info    { --tone: var(--info);   --tone-soft: var(--info-soft); }
+.tone-warn    { --tone: var(--warn);   --tone-soft: var(--warn-soft); }
+.tone-ok      { --tone: var(--ok);     --tone-soft: var(--ok-soft); }
+.tone-danger  { --tone: var(--danger); --tone-soft: var(--danger-soft); }
 .card-item .spill { background: var(--tone-soft); color: var(--tone); }
 .card-item .spill .dot { background: var(--tone); }
+/* Pildora teñida fuera de una ficha (p. ej. la celda de estatus de una tabla):
+   ahi el tono lo declara la propia pildora, no un contenedor. */
+.spill.is-toned { background: var(--tone-soft); color: var(--tone); }
+.spill.is-toned .dot { background: var(--tone); }
 
 /* Cabecera: identidad a la izquierda, estado y acciones a la derecha. */
 .card-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
@@ -649,3 +660,177 @@ select.input { cursor: pointer; padding-right: 30px; }
 .link-log-head .sub-date { margin-left: auto; }
 .link-log-detail { margin-top: 6px; font-size: 13.5px; color: var(--ink-2); }
 .link-log-changes { margin-top: 6px; display: grid; gap: 3px; font-size: 13px; color: var(--muted); }
+
+/* ============================================================
+   Resumen (pantalla Dashboard)
+
+   Es la unica pantalla del portal que no trabaja sobre UN listado, asi que se
+   reparte a lo ancho (`.content-wide`): arriba la fila de colas, abajo los
+   ultimos ingresos junto a los repartos. Densa a proposito —tipografia y aire
+   mas apretados que en el resto— porque aqui se viene a barrer muchas cifras
+   de un vistazo, no a leer ni a llenar campos.
+
+   Cada cuadro es un ATAJO, no un dato: se pinta como algo pulsable (borde,
+   sombra, flecha que se desplaza al pasar por encima) y lleva el tono de su
+   estado, para que seis cifras seguidas no se lean como seis recuadros iguales.
+   ============================================================ */
+.dash { display: grid; gap: 18px; }
+.dash-block { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.dash-block-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
+}
+.dash-block-title { font-family: var(--font-display); font-size: 14px; color: var(--ink); }
+.dash-block-hint { font-size: 12px; color: var(--faint); }
+
+/* Cuerpo del tablero: los ingresos mandan y los repartos acompañan. Se apilan
+   cuando la ventana ya no da para dos columnas de verdad. */
+.dash-main {
+  display: grid; gap: 18px; align-items: start;
+  grid-template-columns: minmax(0, 1.9fr) minmax(272px, 0.85fr);
+}
+.dash-side { display: grid; gap: 14px; align-content: start; min-width: 0; }
+
+@media (max-width: 1180px) {
+  .dash-main { grid-template-columns: minmax(0, 1fr); }
+  /* Apilados, los dos repartos vuelven a caber uno al lado del otro. */
+  .dash-side { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+}
+
+/* ---- Colas de trabajo ---- */
+.dash-queues { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); }
+
+.dash-tile {
+  position: relative; overflow: hidden; text-align: left;
+  /* Columna flexible (no rejilla) para que el pie del cuadro —la linea del
+     destino— quede anclado abajo con `margin-top: auto` y todos los cuadros
+     de la fila lo alineen a la misma altura aunque su texto ocupe una linea
+     mas o menos. */
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 13px 15px 11px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--line); box-shadow: var(--sh-1);
+  font-family: inherit; color: inherit;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+/* Filo de color: es lo que distingue una cola de otra antes de leer nada. */
+.dash-tile::before {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--tone);
+}
+.dash-tile-top { display: flex; align-items: center; gap: 9px; }
+.dash-tile-ic {
+  width: 28px; height: 28px; flex: none; border-radius: 9px;
+  display: grid; place-items: center; background: var(--tone-soft); color: var(--tone);
+}
+.dash-tile-ic svg { width: 15px; height: 15px; }
+.dash-tile-n {
+  font-family: var(--font-display); font-size: 26px; font-weight: 700; line-height: 1;
+  color: var(--ink); letter-spacing: -0.03em;
+}
+.dash-tile-label { font-size: 13px; font-weight: 700; color: var(--ink); margin-top: 3px; }
+/* La explicacion se recorta a dos lineas: mas alla de eso el cuadro crece y
+   deja de caber la fila entera en pantalla, que es justo lo que se busca. */
+.dash-tile-hint {
+  font-size: 11.5px; line-height: 1.35; color: var(--muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.dash-tile-go {
+  display: flex; align-items: center; gap: 4px; margin-top: auto; padding-top: 7px;
+  font-size: 11.5px; font-weight: 700; color: var(--brand);
+}
+.dash-tile-go svg { width: 12px; height: 12px; transition: transform .16s ease; }
+
+/* Version pulsable. Solo la lleva el cuadro que tiene a donde ir: uno que
+   parece boton y no hace nada es peor que uno que no lo parece. */
+button.dash-tile { cursor: pointer; }
+button.dash-tile:hover {
+  transform: translateY(-2px); box-shadow: var(--sh-2); border-color: var(--tone);
+}
+button.dash-tile:active { transform: translateY(0); }
+button.dash-tile:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+button.dash-tile:hover .dash-tile-go svg { transform: translateX(3px); }
+
+/* Cola en cero: sigue ahi (que este vacia es informacion), pero apagada, para
+   que el ojo caiga en lo que si tiene trabajo. */
+.dash-tile.is-empty::before { opacity: .3; }
+.dash-tile.is-empty .dash-tile-n { color: var(--faint); }
+.dash-tile.is-empty .dash-tile-ic { background: var(--paper-2); color: var(--faint); }
+.dash-tile.is-empty .dash-tile-label { color: var(--ink-2); }
+.dash-tile.is-empty .dash-tile-go { color: var(--faint); }
+
+/* Esqueleto de carga: mismo hueco que el cuadro real, sin contenido inventado. */
+.dash-tile.is-skeleton {
+  min-height: 118px;
+  background: var(--paper-2); border-color: var(--line-2); box-shadow: none;
+  animation: pulseDot 1.5s ease-in-out infinite;
+}
+.dash-tile.is-skeleton::before { background: var(--line); }
+
+/* ---- Paneles de reparto (por tipo, por estado) ----
+   No son colas: dicen DONDE ESTA PARADA la operacion entera, incluido lo que
+   nadie tiene que tocar. Por eso van en filas apretadas y no en cuadros. */
+.dash-panel {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); box-shadow: var(--sh-1); padding: 12px 13px 11px;
+  display: grid; gap: 9px; align-content: start; min-width: 0;
+}
+.dash-panel-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--line-2);
+}
+.dash-panel-title {
+  font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-2); font-family: var(--font-body);
+}
+.dash-panel-total { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--faint); }
+.dash-rows { display: grid; gap: 2px; min-width: 0; }
+
+/* La proporcion se pinta como RELLENO de la fila, no como una barra aparte: a
+   este ancho una barra de 40px no se compara con nada, y asi la fila entera
+   deja el espacio para la etiqueta y la cifra. */
+.dash-row {
+  position: relative; overflow: hidden; isolation: isolate;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 5px 8px; border-radius: var(--r-xs); text-align: left;
+  font-family: inherit; color: inherit; background: none;
+}
+.dash-row::before {
+  content: ''; position: absolute; z-index: -1; inset: 0 auto 0 0;
+  width: var(--pct, 0%); background: var(--tone-soft, var(--brand-soft)); border-radius: var(--r-xs);
+}
+.dash-row-label {
+  font-size: 12.5px; font-weight: 600; color: var(--ink-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.dash-row-n { font-size: 12.5px; font-weight: 700; color: var(--ink); flex: none; }
+button.dash-row { cursor: pointer; width: 100%; }
+button.dash-row:hover { box-shadow: inset 0 0 0 1px var(--tone, var(--brand)); }
+button.dash-row:hover .dash-row-label { color: var(--ink); }
+button.dash-row:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+/* Un matiz por flujo en el reparto por tipo (el de estados ya usa `--tone`). */
+.dash-row.flow-paqueteria { --tone: var(--brand); --tone-soft: var(--brand-soft); }
+.dash-row.flow-transporte { --tone: var(--info); --tone-soft: var(--info-soft); }
+.dash-row.flow-agenciamiento { --tone: var(--purple); --tone-soft: var(--purple-soft); }
+
+/* ---- Últimos ingresos: la fila entera abre el trámite. ---- */
+.table tbody tr.is-link { cursor: pointer; }
+.table tbody tr.is-link:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.table .cell-go { width: 30px; text-align: right; color: var(--faint); }
+.table .cell-go svg { width: 14px; height: 14px; vertical-align: middle; transition: transform .16s ease; }
+.table tbody tr.is-link:hover .cell-go { color: var(--brand); }
+.table tbody tr.is-link:hover .cell-go svg { transform: translateX(2px); }
+
+/* Tabla compacta: en un tablero la fila es para barrer, no para leer. */
+.table-dense thead th { padding: 9px 12px; font-size: 11px; }
+.table-dense tbody td { padding: 8px 12px; font-size: 13px; }
+.table-dense .spill { font-size: 11.5px; padding: 3px 9px 3px 8px; }
+.table-dense .spill .dot { width: 6px; height: 6px; }
+.table-wrap .table-dense { min-width: 720px; }
+
+@media (max-width: 560px) {
+  .dash-queues { grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); }
+  .dash-tile { padding: 12px 13px; }
+  .dash-tile-n { font-size: 23px; }
+  /* En movil el cuadro se queda con la cifra y la etiqueta: la explicacion
+     alarga la columna sin aportar a quien ya conoce sus colas. */
+  .dash-tile-hint { display: none; }
+}

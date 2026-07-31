@@ -19,6 +19,7 @@ import { paymentsRoutes } from './modules/payments/payments.routes';
 import { deliveriesRoutes } from './modules/deliveries/deliveries.routes';
 import { reportsRoutes } from './modules/reports/reports.routes';
 import { dashboardRoutes } from './modules/dashboard/dashboard.routes';
+import { settingsRoutes } from './modules/settings/settings.routes';
 
 const app = createApp();
 app.route('/api/auth', authRoutes);
@@ -34,6 +35,7 @@ app.route('/api/payments', paymentsRoutes);
 app.route('/api/deliveries', deliveriesRoutes);
 app.route('/api/reports', reportsRoutes);
 app.route('/api/dashboard', dashboardRoutes);
+app.route('/api/settings', settingsRoutes);
 
 // Panel de control del proveedor simulado. Solo existe con HELGA_MODE=simulated,
 // modo que el arranque prohibe en produccion: no es parte de la API del producto.

@@ -139,6 +139,18 @@ export const CostErrors = {
       'El trámite ya tiene pagos confirmados. Resuelve los pagos antes de reversar la factura.',
       409,
     ),
+  /**
+   * La tasa es un valor general que solo fija el administrador (en Configuración),
+   * y no hay ninguna vigente: ni guardada en el trámite ni fijada en el sistema.
+   * Lo que publica el BCCR no cuenta, es solo referencia. Guardar sin tasa dejaría
+   * líneas sin el testigo de conversión (regla M5), así que se para aquí.
+   */
+  noExchangeRate: () =>
+    new AppError(
+      'COSTS_NO_EXCHANGE_RATE',
+      'No hay tasa de cambio vigente. Pide a un administrador que registre la tasa del día antes de cargar costos.',
+      409,
+    ),
 };
 
 /** Errores de las tarifas preferenciales de cliente. */
@@ -334,8 +346,8 @@ export const PaymentErrors = {
   /**
    * No se pudo determinar la tasa de cambio a congelar con el pago. Guardar el
    * monto sin ella violaria la regla M5, asi que se prefiere no cobrar. Es un
-   * fallo de configuracion (factura sin componente en dolares y BCCR apagado),
-   * no del cliente: 503.
+   * fallo de configuracion (factura sin componente en dolares y sin tasa global
+   * fijada), no del cliente: 503.
    */
   exchangeRateUnavailable: () =>
     new AppError(
