@@ -36,8 +36,14 @@ export const userStatusEnum = pgEnum('user_status', USER_STATUS_VALUES);
 export const clientReviewStatusEnum = pgEnum('client_review_status', CLIENT_REVIEW_STATUS_VALUES);
 export const helgaSyncStatusEnum = pgEnum('helga_sync_status', HELGA_SYNC_STATUS_VALUES);
 
-/** Secuencia del codigo de casillero: HS-1042, HS-1043, ... */
-export const clientCodeSeq = pgSequence('hs_client_code_seq', { startWith: 1042, increment: 1 });
+/**
+ * Secuencia del codigo de casillero: HS-1000, HS-1001, ...
+ *
+ * Arranca en 1000, igual que la de tramites (`hs_shipment_code_seq`): son dos
+ * secuencias independientes y no hay motivo para que empiecen en puntos
+ * distintos. El prefijo es lo que las separa (`HS-` casillero, `HSX` tramite).
+ */
+export const clientCodeSeq = pgSequence('hs_client_code_seq', { startWith: 1000, increment: 1 });
 
 export const users = pgTable(
   'users',

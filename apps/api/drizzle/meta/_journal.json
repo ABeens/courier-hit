@@ -134,6 +134,13 @@
       "when": 1785483143240,
       "tag": "0018_slow_nextwave",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785527665656,
+      "tag": "0019_left_norman_osborn",
+      "breakpoints": true
     }
   ]
 }

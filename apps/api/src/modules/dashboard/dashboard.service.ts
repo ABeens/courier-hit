@@ -24,7 +24,7 @@ export const dashboardService = {
     return {
       /** Colas accionables, en el orden del flujo. */
       queues: [
-        { state: State.Prealertado, label: 'Prealertados', total: at(State.Prealertado) },
+        { state: State.Prealertado, label: 'Recepción', total: at(State.Prealertado) },
         {
           state: State.FacturacionEnProceso,
           label: 'Por facturar',
