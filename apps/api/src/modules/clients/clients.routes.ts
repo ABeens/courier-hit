@@ -22,6 +22,7 @@ import {
   updateProviderLinkSchema,
 } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
+import { requireMiamiLink } from '../../core/middleware/requireMiamiLink';
 import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
 import { clientsService } from './clients.service';
@@ -53,10 +54,15 @@ clientsRoutes.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
 //
 // Permiso `config.manage` (solo Admin), no `clients.write`: corregir el enlace a
 // mano puede abrirle el portal a un cliente que el proveedor no reconoce.
+//
+// Ademas del permiso, las tres piden `MIAMI_LINK_ENABLED=true`: con la bandera
+// apagada la pantalla no se ofrece en el portal, y estas rutas responden 403 en
+// vez de quedar accesibles por URL.
 
 /** Casilleros con problema de enlace. Sin filtro: los que no estan `synced`. */
 clientsRoutes.get(
   '/provider-links',
+  requireMiamiLink(),
   requirePermission(Permission.ConfigManage),
   zValidator('query', listProviderLinksSchema),
   async (c) => {
@@ -65,13 +71,19 @@ clientsRoutes.get(
 );
 
 /** Enlace de un casillero con su bitacora completa (pantalla de diagnostico). */
-clientsRoutes.get('/:id/provider-link', requirePermission(Permission.ConfigManage), async (c) => {
-  return c.json(await providerLinkService.get(c.req.param('id')));
-});
+clientsRoutes.get(
+  '/:id/provider-link',
+  requireMiamiLink(),
+  requirePermission(Permission.ConfigManage),
+  async (c) => {
+    return c.json(await providerLinkService.get(c.req.param('id')));
+  },
+);
 
 /** Correccion manual del enlace (estado, id de Helga, sub-casillero). */
 clientsRoutes.patch(
   '/:id/provider-link',
+  requireMiamiLink(),
   requirePermission(Permission.ConfigManage),
   zValidator('json', updateProviderLinkSchema),
   async (c) => {

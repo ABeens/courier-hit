@@ -11,11 +11,22 @@ import { LoginScreen } from './screens/LoginScreen';
 import { PortalShell } from './PortalShell';
 import './portal.css';
 
+/**
+ * Banderas de despliegue que deciden que OFRECE el portal (no que permite: eso
+ * sigue saliendo del rol). Las manda la API en GET /api/auth/me a partir del
+ * .env, asi que el portal no se recompila para prender o apagar una.
+ */
+export interface Features {
+  /** `MIAMI_LINK_ENABLED`: pantalla "Enlace con Miami" en el menu del Admin. */
+  miamiLink: boolean;
+}
+
 export interface Me {
   userId: string;
   principal: Principal;
   role: Role;
   clientCode?: string;
+  features: Features;
 }
 
 export default function PortalApp() {

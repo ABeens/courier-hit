@@ -165,6 +165,24 @@ const EnvSchema = z.object({
       message: 'HELGA_SIMULATED_STEP debe ser una duracion valida (p. ej. "30s", "2m", "1h").',
     }),
 
+  /**
+   * Interruptor de la pantalla "Enlace con Miami" del portal (el panel de
+   * diagnostico de los casilleros que no quedaron `synced` con Helga).
+   *
+   * Es una bandera de PRESENTACION, no de integracion: no cambia como se habla
+   * con el proveedor (eso es `HELGA_MODE`), solo si el Admin encuentra esa
+   * entrada en el menu. Sirve para no mostrar una pantalla de diagnostico de
+   * Helga mientras el enlace no se opera desde aqui.
+   *
+   * Apagada, el recurso deja de existir para el portal: no sale en el menu, la
+   * URL /app/enlace-miami cae en la pantalla por defecto y los endpoints de
+   * `/api/clients/provider-links` responden 403 (no se confia en el cliente).
+   */
+  MIAMI_LINK_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
   // --- Tasa de cambio de referencia: web service de indicadores del BCCR ---
   // Solo INFORMA el tipo de cambio del dia; la tasa que usa el sistema es la que
   // el administrador fija en Configuración, y ningun monto se guarda con este
@@ -408,6 +426,14 @@ if (helgaMode === 'simulated') {
       'Panel de control en /api/dev/helga. Solo para desarrollo y pruebas.',
   );
 }
+
+/**
+ * Si el portal ofrece la pantalla "Enlace con Miami". Es `MIAMI_LINK_ENABLED`
+ * tal cual: lo que se lee en el .env es lo que se compara en el codigo. Lo
+ * consultan `GET /api/auth/me` (para armar el menu) y las rutas de
+ * `provider-links` (para no servir la pantalla por URL con la bandera apagada).
+ */
+export const miamiLinkEnabled = config.MIAMI_LINK_ENABLED;
 
 /**
  * True solo si el BCCR esta ENCENDIDO **y** tiene con que llamar.

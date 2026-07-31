@@ -7,7 +7,7 @@ import type { Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { deleteCookie, setCookie } from 'hono/cookie';
 import { acceptInviteSchema, loginSchema, registerSchema, verifySchema } from '@courier/shared';
-import { config, isProd } from '../../core/config';
+import { config, isProd, miamiLinkEnabled } from '../../core/config';
 import type { AppEnv } from '../../core/http';
 import { requireSession } from '../../core/middleware/requireSession';
 import { authService } from './auth.service';
@@ -54,7 +54,18 @@ authRoutes.post('/logout', requireSession(), async (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * Sesion hidratada del portal. Ademas del rol viajan las banderas de despliegue
+ * que cambian lo que el portal OFRECE (`features`), no lo que permite: el
+ * permiso sigue saliendo del rol y lo revalida cada endpoint.
+ */
 authRoutes.get('/me', requireSession(), (c) => {
   const s = c.get('session');
-  return c.json({ userId: s.userId, principal: s.principal, role: s.role, clientCode: s.clientCode });
+  return c.json({
+    userId: s.userId,
+    principal: s.principal,
+    role: s.role,
+    clientCode: s.clientCode,
+    features: { miamiLink: miamiLinkEnabled },
+  });
 });

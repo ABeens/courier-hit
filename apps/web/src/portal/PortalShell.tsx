@@ -84,7 +84,18 @@ const STAFF_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
 export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => void }) {
   const isClient = me.role === Role.Client;
   const navGroups = isClient ? CLIENT_NAV_GROUPS : STAFF_NAV_GROUPS;
-  const allowed = useMemo(() => resourcesFor(me.role), [me.role]);
+  const miamiLink = me.features.miamiLink;
+  /**
+   * Lo que el rol puede ver, menos lo que este despliegue no ofrece. Al quitar
+   * el recurso de este conjunto (y no solo del menu) la bandera apagada tambien
+   * cierra el deep-link /app/enlace-miami y el salto desde el Resumen: la URL
+   * cae en la pantalla por defecto, igual que un slug de otro rol.
+   */
+  const allowed = useMemo(() => {
+    const resources = new Set(resourcesFor(me.role));
+    if (!miamiLink) resources.delete(Resource.Config);
+    return resources;
+  }, [me.role, miamiLink]);
   const visibleGroups = useMemo(
     () =>
       navGroups.map((g) => ({ ...g, items: g.items.filter((i) => allowed.has(i.resource)) })).filter(
