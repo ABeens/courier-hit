@@ -90,13 +90,13 @@ function boardFor(state: State): Target {
  * pinta igual con el destino generico en vez de romperse.
  */
 const QUEUE_META: Partial<Record<State, { hint: string; icon: ReactElement; targets: Target[] }>> = {
+  /* Los prealertados no se "trabajan" desde aqui: el paquete llega a bodega y
+     se recibe por su tracking, no eligiendo de una lista. El cuadro es solo la
+     cifra de lo anunciado y por eso no lleva a ninguna pantalla. */
   [State.Prealertado]: {
     hint: 'Anunciados por el cliente, aún sin recibir en bodega',
     icon: <path d="M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />,
-    targets: [
-      { resource: Resource.Reception, name: 'Recepción' },
-      boardFor(State.Prealertado),
-    ],
+    targets: [],
   },
   [State.FacturacionEnProceso]: {
     hint: 'Esperan que alguien les cargue los costos',
