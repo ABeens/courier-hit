@@ -290,7 +290,7 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
           {method === PaymentMethod.DepositoBancario && quote && !quote.settled && (
             <>
               <div className="banner">
-                Deposita a nombre de <strong>HS Global Courier</strong> y adjunta el
+                Deposita a nombre de <strong>HS Global Services</strong> y adjunta el
                 comprobante. Validaremos el depósito y te avisaremos.
               </div>
 

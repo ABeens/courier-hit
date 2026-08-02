@@ -1,4 +1,4 @@
-# HS Global Courier
+# HS Global Services
 
 Monorepo de la app de courier/casillero (Miami → Colombia).
 

@@ -34,7 +34,7 @@ export const TERMS: LegalSection[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Estos Términos de uso regulan el acceso y el uso de los servicios de HS Global Courier ("HS Global", "nosotros"): el casillero en Miami, el transporte internacional de paquetería y carga consolidada, la gestión aduanera y los servicios complementarios contratados a través del sitio web y del portal de clientes.',
+        text: 'Estos Términos de uso regulan el acceso y el uso de los servicios de HS Global Services ("HS Global", "nosotros"): el casillero en Miami, el transporte internacional de paquetería y carga consolidada, la gestión aduanera y los servicios complementarios contratados a través del sitio web y del portal de clientes.',
       },
       {
         type: 'p',
@@ -263,7 +263,7 @@ export const PRIVACY: LegalSection[] = [
     blocks: [
       {
         type: 'p',
-        text: 'HS Global Courier ("HS Global", "nosotros") es responsable del tratamiento de los datos personales que recogemos a través del sitio web, del portal de clientes y de la operación de casillero y transporte internacional.',
+        text: 'HS Global Services ("HS Global", "nosotros") es responsable del tratamiento de los datos personales que recogemos a través del sitio web, del portal de clientes y de la operación de casillero y transporte internacional.',
       },
       {
         type: 'p',

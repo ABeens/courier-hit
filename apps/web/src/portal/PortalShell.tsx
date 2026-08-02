@@ -177,7 +177,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
           <img className="side-logo" src="/logo.png" alt="" />
           <span className="side-brand-text">
             <span className="n">HS Global</span>
-            <span className="s">Courier</span>
+            <span className="s">Services</span>
           </span>
         </div>
 

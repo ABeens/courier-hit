@@ -1,6 +1,6 @@
 /**
  * BrandMark — version React del logo oficial (components/ui/Logo.astro): la
- * imagen de /public/logo.png mas el wordmark "HS Global · Courier".
+ * imagen de /public/logo.png mas el wordmark "HS Global · Services".
  *
  * Existe porque las pantallas de autenticacion son islas React y no pueden
  * montar el componente Astro. Los estilos viven en portal.css para no duplicar
@@ -33,7 +33,7 @@ export function BrandMark({ size = 44, dark = false }: Props) {
       />
       <div className="brandmark__text">
         <span className="brandmark__name">HS Global</span>
-        <span className="brandmark__sub">Courier</span>
+        <span className="brandmark__sub">Services</span>
       </div>
     </div>
   );

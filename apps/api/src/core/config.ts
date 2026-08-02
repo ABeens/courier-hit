@@ -51,7 +51,7 @@ const EnvSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
-  MAIL_FROM: z.string().default('HS Global Courier <no-reply@hsglobalcr.com>'),
+  MAIL_FROM: z.string().default('HS Global Services <no-reply@hsglobalcr.com>'),
   /** Region de SES. Obligatoria con MAIL_ENABLED=true (ver superRefine). */
   AWS_REGION: optionalEnv(),
   /**
