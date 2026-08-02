@@ -70,9 +70,12 @@ const values = [
       </p>
     </header>
 
-    <div class="abt__resumen">
-      <div class="abt__resumen-text">
-        <h3 class="abt__h">Resumen</h3>
+    <div class="abt__intro">
+      <div class="abt__text">
+        <h3 class="abt__h">Nuestra misión</h3>
+        <p class="muted abt__p">{mission}</p>
+
+        <h3 class="abt__h abt__h--next">Nuestra Historia</h3>
         {historia.map((p) => <p class="muted abt__p">{p}</p>)}
       </div>
 
@@ -86,14 +89,6 @@ const values = [
         />
       </figure>
     </div>
-
-    <article class="card abt__mission">
-      <span class="abt__mission-ic"><Icon name="zap" size={22} color="#fff" /></span>
-      <div>
-        <h3 class="abt__mission-title">Nuestra misión</h3>
-        <p class="muted abt__mission-text">{mission}</p>
-      </div>
-    </article>
 
     <div class="abt__moves">
       <h3 class="abt__moves-title">Lo que nos mueve</h3>
@@ -122,12 +117,15 @@ const values = [
   .abt__title { font-size: 42px; margin-top: 18px; letter-spacing: -.035em; line-height: 1.1; }
   .abt__lead { font-size: 17px; margin-top: 16px; line-height: 1.6; }
 
-  /* Resumen + foto, dos columnas. */
-  .abt__resumen {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center;
+  /* Fila superior: misión e historia a la izquierda, foto a la derecha.
+     La misión va en la misma fila que la historia, no debajo. */
+  .abt__intro {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start;
     padding-top: 40px; border-top: 1px solid var(--line);
   }
   .abt__h { font-size: 24px; letter-spacing: -.02em; }
+  /* Separación entre el bloque de misión y el de historia. */
+  .abt__h--next { margin-top: 28px; }
   .abt__p { font-size: 16px; line-height: 1.7; margin-top: 14px; }
   .abt__p + .abt__p { margin-top: 16px; }
 
@@ -141,18 +139,6 @@ const values = [
   .abt__photo :global(img) {
     display: block; width: 100%; height: auto;
   }
-
-  .abt__mission {
-    display: flex; align-items: flex-start; gap: 18px;
-    padding: 28px; margin-top: 56px;
-  }
-  .abt__mission-ic {
-    width: 46px; height: 46px; border-radius: var(--r-md); flex-shrink: 0;
-    background: linear-gradient(140deg, var(--brand), var(--brand-700));
-    display: grid; place-items: center; box-shadow: var(--sh-brand);
-  }
-  .abt__mission-title { font-size: 20px; letter-spacing: -.02em; }
-  .abt__mission-text { font-size: 16px; line-height: 1.7; margin-top: 10px; max-width: 760px; }
 
   .abt__moves { margin-top: 56px; }
   .abt__moves-title { font-size: 24px; letter-spacing: -.02em; }
@@ -171,12 +157,11 @@ const values = [
   .abt__value-desc { font-size: 14px; line-height: 1.55; margin-top: 7px; }
 
   @media (max-width: 900px) {
-    .abt__resumen { grid-template-columns: 1fr; gap: 32px; }
+    .abt__intro { grid-template-columns: 1fr; gap: 32px; }
     .abt__values { grid-template-columns: repeat(2, 1fr); }
   }
   @media (max-width: 560px) {
     .abt__title { font-size: 31px; }
-    .abt__mission { padding: 22px; gap: 14px; }
   }
   @media (max-width: 520px) {
     .abt__values { grid-template-columns: 1fr; }
