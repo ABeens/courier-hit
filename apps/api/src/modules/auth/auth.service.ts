@@ -260,9 +260,9 @@ export const authService = {
 
     await mailer.send({
       to: email,
-      subject: 'Verifica tu correo — HS Global Courier',
+      subject: 'Verifica tu correo — HS Global Services',
       body: [
-        'Bienvenido(a) a HS Global Courier.',
+        'Bienvenido(a) a HS Global Services.',
         '',
         `Tu código de verificación es: ${code}`,
         '',
@@ -310,9 +310,9 @@ export const authService = {
     const link = `${config.WEB_ORIGIN}/invitacion?token=${token}`;
     await mailer.send({
       to: email,
-      subject: 'Tu acceso al panel de HS Global Courier',
+      subject: 'Tu acceso al panel de HS Global Services',
       body: [
-        'Se creó una cuenta para ti en el panel de HS Global Courier.',
+        'Se creó una cuenta para ti en el panel de HS Global Services.',
         '',
         'Define tu contraseña en el siguiente enlace:',
         link,

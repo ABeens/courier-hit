@@ -1,4 +1,4 @@
-# HS Global Courier — Guía del repositorio
+# HS Global Services — Guía del repositorio
 
 App modular de courier/casillero (Miami → Costa Rica). Migración de un HTML
 autocontenido (`backup/`) a un monorepo con web (Astro, islas) + API (Node).

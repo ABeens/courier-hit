@@ -1,5 +1,5 @@
 /**
- * Moneda del dominio. HS Global Courier opera con dos monedas: colon
+ * Moneda del dominio. HS Global Services opera con dos monedas: colon
  * costarricense (CRC) y dolar estadounidense (USD). Todo campo monetario del
  * sistema lleva su moneda de forma EXPLICITA (regla M2 de money-rules): nunca se
  * asume por contexto.
