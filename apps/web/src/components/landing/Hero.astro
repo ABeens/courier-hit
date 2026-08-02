@@ -28,9 +28,7 @@ const features = [
     </div>
 
     <div class="hero__copy fadeUp">
-      <span class="hero__eyebrow">
-        <span class="hero__eyebrow-dot"></span>¿Por qué HS Global?
-      </span>
+      <h2 class="hero__title">¿Por qué HS Global?</h2>
 
       <ul class="hero__features">
         {features.map((f) => (
@@ -71,21 +69,11 @@ const features = [
     border-radius: var(--r-lg); box-shadow: var(--sh-3);
   }
 
-  /* Eyebrow */
-  .hero__eyebrow {
-    display: inline-flex; align-items: center; gap: 8px;
-    font-family: var(--font-display);
-    font-size: 12.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
-    color: var(--brand-600);
-    background: var(--surface);
-    border: 1px solid var(--brand-soft);
-    padding: 7px 14px; border-radius: var(--r-pill);
-    box-shadow: var(--sh-1);
+  /* Título — mismo tratamiento que los títulos de sección ("Tu compra, en
+     cuatro pasos"), pero alineado a la izquierda como el resto del hero. */
+  .hero__title {
+    font-size: 38px; letter-spacing: -.03em;
     margin-bottom: 24px;
-  }
-  .hero__eyebrow-dot {
-    width: 7px; height: 7px; border-radius: 99px; background: var(--brand);
-    box-shadow: 0 0 0 4px oklch(0.55 0.20 263 / .18);
   }
 
   /* Ganchos */
@@ -155,5 +143,6 @@ const features = [
        (imagen arriba, texto abajo) en una sola columna. */
     .hero__copy, .hero__media { grid-column: 1; grid-row: auto; }
     .hero__media { max-width: 480px; margin: 0 auto; }
+    .hero__title { font-size: 30px; }
   }
 </style>
