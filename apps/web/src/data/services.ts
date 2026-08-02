@@ -4,8 +4,9 @@
   exista la API, esto puede moverse a contenido gestionable; por ahora es
   fuente única para la sección de servicios del landing.
 
-  Los nombres provienen del listado oficial del cliente. Las descripciones son
-  redacción propia con el tono del servicio (el cliente no las entregó): por eso
+  Los nombres provienen del listado oficial del cliente, igual que los `short`
+  de consolidación, paquetería y agencia aduanal (textos definitivos entregados
+  por el cliente). El resto es redacción propia con el tono del servicio: por eso
   no afirman plazos, precios ni porcentajes concretos.
 */
 export type Service = {
@@ -33,7 +34,7 @@ export const SERVICES: Service[] = [
     icon: 'layers',
     name: 'Servicio de consolidación (Miami & Costa Rica)',
     tag: null,
-    short: 'Agrupamos tus compras y embarques en nuestros centros de Miami y Costa Rica.',
+    short: 'Agrupamos tus mercancías en nuestros centros de Miami y Costa Rica.',
     desc: 'Recibimos tus paquetes y embarques en nuestras bodegas de Miami y Costa Rica, los agrupamos en un solo envío y los preparamos para el despacho. Un solo flete, un solo trámite y menos manejo por unidad.',
     points: ['Bodegas en Miami y Costa Rica', 'Reempaque y agrupación de envíos', 'Un solo despacho por embarque'],
   },
@@ -51,7 +52,7 @@ export const SERVICES: Service[] = [
     icon: 'package',
     name: 'Paquetería',
     tag: null,
-    short: 'Envíos de paquetes nacionales e internacionales, con opción puerta a puerta.',
+    short: 'Envíos de paquetes y compras internacionales hasta la puerta de tu casa.',
     desc: 'Movemos tus paquetes dentro del país y hacia el exterior con la red de transporte que mejor se ajuste a cada destino. Ideal para envíos puntuales que no requieren consolidación ni contenedor.',
     points: ['Cobertura nacional e internacional', 'Opción puerta a puerta', 'Seguimiento en cada etapa'],
   },
@@ -60,7 +61,7 @@ export const SERVICES: Service[] = [
     icon: 'file',
     name: 'Agencia Aduanal',
     tag: null,
-    short: 'Nacionalizamos tu carga y respondemos por la documentación.',
+    short: 'Servicios de importación y exportación de mercancías abarcando todos los regímenes aduaneros.',
     desc: 'Nuestro equipo se encarga de la clasificación arancelaria, la liquidación de tributos y el trámite ante la aduana, para que tu carga no se quede detenida por un documento.',
     points: ['Clasificación arancelaria', 'Liquidación de tributos', 'Trámite y liberación ante la aduana'],
   },
