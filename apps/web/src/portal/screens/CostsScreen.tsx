@@ -19,6 +19,7 @@ import {
   formatMoney,
 } from '@courier/shared';
 import type { Role, ShipmentDto } from '@courier/shared';
+import { FilterBar } from '../components/FilterBar';
 import { PayFlag } from '../components/PayFlag';
 import { ApiError, api } from '../lib/api';
 import { formatDate } from '../lib/datetime';
@@ -88,16 +89,28 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
       {notice && <div className="banner ok" style={{ marginBottom: 14 }}>{notice}</div>}
 
-      <div className="filters">
-        <input
-          className="input search" placeholder="Buscar por consecutivo, tracking, descripción o cliente…"
-          value={q} onChange={(e) => setQ(e.target.value)}
-        />
-        <select className="input" value={view} onChange={(e) => setView(e.target.value as CostsView)}>
-          <option value="pendientes">Por facturar</option>
-          <option value="facturados">Ya facturados</option>
-        </select>
-      </div>
+      <FilterBar
+        search={{
+          value: q,
+          onChange: setQ,
+          placeholder: 'Buscar por consecutivo, tracking, descripción o cliente…',
+        }}
+        /* La cola no es un filtro que se "quite": siempre tiene valor, y el
+           contador de la cabecera ya dice cual esta puesta. */
+        chips={[]}
+        onClearAll={() => {}}
+      >
+        <div>
+          <label className="field-label" htmlFor="f-view">Cola</label>
+          <select
+            id="f-view" className="input" value={view}
+            onChange={(e) => setView(e.target.value as CostsView)}
+          >
+            <option value="pendientes">Por facturar</option>
+            <option value="facturados">Ya facturados</option>
+          </select>
+        </div>
+      </FilterBar>
 
       <div className="table-wrap">
         <table className="table">

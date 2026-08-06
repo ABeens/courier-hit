@@ -363,14 +363,87 @@
 }
 .stub .big { font-family: var(--font-display); font-size: 19px; color: var(--ink-2); }
 
-/* ---- Encabezado + filtros de Usuarios ---- */
+/* ---- Encabezado de pantalla ---- */
 .head-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .head-row .title { font-family: var(--font-display); font-size: 22px; color: var(--ink); }
 .head-row .count { color: var(--muted); font-size: 13.5px; margin-top: 4px; }
-.filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-.filters .input, .filters select.input { height: 40px; }
-.filters .search { flex: 1; min-width: 200px; }
 select.input { cursor: pointer; padding-right: 30px; }
+
+/* Fila de captura de Recepción. Ocupa el sitio de la barra de filtros y se ve
+   igual, pero NO filtra: es el formulario de escaneo (tracking + Registrar). */
+.scan-row { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.scan-row .input { height: 40px; }
+.scan-row .search { flex: 1; min-width: 200px; }
+
+/* ---- Barra de filtros plegable (componente FilterBar) ----
+   Único patrón de filtros del portal: solo el buscador queda a la vista y el
+   resto vive en un panel colgado del botón. */
+.filter-bar { margin-bottom: 16px; }
+.filter-bar-row { display: flex; gap: 10px; align-items: center; }
+.filter-bar .input.search { flex: 1; min-width: 0; height: 40px; }
+/* Hueco de lo que no se pliega. Ocupa el sitio del buscador (misma altura, mismo
+   reparto) para que la fila se lea igual haya buscador o no. */
+.filter-bar-lead { flex: 1; min-width: 0; }
+.filter-bar-lead .input { width: 100%; height: 40px; }
+
+/* Ancla del panel: el popover se posiciona contra el botón, no contra la fila. */
+.filter-pop { position: relative; flex: none; }
+.filter-toggle { height: 40px; gap: 7px; }
+.filter-toggle.is-open { border-color: var(--brand); color: var(--brand); }
+/* Con filtros puestos el botón deja de ser neutro: es el único rastro del
+   panel cerrado junto a las fichas. */
+.filter-toggle.has-filters { border-color: var(--brand); color: var(--brand); }
+.filter-count {
+  display: inline-grid; place-items: center; min-width: 19px; height: 19px; padding: 0 5px;
+  border-radius: var(--r-pill); background: var(--brand); color: #fff;
+  font-size: 11.5px; font-weight: 800;
+}
+
+/* Panel: cuelga del botón alineado por su borde derecho, que es el que queda
+   pegado al margen de la pantalla. Por encima del listado y de la topbar
+   sticky (z 5), por debajo del modal (z 80). */
+.filter-panel {
+  position: absolute; z-index: 30; top: calc(100% + 8px); right: 0;
+  width: min(330px, calc(100vw - 40px));
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); box-shadow: var(--sh-3); padding: 16px;
+}
+.filter-panel-grid { display: grid; gap: 14px; }
+/* Los dos extremos de un rango van lado a lado aunque el panel sea estrecho:
+   son UN filtro. `.field-pair` decide por el ancho de la VENTANA y aquí eso no
+   dice nada del sitio real que hay, así que manda esta regla. Las fechas van
+   con menos aire lateral para que quepa el "dd/mm/aaaa" y su calendario. */
+.filter-panel .field-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.filter-panel .input[type='date'] { padding: 0 9px; font-size: 14px; }
+.filter-panel-foot {
+  display: flex; justify-content: flex-end;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-2);
+}
+
+/* Fichas de lo aplicado. Se leen con el panel CERRADO: sin ellas, un filtro
+   escondido sigue recortando el listado sin que nada lo diga. */
+.filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.filter-chip {
+  gap: 4px; padding-right: 5px;
+  background: var(--brand-softer); border-color: var(--brand-soft); color: var(--brand-700);
+}
+.filter-chip-x {
+  display: grid; place-items: center; width: 17px; height: 17px; padding: 0;
+  border-radius: 99px; color: var(--brand); opacity: .75;
+}
+.filter-chip-x:hover { opacity: 1; background: var(--brand-soft); }
+.filter-chip-x svg { width: 11px; height: 11px; }
+.filter-clear {
+  padding: 0 2px; font-size: 12.5px; font-weight: 600;
+  color: var(--muted); text-decoration: underline;
+}
+.filter-clear:hover { color: var(--ink-2); }
+
+@media (max-width: 560px) {
+  /* Sigue anclado a la derecha (el botón está pegado a ese margen) pero ocupa
+     el ancho útil: en el móvil un panel de 310px deja el resto en blanco. */
+  .filter-panel { width: calc(100vw - 40px); }
+}
 
 /* ---- Tabla ---- */
 .table { width: 100%; border-collapse: collapse; background: var(--surface);
@@ -599,8 +672,8 @@ select.input { cursor: pointer; padding-right: 30px; }
   .topbar { padding: 0 20px; }
   .head-row { flex-direction: column; align-items: stretch; }
   .head-row .btn { width: 100%; }
-  .filters { flex-direction: column; }
-  .filters .search, .filters .input { width: 100%; }
+  .scan-row { flex-direction: column; }
+  .scan-row .search, .scan-row .input, .scan-row .btn { width: 100%; }
 }
 
 /* En móvil el sidebar se vuelve un drawer off-canvas con hamburguesa */
@@ -673,8 +746,8 @@ select.input { cursor: pointer; padding-right: 30px; }
 .btn-danger-ghost:hover { background: var(--danger-soft); }
 /* Contador de caracteres alineado a la derecha de su etiqueta. */
 .field-label .field-count { float: right; color: var(--faint); font-weight: 500; }
-/* Formulario que vive suelto en una pantalla, no dentro de un modal (prealerta,
-   mi perfil). Columna unica: los campos que van juntos se agrupan con
+/* Formulario que vive suelto en una pantalla, no dentro de un modal (mi perfil,
+   configuración). Columna unica: los campos que van juntos se agrupan con
    .field-pair, igual que en los modales. No usar .form-grid aqui: esa rejilla
    reparte a DOS columnas desde tablet y exige marcar .col-full campo a campo. */
 .form-stack { display: grid; gap: 16px; }

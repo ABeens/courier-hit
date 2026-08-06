@@ -18,6 +18,7 @@ import {
 } from '@courier/shared';
 import type { ProviderLinkDetailDto, ProviderLinkDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
+import { FilterBar } from '../components/FilterBar';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { ProviderLinkEditModal } from './ProviderLinkEditModal';
 
@@ -107,26 +108,42 @@ export function ProviderLinksScreen() {
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
       {notice && <div className="banner ok" style={{ marginBottom: 14 }}>{notice}</div>}
 
-      <div className="filters">
-        <input
-          className="input search"
-          placeholder="Buscar por casillero, nombre, cédula o correo…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <select
-          className="input"
-          value={status}
-          onChange={(e) => setStatus(e.target.value as HelgaSyncStatus | '')}
-        >
-          <option value="">Sin enlazar (en proceso y rechazados)</option>
-          {Object.values(HelgaSyncStatus).map((s) => (
-            <option key={s} value={s}>
-              Solo {HELGA_SYNC_STATUS_LABELS[s].toLowerCase()}
-            </option>
-          ))}
-        </select>
-      </div>
+      <FilterBar
+        search={{
+          value: q,
+          onChange: setQ,
+          placeholder: 'Buscar por casillero, nombre, cédula o correo…',
+        }}
+        /* El valor por defecto de "Enlace" NO es "todos" sino la cola de trabajo
+           (lo que falta por enlazar), asi que solo pinta ficha cuando se sale de
+           ella: es entonces cuando el listado deja de ser lo que se espera. */
+        chips={
+          status
+            ? [{
+                label: `Enlace: Solo ${HELGA_SYNC_STATUS_LABELS[status].toLowerCase()}`,
+                onClear: () => setStatus(''),
+              }]
+            : []
+        }
+        onClearAll={() => setStatus('')}
+      >
+        <div>
+          <label className="field-label" htmlFor="f-link-status">Enlace</label>
+          <select
+            id="f-link-status"
+            className="input"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as HelgaSyncStatus | '')}
+          >
+            <option value="">Sin enlazar (en proceso y rechazados)</option>
+            {Object.values(HelgaSyncStatus).map((s) => (
+              <option key={s} value={s}>
+                Solo {HELGA_SYNC_STATUS_LABELS[s].toLowerCase()}
+              </option>
+            ))}
+          </select>
+        </div>
+      </FilterBar>
 
       <div className="cards">
         {(items ?? []).map((row) => (

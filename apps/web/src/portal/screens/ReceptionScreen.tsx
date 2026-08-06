@@ -88,7 +88,7 @@ export function ReceptionScreen() {
         </div>
       </div>
 
-      <form onSubmit={submit} className="filters">
+      <form onSubmit={submit} className="scan-row">
         <input
           ref={inputRef}
           className="input search mono"

@@ -14,6 +14,8 @@ import {
   ServiceValueType,
   formatMoney,
 } from '@courier/shared';
+import { FilterBar } from '../components/FilterBar';
+import type { FilterChip } from '../components/FilterBar';
 import { ApiError, api } from '../lib/api';
 import { CostServiceFormModal } from './CostServiceFormModal';
 
@@ -73,6 +75,32 @@ export function CostServicesScreen() {
     return () => clearTimeout(t);
   }, [load]);
 
+  /** Lo aplicado ademas del buscador: con el panel cerrado, esto es lo unico
+   *  que dice por que el listado esta recortado. */
+  const chips: FilterChip[] = [
+    ...(kind
+      ? [{ label: `Servicio: ${SERVICE_KIND_LABELS[kind as ServiceKind]}`, onClear: () => setKind('') }]
+      : []),
+    ...(valueType
+      ? [{
+          label: `Valor: ${SERVICE_VALUE_TYPE_LABELS[valueType as ServiceValueType]}`,
+          onClear: () => setValueType(''),
+        }]
+      : []),
+    ...(enabled
+      ? [{
+          label: `Estado: ${enabled === 'true' ? 'Habilitado' : 'Deshabilitado'}`,
+          onClear: () => setEnabled(''),
+        }]
+      : []),
+  ];
+
+  function clearFilters() {
+    setKind('');
+    setValueType('');
+    setEnabled('');
+  }
+
   async function toggleEnabled(row: CostServiceRow) {
     setError(null);
     setNotice(null);
@@ -104,29 +132,43 @@ export function CostServicesScreen() {
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
       {notice && <div className="banner ok" style={{ marginBottom: 14 }}>{notice}</div>}
 
-      <div className="filters">
-        <input
-          className="input search" placeholder="Buscar por nombre…"
-          value={q} onChange={(e) => setQ(e.target.value)}
-        />
-        <select className="input" value={kind} onChange={(e) => setKind(e.target.value)}>
-          <option value="">Todos los servicios</option>
-          {Object.values(ServiceKind).map((k) => (
-            <option key={k} value={k}>{SERVICE_KIND_LABELS[k]}</option>
-          ))}
-        </select>
-        <select className="input" value={valueType} onChange={(e) => setValueType(e.target.value)}>
-          <option value="">Todos los tipos de valor</option>
-          {Object.values(ServiceValueType).map((t) => (
-            <option key={t} value={t}>{SERVICE_VALUE_TYPE_LABELS[t]}</option>
-          ))}
-        </select>
-        <select className="input" value={enabled} onChange={(e) => setEnabled(e.target.value)}>
-          <option value="">Todos los estados</option>
-          <option value="true">Habilitado</option>
-          <option value="false">Deshabilitado</option>
-        </select>
-      </div>
+      <FilterBar
+        search={{ value: q, onChange: setQ, placeholder: 'Buscar por nombre…' }}
+        chips={chips}
+        onClearAll={clearFilters}
+      >
+        <div>
+          <label className="field-label" htmlFor="f-kind">Tipo de servicio</label>
+          <select id="f-kind" className="input" value={kind} onChange={(e) => setKind(e.target.value)}>
+            <option value="">Todos los servicios</option>
+            {Object.values(ServiceKind).map((k) => (
+              <option key={k} value={k}>{SERVICE_KIND_LABELS[k]}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="field-label" htmlFor="f-value-type">Tipo de valor</label>
+          <select
+            id="f-value-type" className="input" value={valueType}
+            onChange={(e) => setValueType(e.target.value)}
+          >
+            <option value="">Todos los tipos de valor</option>
+            {Object.values(ServiceValueType).map((t) => (
+              <option key={t} value={t}>{SERVICE_VALUE_TYPE_LABELS[t]}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="field-label" htmlFor="f-enabled">Estado</label>
+          <select id="f-enabled" className="input" value={enabled} onChange={(e) => setEnabled(e.target.value)}>
+            <option value="">Todos los estados</option>
+            <option value="true">Habilitado</option>
+            <option value="false">Deshabilitado</option>
+          </select>
+        </div>
+      </FilterBar>
 
       <div className="table-wrap">
         <table className="table">

@@ -31,10 +31,13 @@ import {
   usesPackageFields,
 } from '@courier/shared';
 import type { Role, ShipmentDto } from '@courier/shared';
+import { FilterBar } from '../components/FilterBar';
+import type { FilterChip } from '../components/FilterBar';
 import { PayFlag, awaitingValidation } from '../components/PayFlag';
 import { API_BASE, ApiError, api } from '../lib/api';
-import { formatDate, startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
+import { formatDate, formatDayInput, startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
 import { STATE_TONE } from '../lib/tone';
+import { PrealertModal } from './PrealertModal';
 import { ShipmentFormModal, allowedTypesFor } from './ShipmentFormModal';
 import { StateAdvanceModal, reachableStates } from './StateAdvanceModal';
 import { StateCorrectModal } from './StateCorrectModal';
@@ -228,6 +231,8 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
   const [advancing, setAdvancing] = useState<ShipmentDto | null>(null);
   const [correcting, setCorrecting] = useState<ShipmentDto | null>(null);
   const [paying, setPaying] = useState<ShipmentDto | null>(null);
+  /** Alta del cliente: prealertar vive aqui dentro, no en una pantalla aparte. */
+  const [prealerting, setPrealerting] = useState(false);
 
   const isOwn = view === 'propios';
   const canWrite = can(role, Permission.PackageWrite) || can(role, Permission.TramiteManage);
@@ -297,6 +302,24 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
     return () => clearTimeout(t);
   }, [load]);
 
+  /**
+   * Lo que se está aplicando ademas del buscador, en el mismo orden en que sale
+   * en el panel. Con el panel cerrado esto es lo UNICO que dice por que el
+   * listado esta recortado, asi que cada ficha nombra su campo y su valor.
+   */
+  const chips: FilterChip[] = [
+    ...(state ? [{ label: `Estado: ${STATE_LABELS[state as State]}`, onClear: () => setState('') }] : []),
+    ...(from ? [{ label: `Desde: ${formatDayInput(from)}`, onClear: () => setFrom('') }] : []),
+    ...(to ? [{ label: `Hasta: ${formatDayInput(to)}`, onClear: () => setTo('') }] : []),
+  ];
+
+  /** Deja el listado sin recortar. El buscador no entra: se ve y se limpia solo. */
+  function clearFilters() {
+    setState('');
+    setFrom('');
+    setTo('');
+  }
+
   const title = isOwn
     ? 'Mis paquetes'
     : view === 'paqueteria'
@@ -312,45 +335,81 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
           <div className="title">{title}</div>
           {data && <div className="count">{data.items.length} {isOwn ? 'paquetes' : 'trámites'}</div>}
         </div>
-        {canWrite && !isOwn && creatableTypes.length > 0 && (
-          <button className="btn btn-primary" onClick={() => setModal({ mode: 'create' })}>
-            {view === 'paqueteria' ? '+ Nuevo paquete' : '+ Nuevo trámite'}
+        {isOwn ? (
+          /* El cliente no da de alta tramites: avisa de lo que viene en camino. */
+          <button className="btn btn-primary" onClick={() => setPrealerting(true)}>
+            + Prealertar
           </button>
+        ) : (
+          canWrite && creatableTypes.length > 0 && (
+            <button className="btn btn-primary" onClick={() => setModal({ mode: 'create' })}>
+              {view === 'paqueteria' ? '+ Nuevo paquete' : '+ Nuevo trámite'}
+            </button>
+          )
         )}
       </div>
 
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
       {notice && <div className="banner ok" style={{ marginBottom: 14 }}>{notice}</div>}
 
-      <div className="filters">
-        <input
-          className="input search" placeholder="Buscar por consecutivo, tracking, descripción o cliente…"
-          value={q} onChange={(e) => setQ(e.target.value)}
-        />
-        <select className="input" value={state} onChange={(e) => setState(e.target.value)}>
-          <option value="">Todos los estados</option>
-          {stateOptions.map((s) => (
-            <option key={s} value={s}>{STATE_LABELS[s]}</option>
-          ))}
-        </select>
-        <input
-          className="input" type="date" value={from} aria-label="Desde"
-          onChange={(e) => setFrom(e.target.value)}
-        />
-        <input
-          className="input" type="date" value={to} aria-label="Hasta"
-          onChange={(e) => setTo(e.target.value)}
-        />
+      <FilterBar
+        search={{
+          value: q,
+          onChange: setQ,
+          placeholder: isOwn
+            ? 'Buscar por consecutivo, tracking o descripción…'
+            : 'Buscar por consecutivo, tracking, descripción o cliente…',
+        }}
+        chips={chips}
+        onClearAll={clearFilters}
+      >
+        <div>
+          <label className="field-label" htmlFor="f-state">Estado</label>
+          <select id="f-state" className="input" value={state} onChange={(e) => setState(e.target.value)}>
+            <option value="">Todos los estados</option>
+            {stateOptions.map((s) => (
+              <option key={s} value={s}>{STATE_LABELS[s]}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* El rango va en una fila: son los dos extremos de UN filtro, y
+            separados en dos bloques sueltos se leen como dos fechas sin relación. */}
+        <div className="field-pair">
+          <div>
+            <label className="field-label" htmlFor="f-from">Desde</label>
+            <input
+              id="f-from" className="input" type="date" value={from}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="f-to">Hasta</label>
+            <input
+              id="f-to" className="input" type="date" value={to}
+              onChange={(e) => setTo(e.target.value)}
+            />
+          </div>
+        </div>
+
         {/* Alternador del tablero de paquetes. Tambien cuando se llega con
             'todos' precargado desde el Resumen: es el mismo tablero abierto en
-            su vista amplia, y sin el selector no habria forma de volver. */}
+            su vista amplia, y sin el selector no habria forma de volver.
+            No es un filtro que se "quite" (siempre tiene valor), asi que no
+            pinta ficha: el titulo de la pantalla ya dice cual esta puesta. */}
         {(initialView === 'paqueteria' || initialView === 'todos') && (
-          <select className="input" value={view} onChange={(e) => setView(e.target.value as ShipmentView)}>
-            <option value="paqueteria">Solo paquetería</option>
-            <option value="todos">Todos los trámites</option>
-          </select>
+          <div>
+            <label className="field-label" htmlFor="f-view">Vista</label>
+            <select
+              id="f-view" className="input" value={view}
+              onChange={(e) => setView(e.target.value as ShipmentView)}
+            >
+              <option value="paqueteria">Solo paquetería</option>
+              <option value="todos">Todos los trámites</option>
+            </select>
+          </div>
         )}
-      </div>
+      </FilterBar>
 
       <div className="cards">
         {data?.items.map((row) => (
@@ -523,6 +582,24 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
           onPaid={(message) => {
             setPaying(null);
             setNotice(message);
+            setError(null);
+            void load();
+          }}
+        />
+      )}
+
+      {prealerting && (
+        <PrealertModal
+          /*
+            Recargar tambien al cerrar: el modal se queda abierto tras registrar
+            (permite encadenar varias y reintentar el documento), asi que el
+            cierre puede llegar con prealertas ya creadas detras.
+          */
+          onClose={() => {
+            setPrealerting(false);
+            void load();
+          }}
+          onCreated={() => {
             setError(null);
             void load();
           }}

@@ -20,6 +20,7 @@ import {
   findProvince,
 } from '@courier/shared';
 import type { ShipmentType } from '@courier/shared';
+import { FilterBar } from '../components/FilterBar';
 import { PayFlag } from '../components/PayFlag';
 import { API_BASE, ApiError, api } from '../lib/api';
 import { DeliveryConfirmModal } from './DeliveryConfirmModal';
@@ -93,23 +94,24 @@ export function DeliveriesScreen() {
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
       {notice && <div className="banner ok" style={{ marginBottom: 14 }}>{notice}</div>}
 
-      <div className="filters">
-        <input
-          className="input search"
-          placeholder="Buscar por nombre o tracking…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <input
-          className="input"
-          type="number"
-          min={1}
-          placeholder="Ruta"
-          style={{ maxWidth: 120 }}
-          value={route}
-          onChange={(e) => setRoute(e.target.value)}
-        />
-      </div>
+      <FilterBar
+        search={{ value: q, onChange: setQ, placeholder: 'Buscar por nombre o tracking…' }}
+        chips={route ? [{ label: `Ruta: ${route}`, onClear: () => setRoute('') }] : []}
+        onClearAll={() => setRoute('')}
+      >
+        <div>
+          <label className="field-label" htmlFor="f-route">Ruta</label>
+          <input
+            id="f-route"
+            className="input"
+            type="number"
+            min={1}
+            placeholder="Todas las rutas"
+            value={route}
+            onChange={(e) => setRoute(e.target.value)}
+          />
+        </div>
+      </FilterBar>
 
       <div className="cards">
         {items?.map((row) => (
