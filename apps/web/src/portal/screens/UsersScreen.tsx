@@ -5,6 +5,8 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { ROLE_LABELS, Role, UserStatus } from '@courier/shared';
+import { FilterBar } from '../components/FilterBar';
+import type { FilterChip } from '../components/FilterBar';
 import { ApiError, api } from '../lib/api';
 import { StaffFormModal } from './StaffFormModal';
 
@@ -52,6 +54,23 @@ export function UsersScreen() {
     return () => clearTimeout(t);
   }, [load]);
 
+  /** Lo aplicado ademas del buscador: con el panel cerrado, esto es lo unico
+   *  que dice por que el listado esta recortado. */
+  const chips: FilterChip[] = [
+    ...(role ? [{ label: `Rol: ${ROLE_LABELS[role as Role]}`, onClear: () => setRole('') }] : []),
+    ...(status
+      ? [{
+          label: `Estado: ${status === UserStatus.Activo ? 'Activo' : 'Inactivo'}`,
+          onClear: () => setStatus(''),
+        }]
+      : []),
+  ];
+
+  function clearFilters() {
+    setRole('');
+    setStatus('');
+  }
+
   async function toggleStatus(row: StaffRow) {
     const next = row.status === UserStatus.Activo ? UserStatus.Inactivo : UserStatus.Activo;
     setError(null);
@@ -96,25 +115,32 @@ export function UsersScreen() {
         </div>
       )}
 
-      <div className="filters">
-        <input
-          className="input search" placeholder="Buscar por nombre o correo…"
-          value={q} onChange={(e) => setQ(e.target.value)}
-        />
-        <select className="input" value={role} onChange={(e) => setRole(e.target.value)}>
-          <option value="">Todos los roles</option>
-          {Object.values(Role)
-            .filter((r) => r !== Role.Client)
-            .map((r) => (
-              <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-            ))}
-        </select>
-        <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">Todos los estados</option>
-          <option value={UserStatus.Activo}>Activo</option>
-          <option value={UserStatus.Inactivo}>Inactivo</option>
-        </select>
-      </div>
+      <FilterBar
+        search={{ value: q, onChange: setQ, placeholder: 'Buscar por nombre o correo…' }}
+        chips={chips}
+        onClearAll={clearFilters}
+      >
+        <div>
+          <label className="field-label" htmlFor="f-role">Rol</label>
+          <select id="f-role" className="input" value={role} onChange={(e) => setRole(e.target.value)}>
+            <option value="">Todos los roles</option>
+            {Object.values(Role)
+              .filter((r) => r !== Role.Client)
+              .map((r) => (
+                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+              ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="field-label" htmlFor="f-status">Estado</label>
+          <select id="f-status" className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">Todos los estados</option>
+            <option value={UserStatus.Activo}>Activo</option>
+            <option value={UserStatus.Inactivo}>Inactivo</option>
+          </select>
+        </div>
+      </FilterBar>
 
       <div className="table-wrap">
       <table className="table">

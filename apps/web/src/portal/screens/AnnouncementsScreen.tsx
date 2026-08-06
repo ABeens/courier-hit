@@ -16,6 +16,8 @@ import {
   AnnouncementType,
 } from '@courier/shared';
 import type { AnnouncementDto } from '@courier/shared';
+import { FilterBar } from '../components/FilterBar';
+import type { FilterChip } from '../components/FilterBar';
 import { ApiError, api } from '../lib/api';
 import { AnnouncementFormModal } from './AnnouncementFormModal';
 
@@ -77,6 +79,28 @@ export function AnnouncementsScreen() {
     return () => clearTimeout(t);
   }, [load]);
 
+  /** Lo aplicado ademas del buscador: con el panel cerrado, esto es lo unico
+   *  que dice por que el listado esta recortado. */
+  const chips: FilterChip[] = [
+    ...(type
+      ? [{
+          label: `Tipo: ${ANNOUNCEMENT_TYPE_LABELS[type as AnnouncementType]}`,
+          onClear: () => setType(''),
+        }]
+      : []),
+    ...(status
+      ? [{
+          label: `Estado: ${ANNOUNCEMENT_STATUS_LABELS[status as AnnouncementStatus]}`,
+          onClear: () => setStatus(''),
+        }]
+      : []),
+  ];
+
+  function clearFilters() {
+    setType('');
+    setStatus('');
+  }
+
   async function toggleEnabled(row: AnnouncementRow) {
     setError(null);
     setNotice(null);
@@ -128,24 +152,31 @@ export function AnnouncementsScreen() {
         </div>
       )}
 
-      <div className="filters">
-        <input
-          className="input search" placeholder="Buscar por título o mensaje…"
-          value={q} onChange={(e) => setQ(e.target.value)}
-        />
-        <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="">Todos los tipos</option>
-          {Object.values(AnnouncementType).map((t) => (
-            <option key={t} value={t}>{ANNOUNCEMENT_TYPE_LABELS[t]}</option>
-          ))}
-        </select>
-        <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">Todos los estados</option>
-          {Object.values(AnnouncementStatus).map((s) => (
-            <option key={s} value={s}>{ANNOUNCEMENT_STATUS_LABELS[s]}</option>
-          ))}
-        </select>
-      </div>
+      <FilterBar
+        search={{ value: q, onChange: setQ, placeholder: 'Buscar por título o mensaje…' }}
+        chips={chips}
+        onClearAll={clearFilters}
+      >
+        <div>
+          <label className="field-label" htmlFor="f-type">Tipo</label>
+          <select id="f-type" className="input" value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="">Todos los tipos</option>
+            {Object.values(AnnouncementType).map((t) => (
+              <option key={t} value={t}>{ANNOUNCEMENT_TYPE_LABELS[t]}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="field-label" htmlFor="f-status">Estado</label>
+          <select id="f-status" className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">Todos los estados</option>
+            {Object.values(AnnouncementStatus).map((s) => (
+              <option key={s} value={s}>{ANNOUNCEMENT_STATUS_LABELS[s]}</option>
+            ))}
+          </select>
+        </div>
+      </FilterBar>
 
       <div className="table-wrap">
         <table className="table">

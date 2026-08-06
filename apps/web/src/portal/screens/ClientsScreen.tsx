@@ -18,6 +18,7 @@ import {
   findProvince,
   formatMoney,
 } from '@courier/shared';
+import { FilterBar } from '../components/FilterBar';
 import { ApiError, api } from '../lib/api';
 import { ClientEditModal } from './ClientEditModal';
 
@@ -141,22 +142,32 @@ export function ClientsScreen({ canWrite }: { canWrite: boolean }) {
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
       {notice && <div className="banner ok" style={{ marginBottom: 14 }}>{notice}</div>}
 
-      <div className="filters">
-        <input
-          className="input search"
-          placeholder="Buscar por nombre, casillero, cédula o correo…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <select
-          className="input"
-          value={onlyNew ? 'nuevos' : ''}
-          onChange={(e) => setOnlyNew(e.target.value === 'nuevos')}
-        >
-          <option value="">Todos los casilleros</option>
-          <option value="nuevos">Solo nuevos (por revisar)</option>
-        </select>
-      </div>
+      <FilterBar
+        search={{
+          value: q,
+          onChange: setQ,
+          placeholder: 'Buscar por nombre, casillero, cédula o correo…',
+        }}
+        chips={
+          onlyNew
+            ? [{ label: 'Casilleros: Solo nuevos', onClear: () => setOnlyNew(false) }]
+            : []
+        }
+        onClearAll={() => setOnlyNew(false)}
+      >
+        <div>
+          <label className="field-label" htmlFor="f-review">Revisión</label>
+          <select
+            id="f-review"
+            className="input"
+            value={onlyNew ? 'nuevos' : ''}
+            onChange={(e) => setOnlyNew(e.target.value === 'nuevos')}
+          >
+            <option value="">Todos los casilleros</option>
+            <option value="nuevos">Solo nuevos (por revisar)</option>
+          </select>
+        </div>
+      </FilterBar>
 
       <div className="cards">
         {visible.map((row) => {

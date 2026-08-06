@@ -9,6 +9,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PROVINCES, getAllDistricts, getCantons } from '@courier/shared';
 import type { DistrictListItem, DistrictRouteDto } from '@courier/shared';
+import { FilterBar } from '../components/FilterBar';
+import type { FilterChip } from '../components/FilterBar';
 import { ApiError, api } from '../lib/api';
 
 interface ListResponse {
@@ -51,6 +53,37 @@ export function RoutesScreen() {
   function selectProvince(code: string) {
     setProvince(code);
     setCanton('');
+  }
+
+  /**
+   * Lo aplicado ademas del buscador: con el panel cerrado, esto es lo unico que
+   * dice por que la tabla esta recortada. Quitar la provincia se lleva por
+   * delante el canton, igual que al cambiarla: fuera de su provincia no existe.
+   */
+  const chips: FilterChip[] = [
+    ...(province
+      ? [{
+          label: `Provincia: ${PROVINCES.find((p) => p.code === province)?.name ?? province}`,
+          onClear: () => selectProvince(''),
+        }]
+      : []),
+    ...(canton
+      ? [{
+          label: `Cantón: ${cantons.find((c) => c.code === canton)?.name ?? canton}`,
+          onClear: () => setCanton(''),
+        }]
+      : []),
+    ...(assignment
+      ? [{
+          label: `Asignación: ${assignment === 'assigned' ? 'Con ruta' : 'Sin ruta'}`,
+          onClear: () => setAssignment(''),
+        }]
+      : []),
+  ];
+
+  function clearFilters() {
+    selectProvince('');
+    setAssignment('');
   }
 
   const rows = useMemo(() => {
@@ -129,36 +162,55 @@ export function RoutesScreen() {
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
       {notice && <div className="banner ok" style={{ marginBottom: 14 }}>{notice}</div>}
 
-      <div className="filters">
-        <input
-          className="input search"
-          placeholder="Buscar distrito, cantón o código…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <select className="input" value={province} onChange={(e) => selectProvince(e.target.value)}>
-          <option value="">Todas las provincias</option>
-          {PROVINCES.map((p) => (
-            <option key={p.code} value={p.code}>{p.name}</option>
-          ))}
-        </select>
-        <select
-          className="input"
-          value={canton}
-          onChange={(e) => setCanton(e.target.value)}
-          disabled={!province}
-        >
-          <option value="">{province ? 'Todos los cantones' : 'Elige una provincia'}</option>
-          {cantons.map((c) => (
-            <option key={c.code} value={c.code}>{c.name}</option>
-          ))}
-        </select>
-        <select className="input" value={assignment} onChange={(e) => setAssignment(e.target.value)}>
-          <option value="">Todos</option>
-          <option value="assigned">Con ruta</option>
-          <option value="unassigned">Sin ruta</option>
-        </select>
-      </div>
+      <FilterBar
+        search={{ value: q, onChange: setQ, placeholder: 'Buscar distrito, cantón o código…' }}
+        chips={chips}
+        onClearAll={clearFilters}
+      >
+        {/* Provincia y canton son un embudo: el canton solo existe dentro de una
+            provincia, asi que van juntos en la misma fila. */}
+        <div className="field-pair">
+          <div>
+            <label className="field-label" htmlFor="f-province">Provincia</label>
+            <select
+              id="f-province" className="input" value={province}
+              onChange={(e) => selectProvince(e.target.value)}
+            >
+              <option value="">Todas</option>
+              {PROVINCES.map((p) => (
+                <option key={p.code} value={p.code}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="field-label" htmlFor="f-canton">Cantón</label>
+            <select
+              id="f-canton"
+              className="input"
+              value={canton}
+              onChange={(e) => setCanton(e.target.value)}
+              disabled={!province}
+            >
+              <option value="">{province ? 'Todos' : 'Elige provincia'}</option>
+              {cantons.map((c) => (
+                <option key={c.code} value={c.code}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="field-label" htmlFor="f-assignment">Asignación</label>
+          <select
+            id="f-assignment" className="input" value={assignment}
+            onChange={(e) => setAssignment(e.target.value)}
+          >
+            <option value="">Todos</option>
+            <option value="assigned">Con ruta</option>
+            <option value="unassigned">Sin ruta</option>
+          </select>
+        </div>
+      </FilterBar>
 
       <div className="table-wrap">
         <table className="table">

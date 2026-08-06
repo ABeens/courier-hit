@@ -26,6 +26,18 @@ export function formatDateTime(iso: string): string {
 }
 
 /**
+ * Dia elegido en un <input type="date"> (YYYY-MM-DD) -> como se escribe en es-CR.
+ *
+ * Aqui NO hay conversion de zona: ese valor ya es un dia del calendario local
+ * del usuario, no un instante. Pasarlo por `new Date(...)` lo leeria como UTC y
+ * lo correria un dia hacia atras en Costa Rica.
+ */
+export function formatDayInput(day: string): string {
+  const [y, m, d] = day.split('-');
+  return d && m && y ? `${d}/${m}/${y}` : day;
+}
+
+/**
  * Dia elegido en un <input type="date"> (YYYY-MM-DD, hora local) -> instante UTC
  * del ARRANQUE de ese dia. Es el extremo inclusivo de un filtro de rango.
  */

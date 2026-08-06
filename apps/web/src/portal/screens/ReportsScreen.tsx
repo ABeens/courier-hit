@@ -12,8 +12,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ReportKind, SHIPMENT_TYPE_LABELS, ShipmentType } from '@courier/shared';
 import type { ReportColumn, ReportRow } from '@courier/shared';
+import { FilterBar } from '../components/FilterBar';
+import type { FilterChip } from '../components/FilterBar';
 import { API_BASE, ApiError, api } from '../lib/api';
-import { startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
+import { formatDayInput, startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
 
 interface CatalogItem {
   kind: ReportKind;
@@ -89,6 +91,28 @@ export function ReportsScreen() {
     window.open(`${API_BASE}/api/reports?${params.toString()}`, '_blank');
   }
 
+  /**
+   * Lo aplicado sobre el reporte. Aqui importa mas que en un listado: lo que
+   * se ve en pantalla es lo que se descarga en CSV, y un recorte escondido
+   * viaja dentro del archivo sin que nada lo diga.
+   */
+  const chips: FilterChip[] = [
+    ...(type
+      ? [{
+          label: `Trámite: ${SHIPMENT_TYPE_LABELS[type as ShipmentType]}`,
+          onClear: () => setType(''),
+        }]
+      : []),
+    ...(from ? [{ label: `Desde: ${formatDayInput(from)}`, onClear: () => setFrom('') }] : []),
+    ...(to ? [{ label: `Hasta: ${formatDayInput(to)}`, onClear: () => setTo('') }] : []),
+  ];
+
+  function clearFilters() {
+    setType('');
+    setFrom('');
+    setTo('');
+  }
+
   const selected = catalog?.find((item) => item.kind === kind);
 
   return (
@@ -105,41 +129,56 @@ export function ReportsScreen() {
 
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
 
-      <div className="filters">
-        <select
-          className="input search"
-          value={kind}
-          onChange={(e) => setKind(e.target.value as ReportKind)}
-        >
-          {catalog?.map((item) => (
-            <option key={item.kind} value={item.kind}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-        <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="">Todos los trámites</option>
-          {Object.values(ShipmentType).map((t) => (
-            <option key={t} value={t}>
-              {SHIPMENT_TYPE_LABELS[t]}
-            </option>
-          ))}
-        </select>
-        <input
-          className="input"
-          type="date"
-          value={from}
-          onChange={(e) => setFrom(e.target.value)}
-          aria-label="Desde"
-        />
-        <input
-          className="input"
-          type="date"
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-          aria-label="Hasta"
-        />
-      </div>
+      <FilterBar
+        /* El reporte NO se pliega: no recorta un listado, lo elige. Con el
+           selector escondido la pantalla no diria que se esta mirando. */
+        lead={
+          <select
+            className="input"
+            value={kind}
+            aria-label="Reporte"
+            onChange={(e) => setKind(e.target.value as ReportKind)}
+          >
+            {catalog?.map((item) => (
+              <option key={item.kind} value={item.kind}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        }
+        chips={chips}
+        onClearAll={clearFilters}
+      >
+        <div>
+          <label className="field-label" htmlFor="f-type">Trámite</label>
+          <select id="f-type" className="input" value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="">Todos los trámites</option>
+            {Object.values(ShipmentType).map((t) => (
+              <option key={t} value={t}>
+                {SHIPMENT_TYPE_LABELS[t]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* El rango va en una fila: son los dos extremos de UN filtro. */}
+        <div className="field-pair">
+          <div>
+            <label className="field-label" htmlFor="f-from">Desde</label>
+            <input
+              id="f-from" className="input" type="date" value={from}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="f-to">Hasta</label>
+            <input
+              id="f-to" className="input" type="date" value={to}
+              onChange={(e) => setTo(e.target.value)}
+            />
+          </div>
+        </div>
+      </FilterBar>
 
       <div className="table-wrap">
         <table className="table">

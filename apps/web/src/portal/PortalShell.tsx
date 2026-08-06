@@ -19,7 +19,6 @@ import { SettingsScreen } from './screens/SettingsScreen';
 import { CostsScreen } from './screens/CostsScreen';
 import { TariffsScreen } from './screens/TariffsScreen';
 import { RoutesScreen } from './screens/RoutesScreen';
-import { PrealertScreen } from './screens/PrealertScreen';
 import { ShipmentsScreen } from './screens/ShipmentsScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { DeliveriesScreen } from './screens/DeliveriesScreen';
@@ -34,16 +33,18 @@ interface NavItem { resource: Resource; label: string }
 
 /**
  * Menu del titular de casillero. Va aparte del de staff porque comparten el
- * recurso Package con etiquetas distintas: para el cliente son "sus" tramites,
- * no la cola de operacion. Sin esta rama el rol client se quedaba SIN NINGUNA
- * entrada de menu, porque Prealert no figuraba en los grupos de staff.
+ * recurso Package con etiquetas distintas: para el cliente son "sus" paquetes,
+ * no la cola de operacion.
+ *
+ * Prealertar NO tiene entrada propia: es una accion de "Mis paquetes" (el boton
+ * abre `PrealertModal`), porque el cliente avisa de un paquete para verlo
+ * aparecer en ese mismo listado.
  */
 const CLIENT_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   {
     group: 'Mi casillero',
     items: [
       { resource: Resource.Locker, label: 'Mi casillero' },
-      { resource: Resource.Prealert, label: 'Prealertar' },
       { resource: Resource.Package, label: 'Mis paquetes' },
       { resource: Resource.Profile, label: 'Mi perfil' },
     ],
@@ -94,6 +95,13 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
   const allowed = useMemo(() => {
     const resources = new Set(resourcesFor(me.role));
     if (!miamiLink) resources.delete(Resource.Config);
+    /**
+     * Prealertar ya no es una pantalla: vive dentro de "Mis paquetes". Se quita
+     * tambien de este conjunto (y no solo del menu) para que el deep-link viejo
+     * /app/prealerta caiga en la pantalla por defecto en vez de en el hueco de
+     * una pantalla que no existe. El permiso de la API no se toca.
+     */
+    resources.delete(Resource.Prealert);
     return resources;
   }, [me.role, miamiLink]);
   const visibleGroups = useMemo(
@@ -255,8 +263,6 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
             <SettingsScreen canEdit={can(me.role, Permission.ExchangeRateWrite)} />
           ) : current === Resource.Routes ? (
             <RoutesScreen />
-          ) : current === Resource.Prealert ? (
-            <PrealertScreen />
           ) : current === Resource.Package ? (
             // Para el cliente, "sus" tramites (la API ya acota el listado);
             // para staff, el tablero de Paqueteria con opcion de ver todos.
