@@ -26,6 +26,7 @@ import type { AppEnv } from '../../core/http';
 import { requireAnyPermission } from '../../core/middleware/requireAnyPermission';
 import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
+import { StorageErrors } from '../../core/storage';
 import { providerSyncService } from './provider-sync.service';
 import { receptionService } from './reception.service';
 import { shipmentsService, toDto } from './shipments.service';
@@ -92,6 +93,42 @@ shipmentsRoutes.get('/:id', canRead, async (c) => {
 
 shipmentsRoutes.get('/:id/events', canRead, async (c) => {
   return c.json(await shipmentsService.events(c.get('session'), c.req.param('id')));
+});
+
+/**
+ * Documento adjunto del tramite (la factura de la compra, tipicamente). Va como
+ * multipart porque lleva un archivo; el resto del modulo es JSON.
+ *
+ * La barrera es `canRead` y no `canWrite` a proposito: adjuntar el documento es
+ * parte de prealertar, y el cliente solo tiene permisos de LECTURA sobre sus
+ * tramites (`package.read.own`). Con `canWrite` ningun cliente podria adjuntar
+ * nada. Quien puede escribir es siempre el dueño del tramite o el staff, y de eso
+ * se encarga el servicio, que resuelve el acceso con las mismas reglas del
+ * detalle (404 si el tramite no es suyo). Mismo criterio que el comprobante de
+ * deposito en el modulo de pagos.
+ */
+shipmentsRoutes.post('/:id/document', canRead, async (c) => {
+  const form = await c.req.parseBody();
+  const file = form['file'];
+  if (!(file instanceof File)) throw StorageErrors.fileRequired('el documento del trámite');
+
+  return c.json(await shipmentsService.attachDocument(c.get('session'), c.req.param('id'), file));
+});
+
+/**
+ * Descarga del documento. `attachment` y no `inline`: un .docx o un .xlsx no los
+ * pinta el navegador, y forzar la descarga evita la pantalla en blanco. El nombre
+ * lo arma el servicio a partir del consecutivo, nunca del archivo original.
+ */
+shipmentsRoutes.get('/:id/document', canRead, async (c) => {
+  const { body, contentType, filename } = await shipmentsService.documentFile(
+    c.get('session'),
+    c.req.param('id'),
+  );
+  return c.body(body, 200, {
+    'content-type': contentType,
+    'content-disposition': `attachment; filename="${filename}"`,
+  });
 });
 
 shipmentsRoutes.patch('/:id', canWrite, zValidator('json', updateShipmentSchema), async (c) => {

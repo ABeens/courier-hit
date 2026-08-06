@@ -5,6 +5,10 @@
  *   - Paqueteria                  -> tienda, transportista, tracking, descripcion.
  *   - Transporte / Agenciamiento  -> solo guia (AWB/BL) y descripcion (REF).
  *
+ * Vive DENTRO de "Mis paquetes" (no como pantalla propia del menu): prealertar
+ * es una accion sobre ese listado, y asi el cliente ve aparecer lo que acaba de
+ * avisar sin cambiar de sitio.
+ *
  * El dueño de la prealerta NO se elige: lo pone la API desde la sesion.
  *
  * El documento (la factura de la compra) es OPCIONAL y viaja en una SEGUNDA
@@ -27,12 +31,19 @@ import {
 } from '@courier/shared';
 import type { ShipmentDto } from '@courier/shared';
 import { FileField } from '../components/FileField';
+import { ModalOverlay } from '../components/ModalOverlay';
 import { ApiError, api } from '../lib/api';
 
 /** Paqueteria primero: es el caso por defecto del requisito. */
 const TYPE_OPTIONS: ShipmentType[] = [ShipmentType.Paqueteria, ...MANUAL_SHIPMENT_TYPES];
 
-export function PrealertScreen({ onCreated }: { onCreated?: () => void }) {
+interface Props {
+  onClose: () => void;
+  /** El listado de fondo se recarga con cada prealerta registrada. */
+  onCreated: () => void;
+}
+
+export function PrealertModal({ onClose, onCreated }: Props) {
   const [shipmentType, setShipmentType] = useState<ShipmentType>(ShipmentType.Paqueteria);
   const [tracking, setTracking] = useState('');
   const [description, setDescription] = useState('');
@@ -151,7 +162,12 @@ export function PrealertScreen({ onCreated }: { onCreated?: () => void }) {
        * el estado para reintentar solo esa subida.
        */
       if (documentFile && (await uploadDocument(result.id, documentFile))) clearDocument();
-      onCreated?.();
+      /**
+       * El modal NO se cierra solo: la prealerta puede haber dejado el documento
+       * pendiente de reintento, y encadenar varias (llega mas de un paquete el
+       * mismo dia) es lo normal. Lo que si se refresca es el listado de detras.
+       */
+      onCreated();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo registrar la prealerta.');
     } finally {
@@ -160,31 +176,22 @@ export function PrealertScreen({ onCreated }: { onCreated?: () => void }) {
   }
 
   return (
-    <div className="fadeIn">
-      <div className="head-row">
-        <div>
-          <div className="title">Prealertar un trámite</div>
-          <div className="count">Avísanos qué viene en camino para darle seguimiento.</div>
+    <ModalOverlay onClose={onClose}>
+      <form className="modal fadeUp" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
+        <div className="modal-head">
+          <h3>Prealertar</h3>
+          <p>Avísanos qué viene en camino para darle seguimiento.</p>
         </div>
-      </div>
 
-      {/* Los avisos se alinean con el formulario (mismo ancho): son suyos, no de
-          la pantalla entera. */}
-      {error && <div className="banner err" style={{ marginBottom: 14, maxWidth: 920 }}>{error}</div>}
-      {created && (
-        <div className="banner ok" style={{ marginBottom: 14, maxWidth: 920 }}>
-          Prealerta registrada con el consecutivo <strong>{created.code}</strong> ({created.tracking}).
-          Puedes seguir su estado en «Mis paquetes».
-        </div>
-      )}
+        <div className="modal-body">
+          {error && <div className="banner err">{error}</div>}
+          {created && (
+            <div className="banner ok">
+              Prealerta registrada con el consecutivo <strong>{created.code}</strong> ({created.tracking}).
+              Ya aparece en tu listado.
+            </div>
+          )}
 
-      {/* Ancho: el formulario es de pantalla, no de modal, y con los campos a una
-          sola columna estrecha quedaba una cinta vertical en medio de la nada.
-          Los datos que se leen juntos van en la misma fila (trámite + tracking,
-          y los tres de paquetería) y el ancho se corta antes del de la pantalla
-          para que ninguna línea de texto se estire de borde a borde. */}
-      <form className="card form-stack" onSubmit={submit} style={{ maxWidth: 920 }}>
-        <div className="field-pair">
           <div>
             <label className="field-label" htmlFor="p-type">Trámite</label>
             <select
@@ -207,35 +214,36 @@ export function PrealertScreen({ onCreated }: { onCreated?: () => void }) {
               onChange={(e) => setTracking(e.target.value)}
             />
           </div>
-        </div>
 
-        <div>
-          <label className="field-label" htmlFor="p-desc">Descripción (REF)</label>
-          <input
-            id="p-desc" className="input" value={description}
-            placeholder={isPackage ? 'Audífonos bluetooth' : 'CHEVROLET SPARK VIN583378'}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </div>
+          <div>
+            <label className="field-label" htmlFor="p-desc">Descripción (REF)</label>
+            <input
+              id="p-desc" className="input" value={description}
+              placeholder={isPackage ? 'Audífonos bluetooth' : 'CHEVROLET SPARK VIN583378'}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
 
-        {/* Los tres datos de la compra en una fila: son el mismo bloque de
-            información (dónde se compró, quién lo trae y cuánto costó). */}
-        {isPackage && (
-          <div className="field-pair cols-3">
-            <div>
-              <label className="field-label" htmlFor="p-store">Tienda</label>
-              <select id="p-store" className="input" value={store} onChange={(e) => setStore(e.target.value)}>
-                <option value="">Elige…</option>
-                {STORES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+          {isPackage && (
+            <div className="field-pair">
+              <div>
+                <label className="field-label" htmlFor="p-store">Tienda</label>
+                <select id="p-store" className="input" value={store} onChange={(e) => setStore(e.target.value)}>
+                  <option value="">Elige…</option>
+                  {STORES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="field-label" htmlFor="p-carrier">Transportista</label>
+                <select id="p-carrier" className="input" value={carrier} onChange={(e) => setCarrier(e.target.value)}>
+                  <option value="">Elige…</option>
+                  {CARRIERS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="field-label" htmlFor="p-carrier">Transportista</label>
-              <select id="p-carrier" className="input" value={carrier} onChange={(e) => setCarrier(e.target.value)}>
-                <option value="">Elige…</option>
-                {CARRIERS.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
+          )}
+
+          {isPackage && (
             <div>
               <label className="field-label" htmlFor="p-value">Valor declarado (USD)</label>
               <input
@@ -245,31 +253,34 @@ export function PrealertScreen({ onCreated }: { onCreated?: () => void }) {
               />
               <div className="field-hint">Lo que pagaste por la compra, en dólares. Es obligatorio para la aduana.</div>
             </div>
-          </div>
-        )}
+          )}
 
-        <FileField
-          id="p-document"
-          label="Documento (opcional)"
-          accept={DOCUMENT_ATTACHMENT.accept}
-          file={documentFile}
-          onPick={pickDocument}
-          disabled={busy}
-          hint={`Adjunta la factura de la compra. Se aceptan ${DOCUMENT_ATTACHMENT.label}; las fotos y capturas de pantalla no sirven, tiene que ser el documento.`}
-        />
+          <FileField
+            id="p-document"
+            label="Documento (opcional)"
+            accept={DOCUMENT_ATTACHMENT.accept}
+            file={documentFile}
+            onPick={pickDocument}
+            disabled={busy}
+            hint={`Adjunta la factura de la compra. Se aceptan ${DOCUMENT_ATTACHMENT.label}; las fotos y capturas de pantalla no sirven, tiene que ser el documento.`}
+          />
+        </div>
 
-        <div className="form-actions is-buttons">
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? 'Registrando…' : 'Prealertar'}
-          </button>
+        <div className="modal-foot">
           {/* Solo cuando la prealerta ya paso y lo unico que falto fue el archivo. */}
           {pendingDocument && (
             <button type="button" className="btn btn-ghost" disabled={busy} onClick={retryDocument}>
               {busy ? 'Adjuntando…' : 'Reintentar adjuntar'}
             </button>
           )}
+          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
+            {created ? 'Cerrar' : 'Cancelar'}
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? 'Registrando…' : 'Prealertar'}
+          </button>
         </div>
       </form>
-    </div>
+    </ModalOverlay>
   );
 }

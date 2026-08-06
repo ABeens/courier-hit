@@ -3,7 +3,7 @@
  * (docs/manuales/flujo.md L73-121).
  *
  * El TIPO de tramite manda sobre el formulario:
- *   - Paqueteria       -> tienda, transportista, HAWB/HBL y peso.
+ *   - Paqueteria       -> tienda, transportista, HAWB (LES) y peso.
  *   - Transporte y Ag. -> notas para facturar; almacen y DUA solo al EDITAR,
  *                         porque el manual los pide despues de guardar (L80-83).
  *
@@ -323,7 +323,9 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
               </div>
 
               <div>
-                <label className="field-label" htmlFor="t-hawb">HAWB / HBL</label>
+                {/* Mismo nombre que en la ficha del trámite: es el mismo dato, y
+                    quien lo digita aquí es quien después lo lee ahí. */}
+                <label className="field-label" htmlFor="t-hawb">HAWB (LES)</label>
                 <input
                   id="t-hawb" className="input" inputMode="numeric" value={hawb}
                   placeholder="Solo números" disabled={!canEdit(ShipmentField.Hawb)}

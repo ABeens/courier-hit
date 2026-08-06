@@ -42,7 +42,7 @@ export interface ShipmentDto {
   // --- Solo Paqueteria ---
   store: string | null;
   carrier: string | null;
-  /** HAWB / HBL, solo digitos. */
+  /** HAWB (LES): el identificador del paquete en la bodega de Miami, solo digitos. */
   hawb: string | null;
   /** Peso en kilos, entero (siempre redondeado hacia arriba al guardar). */
   weightKg: number | null;
@@ -69,6 +69,15 @@ export interface ShipmentDto {
   tariffPosition: string | null;
   /** Retener el paquete en la bodega del proveedor. Solo staff; null/false = no retener. */
   retain: boolean | null;
+
+  /**
+   * Clave del documento adjunto (la factura de la compra, tipicamente), o null
+   * si no se adjunto ninguno. Es OPACA: no sirve para construir una URL ni
+   * revela el nombre del archivo original. La UI solo la mira para saber si hay
+   * algo que descargar; el contenido se pide a
+   * `GET /api/shipments/:id/document`, que es quien comprueba el permiso.
+   */
+  documentFileKey: string | null;
 
   // --- Solo Transporte y Agenciamiento ---
   warehouse: string | null;

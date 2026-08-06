@@ -1,0 +1,1 @@
+ALTER TABLE "shipments" ADD COLUMN "document_file_key" text;

@@ -26,6 +26,7 @@ export * from './clients/dto';
 export * from './clients/provider-link';
 export * from './announcements/announcement';
 export * from './announcements/dto';
+export * from './files/attachments';
 export * from './geo/costa-rica';
 export * from './geo/routes';
 export * from './shipments/catalogs';

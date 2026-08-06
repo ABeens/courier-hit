@@ -141,6 +141,13 @@
       "when": 1785527665656,
       "tag": "0019_left_norman_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785991967224,
+      "tag": "0020_nostalgic_namorita",
+      "breakpoints": true
     }
   ]
 }

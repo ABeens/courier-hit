@@ -260,6 +260,9 @@ export const ShipmentErrors = {
       'El peso no se puede cambiar: la factura ya fue aprobada. Reversa los costos del trámite para corregirlo.',
       409,
     ),
+  /** Se pidio el documento de un tramite que no tiene ninguno adjunto. */
+  documentMissing: () =>
+    new AppError('SHIPMENT_DOCUMENT_MISSING', 'El trámite no tiene documento adjunto.', 404),
 };
 
 /**
