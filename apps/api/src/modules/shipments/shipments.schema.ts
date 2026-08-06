@@ -98,6 +98,18 @@ export const shipments = pgTable(
     /** Retener el paquete en la bodega del proveedor. Solo staff; null/false = no retener. */
     retain: boolean('retain'),
 
+    /**
+     * Documento que acompaña al tramite (la factura de la compra, tipicamente).
+     * Lo adjunta el cliente al prealertar —o el staff despues— y es OPCIONAL: la
+     * prealerta sin documento sigue siendo valida, solo obliga a pedirlo luego.
+     *
+     * Guarda la CLAVE OPACA del almacen, no una ruta ni el nombre original (ver
+     * `core/storage.ts`): el dia que el driver pase a S3 esta columna no cambia.
+     * Los formatos aceptados son los de `DOCUMENT_ATTACHMENT` (PDF, Word y
+     * similares); las imagenes se rechazan en el borde.
+     */
+    documentFileKey: text('document_file_key'),
+
     // --- Solo Transporte y Agenciamiento ---
     warehouse: text('warehouse'),
     dua: text('dua'),

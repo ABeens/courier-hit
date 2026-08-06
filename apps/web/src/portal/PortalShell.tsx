@@ -44,7 +44,7 @@ const CLIENT_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
     items: [
       { resource: Resource.Locker, label: 'Mi casillero' },
       { resource: Resource.Prealert, label: 'Prealertar' },
-      { resource: Resource.Package, label: 'Mis trámites' },
+      { resource: Resource.Package, label: 'Mis paquetes' },
       { resource: Resource.Profile, label: 'Mi perfil' },
     ],
   },

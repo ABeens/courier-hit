@@ -32,6 +32,7 @@ const columns = {
   insuredValueUsd: shipments.insuredValueUsd,
   tariffPosition: shipments.tariffPosition,
   retain: shipments.retain,
+  documentFileKey: shipments.documentFileKey,
   warehouse: shipments.warehouse,
   dua: shipments.dua,
   billingNotes: shipments.billingNotes,

@@ -703,6 +703,64 @@ select.input { cursor: pointer; padding-right: 30px; }
   .field-pair.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
+/* Pie con SOLO botones (prealerta, mi perfil): van juntos. El reparto a los
+   extremos de .form-actions es del asistente de registro, donde al otro lado
+   está el check de términos; con dos botones sueltos deja un hueco absurdo. */
+.form-actions.is-buttons { justify-content: flex-start; gap: 10px; }
+
+/* ---- Selector de archivo (componente FileField) ----
+   El input nativo no se puede maquetar: el botón lo pinta el navegador y no
+   encaja en la caja de .input. Se oculta (sin sacarlo del foco) y la caja la
+   dibuja este bloque: zona de arrastre mientras no hay archivo, ficha del
+   archivo elegido despues. */
+.file-field {
+  position: relative;
+  border: 1px dashed var(--line); border-radius: var(--r-sm);
+  background: var(--paper-2);
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+/* Oculto a la vista pero NO al formulario ni al teclado: `display: none` lo
+   sacaría de la navegación por tabulador y del envío. */
+.file-field-input {
+  position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+}
+/* Solo mientras la caja ENTERA es clicable (zona de arrastre): con el archivo
+   ya elegido lo clicable son sus botones, y teñirla al pasar por encima
+   prometería algo que no ocurre. */
+.file-field:not(.has-file):not(.is-disabled):hover { border-color: var(--brand); background: var(--brand-softer); }
+/* El foco del input oculto se pinta en la caja: es lo único que se ve. */
+.file-field:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3.5px var(--brand-soft); }
+.file-field.is-drag { border-color: var(--brand); background: var(--brand-soft); }
+/* Con el archivo ya elegido deja de ser una zona de arrastre: borde sólido. */
+.file-field.has-file { border-style: solid; background: var(--surface); }
+.file-field.is-disabled { opacity: .6; }
+
+.file-field-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 20px 16px; cursor: pointer; text-align: center;
+}
+.file-field-empty svg { width: 22px; height: 22px; color: var(--brand); }
+.file-field-cta { font-size: 13.5px; color: var(--muted); }
+.file-field-link { color: var(--brand); font-weight: 600; text-decoration: underline; }
+.file-field.is-disabled .file-field-empty { cursor: not-allowed; }
+
+.file-field-picked { display: flex; align-items: center; gap: 12px; padding: 11px 13px; }
+.file-field-picked > svg { flex: none; width: 21px; height: 21px; color: var(--brand); }
+.file-field-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+/* Un nombre largo se recorta: no puede estirar la fila ni empujar los botones. */
+.file-field-name {
+  font-size: 13.5px; font-weight: 600; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.file-field-size { font-size: 12px; color: var(--faint); }
+.file-field-actions { display: flex; gap: 6px; flex: none; }
+@media (max-width: 480px) {
+  /* Sin sitio para nombre y botones en la misma línea: los botones bajan. */
+  .file-field-picked { flex-wrap: wrap; }
+  .file-field-actions { width: 100%; }
+  .file-field-actions .btn { flex: 1; }
+}
+
 /* --- Bitacora del enlace con el operador (pantalla Configuracion) ---
    Lista de eventos con barra lateral tenida por estado, reusando las mismas
    variables --tone que las fichas de tramite: un evento rechazado se reconoce

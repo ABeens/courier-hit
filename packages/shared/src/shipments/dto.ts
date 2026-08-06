@@ -45,11 +45,15 @@ export const descriptionSchema = z
   .min(1, 'La descripción es obligatoria.')
   .max(200, 'La descripción es demasiado larga.');
 
-/** HAWB / HBL: numerico (docs/manuales/flujo.md L114). */
+/**
+ * HAWB, el identificador que le pone la bodega de Miami al paquete. La operacion
+ * lo llama LES, y asi se nombra en la UI ("HAWB (LES)"): es el nombre por el que
+ * el cliente lo pregunta. Numerico (docs/manuales/flujo.md L114).
+ */
 export const hawbSchema = z
   .string()
   .trim()
-  .regex(/^\d{1,30}$/, 'El HAWB/HBL debe contener solo números.');
+  .regex(/^\d{1,30}$/, 'El HAWB (LES) debe contener solo números.');
 
 /** DUA con el formato del manual: ###-####-###### (docs/manuales/flujo.md L82). */
 export const duaSchema = z

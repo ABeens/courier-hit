@@ -6,8 +6,10 @@
  *   - 'paqueteria' -> Consecutivo, Cliente, Tracking, Tienda, Transportista, HAWB…
  *   - 'transporte' -> Consecutivo, Almacen, Cliente, Tracking, DUA…
  *   - 'todos'      -> solo las columnas comunes.
- * El cliente ve una cuarta variante ('propios'): sus tramites, sin filtro de
- * cliente ni acciones de staff. La API ya acota el listado a lo suyo.
+ * El cliente ve una cuarta variante ('propios'): sus PAQUETES, sin filtro de
+ * cliente ni acciones de staff. La API ya acota el listado a lo suyo, y la vista
+ * lo acota ademas a Paqueteria: el menu del cliente se llama "Mis paquetes" y no
+ * puede listar carga aerea o maritima.
  *
  * El "Monto de Factura" que pide el manual sale del modulo de costos y solo
  * existe una vez APROBADOS: hasta entonces la ficha no lo muestra, para no dar
@@ -30,7 +32,7 @@ import {
 } from '@courier/shared';
 import type { Role, ShipmentDto } from '@courier/shared';
 import { PayFlag, awaitingValidation } from '../components/PayFlag';
-import { ApiError, api } from '../lib/api';
+import { API_BASE, ApiError, api } from '../lib/api';
 import { formatDate, startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
 import { STATE_TONE } from '../lib/tone';
 import { ShipmentFormModal, allowedTypesFor } from './ShipmentFormModal';
@@ -51,7 +53,7 @@ const TYPES_BY_VIEW: Record<ShipmentView, ShipmentType[]> = {
     ShipmentType.Agenciamiento,
   ],
   todos: [],
-  propios: [],
+  propios: [ShipmentType.Paqueteria],
 };
 
 interface ListResponse {
@@ -95,6 +97,33 @@ function trackingField(row: ShipmentDto): CardField {
     value: row.tracking,
     mono: true,
   };
+}
+
+/**
+ * HAWB, el identificador que le pone la bodega de Miami al paquete. Va SIEMPRE
+ * junto al tracking y nunca en su lugar: son dos numeros distintos que conviven
+ * (el de la tienda y el del courier), y el cliente que llama preguntando por su
+ * paquete necesita poder leer el que le pidan.
+ *
+ * Se muestra tambien vacio ("—") mientras el paquete no ha llegado a Miami: ahi
+ * el hueco ES el dato, dice que todavia no hay HAWB asignado.
+ *
+ * "(LES)" es como lo nombra la operacion, y es el nombre por el que el cliente
+ * lo va a oir; "HAWB" solo, sin esa pista, no lo reconoce nadie por telefono.
+ */
+function hawbField(row: ShipmentDto): CardField {
+  return { label: 'HAWB (LES)', value: row.hawb, mono: true };
+}
+
+/**
+ * Identificadores de la ficha. En Paqueteria son DOS y van juntos; en Transporte
+ * y Agenciamiento el HAWB no existe como campo, asi que la seccion se queda con
+ * su unica guia en vez de inventar una fila vacia que no aplica.
+ */
+function guideFields(row: ShipmentDto): CardField[] {
+  return usesPackageFields(row.shipmentType)
+    ? [trackingField(row), hawbField(row)]
+    : [trackingField(row)];
 }
 
 /**
@@ -142,7 +171,7 @@ function sectionsFor(row: ShipmentDto, view: ShipmentView): CardSection[] {
 
   if (view === 'paqueteria') {
     return [
-      { title: 'Guías', fields: [trackingField(row), { label: 'HAWB/HBL', value: row.hawb, mono: true }] },
+      { title: 'Guías', fields: guideFields(row) },
       { title: 'Compra', fields: [{ label: 'Tienda', value: row.store }, { label: 'Transportista', value: row.carrier }] },
       {
         title: 'Logística',
@@ -154,16 +183,20 @@ function sectionsFor(row: ShipmentDto, view: ShipmentView): CardSection[] {
 
   if (view === 'transporte') {
     return [
-      { title: 'Guías', fields: [trackingField(row)] },
+      { title: 'Guías', fields: guideFields(row) },
       { title: 'Aduana', fields: [{ label: 'DUA', value: row.dua, mono: true }, { label: 'Almacén', value: row.warehouse }] },
       { title: 'Entrega', fields: [entrega] },
       ...(money ? [money] : []),
     ];
   }
 
-  // 'todos' y 'propios': conviven paquetes y trámites, así que solo lo común.
+  // 'todos': conviven paquetes y trámites, así que solo lo común. 'propios' usa
+  // el mismo juego: es de Paquetería, pero al cliente no le toca la trastienda
+  // (tienda, transportista, peso) sino sus guías y su cobro.
+  // Los identificadores SI son comunes: `guideFields` ya resuelve por fila cuál
+  // lleva HAWB y cuál no, sin que el tablero tenga que elegir un juego único.
   return [
-    { title: 'Guías', fields: [trackingField(row)] },
+    { title: 'Guías', fields: guideFields(row) },
     { title: 'Entrega', fields: [entrega] },
     ...(money ? [money] : []),
   ];
@@ -225,12 +258,13 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
       return [...new Set([...statesOf(Flow.Transporte), ...statesOf(Flow.Agenciamiento)])];
     }
     /**
-     * En la vista del cliente se cae "En bodega - Pendiente pago", por lo mismo
-     * que no se pinta su píldora en la ficha: ofrecerla en el filtro seria
-     * enseñarle por la puerta de atras la etiqueta que se le oculta.
+     * La vista del cliente es Paqueteria, asi que ofrece los estados de ese
+     * flujo. Se cae "En bodega - Pendiente pago", por lo mismo que no se pinta
+     * su píldora en la ficha: ofrecerla en el filtro seria enseñarle por la
+     * puerta de atras la etiqueta que se le oculta.
      */
     if (view === 'propios') {
-      return Object.values(State).filter((s) => s !== State.EnBodegaPendientePago);
+      return statesOf(Flow.Paqueteria).filter((s) => s !== State.EnBodegaPendientePago);
     }
     return Object.values(State);
   }, [view]);
@@ -264,7 +298,7 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
   }, [load]);
 
   const title = isOwn
-    ? 'Mis trámites'
+    ? 'Mis paquetes'
     : view === 'paqueteria'
       ? 'Paquetería'
       : view === 'transporte'
@@ -276,7 +310,7 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
       <div className="head-row">
         <div>
           <div className="title">{title}</div>
-          {data && <div className="count">{data.items.length} trámites</div>}
+          {data && <div className="count">{data.items.length} {isOwn ? 'paquetes' : 'trámites'}</div>}
         </div>
         {canWrite && !isOwn && creatableTypes.length > 0 && (
           <button className="btn btn-primary" onClick={() => setModal({ mode: 'create' })}>
@@ -358,6 +392,20 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
                 */}
                 {!(isOwn && row.state === State.EnBodegaPendientePago) && (
                   <span className="spill"><span className="dot" />{STATE_LABELS[row.state]}</span>
+                )}
+                {/* Documento del trámite (la factura que adjuntó el cliente al
+                    prealertar). Es un <a> y no un botón porque la descarga la
+                    resuelve el navegador contra la API, que es quien comprueba
+                    el permiso: la clave del almacén no viaja en la URL. */}
+                {row.documentFileKey && (
+                  <a
+                    className="btn btn-ghost btn-sm"
+                    href={`${API_BASE}/api/shipments/${row.id}/document`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Documento
+                  </a>
                 )}
                 {canWrite && !isOwn && (
                   <button className="btn btn-ghost btn-sm" onClick={() => setModal({ mode: 'edit', row })}>

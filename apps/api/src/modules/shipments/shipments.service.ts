@@ -13,6 +13,7 @@
  */
 import {
   Currency,
+  DOCUMENT_ATTACHMENT,
   HelgaSyncStatus,
   Permission,
   Role,
@@ -45,6 +46,7 @@ import {
   deleteHelgaPrealert,
   isHelgaEnabled,
 } from '../../integrations/helga/helga.client';
+import { storage } from '../../core/storage';
 import { clientsRepo } from '../clients/clients.repo';
 import { shipmentsRepo } from './shipments.repo';
 
@@ -116,6 +118,7 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     insuredValueUsd: row.insuredValueUsd,
     tariffPosition: row.tariffPosition,
     retain: row.retain,
+    documentFileKey: row.documentFileKey,
     warehouse: row.warehouse,
     dua: row.dua,
     billingNotes: row.billingNotes,
@@ -173,6 +176,57 @@ export const shipmentsService = {
         createdAt: e.createdAt.toISOString(),
       })),
     };
+  },
+
+  /**
+   * Adjunta (o reemplaza) el DOCUMENTO del tramite: la factura de la compra que
+   * se prealerta, tipicamente.
+   *
+   * Va en una peticion aparte de la prealerta, y no en el mismo cuerpo, por lo
+   * mismo que el comprobante de un deposito: el archivo obliga a multipart y
+   * mezclarlo con el JSON validado por Zod significaria validar datos y archivo
+   * en la misma transaccion. Aqui ademas compra algo: el documento es opcional y
+   * puede llegar despues, sin repetir la prealerta.
+   *
+   * El acceso lo resuelve `get`, que ya devuelve 404 —no 403— cuando el tramite
+   * no es del cliente de la sesion: quien no puede verlo tampoco puede saber que
+   * existe para adjuntarle nada.
+   *
+   * Que formatos entran NO se decide aqui sino en el borde (`storage.put` con el
+   * catalogo `DOCUMENT_ATTACHMENT`), que es el unico punto por el que un archivo
+   * entra al sistema.
+   */
+  async attachDocument(session: Session, id: string, file: File): Promise<ShipmentDto> {
+    const shipment = await this.get(session, id);
+
+    const key = await storage.put('documents', file, DOCUMENT_ATTACHMENT);
+    // Reemplazar el documento borra el anterior: dejarlo huerfano solo acumula
+    // basura en el almacen que ya nadie puede alcanzar (mismo criterio que el
+    // comprobante de pago).
+    if (shipment.documentFileKey) await storage.remove(shipment.documentFileKey);
+    await shipmentsRepo.update(id, { documentFileKey: key });
+
+    return this.get(session, id);
+  },
+
+  /**
+   * Contenido del documento adjunto, para descargarlo. Pasa por la API en vez de
+   * exponer el almacen: la clave es opaca pero no es un permiso, y quien pide el
+   * archivo tiene que superar la misma barrera que para ver el tramite.
+   */
+  async documentFile(session: Session, id: string): Promise<{ body: ArrayBuffer; contentType: string; filename: string }> {
+    const shipment = await this.get(session, id);
+    if (!shipment.documentFileKey) throw ShipmentErrors.documentMissing();
+
+    const file = await storage.get(shipment.documentFileKey);
+    /**
+     * El nombre de la descarga se DERIVA del consecutivo del tramite y de la
+     * extension de la clave; no se guarda el nombre original. Asi lo que llega a
+     * la cabecera `content-disposition` no lo escribe el usuario, y de paso el
+     * archivo cae en el escritorio de quien lo baja ya identificado por tramite.
+     */
+    const ext = shipment.documentFileKey.split('.').pop() ?? 'bin';
+    return { ...file, filename: `${shipment.code}.${ext}` };
   },
 
   /**
