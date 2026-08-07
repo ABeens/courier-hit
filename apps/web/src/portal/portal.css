@@ -38,7 +38,7 @@
   font-family: var(--font-body); color: var(--ink);
 }
 
-/* Panel de marca: degradado del azul de marca al chrome oscuro del portal.
+/* Panel de marca: el azul de marca plano, el mismo del boton primario.
    Queda fijo a la altura de la ventana (sticky): en formularios largos como el
    registro, lo unico que se desplaza es la columna del formulario. */
 .auth__aside {
@@ -46,13 +46,17 @@
   height: 100vh; height: 100dvh; overflow: hidden auto;
   display: flex; flex-direction: column; gap: 40px;
   padding: 46px 42px; color: var(--on-dark);
-  background: var(--dark); /* respaldo solido por si el degradado no aplica */
-  background: linear-gradient(165deg, var(--brand-700), var(--dark) 68%);
+  background: var(--brand);
+  /* El gris de --on-dark-muted estaba calibrado contra el navy y sobre el azul
+     de marca casi no contrasta. Se sustituye solo aqui (la landing sigue
+     usando el token original sobre --dark). */
+  --on-dark-muted: oklch(1 0 0 / .80);
 }
-/* Halo de marca arriba y trama de puntos: textura sin imagenes extra. */
+/* Halo claro arriba y trama de puntos: textura sin imagenes extra. Sobre el
+   azul plano el halo va en blanco translucido (un halo de marca seria invisible). */
 .auth__aside::before {
   content: ''; position: absolute; left: -30%; top: -25%; width: 130%; height: 60%;
-  background: radial-gradient(closest-side, oklch(0.55 0.20 263 / .55), transparent);
+  background: radial-gradient(closest-side, oklch(1 0 0 / .16), transparent);
 }
 .auth__aside::after {
   content: ''; position: absolute; inset: 0; opacity: .5;
@@ -66,8 +70,8 @@
 .auth__route {
   display: inline-flex; align-items: center; gap: 8px;
   font-family: var(--font-display); font-size: 12px; font-weight: 600;
-  letter-spacing: .08em; text-transform: uppercase; color: oklch(0.88 0.06 263);
-  background: oklch(1 0 0 / .09); border: 1px solid oklch(1 0 0 / .16);
+  letter-spacing: .08em; text-transform: uppercase; color: oklch(0.95 0.03 263);
+  background: oklch(1 0 0 / .14); border: 1px solid oklch(1 0 0 / .26);
   padding: 6px 13px; border-radius: var(--r-pill); margin-bottom: 20px;
 }
 .auth__title {
@@ -81,7 +85,7 @@
 .auth__point { display: flex; align-items: flex-start; gap: 13px; }
 .auth__point-ic {
   width: 26px; height: 26px; flex: none; display: grid; place-items: center;
-  border-radius: 99px; background: oklch(1 0 0 / .12); color: #fff;
+  border-radius: 99px; background: oklch(1 0 0 / .2); color: #fff;
 }
 .auth__point-ic svg { width: 15px; height: 15px; }
 .auth__point-body { display: flex; flex-direction: column; gap: 2px; }
