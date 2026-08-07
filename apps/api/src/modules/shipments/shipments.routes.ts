@@ -36,8 +36,18 @@ export const shipmentsRoutes = new Hono<AppEnv>();
 
 shipmentsRoutes.use('*', requireSession());
 
-/** Puede leer tramites: el staff (todos) o el cliente (los suyos). */
-const canRead = requireAnyPermission(Permission.PackageRead, Permission.PackageReadOwn);
+/**
+ * Puede leer tramites: el staff (todos) o el cliente (los suyos). El cliente
+ * entra por dos puertas segun el modulo del que venga —"Mis paquetes"
+ * (package.read.own) y "Otros tramites" (tramite.read.own)—, pero el recorte a
+ * lo suyo no depende del permiso con el que pase: lo pone `ownerScopeFor` a
+ * partir del rol de la sesion.
+ */
+const canRead = requireAnyPermission(
+  Permission.PackageRead,
+  Permission.PackageReadOwn,
+  Permission.TramiteReadOwn,
+);
 
 /** Puede escribir tramites: bodega (Paqueteria) o gestion de tramites (el resto). */
 const canWrite = requireAnyPermission(Permission.PackageWrite, Permission.TramiteManage);

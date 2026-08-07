@@ -37,8 +37,13 @@ interface NavItem { resource: Resource; label: string }
  * no la cola de operacion.
  *
  * Prealertar NO tiene entrada propia: es una accion de "Mis paquetes" (el boton
- * abre `PrealertModal`), porque el cliente avisa de un paquete para verlo
+ * abre `ClientShipmentModal`), porque el cliente avisa de un paquete para verlo
  * aparecer en ese mismo listado.
+ *
+ * "Otros tramites" es esa misma idea para lo que NO es Paqueteria (aereo,
+ * maritimo, agenciamiento): son tramites con otro flujo, otros campos y otra
+ * guia (AWB/BL), asi que no caben en un listado que se llama "Mis paquetes" ni
+ * se avisan con una prealerta. Cada modulo registra y lista lo suyo.
  */
 const CLIENT_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   {
@@ -46,6 +51,7 @@ const CLIENT_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
     items: [
       { resource: Resource.Locker, label: 'Mi casillero' },
       { resource: Resource.Package, label: 'Mis paquetes' },
+      { resource: Resource.Tramite, label: 'Otros trámites' },
       { resource: Resource.Profile, label: 'Mi perfil' },
     ],
   },
@@ -204,17 +210,6 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
           </div>
         ))}
 
-        <div className="side-foot">
-          <div className="side-user">
-            <span className="avatar">{initials(roleLabel)}</span>
-            <span className="who">
-              <div className="n">{roleLabel}</div>
-              {/* "Cuenta interna" solo aplica a staff; al titular se le muestra su casillero. */}
-              <div className="r">{isClient ? (me.clientCode ?? 'Casillero') : 'Cuenta interna'}</div>
-            </span>
-          </div>
-          <button className="side-logout" onClick={logout}>Cerrar sesión</button>
-        </div>
       </aside>
 
       <main className="main">
@@ -231,6 +226,14 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
             </svg>
           </button>
           <h2>{currentLabel}</h2>
+          {/* La cuenta vive arriba a la derecha: es lo mismo en todas las
+              pantallas y no compite con la navegacion del menu lateral. */}
+          <AccountMenu
+            name={roleLabel}
+            /* "Cuenta interna" solo aplica a staff; al titular se le muestra su casillero. */
+            detail={isClient ? (me.clientCode ?? 'Casillero') : 'Cuenta interna'}
+            onLogout={logout}
+          />
         </header>
         {/* Avisos del portal del cliente: fuera de <section.content> para que la
             pila quede sticky bajo el topbar en todas las pantallas (§3.4.1). */}
@@ -274,10 +277,12 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
               initialQuery={nav?.intent.q}
             />
           ) : current === Resource.Tramite ? (
+            // Mismo modulo, dos lecturas: el staff opera la cola de Transporte y
+            // Agenciamiento; el cliente ve (y registra) los suyos.
             <ShipmentsScreen
               key={nav?.key}
               role={me.role}
-              initialView="transporte"
+              initialView={isClient ? 'propios-tramites' : 'transporte'}
               initialState={nav?.intent.state}
               initialQuery={nav?.intent.q}
             />
@@ -303,6 +308,77 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
           )}
         </section>
       </main>
+    </div>
+  );
+}
+
+/**
+ * Cuenta del usuario en el topbar: el boton muestra quien esta dentro y el
+ * desplegable guarda las acciones de la sesion (hoy, cerrar sesion). Se cierra
+ * al hacer clic fuera o con Escape, como el resto de paneles del portal.
+ */
+function AccountMenu({
+  name,
+  detail,
+  onLogout,
+}: {
+  name: string;
+  detail: string;
+  onLogout: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="topbar-account" ref={ref}>
+      <button
+        type="button"
+        className={`account-btn${open ? ' open' : ''}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="avatar">{initials(name)}</span>
+        <span className="who">
+          <span className="n">{name}</span>
+          <span className="r">{detail}</span>
+        </span>
+        <svg className="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div className="account-menu" role="menu">
+          {/* En movil el boton se queda solo con el avatar, asi que el nombre y
+              el casillero se repiten aqui para no perderlos. */}
+          <div className="account-menu-head">
+            <div className="n">{name}</div>
+            <div className="r">{detail}</div>
+          </div>
+          <button type="button" className="account-menu-item" role="menuitem" onClick={onLogout}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+            </svg>
+            Cerrar sesión
+          </button>
+        </div>
+      )}
     </div>
   );
 }

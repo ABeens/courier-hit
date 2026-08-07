@@ -6,10 +6,13 @@
  *   - 'paqueteria' -> Consecutivo, Cliente, Tracking, Tienda, Transportista, HAWB…
  *   - 'transporte' -> Consecutivo, Almacen, Cliente, Tracking, DUA…
  *   - 'todos'      -> solo las columnas comunes.
- * El cliente ve una cuarta variante ('propios'): sus PAQUETES, sin filtro de
- * cliente ni acciones de staff. La API ya acota el listado a lo suyo, y la vista
- * lo acota ademas a Paqueteria: el menu del cliente se llama "Mis paquetes" y no
- * puede listar carga aerea o maritima.
+ * El cliente ve DOS variantes propias, sin filtro de cliente ni acciones de
+ * staff (la API ya acota el listado a lo suyo); la vista las parte por flujo,
+ * que es como el cliente las tiene en el menu:
+ *   - 'propios'         -> "Mis paquetes": Paqueteria, y ahi se PREALERTA.
+ *   - 'propios-tramites' -> "Otros tramites": aereo, maritimo y agenciamiento.
+ * Antes solo existia la primera, asi que un tramite no-Paqueteria registrado por
+ * el cliente no aparecia en ningun listado suyo.
  *
  * El "Monto de Factura" que pide el manual sale del modulo de costos y solo
  * existe una vez APROBADOS: hasta entonces la ficha no lo muestra, para no dar
@@ -19,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Currency,
   Flow,
+  MANUAL_SHIPMENT_TYPES,
   Permission,
   SHIPMENT_TYPE_LABELS,
   STATE_LABELS,
@@ -37,26 +41,26 @@ import { PayFlag, awaitingValidation } from '../components/PayFlag';
 import { API_BASE, ApiError, api } from '../lib/api';
 import { formatDate, formatDayInput, startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
 import { STATE_TONE } from '../lib/tone';
-import { PrealertModal } from './PrealertModal';
+import { ClientShipmentModal } from './ClientShipmentModal';
 import { ShipmentFormModal, allowedTypesFor } from './ShipmentFormModal';
 import { StateAdvanceModal, reachableStates } from './StateAdvanceModal';
 import { StateCorrectModal } from './StateCorrectModal';
 import { PaymentModal } from './PaymentModal';
 
 /** Que tablero se esta mirando. */
-export type ShipmentView = 'paqueteria' | 'transporte' | 'todos' | 'propios';
+export type ShipmentView = 'paqueteria' | 'transporte' | 'todos' | 'propios' | 'propios-tramites';
 
-/** Tipos de tramite que trae cada vista (vacio = todos). */
+/**
+ * Tipos de tramite que trae cada vista (vacio = todos). Los tableros de staff y
+ * los del cliente se acotan igual: lo que cambia entre ellos es quien los mira,
+ * no que tramites son.
+ */
 const TYPES_BY_VIEW: Record<ShipmentView, ShipmentType[]> = {
   paqueteria: [ShipmentType.Paqueteria],
-  transporte: [
-    ShipmentType.Aereo,
-    ShipmentType.MaritimoFCL,
-    ShipmentType.MaritimoLCL,
-    ShipmentType.Agenciamiento,
-  ],
+  transporte: [...MANUAL_SHIPMENT_TYPES],
   todos: [],
   propios: [ShipmentType.Paqueteria],
+  'propios-tramites': [...MANUAL_SHIPMENT_TYPES],
 };
 
 interface ListResponse {
@@ -193,9 +197,10 @@ function sectionsFor(row: ShipmentDto, view: ShipmentView): CardSection[] {
     ];
   }
 
-  // 'todos': conviven paquetes y trámites, así que solo lo común. 'propios' usa
-  // el mismo juego: es de Paquetería, pero al cliente no le toca la trastienda
-  // (tienda, transportista, peso) sino sus guías y su cobro.
+  // 'todos': conviven paquetes y trámites, así que solo lo común. Las dos vistas
+  // del cliente usan el mismo juego: al titular no le toca la trastienda (tienda,
+  // transportista, peso en Paquetería; DUA y almacén en los demás, que son
+  // documentación que llevamos nosotros) sino sus guías, su ruta y su cobro.
   // Los identificadores SI son comunes: `guideFields` ya resuelve por fila cuál
   // lleva HAWB y cuál no, sin que el tablero tenga que elegir un juego único.
   return [
@@ -231,10 +236,13 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
   const [advancing, setAdvancing] = useState<ShipmentDto | null>(null);
   const [correcting, setCorrecting] = useState<ShipmentDto | null>(null);
   const [paying, setPaying] = useState<ShipmentDto | null>(null);
-  /** Alta del cliente: prealertar vive aqui dentro, no en una pantalla aparte. */
-  const [prealerting, setPrealerting] = useState(false);
+  /** Alta del cliente: vive aqui dentro, no en una pantalla aparte. */
+  const [registering, setRegistering] = useState(false);
 
-  const isOwn = view === 'propios';
+  /** Tablero del titular (cualquiera de los dos): sin acciones de staff. */
+  const isOwn = view === 'propios' || view === 'propios-tramites';
+  /** El de Paqueteria, el unico donde el alta se llama prealerta. */
+  const isOwnPackages = view === 'propios';
   const canWrite = can(role, Permission.PackageWrite) || can(role, Permission.TramiteManage);
   const canPay = can(role, Permission.PackagePay);
   /**
@@ -263,13 +271,18 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
       return [...new Set([...statesOf(Flow.Transporte), ...statesOf(Flow.Agenciamiento)])];
     }
     /**
-     * La vista del cliente es Paqueteria, asi que ofrece los estados de ese
-     * flujo. Se cae "En bodega - Pendiente pago", por lo mismo que no se pinta
-     * su píldora en la ficha: ofrecerla en el filtro seria enseñarle por la
-     * puerta de atras la etiqueta que se le oculta.
+     * Las vistas del cliente ofrecen los estados de SU flujo. En las dos se cae
+     * "En bodega - Pendiente pago", por lo mismo que no se pinta su píldora en la
+     * ficha: ofrecerla en el filtro seria enseñarle por la puerta de atras la
+     * etiqueta que se le oculta.
      */
     if (view === 'propios') {
       return statesOf(Flow.Paqueteria).filter((s) => s !== State.EnBodegaPendientePago);
+    }
+    if (view === 'propios-tramites') {
+      return [...new Set([...statesOf(Flow.Transporte), ...statesOf(Flow.Agenciamiento)])].filter(
+        (s) => s !== State.EnBodegaPendientePago,
+      );
     }
     return Object.values(State);
   }, [view]);
@@ -320,25 +333,29 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
     setTo('');
   }
 
-  const title = isOwn
+  const title = isOwnPackages
     ? 'Mis paquetes'
-    : view === 'paqueteria'
-      ? 'Paquetería'
-      : view === 'transporte'
-        ? 'Transporte y agenciamiento'
-        : 'Todos los trámites';
+    : view === 'propios-tramites'
+      ? 'Otros trámites'
+      : view === 'paqueteria'
+        ? 'Paquetería'
+        : view === 'transporte'
+          ? 'Transporte y agenciamiento'
+          : 'Todos los trámites';
 
   return (
     <div className="fadeIn">
       <div className="head-row">
         <div>
           <div className="title">{title}</div>
-          {data && <div className="count">{data.items.length} {isOwn ? 'paquetes' : 'trámites'}</div>}
+          {data && <div className="count">{data.items.length} {isOwnPackages ? 'paquetes' : 'trámites'}</div>}
         </div>
         {isOwn ? (
-          /* El cliente no da de alta tramites: avisa de lo que viene en camino. */
-          <button className="btn btn-primary" onClick={() => setPrealerting(true)}>
-            + Prealertar
+          /* El alta del titular: en Paqueteria es avisar de una compra que viene
+             en camino (prealerta); en los demas flujos es registrar el tramite.
+             Son la misma pantalla y el mismo modal, pero no la misma cosa. */
+          <button className="btn btn-primary" onClick={() => setRegistering(true)}>
+            {isOwnPackages ? '+ Prealertar' : '+ Nuevo trámite'}
           </button>
         ) : (
           canWrite && creatableTypes.length > 0 && (
@@ -588,15 +605,20 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
         />
       )}
 
-      {prealerting && (
-        <PrealertModal
+      {registering && (
+        <ClientShipmentModal
+          /* Cada tablero del cliente da de alta LO QUE LISTA: un tramite creado
+             fuera de su filtro desapareceria al guardar, que es justo lo que
+             pasaba cuando el selector ofrecia los cinco tipos desde "Mis
+             paquetes". */
+          types={TYPES_BY_VIEW[view]}
           /*
             Recargar tambien al cerrar: el modal se queda abierto tras registrar
-            (permite encadenar varias y reintentar el documento), asi que el
-            cierre puede llegar con prealertas ya creadas detras.
+            (permite encadenar varios y reintentar el documento), asi que el
+            cierre puede llegar con tramites ya creados detras.
           */
           onClose={() => {
-            setPrealerting(false);
+            setRegistering(false);
             void load();
           }}
           onCreated={() => {
