@@ -314,20 +314,6 @@
 .navitem:hover { background: var(--paper-2); color: var(--ink); }
 .navitem.active { background: var(--brand); color: #fff; box-shadow: var(--sh-brand); }
 .navitem svg { width: 18px; height: 18px; flex: none; }
-.side-foot { margin-top: auto; border-top: 1px solid var(--line); padding-top: 14px; }
-.side-user { display: flex; align-items: center; gap: 10px; padding: 4px 8px 12px; }
-.side-user .avatar {
-  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--brand-soft); color: var(--brand); font-weight: 700; font-size: 13px; flex: none;
-}
-.side-user .who { line-height: 1.2; min-width: 0; }
-.side-user .who .n { font-size: 13.5px; font-weight: 700; color: var(--ink); }
-.side-user .who .r { font-size: 12px; color: var(--muted); }
-.side-logout {
-  width: 100%; padding: 9px; border-radius: var(--r-sm); border: 1px solid var(--line);
-  background: none; color: var(--muted); font-weight: 600; font-size: 13px; cursor: pointer;
-}
-.side-logout:hover { background: var(--paper-2); color: var(--ink); }
 
 /* ---- Area principal ---- */
 .main { min-width: 0; background: var(--paper); }
@@ -344,6 +330,58 @@
 }
 .topbar-burger:hover { background: var(--paper-2); color: var(--ink); }
 .topbar-burger svg { width: 20px; height: 20px; }
+
+/* ---- Cuenta del usuario (topbar, extremo derecho) ----
+   `margin-left: auto` la empuja al borde derecho sin depender del ancho del
+   titulo. El desplegable cuelga del boton alineado por la derecha. */
+.topbar-account { position: relative; margin-left: auto; flex: none; }
+.account-btn {
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 8px 5px 5px; border-radius: var(--r-pill);
+  border: 1px solid transparent; background: none; cursor: pointer;
+  transition: background .14s ease, border-color .14s ease;
+}
+.account-btn:hover, .account-btn.open { background: var(--paper-2); border-color: var(--line); }
+.account-btn .avatar {
+  width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--brand-soft); color: var(--brand); font-weight: 700; font-size: 13px; flex: none;
+}
+/* El ancho lo pone el texto (un ancho fijo dejaria un hueco enorme con los
+   roles cortos). El borde derecho del boton esta anclado, asi que al entrar
+   Manrope solo se corre el borde izquierdo unos pocos px; el chevron, que es
+   donde se nota, no se mueve. `max-width` trunca la etiqueta mas larga. */
+.account-btn .who {
+  display: grid; line-height: 1.2; max-width: 150px; min-width: 0; text-align: left;
+}
+.account-btn .who .n {
+  font-size: 13.5px; font-weight: 700; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.account-btn .who .r {
+  font-size: 12px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* El margen negativo recorta el hueco entre el texto y la flecha sin tocar el
+   gap del avatar, que si necesita aire. */
+.account-btn .chev { width: 16px; height: 16px; flex: none; margin-left: -3px; color: var(--muted); }
+
+/* Por encima del contenido y de la pila de anuncios; el modal (z 80) sigue mandando. */
+.account-menu {
+  position: absolute; z-index: 30; top: calc(100% + 8px); right: 0;
+  width: min(240px, calc(100vw - 32px));
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); box-shadow: var(--sh-3); padding: 6px;
+}
+.account-menu-head { padding: 8px 10px 10px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.account-menu-head .n { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.account-menu-head .r { font-size: 12px; color: var(--muted); }
+.account-menu-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  padding: 9px 10px; border-radius: var(--r-sm); border: none; background: none;
+  color: var(--ink-2); font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.account-menu-item:hover { background: var(--paper-2); color: var(--ink); }
+.account-menu-item svg { width: 16px; height: 16px; flex: none; }
 
 /* Backdrop del drawer (solo visible cuando el sidebar está abierto en móvil) */
 .side-backdrop {
@@ -670,6 +708,8 @@ select.input { cursor: pointer; padding-right: 30px; }
 @media (max-width: 900px) {
   .content { padding: 22px 20px; }
   .topbar { padding: 0 20px; }
+  /* El titulo cede espacio antes que la cuenta, que es de ancho fijo. */
+  .topbar h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .head-row { flex-direction: column; align-items: stretch; }
   .head-row .btn { width: 100%; }
   .scan-row { flex-direction: column; }
@@ -687,6 +727,13 @@ select.input { cursor: pointer; padding-right: 30px; }
     box-shadow: var(--sh-3);
   }
   .side.open { transform: translateX(0); }
+}
+
+/* En pantallas estrechas la cuenta se reduce al avatar: el nombre y el
+   casillero siguen visibles al abrir el desplegable (account-menu-head). */
+@media (max-width: 620px) {
+  .account-btn { padding: 4px; gap: 4px; }
+  .account-btn .who { display: none; }
 }
 
 /* La tabla nunca fuerza scroll horizontal de la página: desborda en su envoltorio */

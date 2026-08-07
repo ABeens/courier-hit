@@ -77,6 +77,13 @@ export enum Permission {
   PrealertCreate = 'prealert.create',
   PackageReadOwn = 'package.read.own',
   PackagePay = 'package.pay',
+  /**
+   * Ver los tramites PROPIOS que no son de Paqueteria (aereo, maritimo,
+   * agenciamiento). Va aparte de `package.read.own` porque abre un modulo
+   * distinto del menu del cliente ("Otros tramites"): prealertar es una accion
+   * de Paqueteria y esos tramites no caben en "Mis paquetes".
+   */
+  TramiteReadOwn = 'tramite.read.own',
   LockerRead = 'locker.read',
   ProfileWrite = 'profile.write',
 
@@ -133,6 +140,10 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   [Permission.PrealertCreate]: { resource: Resource.Prealert, action: Action.Create, scope: Scope.Own },
   [Permission.PackageReadOwn]: { resource: Resource.Package, action: Action.Read, scope: Scope.Own },
   [Permission.PackagePay]: { resource: Resource.Package, action: Action.Pay, scope: Scope.Own },
+  // Resource.Tramite y no Package: es la entrada "Otros tramites" del menu del
+  // cliente, el mismo modulo que el staff ve como "Tramites". El alcance real de
+  // la consulta lo pone la sesion (`ownerScopeFor`), igual que package.read.own.
+  [Permission.TramiteReadOwn]: { resource: Resource.Tramite, action: Action.Read, scope: Scope.Own },
   [Permission.LockerRead]: { resource: Resource.Locker, action: Action.Read, scope: Scope.Own },
   [Permission.ProfileWrite]: { resource: Resource.Profile, action: Action.Write, scope: Scope.Own },
 
@@ -200,6 +211,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.PrealertCreate,
     Permission.PackageReadOwn,
     Permission.PackagePay,
+    Permission.TramiteReadOwn,
     Permission.LockerRead,
     Permission.ProfileWrite,
   ],

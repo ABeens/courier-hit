@@ -43,6 +43,11 @@ input, select, textarea { font-family: inherit; font-size: inherit; color: inher
 ::selection { background: var(--brand-soft); }
 
 /* Scrollbars */
+/* El hueco de la barra vertical se reserva siempre, desborde o no la página.
+   Sin esto, cuando termina de cargar el contenido y aparece la barra, el ancho
+   útil cae de golpe 11px y todo lo alineado a la derecha (la cuenta del topbar)
+   da un salto lateral. */
+html { scrollbar-gutter: stable; }
 *::-webkit-scrollbar { width: 11px; height: 11px; }
 *::-webkit-scrollbar-thumb {
   background: oklch(0.85 0.01 263);

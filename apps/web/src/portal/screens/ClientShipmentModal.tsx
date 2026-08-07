@@ -1,27 +1,36 @@
 /**
- * Prealerta del titular del casillero ("Requerimientos Parte 2 - Portal Cliente",
- * L45-71). Un selector de Tramite que arranca SIEMPRE en Paqueteria y, al
- * cambiarlo, reduce el formulario a lo que ese tipo necesita:
+ * Alta de un tramite por el titular del casillero ("Requerimientos Parte 2 -
+ * Portal Cliente", L45-71). Un unico formulario que se reduce a lo que pide el
+ * tipo elegido:
  *   - Paqueteria                  -> tienda, transportista, tracking, descripcion.
  *   - Transporte / Agenciamiento  -> solo guia (AWB/BL) y descripcion (REF).
  *
- * Vive DENTRO de "Mis paquetes" (no como pantalla propia del menu): prealertar
- * es una accion sobre ese listado, y asi el cliente ve aparecer lo que acaba de
- * avisar sin cambiar de sitio.
+ * Quien lo abre decide QUE tipos ofrece (`types`), y de ahi sale todo lo demas:
+ *   - "Mis paquetes" pasa solo Paqueteria: ahi el alta es una PREALERTA (avisar
+ *     de una compra que viene en camino) y no hay nada que elegir.
+ *   - "Otros tramites" pasa los tipos manuales: eso no es una prealerta sino el
+ *     registro de un tramite de transporte o agenciamiento, con su propio
+ *     lenguaje. Por eso los textos siguen al tipo y no al componente.
+ * Separarlos importa: mientras el selector ofrecia los cinco tipos desde "Mis
+ * paquetes", un tramite aereo o maritimo se registraba y desaparecia, porque ese
+ * listado solo trae Paqueteria.
  *
- * El dueño de la prealerta NO se elige: lo pone la API desde la sesion.
+ * Vive DENTRO del listado que lo abre (no como pantalla propia del menu): dar de
+ * alta es una accion sobre ese listado, y asi el cliente ve aparecer lo que
+ * acaba de registrar sin cambiar de sitio.
  *
- * El documento (la factura de la compra) es OPCIONAL y viaja en una SEGUNDA
- * peticion, porque un archivo obliga a multipart: mezclarlo con el JSON haria
- * que un adjunto rechazado tumbara tambien los datos ya validados. Separadas, un
- * fallo al subir deja la prealerta registrada y solo hay que reintentar el
- * archivo, que es lo que ofrece el boton de reintento.
+ * El dueño del tramite NO se elige: lo pone la API desde la sesion.
+ *
+ * El documento (la factura de la compra, tipicamente) es OPCIONAL y viaja en una
+ * SEGUNDA peticion, porque un archivo obliga a multipart: mezclarlo con el JSON
+ * haria que un adjunto rechazado tumbara tambien los datos ya validados.
+ * Separadas, un fallo al subir deja el tramite registrado y solo hay que
+ * reintentar el archivo, que es lo que ofrece el boton de reintento.
  */
 import { useState } from 'react';
 import {
   CARRIERS,
   DOCUMENT_ATTACHMENT,
-  MANUAL_SHIPMENT_TYPES,
   SHIPMENT_TYPE_LABELS,
   STORES,
   ShipmentType,
@@ -34,17 +43,19 @@ import { FileField } from '../components/FileField';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { ApiError, api } from '../lib/api';
 
-/** Paqueteria primero: es el caso por defecto del requisito. */
-const TYPE_OPTIONS: ShipmentType[] = [ShipmentType.Paqueteria, ...MANUAL_SHIPMENT_TYPES];
-
 interface Props {
+  /**
+   * Tipos que se pueden registrar desde el listado que abre el modal. Con uno
+   * solo no se pinta el selector: no hay decision que tomar.
+   */
+  types: readonly ShipmentType[];
   onClose: () => void;
-  /** El listado de fondo se recarga con cada prealerta registrada. */
+  /** El listado de fondo se recarga con cada tramite registrado. */
   onCreated: () => void;
 }
 
-export function PrealertModal({ onClose, onCreated }: Props) {
-  const [shipmentType, setShipmentType] = useState<ShipmentType>(ShipmentType.Paqueteria);
+export function ClientShipmentModal({ types, onClose, onCreated }: Props) {
+  const [shipmentType, setShipmentType] = useState<ShipmentType>(types[0]!);
   const [tracking, setTracking] = useState('');
   const [description, setDescription] = useState('');
   const [store, setStore] = useState('');
@@ -57,15 +68,19 @@ export function PrealertModal({ onClose, onCreated }: Props) {
   const [created, setCreated] = useState<ShipmentDto | null>(null);
   const [busy, setBusy] = useState(false);
   /**
-   * Prealerta que quedo registrada pero SIN su documento. Mientras exista, se
+   * Tramite que quedo registrado pero SIN su documento. Mientras exista, se
    * ofrece reintentar solo la subida: repetir el formulario entero chocaria
-   * contra el tracking, que ya esta tomado por esta misma prealerta.
+   * contra el tracking, que ya esta tomado por este mismo tramite.
    */
   const [pendingDocument, setPendingDocument] = useState<{ id: string; file: File } | null>(null);
 
+  /**
+   * Interruptor unico del formulario Y de los textos: en Paqueteria el cliente
+   * PREALERTA una compra; en transporte y agenciamiento REGISTRA un tramite.
+   */
   const isPackage = usesPackageFields(shipmentType);
 
-  /** Campos de texto de la prealerta. El documento se limpia aparte: su suerte
+  /** Campos de texto del formulario. El documento se limpia aparte: su suerte
    *  no va atada a la del formulario (puede quedar pendiente de reintento). */
   function resetFields() {
     setTracking('');
@@ -82,7 +97,7 @@ export function PrealertModal({ onClose, onCreated }: Props) {
 
   /**
    * Filtra el archivo elegido con el MISMO catalogo que aplica la API, para que
-   * el rechazo llegue al elegirlo y no despues de mandar la prealerta. El
+   * el rechazo llegue al elegirlo y no despues de mandar el tramite. El
    * `accept` del input ya orienta el selector, pero no obliga: se puede soltar
    * ahi cualquier cosa.
    */
@@ -101,7 +116,7 @@ export function PrealertModal({ onClose, onCreated }: Props) {
     setDocumentFile(file);
   }
 
-  /** Sube el documento de una prealerta ya creada. Devuelve si lo consiguio. */
+  /** Sube el documento de un tramite ya creado. Devuelve si lo consiguio. */
   async function uploadDocument(shipmentId: string, file: File): Promise<boolean> {
     try {
       await api.upload<ShipmentDto>(`/shipments/${shipmentId}/document`, file);
@@ -111,8 +126,8 @@ export function PrealertModal({ onClose, onCreated }: Props) {
       setPendingDocument({ id: shipmentId, file });
       setError(
         err instanceof ApiError
-          ? `La prealerta quedó registrada, pero el documento no se adjuntó: ${err.message}`
-          : 'La prealerta quedó registrada, pero no se pudo adjuntar el documento.',
+          ? `El trámite quedó registrado, pero el documento no se adjuntó: ${err.message}`
+          : 'El trámite quedó registrado, pero no se pudo adjuntar el documento.',
       );
       return false;
     }
@@ -157,19 +172,25 @@ export function PrealertModal({ onClose, onCreated }: Props) {
       resetFields();
 
       /**
-       * El documento va aparte y NO puede deshacer la prealerta: si falla, el
-       * tramite ya existe y lo unico pendiente es el archivo, que se conserva en
-       * el estado para reintentar solo esa subida.
+       * El documento va aparte y NO puede deshacer el alta: si falla, el tramite
+       * ya existe y lo unico pendiente es el archivo, que se conserva en el
+       * estado para reintentar solo esa subida.
        */
       if (documentFile && (await uploadDocument(result.id, documentFile))) clearDocument();
       /**
-       * El modal NO se cierra solo: la prealerta puede haber dejado el documento
+       * El modal NO se cierra solo: el alta puede haber dejado el documento
        * pendiente de reintento, y encadenar varias (llega mas de un paquete el
        * mismo dia) es lo normal. Lo que si se refresca es el listado de detras.
        */
       onCreated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo registrar la prealerta.');
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : isPackage
+            ? 'No se pudo registrar la prealerta.'
+            : 'No se pudo registrar el trámite.',
+      );
     } finally {
       setBusy(false);
     }
@@ -179,30 +200,38 @@ export function PrealertModal({ onClose, onCreated }: Props) {
     <ModalOverlay onClose={onClose}>
       <form className="modal fadeUp" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal-head">
-          <h3>Prealertar</h3>
-          <p>Avísanos qué viene en camino para darle seguimiento.</p>
+          <h3>{isPackage ? 'Prealertar' : 'Nuevo trámite'}</h3>
+          <p>
+            {isPackage
+              ? 'Avísanos qué viene en camino para darle seguimiento.'
+              : 'Registra tu carga aérea, marítima o de agenciamiento para darle seguimiento.'}
+          </p>
         </div>
 
         <div className="modal-body">
           {error && <div className="banner err">{error}</div>}
           {created && (
             <div className="banner ok">
-              Prealerta registrada con el consecutivo <strong>{created.code}</strong> ({created.tracking}).
-              Ya aparece en tu listado.
+              {isPackage ? 'Prealerta registrada' : 'Trámite registrado'} con el consecutivo{' '}
+              <strong>{created.code}</strong> ({created.tracking}). Ya aparece en tu listado.
             </div>
           )}
 
-          <div>
-            <label className="field-label" htmlFor="p-type">Trámite</label>
-            <select
-              id="p-type" className="input" value={shipmentType}
-              onChange={(e) => setShipmentType(e.target.value as ShipmentType)}
-            >
-              {TYPE_OPTIONS.map((t) => (
-                <option key={t} value={t}>{SHIPMENT_TYPE_LABELS[t]}</option>
-              ))}
-            </select>
-          </div>
+          {/* Con un solo tipo no hay nada que elegir: el listado que abrio el
+              modal ya dijo de que se trata. */}
+          {types.length > 1 && (
+            <div>
+              <label className="field-label" htmlFor="p-type">Trámite</label>
+              <select
+                id="p-type" className="input" value={shipmentType}
+                onChange={(e) => setShipmentType(e.target.value as ShipmentType)}
+              >
+                {types.map((t) => (
+                  <option key={t} value={t}>{SHIPMENT_TYPE_LABELS[t]}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="field-label" htmlFor="p-tracking">
@@ -262,12 +291,14 @@ export function PrealertModal({ onClose, onCreated }: Props) {
             file={documentFile}
             onPick={pickDocument}
             disabled={busy}
-            hint={`Adjunta la factura de la compra. Se aceptan ${DOCUMENT_ATTACHMENT.label}; las fotos y capturas de pantalla no sirven, tiene que ser el documento.`}
+            hint={`Adjunta ${
+              isPackage ? 'la factura de la compra' : 'la factura o el documento de embarque'
+            }. Se aceptan ${DOCUMENT_ATTACHMENT.label}; las fotos y capturas de pantalla no sirven, tiene que ser el documento.`}
           />
         </div>
 
         <div className="modal-foot">
-          {/* Solo cuando la prealerta ya paso y lo unico que falto fue el archivo. */}
+          {/* Solo cuando el tramite ya paso y lo unico que falto fue el archivo. */}
           {pendingDocument && (
             <button type="button" className="btn btn-ghost" disabled={busy} onClick={retryDocument}>
               {busy ? 'Adjuntando…' : 'Reintentar adjuntar'}
@@ -277,7 +308,7 @@ export function PrealertModal({ onClose, onCreated }: Props) {
             {created ? 'Cerrar' : 'Cancelar'}
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? 'Registrando…' : 'Prealertar'}
+            {busy ? 'Registrando…' : isPackage ? 'Prealertar' : 'Registrar'}
           </button>
         </div>
       </form>
