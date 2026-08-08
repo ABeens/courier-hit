@@ -24,7 +24,7 @@ export type LegalSection = {
 };
 
 /** Fechas de la última revisión de cada texto (se muestran en el encabezado). */
-export const TERMS_UPDATED = '28 de julio de 2026';
+export const TERMS_UPDATED = '8 de agosto de 2026';
 export const PRIVACY_UPDATED = '28 de julio de 2026';
 
 export const TERMS: LegalSection[] = [
@@ -135,6 +135,34 @@ export const TERMS: LegalSection[] = [
     ],
   },
   {
+    id: 'alto-valor',
+    title: 'Mercancías de alto valor',
+    blocks: [
+      {
+        type: 'p',
+        text: 'Salvo aceptación expresa y por escrito por parte de HS Global, no se aceptan para transporte mercancías consideradas de alto valor, incluyendo, sin limitarse a:',
+      },
+      {
+        type: 'list',
+        items: [
+          'Dinero en efectivo.',
+          'Metales preciosos.',
+          'Joyería.',
+          'Obras de arte.',
+          'Antigüedades.',
+          'Instrumentos negociables.',
+          'Criptowallets o dispositivos equivalentes.',
+          'Relojes de lujo.',
+          'Equipos electrónicos de valor excepcional.',
+        ],
+      },
+      {
+        type: 'p',
+        text: 'En caso de que dichos artículos sean enviados sin declaración previa, HS Global podrá rechazar el transporte o limitar su responsabilidad al máximo permitido por la legislación aplicable.',
+      },
+    ],
+  },
+  {
     id: 'tarifas',
     title: 'Tarifas, peso y facturación',
     blocks: [
@@ -149,6 +177,20 @@ export const TERMS: LegalSection[] = [
       {
         type: 'p',
         text: 'La liberación y la entrega del envío están sujetas al pago total de los cargos. Un envío con saldo pendiente permanece en bodega y puede generar cargos por almacenaje.',
+      },
+    ],
+  },
+  {
+    id: 'retencion',
+    title: 'Derecho de retención por saldos pendientes',
+    blocks: [
+      {
+        type: 'p',
+        text: 'HS Global tendrá derecho a retener mercancías, documentos o envíos que se encuentren bajo su custodia mientras existan saldos pendientes, cargos de transporte, almacenaje, impuestos, multas, recargos o cualquier otra obligación económica a cargo del cliente.',
+      },
+      {
+        type: 'p',
+        text: 'La liberación de la mercancía se realizará únicamente una vez cancelados en su totalidad los montos adeudados. Los cargos por almacenaje continuarán acumulándose durante el período de retención.',
       },
     ],
   },
@@ -171,6 +213,33 @@ export const TERMS: LegalSection[] = [
     ],
   },
   {
+    id: 'ajustes-aduaneros',
+    title: 'Ajustes aduaneros posteriores',
+    blocks: [
+      {
+        type: 'p',
+        text: 'El cliente reconoce que las autoridades aduaneras podrán realizar revisiones, auditorías, reliquidaciones o ajustes posteriores al despacho de las mercancías.',
+      },
+      {
+        type: 'p',
+        text: 'En caso de que se generen impuestos, aranceles, multas, recargos, diferencias tributarias o gastos adicionales derivados de:',
+      },
+      {
+        type: 'list',
+        items: [
+          'Errores en la información proporcionada por el cliente.',
+          'Diferencias de valoración.',
+          'Reclasificaciones arancelarias.',
+          'Requerimientos de las autoridades.',
+        ],
+      },
+      {
+        type: 'p',
+        text: 'Dichos montos serán responsabilidad exclusiva del cliente, quien deberá reembolsarlos a HS Global dentro del plazo indicado en la factura correspondiente. HS Global podrá suspender servicios o retener futuras cargas hasta la cancelación de dichos montos.',
+      },
+    ],
+  },
+  {
     id: 'tiempos',
     title: 'Tiempos de tránsito y entrega',
     blocks: [
@@ -181,6 +250,49 @@ export const TERMS: LegalSection[] = [
       {
         type: 'p',
         text: 'La entrega se hace en la dirección registrada en tu cuenta. Si no hay quien reciba, se coordina un nuevo intento; los intentos adicionales pueden generar un cargo. Mantener la dirección actualizada es responsabilidad tuya.',
+      },
+    ],
+  },
+  {
+    id: 'retrasos',
+    title: 'Retrasos fuera del control de HS Global',
+    blocks: [
+      {
+        type: 'p',
+        text: 'HS Global actúa como operador logístico y coordinador de transporte internacional. Los tiempos de tránsito comunicados al cliente son estimados y podrán verse afectados por factores ajenos a nuestro control, incluyendo, entre otros, aerolíneas, navieras, transportistas terrestres, agentes aduanales, autoridades gubernamentales, inspecciones aduaneras, medidas sanitarias, congestión logística, condiciones climáticas, conflictos laborales o eventos similares.',
+      },
+      {
+        type: 'p',
+        text: 'En consecuencia, HS Global no será responsable por pérdidas, daños, penalidades, lucro cesante ni perjuicios derivados de retrasos ocasionados por terceros o por circunstancias fuera de su control razonable.',
+      },
+    ],
+  },
+  {
+    id: 'fuerza-mayor',
+    title: 'Cláusula de fuerza mayor',
+    blocks: [
+      {
+        type: 'p',
+        text: 'HS Global no será responsable por incumplimientos, interrupciones o retrasos en la prestación de los servicios cuando estos sean consecuencia de eventos de fuerza mayor o caso fortuito.',
+      },
+      { type: 'p', text: 'Se consideran eventos de fuerza mayor, entre otros:' },
+      {
+        type: 'list',
+        items: [
+          'Desastres naturales.',
+          'Huracanes, terremotos, inundaciones o incendios.',
+          'Pandemias o emergencias sanitarias.',
+          'Guerras, actos terroristas o disturbios civiles.',
+          'Huelgas o conflictos laborales.',
+          'Interrupciones de servicios de transporte.',
+          'Cierres de puertos o aeropuertos.',
+          'Fallas generalizadas de telecomunicaciones o infraestructura tecnológica.',
+          'Actos u órdenes de autoridades gubernamentales.',
+        ],
+      },
+      {
+        type: 'p',
+        text: 'Durante la vigencia de dichos eventos, las obligaciones afectadas quedarán suspendidas sin que ello genere responsabilidad para HS Global.',
       },
     ],
   },
@@ -198,7 +310,67 @@ export const TERMS: LegalSection[] = [
       },
       {
         type: 'p',
-        text: 'Los reclamos por faltantes o daño visible deben presentarse al momento de la entrega y, en todo caso, dentro de los cinco (5) días hábiles siguientes, con el soporte fotográfico y la factura de compra.',
+        text: 'Todo reclamo debe presentarse con el soporte fotográfico y la factura de compra, dentro de los plazos y por los canales indicados en el procedimiento de reclamos de este documento.',
+      },
+    ],
+  },
+  {
+    id: 'limite-responsabilidad',
+    title: 'Limitación máxima de responsabilidad',
+    blocks: [
+      {
+        type: 'p',
+        text: 'La responsabilidad total acumulada de HS Global por cualquier reclamación relacionada con un envío no excederá en ningún caso el menor entre: (i) el valor declarado de la mercancía, (ii) el monto cubierto por el seguro contratado, o (iii) USD 100 por envío cuando no exista seguro contratado.',
+      },
+    ],
+  },
+  {
+    id: 'reclamos',
+    title: 'Procedimiento de reclamos y plazos',
+    blocks: [
+      {
+        type: 'p',
+        text: 'Todo reclamo deberá presentarse por escrito a través de los canales autorizados por HS Global, dentro de los siguientes plazos:',
+      },
+      {
+        type: 'list',
+        items: [
+          'Daño visible o faltantes evidentes: deberán reportarse al momento de la entrega o dentro de las siguientes 24 horas.',
+          'Daños ocultos: deberán notificarse dentro de los cinco (5) días naturales posteriores a la entrega.',
+        ],
+      },
+      {
+        type: 'p',
+        text: 'HS Global acusará recibo del reclamo dentro de cinco (5) días naturales y emitirá una resolución preliminar una vez recibida toda la documentación requerida.',
+      },
+      {
+        type: 'p',
+        text: 'La falta de presentación del reclamo dentro de los plazos establecidos implicará la aceptación conforme de la entrega y extinguirá cualquier derecho posterior de reclamación.',
+      },
+    ],
+  },
+  {
+    id: 'evidencia-fotografica',
+    title: 'Uso de evidencia fotográfica',
+    blocks: [
+      {
+        type: 'p',
+        text: 'El cliente autoriza a HS Global a capturar, almacenar y utilizar fotografías o registros visuales de los paquetes durante las etapas de recepción, clasificación, almacenamiento, consolidación, transporte, inspección y entrega.',
+      },
+      { type: 'p', text: 'Dichas imágenes podrán utilizarse como evidencia válida para:' },
+      {
+        type: 'list',
+        items: [
+          'Confirmar el estado de la mercancía.',
+          'Verificar embalaje y contenido declarado.',
+          'Resolver reclamos.',
+          'Atender requerimientos de aseguradoras.',
+          'Cumplir obligaciones regulatorias o aduaneras.',
+        ],
+      },
+      {
+        type: 'p',
+        text: 'Las fotografías podrán conservarse durante los plazos internos definidos por HS Global.',
       },
     ],
   },
@@ -213,6 +385,32 @@ export const TERMS: LegalSection[] = [
       {
         type: 'p',
         text: 'La mercancía que permanezca sin instrucciones, sin pago o sin retirar durante más de noventa (90) días se considera abandonada y HS Global podrá disponer de ella para cubrir los costos pendientes, previo aviso al correo registrado.',
+      },
+    ],
+  },
+  {
+    id: 'comunicaciones',
+    title: 'Comunicaciones electrónicas',
+    blocks: [
+      {
+        type: 'p',
+        text: 'El cliente autoriza expresamente a HS Global a enviar comunicaciones relacionadas con el servicio mediante correo electrónico, mensajes SMS, WhatsApp, notificaciones push y el portal de clientes.',
+      },
+      { type: 'p', text: 'Estas comunicaciones podrán incluir:' },
+      {
+        type: 'list',
+        items: [
+          'Confirmaciones de recepción.',
+          'Estados de rastreo.',
+          'Facturas.',
+          'Avisos y notificaciones aduaneros.',
+          'Solicitudes de documentación.',
+          'Actualizaciones operativas.',
+        ],
+      },
+      {
+        type: 'p',
+        text: 'Toda notificación enviada a los medios de contacto registrados por el cliente se considerará válidamente recibida.',
       },
     ],
   },
