@@ -584,6 +584,12 @@ select.input { cursor: pointer; padding-right: 30px; }
 }
 .card-item:hover { border-color: var(--line); box-shadow: var(--sh-2); transform: translateY(-1px); }
 
+/* La ficha del titular ABRE su historial, asi que se comporta como un control:
+   lo dice el cursor y lo marca el foco de teclado. Los botones de dentro
+   (documento, pagar) conservan el suyo; el clic sobre ellos no llega a la ficha. */
+.card-item.is-clickable { cursor: pointer; }
+.card-item.is-clickable:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
 /* Tono semantico, compartido por todo el portal: `--tone` es el trazo (barra,
    texto, icono) y `--tone-soft` el fondo. Lo declara cualquier bloque que se
    tiña por estado —ficha de trámite, cuadro del Resumen, evento de la bitácora—
@@ -905,6 +911,71 @@ select.input { cursor: pointer; padding-right: 30px; }
 .link-log-head .sub-date { margin-left: auto; }
 .link-log-detail { margin-top: 6px; font-size: 13.5px; color: var(--ink-2); }
 .link-log-changes { margin-top: 6px; display: grid; gap: 3px; font-size: 13px; color: var(--muted); }
+
+/* --- Trazabilidad de un tramite (modal Historial) ---
+   Linea de tiempo vertical: cada asiento es una marca sobre una linea continua,
+   del mas reciente (arriba) al mas antiguo.
+
+   No reusa `.link-log` de aqui arriba aunque tambien sea una lista de eventos:
+   aquella es una PILA de tarjetas sueltas y esta es un RECORRIDO. La linea que
+   une las marcas es la que dice que hay un antes y un despues; con tarjetas
+   independientes los tramos se leen como sucesos sin relacion entre si.
+
+   El color sale de las mismas variables --tone que las fichas del listado: un
+   estado se reconoce por su color en las dos pantallas. */
+.trace { display: grid; margin: 0; padding: 0; list-style: none; }
+.trace-step { position: relative; display: flex; gap: 12px; padding-bottom: 20px; }
+.trace-step:last-child { padding-bottom: 0; }
+
+/* El tramo de linea cuelga de CADA marca hacia la siguiente; la ultima no lleva
+   (no hay nada debajo a lo que unirse). Centrada bajo la marca de 28px. */
+.trace-step::before {
+  content: ''; position: absolute; left: 13px; top: 30px; bottom: 0;
+  width: 2px; background: var(--line);
+}
+.trace-step:last-child::before { display: none; }
+
+.trace-mark {
+  flex: none; display: grid; place-items: center;
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--faint);
+}
+.trace-mark svg { width: 14px; height: 14px; }
+
+/* El asiento actual es el UNICO macizo y teñido: donde esta el paquete se
+   reconoce antes de leer una sola palabra. */
+.trace-step.is-current .trace-mark {
+  border-color: transparent; background: var(--tone); color: #fff;
+  box-shadow: 0 0 0 4px var(--tone-soft);
+}
+
+.trace-body { min-width: 0; padding-top: 3px; }
+.trace-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.trace-state { font-size: 14.5px; font-weight: 700; color: var(--ink-2); line-height: 1.3; }
+.trace-step.is-current .trace-state { color: var(--ink); }
+
+.trace-now {
+  padding: 2px 7px; border-radius: 999px;
+  background: var(--tone-soft); color: var(--tone);
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+}
+
+.trace-place {
+  display: flex; align-items: center; gap: 5px;
+  margin-top: 3px; font-size: 13px; color: var(--muted);
+}
+.trace-pin { width: 13px; height: 13px; flex: none; color: var(--faint); }
+
+/* En cursiva y en gris: la nota es una acotacion sobre el tramo, no un dato del
+   tramite, y no debe competir con la etiqueta del estado. */
+.trace-note { margin-top: 4px; font-size: 12.5px; font-style: italic; color: var(--muted); }
+
+/* Sello en monoespaciada: la columna de fechas se recorre en vertical y con los
+   digitos alineados se compara de un vistazo cuanto tardo cada tramo. */
+.trace-when {
+  display: block; margin-top: 5px;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--faint);
+}
 
 /* ============================================================
    Resumen (pantalla Dashboard)

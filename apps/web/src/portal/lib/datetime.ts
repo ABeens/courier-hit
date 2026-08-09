@@ -26,6 +26,29 @@ export function formatDateTime(iso: string): string {
 }
 
 /**
+ * Instante ISO (UTC) -> sello de la linea de tiempo: `25 may 2026 · 08:00`.
+ *
+ * Formato distinto al de `formatDateTime` a proposito. Ahi la fecha se lee de una
+ * en una y el numero es lo comodo; aqui se recorre una columna de sellos uno
+ * debajo de otro, y con el mes en letra no hay que descifrar si `05/06` es mayo o
+ * junio al saltar de una fila a la siguiente.
+ */
+export function formatStamp(iso: string): string {
+  const date = new Date(iso);
+  const day = date.toLocaleDateString('es-CR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+  const time = date.toLocaleTimeString('es-CR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return `${day} · ${time}`;
+}
+
+/**
  * Dia elegido en un <input type="date"> (YYYY-MM-DD) -> como se escribe en es-CR.
  *
  * Aqui NO hay conversion de zona: ese valor ya es un dia del calendario local

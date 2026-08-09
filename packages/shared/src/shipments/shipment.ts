@@ -133,6 +133,49 @@ export interface ShipmentDto {
   updatedAt: string;
 }
 
+/**
+ * Un asiento del historial de estados (tabla append-only `shipment_events`): el
+ * tramite entro a `state` en `createdAt`. La trazabilidad del tramite es la lista
+ * completa de estos asientos, en orden.
+ *
+ * No lleva el estado ANTERIOR a proposito: se lee del asiento previo. Guardarlo
+ * seria un dato derivado que puede contradecir a su vecino.
+ */
+export interface ShipmentEventDto {
+  id: string;
+  state: State;
+  /**
+   * Comentario del asiento, o null si no lleva. Obligatorio al devolver a bodega
+   * (Condition.RequiresComment); opcional en el resto de avances, donde suele ser
+   * una nota interna de la operacion.
+   */
+  note: string | null;
+  /**
+   * Quien lo registro. Null = lo movio el sistema (la sincronizacion con el
+   * proveedor), o la respuesta va dirigida al titular del casillero, que no ve
+   * nombres de la operacion (ver `shipmentsService.events`).
+   */
+  createdByName: string | null;
+  /** Instante en UTC, ISO 8601. La hora local se arma en la presentacion. */
+  createdAt: string;
+}
+
+export interface ShipmentEventsResponse {
+  items: ShipmentEventDto[];
+}
+
+/**
+ * Marca con la que una correccion administrativa se distingue de un avance real
+ * en el historial (la escribe `transitionsService.correct`). Vive aqui, y no como
+ * literal en cada sitio, porque ya la leen dos capas: quien la escribe y quien
+ * decide que notas puede ver el cliente.
+ *
+ * Es una convencion sobre el texto, no una columna: el historial es append-only y
+ * no se quiso migrar la tabla por una distincion que hasta ahora solo se leia a
+ * ojo. Si algun dia hace falta filtrar correcciones en SQL, ahi si toca columna.
+ */
+export const CORRECTION_NOTE_PREFIX = 'Corrección: ';
+
 /** True si el tipo usa los campos propios de Paqueteria (tienda, transportista, HAWB, peso). */
 export function usesPackageFields(type: ShipmentType): boolean {
   return flowForType(type) === Flow.Paqueteria;

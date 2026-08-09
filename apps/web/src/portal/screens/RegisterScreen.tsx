@@ -10,7 +10,15 @@
  * catálogo territorial compartido: todos los usuarios son de Costa Rica.
  */
 import { useRef, useState } from 'react';
-import { PROVINCES, getCantons, getDistricts, registerSchema, verifySchema } from '@courier/shared';
+import {
+  PROVINCES,
+  getCantons,
+  getDistricts,
+  formatLockerCode,
+  registerSchema,
+  verifySchema,
+  warehouseAddressLines,
+} from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { AuthShell } from '../components/AuthShell';
 import { PasswordField } from '../components/PasswordField';
@@ -25,8 +33,13 @@ const POINTS = [
   { title: 'Tarifa por peso real', sub: 'Pagas solo lo que pesa tu paquete, sin sorpresas.' },
 ];
 
-/** Dirección del casillero en Miami: es fija de HS Global (docs/05 §2). */
-const MIAMI_ADDRESS = ['8200 NW 27th St, Suite 140', 'Doral, Miami, FL 33122', 'United States · +1 (555) 010-0000'];
+/**
+ * Dirección del casillero en Miami: es fija de HS Global y sale de
+ * @courier/shared. No se copia aquí: una segunda copia es una segunda verdad, y
+ * durante un tiempo esta pantalla mostró una dirección distinta a la de "Mi
+ * casillero".
+ */
+const MIAMI_ADDRESS = warehouseAddressLines();
 
 const CODE_LENGTH = 6;
 
@@ -367,9 +380,10 @@ export default function RegisterScreen() {
             <p className="sub">Tu casillero en Miami ya está listo. Esta es tu dirección de envío:</p>
 
             <div className="locker-card">
-              <div className="locker-title">Tu casillero · {lockerCode}</div>
+              <div className="locker-title">Tu casillero · {formatLockerCode(lockerCode)}</div>
               <div className="locker-address">
-                {form.name} · {lockerCode}
+                {/* Mismo formato que la línea "Nombre" de "Mi casillero". */}
+                {form.name} {formatLockerCode(lockerCode)}
                 {MIAMI_ADDRESS.map((line) => (
                   <span key={line}>
                     <br />

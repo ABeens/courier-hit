@@ -14,37 +14,33 @@
  * Identificador del casillero maestro de HS Global ante el proveedor. Constante
  * del negocio ("El identificador único del casillero siempre es: SJO008835").
  *
- * NO se le muestra al cliente: la dirección que él pega en el checkout lleva
- * nuestro código `HS…` (ver `lockerIdFor`). Esta constante queda para lo que
- * mira hacia el proveedor.
+ * SI se le muestra al cliente: va literal en la segunda linea de la direccion
+ * ("Suite 700 SJO 008835"), separado en dos bloques porque asi lo pide el
+ * negocio. La cadena sin espacio es la que mira hacia el proveedor.
  */
 export const MASTER_LOCKER_ID = 'SJO008835';
 
 /**
- * Direccion fisica de la bodega en Miami.
+ * Direccion fisica de la bodega en Miami. Datos DEFINITIVOS confirmados por HS
+ * Global (2026-08-08); ya no son valores de relleno.
  *
- * TODO(casillero): SIGUEN SIENDO VALORES DE RELLENO. Confirmar con HS Global; el
- * manual lo deja pendiente de forma explicita ("confirmar datos con el cliente").
- * Cuando lleguen los definitivos se cambian AQUI y toda la web los toma.
+ * Esta es la direccion que el cliente copia al comprar y un error aqui manda
+ * paquetes a ninguna parte: cambiarla solo contra confirmacion escrita del
+ * negocio. NO se puede sacar del API del proveedor (comprobado el 2026-07-26:
+ * su ficha de cuenta solo trae la direccion de Costa Rica, docs/13 §6).
  *
- * Dos avisos, porque esta es la direccion que el cliente copia al comprar y un
- * error aqui manda paquetes a ninguna parte:
- *
- * 1. NO se puede sacar del API del proveedor. Comprobado el 2026-07-26: su ficha
- *    de cuenta solo trae la direccion de Costa Rica y no expone ninguna ruta de
- *    oficinas ni bodegas (docs/13 §6).
- * 2. Estos valores NO COINCIDEN con los del prototipo, que decia
- *    "8200 NW 27th St, Suite 140". Al menos uno de los dos esta mal, y el
- *    telefono es de relleno en ambos.
+ * `addressLine2` lleva el casillero maestro incrustado (MASTER_LOCKER_ID con un
+ * espacio) porque el negocio lo dicta como una sola linea de formulario: es el
+ * campo "Apto / Suite" que el cliente pega tal cual en el checkout.
  */
 export const MIAMI_WAREHOUSE = {
-  addressLine1: '8200 NW 30th Terrace',
-  addressLine2: 'Suite 100',
-  city: 'Doral',
-  state: 'FL',
-  zipCode: '33122',
+  addressLine1: '1350 NW 121 ST Ave',
+  addressLine2: 'Suite 700 SJO 008835',
+  city: 'Miami',
+  state: 'Florida',
+  zipCode: '33182-1542',
   country: 'USA',
-  phone: '+1 (305) 000-0000',
+  phone: '+1 305 714 0023',
 } as const;
 
 /**
@@ -52,9 +48,14 @@ export const MIAMI_WAREHOUSE = {
  * digitos (su ejemplo literal es HS0000001).
  *
  * El codigo que guarda la BD es `HS-1000` (con guion, sin relleno) porque es la
- * clave de negocio interna. Esta funcion solo cambia su PRESENTACION para la
- * etiqueta de envio, donde el formato importa: se toman los digitos del codigo y
- * se rellenan. Nada se migra en BD.
+ * clave de negocio interna. Esta funcion solo cambia su PRESENTACION: se toman
+ * los digitos del codigo y se rellenan. Nada se migra en BD.
+ *
+ * Pasa por aqui TODO lo que ve el cliente (direccion de envio, badge de "Mi
+ * casillero", perfil, menu de cuenta, registro). El `HS-1000` crudo queda para
+ * el panel interno. La regla es: el cliente lee un solo numero. Antes convivian
+ * los dos formatos en la misma pantalla -- el badge decia `HS-1000` y la linea
+ * de Nombre `HS0001000` -- que es justo lo que hace que pegue el equivocado.
  */
 export function formatLockerCode(clientCode: string): string {
   const digits = clientCode.replace(/\D/g, '');
@@ -86,6 +87,19 @@ function lockerIdFor(clientCode: string): string {
 }
 
 /**
+ * Direccion de la bodega SIN cliente, para la web publica (landing, FAQ) donde
+ * todavia no hay casillero asignado. Mismas lineas, misma fuente.
+ */
+export function warehouseAddressLines(): string[] {
+  return [
+    MIAMI_WAREHOUSE.addressLine1,
+    MIAMI_WAREHOUSE.addressLine2,
+    `${MIAMI_WAREHOUSE.city}, ${MIAMI_WAREHOUSE.state} ${MIAMI_WAREHOUSE.zipCode}`,
+    `${MIAMI_WAREHOUSE.country} · ${MIAMI_WAREHOUSE.phone}`,
+  ];
+}
+
+/**
  * Direccion completa de envio del cliente, en el orden en que se llena un
  * formulario de compra en USA. Punto UNICO donde se arma esa direccion: la usan
  * la pantalla de Casillero y cualquier correo que la incluya.
@@ -93,9 +107,12 @@ function lockerIdFor(clientCode: string): string {
 export function lockerAddressFor(clientName: string, clientCode: string): LockerAddressLine[] {
   const locker = lockerIdFor(clientCode);
   return [
-    { label: 'Nombre', value: `${clientName} — ${locker}` },
+    { label: 'Nombre', value: `${clientName} ${locker}` },
     { label: 'Dirección', value: MIAMI_WAREHOUSE.addressLine1 },
-    { label: 'Apto / Suite', value: `${MIAMI_WAREHOUSE.addressLine2} — ${locker}` },
+    // La suite NO lleva el codigo del cliente: el negocio la define fija
+    // ("Suite 700 SJO 008835"). Lo unico que distingue al destinatario es la
+    // linea de Nombre.
+    { label: 'Apto / Suite', value: MIAMI_WAREHOUSE.addressLine2 },
     { label: 'Ciudad', value: MIAMI_WAREHOUSE.city },
     { label: 'Estado', value: MIAMI_WAREHOUSE.state },
     { label: 'Código postal', value: MIAMI_WAREHOUSE.zipCode },

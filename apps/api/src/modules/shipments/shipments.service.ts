@@ -12,6 +12,8 @@
  *    casillero de la SESION, nunca a un clientId del query string.
  */
 import {
+  CORRECTION_NOTE_PREFIX,
+  Condition,
   Currency,
   DOCUMENT_ATTACHMENT,
   HelgaSyncStatus,
@@ -20,6 +22,7 @@ import {
   STATE_LABELS,
   ShipmentField,
   can,
+  conditionsFor,
   editableFieldsAt,
   flowForType,
   initialState,
@@ -32,11 +35,14 @@ import {
 } from '@courier/shared';
 import type {
   CreateShipmentInput,
+  Flow,
   ListShipmentsQuery,
   PrealertShipmentInput,
   Session,
   ShipmentDto,
+  ShipmentEventsResponse,
   ShipmentType,
+  State,
   UpdateShipmentInput,
 } from '@courier/shared';
 import { AuthErrors, ShipmentErrors } from '../../core/errors';
@@ -88,6 +94,22 @@ function ownerScopeFor(session: Session): string | undefined {
   if (session.role !== Role.Client) return undefined;
   if (!session.clientId) throw ShipmentErrors.missingClientProfile();
   return session.clientId;
+}
+
+/**
+ * Nota de un asiento del historial tal como puede verla el TITULAR, o null si esa
+ * nota no es para el. Ver `shipmentsService.events` para el por que.
+ *
+ * Dos filtros, y los dos hacen falta: el estado tiene que EXIGIR comentario (solo
+ * entonces la nota es la explicacion que se le debe al cliente) y el asiento no
+ * puede ser una correccion administrativa, que llega al mismo estado por la
+ * puerta de atras y guarda ahi el motivo de un error nuestro.
+ */
+function ownerVisibleNote(flow: Flow, state: State, note: string | null): string | null {
+  if (!note) return null;
+  if (!conditionsFor(flow, state).includes(Condition.RequiresComment)) return null;
+  if (note.startsWith(CORRECTION_NOTE_PREFIX)) return null;
+  return note;
 }
 
 /**
@@ -163,16 +185,35 @@ export const shipmentsService = {
     return toDto(row);
   },
 
-  /** Historial de estados de un tramite (mismas reglas de acceso que el detalle). */
-  async events(session: Session, id: string) {
-    await this.get(session, id); // valida existencia y propiedad
+  /**
+   * Historial de estados de un tramite (mismas reglas de acceso que el detalle).
+   *
+   * Al TITULAR se le devuelve recortado. No es una decision de pantalla sino de
+   * exposicion de datos, y por eso vive aqui: la trazabilidad que el cliente pide
+   * es "por donde ha pasado mi paquete y cuando", no la trastienda con la que la
+   * operacion lo movio. Se le quitan dos cosas:
+   *
+   *   - QUIEN lo movio: es organigrama interno. Al cliente le responde HS Global,
+   *     no la persona que pulso el boton.
+   *   - Las notas que NO son para el: el comentario del avance es un campo libre
+   *     donde la operacion se deja recados ("ojo, el peso no cuadra"), y la
+   *     correccion administrativa guarda ahi el motivo de un error nuestro. La
+   *     unica nota escrita PARA el cliente es la que un estado exige
+   *     (Condition.RequiresComment: la razon por la que su paquete volvio a
+   *     bodega), asi que ese es el filtro, y sale de la maquina de estados en vez
+   *     de una lista de estados a mano.
+   */
+  async events(session: Session, id: string): Promise<ShipmentEventsResponse> {
+    const shipment = await this.get(session, id); // valida existencia y propiedad
+    const forOwner = session.role === Role.Client;
     const rows = await shipmentsRepo.listEvents(id);
+
     return {
       items: rows.map((e) => ({
         id: e.id,
         state: e.state,
-        note: e.note,
-        createdByName: e.createdByName,
+        note: forOwner ? ownerVisibleNote(shipment.flow, e.state, e.note) : e.note,
+        createdByName: forOwner ? null : e.createdByName,
         createdAt: e.createdAt.toISOString(),
       })),
     };

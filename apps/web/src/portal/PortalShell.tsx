@@ -6,7 +6,7 @@
  * recarga y botones atras/adelante funcionan.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Permission, ROLE_LABELS, Resource, Role, can, resourcesFor } from '@courier/shared';
+import { Permission, ROLE_LABELS, Resource, Role, can, formatLockerCode, resourcesFor } from '@courier/shared';
 import type { Me } from './PortalApp';
 import { api } from './lib/api';
 import type { NavIntent } from './lib/nav';
@@ -230,8 +230,11 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
               pantallas y no compite con la navegacion del menu lateral. */}
           <AccountMenu
             name={roleLabel}
-            /* "Cuenta interna" solo aplica a staff; al titular se le muestra su casillero. */
-            detail={isClient ? (me.clientCode ?? 'Casillero') : 'Cuenta interna'}
+            /* "Cuenta interna" solo aplica a staff; al titular se le muestra su
+               casillero, SIEMPRE en el formato de la etiqueta de envio
+               (`HS0001000`): el cliente debe leer un unico numero, no el
+               `HS-1000` interno aqui y otro distinto en la direccion. */
+            detail={isClient ? (me.clientCode ? formatLockerCode(me.clientCode) : 'Casillero') : 'Cuenta interna'}
             onLogout={logout}
           />
         </header>
