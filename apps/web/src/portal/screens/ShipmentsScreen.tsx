@@ -43,6 +43,7 @@ import { formatDate, formatDayInput, startOfLocalDayUtc, startOfNextLocalDayUtc 
 import { STATE_TONE } from '../lib/tone';
 import { ClientShipmentModal } from './ClientShipmentModal';
 import { ShipmentFormModal, allowedTypesFor } from './ShipmentFormModal';
+import { ShipmentHistoryModal } from './ShipmentHistoryModal';
 import { StateAdvanceModal, reachableStates } from './StateAdvanceModal';
 import { StateCorrectModal } from './StateCorrectModal';
 import { PaymentModal } from './PaymentModal';
@@ -236,6 +237,8 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
   const [advancing, setAdvancing] = useState<ShipmentDto | null>(null);
   const [correcting, setCorrecting] = useState<ShipmentDto | null>(null);
   const [paying, setPaying] = useState<ShipmentDto | null>(null);
+  /** Trámite cuyo historial de estados se está mirando (clic sobre la ficha). */
+  const [tracing, setTracing] = useState<ShipmentDto | null>(null);
   /** Alta del cliente: vive aqui dentro, no en una pantalla aparte. */
   const [registering, setRegistering] = useState(false);
 
@@ -348,7 +351,14 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
       <div className="head-row">
         <div>
           <div className="title">{title}</div>
-          {data && <div className="count">{data.items.length} {isOwnPackages ? 'paquetes' : 'trámites'}</div>}
+          {data && (
+            <div className="count">
+              {data.items.length} {isOwnPackages ? 'paquetes' : 'trámites'}
+              {/* La ficha pulsable no se anuncia sola: sin esta linea el historial
+                  solo lo encuentra quien pruebe a hacer clic por curiosidad. */}
+              {isOwn && data.items.length > 0 && ' · toca uno para ver su historial'}
+            </div>
+          )}
         </div>
         {isOwn ? (
           /* El alta del titular: en Paqueteria es avisar de una compra que viene
@@ -430,7 +440,38 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
 
       <div className="cards">
         {data?.items.map((row) => (
-          <article className={`card-item tone-${STATE_TONE[row.state]}`} key={row.id}>
+          <article
+            className={`card-item tone-${STATE_TONE[row.state]}${isOwn ? ' is-clickable' : ''}`}
+            key={row.id}
+            /*
+              La ficha del titular ABRE su trazabilidad. El gesto va sobre la
+              tarjeta entera y no sobre un botón «Ver historial» porque pulsar la
+              tarjeta es lo que el cliente intenta igual, y en su tablero no hay
+              otra acción que le compita por el clic.
+
+              No se usa <button> como contenedor: dentro ya viven el enlace al
+              documento y el botón de pago, y un control no puede anidar otros.
+              De ahí el rol y el teclado puestos a mano.
+
+              Los tableros de staff NO son pulsables: ahí la tarjeta está llena de
+              acciones (editar, avanzar, corregir) y un clic al aire abriendo una
+              ventana estorbaría más de lo que ayuda.
+            */
+            {...(isOwn
+              ? {
+                  role: 'button',
+                  tabIndex: 0,
+                  'aria-label': `Ver historial de ${row.code}`,
+                  onClick: () => setTracing(row),
+                  onKeyDown: (e: React.KeyboardEvent<HTMLElement>) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setTracing(row);
+                    }
+                  },
+                }
+              : {})}
+          >
             <div className="card-item-head">
               <div className="card-item-ident">
                 <span className="card-item-code">{row.code}</span>
@@ -447,7 +488,9 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
                   <span className="sub-date">Ingresó {formatDate(row.createdAt)}</span>
                 </div>
               </div>
-              <div className="card-item-aside">
+              {/* Las acciones de la ficha tienen la suya propia: un clic aqui no
+                  debe abrir ademas el historial de la tarjeta que las contiene. */}
+              <div className="card-item-aside" onClick={(e) => e.stopPropagation()}>
                 {/* Antes de la píldora de estado: el operador que barre la lista
                     busca primero si el trámite se puede mover, y eso depende del
                     cobro. Sin factura aprobada no pinta nada. */}
@@ -603,6 +646,10 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
             void load();
           }}
         />
+      )}
+
+      {tracing && (
+        <ShipmentHistoryModal row={tracing} onClose={() => setTracing(null)} />
       )}
 
       {registering && (

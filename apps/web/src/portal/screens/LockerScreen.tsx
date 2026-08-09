@@ -12,6 +12,7 @@
  * solo se pinta lo que llega.
  */
 import { useEffect, useState } from 'react';
+import { formatLockerCode } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 
 interface LockerLine {
@@ -68,8 +69,9 @@ export function LockerScreen() {
       {locker && (
         <>
           <div className="banner info" style={{ marginBottom: 16 }}>
-            Incluye <strong>siempre</strong> el identificador del casillero en el nombre y en la
-            línea de suite. Sin él no podemos saber que el paquete es tuyo.
+            Escribe <strong>siempre</strong> tu identificador de casillero junto a tu nombre. La
+            dirección es la misma para todos los clientes: sin ese identificador no podemos saber
+            que el paquete es tuyo.
           </div>
 
           {/*
@@ -97,7 +99,7 @@ export function LockerScreen() {
                 <div className="locker-panel-title">Dirección en Miami</div>
                 <div className="locker-panel-sub">Toca la libreta para copiar cada línea</div>
               </div>
-              <span className="locker-code">{locker.clientCode}</span>
+              <span className="locker-code">{formatLockerCode(locker.clientCode)}</span>
             </header>
 
             <dl className="locker-rows">

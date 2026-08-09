@@ -13,7 +13,7 @@
  * reparto, así que moverla es una gestión operativa que pasa por soporte.
  */
 import { useEffect, useState } from 'react';
-import { findCanton, findDistrict, findProvince } from '@courier/shared';
+import { findCanton, findDistrict, findProvince, formatLockerCode } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 
 interface Profile {
@@ -108,7 +108,8 @@ export function ProfileScreen({ onLoggedOut }: { onLoggedOut: () => void }) {
       <div className="head-row">
         <div>
           <div className="title">Mi perfil</div>
-          {profile && <div className="count">Casillero {profile.code}</div>}
+          {/* Formato de etiqueta de envío: el mismo número que en "Mi casillero". */}
+          {profile && <div className="count">Casillero {formatLockerCode(profile.code)}</div>}
         </div>
       </div>
 
