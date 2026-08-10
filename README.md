@@ -1,6 +1,6 @@
 # HS Global Services
 
-Monorepo de la app de courier/casillero (Miami → Colombia).
+Monorepo de la app de courier/casillero (Miami → Costa Rica).
 
 - `apps/web` — sitio público en Astro + portal privado como isla-app React.
 - `apps/api` — API en Node (Hono) con Postgres/Drizzle.
