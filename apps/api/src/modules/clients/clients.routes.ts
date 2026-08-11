@@ -13,7 +13,7 @@
  */
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { zValidator } from '../../core/validator';
 import {
   Permission,
   deliveryAddressSchema,

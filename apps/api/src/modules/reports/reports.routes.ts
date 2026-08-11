@@ -8,7 +8,7 @@
  * que el modulo no aparezca en el menu de quien no genera ningun reporte.
  */
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+import { zValidator } from '../../core/validator';
 import {
   Permission,
   REPORT_DESCRIPTIONS,

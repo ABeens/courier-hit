@@ -18,7 +18,7 @@
  * es simulado, y el modo simulado no arranca en produccion).
  */
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+import { zValidator } from '../../core/validator';
 import { z } from 'zod';
 import type { AppEnv } from '../../core/http';
 import {

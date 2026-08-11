@@ -11,7 +11,7 @@
  * comprobacion vive en el servicio (`assertCanWrite`), que es quien conoce el tipo.
  */
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+import { zValidator } from '../../core/validator';
 import {
   Permission,
   correctStateSchema,

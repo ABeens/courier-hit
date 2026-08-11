@@ -4,7 +4,7 @@
  * Contrato en docs/05-modulo-usuarios.md §3 y docs/06 §6.2.
  */
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+import { zValidator } from '../../core/validator';
 import { Permission, createStaffSchema, listStaffQuerySchema, updateStaffSchema } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
 import { requirePermission } from '../../core/middleware/requirePermission';

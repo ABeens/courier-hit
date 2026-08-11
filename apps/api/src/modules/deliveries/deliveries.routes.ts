@@ -7,7 +7,7 @@
  * modulo es JSON.
  */
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+import { zValidator } from '../../core/validator';
 import {
   Permission,
   listDeliveryQueueQuerySchema,

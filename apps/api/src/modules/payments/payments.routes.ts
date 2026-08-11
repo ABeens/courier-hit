@@ -10,7 +10,7 @@
  * navegador. Su autenticacion es la firma del cuerpo, no una cookie.
  */
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+import { zValidator } from '../../core/validator';
 import {
   Permission,
   listPaymentsQuerySchema,

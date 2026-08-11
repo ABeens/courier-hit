@@ -377,8 +377,8 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
                     quien lo digita aquí es quien después lo lee ahí. */}
                 <label className="field-label" htmlFor="t-hawb">HAWB (LES)</label>
                 <input
-                  id="t-hawb" className="input" inputMode="numeric" value={hawb}
-                  placeholder="Solo números" disabled={!canEdit(ShipmentField.Hawb)}
+                  id="t-hawb" className="input" value={hawb}
+                  placeholder="p. ej. LES48450141" disabled={!canEdit(ShipmentField.Hawb)}
                   onChange={(e) => setHawb(e.target.value)}
                 />
               </div>
