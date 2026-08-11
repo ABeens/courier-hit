@@ -74,6 +74,12 @@ export enum Scope {
 
 export enum Permission {
   // --- Portal del cliente (customer) ---
+  /**
+   * Prealertar, y SOLO Paqueteria: avisar de una compra que viene en camino a
+   * Miami. No habilita dar de alta transporte ni agenciamiento; para eso hace
+   * falta `tramite.manage`, que el cliente no tiene. La regla la aplican el
+   * schema (`prealertShipmentSchema` fija el tipo) y `shipmentsService.prealert`.
+   */
   PrealertCreate = 'prealert.create',
   PackageReadOwn = 'package.read.own',
   PackagePay = 'package.pay',
@@ -82,6 +88,9 @@ export enum Permission {
    * agenciamiento). Va aparte de `package.read.own` porque abre un modulo
    * distinto del menu del cliente ("Otros tramites"): prealertar es una accion
    * de Paqueteria y esos tramites no caben en "Mis paquetes".
+   *
+   * Es SOLO LECTURA. Ese modulo no tiene alta: quien registra un tramite de
+   * transporte o agenciamiento es el staff con `tramite.manage`.
    */
   TramiteReadOwn = 'tramite.read.own',
   LockerRead = 'locker.read',
@@ -114,12 +123,44 @@ export enum Permission {
    * tocar una linea mas.
    */
   ExchangeRateWrite = 'exchange_rate.write',
+  /**
+   * Fijar la tarifa de transporte internacional (USD por libra) con la que el
+   * reporte de Paqueteria calcula el campo 21.
+   *
+   * Es un valor general del sistema, igual que la tasa de cambio, y por eso vive
+   * en la misma pantalla y sigue el mismo patron: permiso propio para poder
+   * abrirlo a otro rol sin regalarle tambien la tasa.
+   */
+  FreightRateWrite = 'freight_rate.write',
   CostServicesManage = 'cost_services.manage',
   PaymentsValidate = 'payments.validate',
   DeliveryManage = 'delivery.manage',
   ReportsOperationalBasic = 'reports.operational.basic',
   ReportsOperationalFull = 'reports.operational.full',
   ReportsFinancial = 'reports.financial',
+  /**
+   * Reportes FULL por servicio (Paqueteria y Agenciamiento): el juego COMPLETO
+   * de columnas, costos y margen incluidos.
+   *
+   * Va aparte de `reports.operational.full` y no encima de el porque no es "mas
+   * detalle operativo": es la rentabilidad del negocio. Solo `admin`, tal como lo
+   * fija el mapeo de campos ("Solo los administradores tienen acceso a esto").
+   */
+  ReportsFull = 'reports.full',
+  /**
+   * Reportes operativos por servicio: los mismos tramites SIN las columnas de
+   * costo, margen ni porcentaje (Paqueteria hasta el campo 15, Agenciamiento
+   * hasta el 18). Incluye el monto de factura, que es lo que lo separa del
+   * basico y la razon de que sea un permiso propio y no el mismo.
+   */
+  ReportsOperational = 'reports.operational',
+  /**
+   * Generar la proforma de un tramite. Es un DOCUMENTO para el cliente, no una
+   * consulta, y ese es el motivo de que no cuelgue de ningun reporte: quien
+   * puede leer cifras no necesariamente puede emitir papel a nombre de la
+   * empresa. Administrador y Financiero.
+   */
+  ReportsProforma = 'reports.proforma',
   ClientsRead = 'clients.read',
   ClientsWrite = 'clients.write',
   ConfigManage = 'config.manage',
@@ -161,12 +202,16 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   // Resource.Settings: fijar la tasa SI abre un modulo del menu (Configuración),
   // que es donde se decide el valor general. La pantalla de costos solo lo usa.
   [Permission.ExchangeRateWrite]: { resource: Resource.Settings, action: Action.Write, scope: Scope.All },
+  [Permission.FreightRateWrite]: { resource: Resource.Settings, action: Action.Write, scope: Scope.All },
   [Permission.CostServicesManage]: { resource: Resource.CostServices, action: Action.Manage, scope: Scope.All },
   [Permission.PaymentsValidate]: { resource: Resource.Payments, action: Action.Validate, scope: Scope.All },
   [Permission.DeliveryManage]: { resource: Resource.Delivery, action: Action.Manage, scope: Scope.All },
   [Permission.ReportsOperationalBasic]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
   [Permission.ReportsOperationalFull]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
   [Permission.ReportsFinancial]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
+  [Permission.ReportsFull]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
+  [Permission.ReportsOperational]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
+  [Permission.ReportsProforma]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
   [Permission.ClientsRead]: { resource: Resource.Clients, action: Action.Read, scope: Scope.All },
   [Permission.ClientsWrite]: { resource: Resource.Clients, action: Action.Write, scope: Scope.All },
   [Permission.ConfigManage]: { resource: Resource.Config, action: Action.Manage, scope: Scope.All },
@@ -188,14 +233,18 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   Permission.ShipmentCorrect,
   Permission.CostsManage,
   Permission.CostsTramiteManage,
-  // Solo admin: la tasa es un valor general del sistema, no un dato del tramite.
+  // Solo admin: son valores generales del sistema, no datos del tramite.
   Permission.ExchangeRateWrite,
+  Permission.FreightRateWrite,
   Permission.CostServicesManage,
   Permission.PaymentsValidate,
   Permission.DeliveryManage,
   Permission.ReportsOperationalBasic,
   Permission.ReportsOperationalFull,
   Permission.ReportsFinancial,
+  Permission.ReportsFull,
+  Permission.ReportsOperational,
+  Permission.ReportsProforma,
   Permission.ClientsRead,
   Permission.ClientsWrite,
   Permission.ConfigManage,
@@ -222,6 +271,9 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.DashboardRead,
     Permission.PackageRead,
     Permission.ReportsOperationalBasic,
+    // Atender a un cliente incluye responderle cuanto se le facturo; lo que no ve
+    // es lo que a HS Global le costo (eso es `reports.full`).
+    Permission.ReportsOperational,
     Permission.ClientsRead,
   ],
 
@@ -233,10 +285,17 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.PackageReassign,
     Permission.CostsManage,
     Permission.ReportsOperationalBasic,
+    Permission.ReportsOperational,
     Permission.ClientsRead,
   ],
 
-  [Role.Financiero]: [Permission.PackageRead, Permission.ReportsFinancial],
+  // Financiero emite proformas pero NO ve el reporte FULL: cobrar es su trabajo,
+  // la rentabilidad del negocio no.
+  [Role.Financiero]: [
+    Permission.PackageRead,
+    Permission.ReportsFinancial,
+    Permission.ReportsProforma,
+  ],
 
   [Role.Mensajeria]: [Permission.DeliveryManage],
 };

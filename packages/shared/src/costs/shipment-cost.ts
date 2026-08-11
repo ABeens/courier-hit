@@ -17,6 +17,7 @@
  *    donde se suma una factura, y devuelve el total en ambas monedas.
  */
 import { Currency, convertMoney, roundMoney } from '../money/currency';
+import { CostCategory, isPassThroughCost } from './cost-service';
 
 /**
  * Origen del importe de una linea. Enum de comportamiento: valores en ingles.
@@ -45,6 +46,14 @@ export interface ShipmentCostLine {
   costServiceId: string | null;
   /** Etiqueta congelada al cargar (no se relee del catalogo). */
   label: string;
+  /**
+   * De quien es el dinero, congelado al cargar igual que la etiqueta. Se copia
+   * del servicio del catalogo; en la linea de flete la fija el sistema
+   * (`CostCategory.Flete`). Reclasificar el catalogo no mueve una factura vieja.
+   */
+  category: CostCategory;
+  /** COD SIS FE del concepto, copiado del catalogo. Null si no lleva. */
+  electronicInvoiceCode: string | null;
   source: CostLineSource;
   /** Porcentaje aplicado (0-100) cuando `source` es Percentage; null en el resto. */
   percentage: number | null;
@@ -81,6 +90,86 @@ export function computeTotals(lines: readonly Totalizable[]): CostTotals {
     crc += convertMoney(line.amount, line.currency, Currency.CRC, line.exchangeRate);
   }
   return { usd: roundMoney(usd, Currency.USD), crc: roundMoney(crc, Currency.CRC) };
+}
+
+/**
+ * Desglose de una factura por categoria, en UNA moneda. Todas las cifras salen
+ * de las mismas lineas que produjeron el total: nunca se digitan.
+ */
+export interface CostBreakdown {
+  /** Flete de Paqueteria. Es cobro al cliente, no costo (ver `CostCategory.Flete`). */
+  flete: number;
+  /** Columna IMPUESTOS del reporte de Paqueteria (campo 22). */
+  impuestos: number;
+  /** Columna OTROS / COMPRAS del reporte de Paqueteria (campo 23). */
+  otros: number;
+  /** Honorarios de HS Global. Tampoco es costo: es el margen. */
+  propio: number;
+  /**
+   * Lo que de verdad cuesta el tramite: `impuestos + otros`. Es la columna
+   * COSTOS ASOCIADOS del reporte de Agenciamiento (campo 20), y lo que hace que
+   * su PROFIT (campo 21) no salga en cero.
+   */
+  passThrough: number;
+}
+
+/** Lo minimo para desglosar: la linea guardada lo cumple. */
+type Categorizable = Totalizable & { category: CostCategory };
+
+/**
+ * Suma las lineas AGRUPADAS por categoria, en la moneda pedida y cada una con SU
+ * propia tasa (mismo criterio que `computeTotals`, del que este es el hermano
+ * desagregado: `computeTotals` responde "cuanto se factura" y este "de que esta
+ * hecho ese numero").
+ *
+ * Punto UNICO del corte por categoria. Los dos reportes lo consumen: sin esto,
+ * uno sumaria "impuestos + otros" y el otro las columnas por separado, y bastaria
+ * que alguien clasificara distinto en un sitio para que dejaran de cuadrar entre
+ * si sobre el mismo tramite.
+ */
+export function breakdownByCategory(
+  lines: readonly Categorizable[],
+  target: Currency,
+): CostBreakdown {
+  const sums: Record<CostCategory, number> = {
+    [CostCategory.Flete]: 0,
+    [CostCategory.Impuestos]: 0,
+    [CostCategory.Otros]: 0,
+    [CostCategory.Propio]: 0,
+  };
+  let passThrough = 0;
+
+  for (const line of lines) {
+    const amount = convertMoney(line.amount, line.currency, target, line.exchangeRate);
+    sums[line.category] += amount;
+    if (isPassThroughCost(line.category)) passThrough += amount;
+  }
+
+  // Se redondea al final, no linea a linea: redondear antes de sumar arrastra el
+  // error de cada linea al total (misma politica que `computeTotals`).
+  return {
+    flete: roundMoney(sums[CostCategory.Flete], target),
+    impuestos: roundMoney(sums[CostCategory.Impuestos], target),
+    otros: roundMoney(sums[CostCategory.Otros], target),
+    propio: roundMoney(sums[CostCategory.Propio], target),
+    passThrough: roundMoney(passThrough, target),
+  };
+}
+
+/**
+ * Categoria que le toca a una linea. La del catalogo, SALVO en el flete, que la
+ * fija el sistema: la linea de flete no sale de ningun servicio del catalogo y
+ * su costo real lo calcula el reporte aparte (campo 21, TRANSPORTE INTL).
+ *
+ * Vive aqui para que la API (al guardar) y el reporte (al leer datos viejos)
+ * respondan lo mismo.
+ */
+export function categoryForLine(
+  source: CostLineSource,
+  serviceCategory: CostCategory | null | undefined,
+): CostCategory {
+  if (source === CostLineSource.Freight) return CostCategory.Flete;
+  return serviceCategory ?? CostCategory.Otros;
 }
 
 /**

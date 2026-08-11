@@ -6,7 +6,7 @@
  * no como etiquetas: el catalogo vive en @courier/shared y es la web quien lo
  * resuelve a nombres.
  *
- * Dos decisiones que viven aqui:
+ * Tres decisiones que viven aqui:
  *
  * 1. EDITAR ES REVISAR. El manual lo dice explicito: al entrar a editar un
  *    cliente el flag "Nuevo" se apaga, "esto garantiza que ya revisaron al
@@ -20,13 +20,23 @@
  *    del registro, asi que aceptarlo dejaria la cuenta sin verificar, sin sesion y
  *    sin ruta de regreso. La logica de reverificacion queda comentada en su sitio
  *    para reactivarla cuando el flujo tenga su paso de verificacion.
+ * 3. LA DIRECCION SE MUEVE SOLO CON EL CASILLERO EN CALMA. El cliente la edita
+ *    el mismo, pero unicamente si no tiene tramites en curso: el distrito manda
+ *    la ruta de reparto y la operacion lee la direccion en vivo. Ver
+ *    `updateAddress`.
  */
 import { ClientReviewStatus, lockerAddressFor } from '@courier/shared';
-import type { Session, UpdateClientInput, UpdateProfileInput } from '@courier/shared';
-import { AuthErrors, ShipmentErrors } from '../../core/errors';
+import type {
+  DeliveryAddressInput,
+  Session,
+  UpdateClientInput,
+  UpdateProfileInput,
+} from '@courier/shared';
+import { AuthErrors, ClientErrors, ShipmentErrors } from '../../core/errors';
 import { authRepo } from '../auth/auth.repo';
 // TODO(correo): vuelve al reactivar el cambio de correo (reemite el codigo).
 // import { authService } from '../auth/auth.service';
+import { shipmentsRepo } from '../shipments/shipments.repo';
 import { clientsRepo } from './clients.repo';
 
 /** Casillero tal como lo ve el panel administrador. */
@@ -99,11 +109,20 @@ export const clientsService = {
     };
   },
 
-  /** Perfil del titular de la sesion, para precargar el formulario de edicion. */
+  /**
+   * Perfil del titular de la sesion, para precargar el formulario de edicion.
+   *
+   * Trae ademas si la direccion se puede editar AHORA y cuantos tramites la
+   * tienen trabada. Va en la misma respuesta a proposito: sin ese dato la web
+   * solo podria descubrir el candado al fallar el guardado, y el cliente habria
+   * llenado el formulario para nada.
+   */
   async profile(session: Session) {
     if (!session.clientId) throw ShipmentErrors.missingClientProfile();
     const row = await clientsRepo.findById(session.clientId);
     if (!row) throw ShipmentErrors.missingClientProfile();
+
+    const activeShipmentCount = await shipmentsRepo.countActiveByClient(session.clientId);
 
     return {
       code: row.code,
@@ -115,6 +134,9 @@ export const clientsService = {
       cantonCode: row.cantonCode,
       districtCode: row.districtCode,
       addressLine: row.addressLine,
+      /** Tramites en curso (no entregados) que hoy bloquean el cambio. */
+      activeShipmentCount,
+      canEditAddress: activeShipmentCount === 0,
     };
   },
 
@@ -173,5 +195,49 @@ export const clientsService = {
     // Se mantiene en la respuesta para no cambiar el contrato: hoy siempre false
     // porque el cambio de correo no se acepta.
     return { emailChanged: false };
+  },
+
+  /**
+   * Cambio de la direccion de entrega por el propio cliente.
+   *
+   * Va aparte de `updateProfile` porque no es un dato de contacto mas:
+   *
+   * - Se guarda COMPLETA, nunca por campos sueltos. La terna
+   *   provincia/canton/distrito solo tiene sentido junta (`deliveryAddressSchema`
+   *   ya la valida contra el catalogo con `isValidLocation`), y aceptar un PATCH
+   *   parcial permitiria dejar un canton que no cuelga de la provincia guardada.
+   *
+   * - Solo se puede mover con el casillero EN CALMA: cero tramites en curso. El
+   *   distrito determina la ruta de reparto (`district_routes`) y ni la hoja del
+   *   mensajero ni la proforma copian la direccion al tramite: la leen en vivo
+   *   del casillero. Con un paquete en camino, cambiarla lo mandaria a otro lado
+   *   sin que nadie en la operacion se entere. Cuando todo esta entregado no hay
+   *   nada que redirigir y el cambio es inocuo.
+   *
+   * La comprobacion es del lado del servidor y no solo de la UI: el candado ES la
+   * regla, y `canEditAddress` en el perfil solo sirve para explicarla antes de
+   * que el cliente escriba.
+   *
+   * Nada de esto viaja al proveedor: hacia Helga va siempre la direccion fija de
+   * consolidacion (docs/13 §3.6), asi que un cambio aqui no obliga a resincronizar.
+   */
+  async updateAddress(session: Session, input: DeliveryAddressInput) {
+    if (!session.clientId) throw ShipmentErrors.missingClientProfile();
+    const current = await clientsRepo.findById(session.clientId);
+    if (!current) throw ShipmentErrors.missingClientProfile();
+
+    const activeShipmentCount = await shipmentsRepo.countActiveByClient(session.clientId);
+    if (activeShipmentCount > 0) {
+      throw ClientErrors.addressLockedByActiveShipments(activeShipmentCount);
+    }
+
+    await clientsRepo.update(session.clientId, {
+      provinceCode: input.provinceCode,
+      cantonCode: input.cantonCode,
+      districtCode: input.districtCode,
+      addressLine: input.addressLine,
+    });
+
+    return this.profile(session);
   },
 };

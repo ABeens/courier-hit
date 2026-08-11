@@ -8,7 +8,7 @@
  */
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { Permission, setExchangeRateSchema } from '@courier/shared';
+import { Permission, setExchangeRateSchema, setFreightRateSchema } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
 import { requireAnyPermission } from '../../core/middleware/requireAnyPermission';
 import { requirePermission } from '../../core/middleware/requirePermission';
@@ -48,5 +48,33 @@ settingsRoutes.put(
   zValidator('json', setExchangeRateSchema),
   async (c) => {
     return c.json(await settingsService.setExchangeRate(c.get('session'), c.req.valid('json')));
+  },
+);
+
+/**
+ * Tarifa de transporte internacional (USD por libra).
+ *
+ * La LEE, ademas de quien la fija, quien aprueba costos: al aprobar se congela en
+ * el tramite, asi que el operador tiene que poder ver con que numero va a quedar
+ * marcado el paquete que esta facturando.
+ */
+settingsRoutes.get(
+  '/freight-rate',
+  requireAnyPermission(
+    Permission.FreightRateWrite,
+    Permission.CostsManage,
+    Permission.CostsTramiteManage,
+  ),
+  async (c) => {
+    return c.json(await settingsService.freightRate());
+  },
+);
+
+settingsRoutes.put(
+  '/freight-rate',
+  requirePermission(Permission.FreightRateWrite),
+  zValidator('json', setFreightRateSchema),
+  async (c) => {
+    return c.json(await settingsService.setFreightRate(c.get('session'), c.req.valid('json')));
   },
 );

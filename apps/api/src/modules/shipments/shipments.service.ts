@@ -147,6 +147,7 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     routeNumber: row.routeNumber,
     invoiceTotalUsd: row.invoiceTotalUsd,
     invoiceTotalCrc: row.invoiceTotalCrc,
+    electronicInvoiceNumber: row.electronicInvoiceNumber,
     /**
      * Bandera de cobro, derivada aqui en cada lectura a partir de los abonos que
      * trajo la consulta. Las dos cifras salen de las funciones compartidas, las
@@ -157,6 +158,14 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     settledCrc: settledAmount(row.settlement, Currency.CRC),
     settled: isSettled(row.settlement, row.invoiceTotalCrc),
     pendingCrc: pendingAmount(row.settlement, Currency.CRC),
+    /**
+     * Los mismos abonos en dolares. Se mandan SIEMPRE, no solo en Paqueteria: la
+     * moneda en que se leen la elige la pantalla segun quien mira
+     * (`billingCurrencyFor`), y un DTO que cambia de forma segun el tipo de
+     * tramite obligaria a cada consumidor a repetir esa condicion.
+     */
+    settledUsd: settledAmount(row.settlement, Currency.USD),
+    pendingUsd: pendingAmount(row.settlement, Currency.USD),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -275,6 +284,12 @@ export const shipmentsService = {
    * se acepta clientId en el cuerpo, asi un cliente no puede prealertar a nombre
    * de otro.
    *
+   * SOLO PAQUETERIA. Transporte y Agenciamiento no se prealertan: los registra el
+   * staff con `create`, que exige `tramite.manage`. La barrera se repite aqui
+   * aunque el schema ya fije el tipo a `Paqueteria`, porque este es el UNICO alta
+   * que no pasa por `assertCanWrite`: sin ella, aflojar el schema volveria a
+   * abrir el alta de agenciamiento al cliente sin que nada lo delate.
+   *
    * En Paqueteria la prealerta se replica ante el proveedor: es lo que lo
    * autoriza a reportarnos el estado del paquete mientras esta en USA. Ese paso
    * NO bloquea —a diferencia del registro del casillero— porque el tramite ya es
@@ -283,6 +298,7 @@ export const shipmentsService = {
    */
   async prealert(session: Session, input: PrealertShipmentInput): Promise<ShipmentDto> {
     if (!session.clientId) throw ShipmentErrors.missingClientProfile();
+    if (!usesPackageFields(input.shipmentType)) throw AuthErrors.forbidden();
 
     const created = await this.insert(
       {
@@ -300,9 +316,9 @@ export const shipmentsService = {
       session.userId,
     );
 
-    if (usesPackageFields(input.shipmentType)) {
-      await this.prealertWithProvider(session.clientId, created);
-    }
+    // Sin condicion por tipo: llegados aqui el tramite es de Paqueteria, y todo
+    // paquete prealertado se replica ante el proveedor.
+    await this.prealertWithProvider(session.clientId, created);
     return created;
   },
 
@@ -485,8 +501,10 @@ export const shipmentsService = {
     assertCanWrite(session, current.shipmentType);
 
     const isPackage = usesPackageFields(current.shipmentType);
+    // `billingNotes` y `electronicInvoiceNumber` no estan en ninguna de las dos
+    // listas: son comunes a los dos flujos (el reporte los pide en ambos).
     const notForThisType = isPackage
-      ? (['warehouse', 'dua', 'billingNotes'] as const)
+      ? (['warehouse', 'dua'] as const)
       : (['store', 'carrier', 'hawb', 'weightKg', 'declaredValueUsd', 'insuredValueUsd', 'tariffPosition', 'retain'] as const);
     for (const field of notForThisType) {
       if (patch[field] !== undefined && patch[field] !== null) throw ShipmentErrors.fieldNotForType();
@@ -535,6 +553,9 @@ export const shipmentsService = {
       ...(patch.warehouse !== undefined ? { warehouse: patch.warehouse } : {}),
       ...(patch.dua !== undefined ? { dua: patch.dua } : {}),
       ...(patch.billingNotes !== undefined ? { billingNotes: patch.billingNotes } : {}),
+      ...(patch.electronicInvoiceNumber !== undefined
+        ? { electronicInvoiceNumber: patch.electronicInvoiceNumber }
+        : {}),
     });
 
     const updated = await shipmentsRepo.findById(id);

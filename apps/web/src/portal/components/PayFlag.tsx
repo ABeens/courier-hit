@@ -20,8 +20,14 @@
  *
  * Las cifras llegan calculadas por la API; aqui solo se resta el saldo, con la
  * misma funcion compartida que usa el servidor para cobrarlo.
+ *
+ * HABLA EN COLONES SALVO QUE SE LE DIGA OTRA COSA. Es la moneda de la operacion:
+ * la que cuadra contra el banco y la que decide si el tramite esta saldado. El
+ * tablero del cliente le pasa `amounts` con la moneda que a EL le toca leer
+ * (`billingCurrencyFor`), que en Paqueteria son dolares sin convertir.
  */
-import { Currency, formatMoney, outstandingCrc } from '@courier/shared';
+import type { BillingAmounts } from '@courier/shared';
+import { Currency, awaitsValidation, billingAmounts, formatMoney } from '@courier/shared';
 
 export interface PayState {
   /** Monto de factura congelado; null = costos aun sin aprobar. */
@@ -34,31 +40,55 @@ export interface PayState {
   pendingCrc: number;
 }
 
+interface Props extends PayState {
+  /**
+   * Cifras ya proyectadas a la moneda en que se van a LEER. Omitirlas deja la
+   * bandera en colones, que es lo que ve la operacion.
+   *
+   * Solo cambia el texto: quien decide si hay saldo, si esta en validacion o si
+   * esta pagado siguen siendo los campos en colones de arriba, porque esas son
+   * preguntas de contabilidad y tienen una sola respuesta.
+   */
+  amounts?: BillingAmounts;
+}
+
 /**
  * True si lo que falta por cobrar ya esta cubierto por abonos EN VALIDACION.
  *
- * Exportado porque quien pinta la bandera y quien decide si ofrece el boton de
- * pagar se estan haciendo la misma pregunta, y responderla distinto es como el
- * cliente termina pagando dos veces.
- *
- * Un abono parcial en validacion no cuenta: el trámite sigue teniendo saldo que
- * alguien tiene que pagar.
+ * Solo adapta la ficha del listado a `awaitsValidation`, que es donde vive la
+ * regla: la bandera, el boton de pagar de la ficha, el formulario del modal y la
+ * guarda del servidor se hacen la MISMA pregunta, y responderla distinto en
+ * alguno es como el cliente termina pagando dos veces.
  */
 export function awaitingValidation(row: PayState): boolean {
-  if (row.settled || row.invoiceTotalCrc == null || row.pendingCrc <= 0) return false;
-  return row.pendingCrc >= outstandingCrc(row.settledCrc, row.invoiceTotalCrc);
+  return awaitsValidation(row.settledCrc, row.pendingCrc, row.invoiceTotalCrc);
 }
 
-export function PayFlag(row: PayState) {
-  const { invoiceTotalCrc, settledCrc, settled, pendingCrc } = row;
+/** Lo que trae `PayState` es la columna en colones; asi se lee como cualquier otra. */
+function crcAmounts(row: PayState): BillingAmounts {
+  return billingAmounts(
+    {
+      invoiceTotalCrc: row.invoiceTotalCrc,
+      settledCrc: row.settledCrc,
+      pendingCrc: row.pendingCrc,
+      invoiceTotalUsd: null,
+      settledUsd: 0,
+      pendingUsd: 0,
+    },
+    Currency.CRC,
+    row.settled,
+  );
+}
+
+export function PayFlag({ amounts, ...row }: Props) {
+  const { invoiceTotalCrc, settled } = row;
   if (invoiceTotalCrc == null) return null;
+
+  const { currency, invoiceTotal, paid, pending, due } = amounts ?? crcAmounts(row);
 
   if (settled) {
     return (
-      <span
-        className="pay-flag"
-        title={`Cobrado: ${formatMoney(settledCrc, Currency.CRC)} confirmados.`}
-      >
+      <span className="pay-flag" title={`Cobrado: ${formatMoney(paid, currency)} confirmados.`}>
         Pagado
       </span>
     );
@@ -68,24 +98,22 @@ export function PayFlag(row: PayState) {
     return (
       <span
         className="pay-flag is-review"
-        title={`Recibimos ${formatMoney(pendingCrc, Currency.CRC)}. Estamos validando el comprobante.`}
+        title={`Recibimos ${formatMoney(pending, currency)}. Estamos validando el comprobante.`}
       >
         En validación
       </span>
     );
   }
 
-  const abonado = `Abonado ${formatMoney(settledCrc, Currency.CRC)} de ${formatMoney(invoiceTotalCrc, Currency.CRC)}.`;
+  const abonado = `Abonado ${formatMoney(paid, currency)} de ${formatMoney(invoiceTotal ?? 0, currency)}.`;
   return (
     <span
       className="pay-flag is-due"
       title={
-        pendingCrc > 0
-          ? `${abonado} En validación: ${formatMoney(pendingCrc, Currency.CRC)}.`
-          : abonado
+        pending > 0 ? `${abonado} En validación: ${formatMoney(pending, currency)}.` : abonado
       }
     >
-      Saldo {formatMoney(outstandingCrc(settledCrc, invoiceTotalCrc), Currency.CRC)}
+      Saldo {formatMoney(due, currency)}
     </span>
   );
 }

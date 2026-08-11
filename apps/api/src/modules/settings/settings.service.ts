@@ -1,5 +1,8 @@
 /**
- * Ajustes generales del sistema. Hoy uno solo: la tasa de cambio.
+ * Ajustes generales del sistema: la tasa de cambio y la tarifa de transporte
+ * internacional. Comparten pantalla, tabla y patron (valor vigente + historial)
+ * porque son la misma clase de dato: numeros que el sistema aplica IGUAL a todos
+ * los tramites, no datos de uno.
  *
  * Dos valores que NO son lo mismo y por eso viajan separados hasta la pantalla:
  *   - `rate`: la tasa VIGENTE del sistema, la que se usa para convertir. La fija
@@ -14,8 +17,10 @@
 import type {
   ExchangeRateHistoryEntryDto,
   ExchangeRateSettingDto,
+  FreightRateSettingDto,
   Session,
   SetExchangeRateInput,
+  SetFreightRateInput,
 } from '@courier/shared';
 import { exchangeRateReference } from './bccr-reference';
 import { settingsRepo } from './settings.repo';
@@ -70,5 +75,39 @@ export const settingsService = {
       setAt: row.setAt.toISOString(),
       setByName: row.setByName,
     }));
+  },
+
+  /**
+   * Tarifa de transporte internacional vigente (USD por libra).
+   *
+   * A diferencia de la tasa de cambio no lleva referencia externa: no hay un BCCR
+   * del flete. El valor sale de lo que la naviera le cobre a HS Global, asi que la
+   * unica fuente posible es lo que el administrador digite.
+   */
+  async freightRate(): Promise<FreightRateSettingDto> {
+    const setting = await settingsRepo.freightRateSetting();
+    return {
+      usdPerLb: setting.usdPerLb,
+      updatedAt: setting.setAt?.toISOString() ?? null,
+      updatedByName: setting.setByName,
+    };
+  },
+
+  /**
+   * Fija la tarifa vigente. Solo afecta a los tramites que se FACTUREN a partir
+   * de ahora: los ya aprobados llevan su tarifa congelada en la fila
+   * (`shipments.freight_rate_usd_per_lb`), justamente para que este cambio no
+   * reescriba el margen de meses cerrados.
+   */
+  async setFreightRate(
+    session: Session,
+    input: SetFreightRateInput,
+  ): Promise<FreightRateSettingDto> {
+    await settingsRepo.setFreightRate({
+      usdPerLb: input.usdPerLb,
+      note: input.note?.trim() || null,
+      userId: session.userId,
+    });
+    return settingsService.freightRate();
   },
 };

@@ -14,12 +14,43 @@
  */
 import { z } from 'zod';
 import { Currency } from '../money/currency';
-import { ServiceKind, ServiceValueType, isCurrencyAllowed, isValueTypeAllowed } from './cost-service';
+import {
+  CostCategory,
+  SELECTABLE_COST_CATEGORIES,
+  ServiceKind,
+  ServiceValueType,
+  isCurrencyAllowed,
+  isValueTypeAllowed,
+} from './cost-service';
 
 /** Moneda de un campo monetario. Solo tiene sentido cuando el valor es dinero (Fixed). */
 const currencySchema = z.nativeEnum(Currency, {
   errorMap: () => ({ message: 'Elige una moneda válida (CRC o USD).' }),
 });
+
+/**
+ * Categoria del concepto. Se valida contra `SELECTABLE_COST_CATEGORIES` y no
+ * contra el enum entero: `CostCategory.Flete` la asigna el sistema a la linea de
+ * flete, y aceptarla aqui dejaria crear un servicio de catalogo que el reporte
+ * trataria como cobro base y sacaria de los costos sin que nadie lo pidiera.
+ */
+const costCategorySchema = z
+  .nativeEnum(CostCategory, {
+    errorMap: () => ({ message: 'Elige de quién es el dinero de este concepto.' }),
+  })
+  .refine((c) => SELECTABLE_COST_CATEGORIES.includes(c), {
+    message: 'El flete lo calcula el sistema: no se puede crear como servicio.',
+  });
+
+/**
+ * Codigo del concepto en el sistema de Factura Electronica (COD SIS FE de la
+ * proforma). Identificador externo: se guarda tal cual, sin interpretarlo.
+ */
+const electronicInvoiceCodeSchema = z
+  .string()
+  .trim()
+  .min(1, 'El código no puede ir vacío.')
+  .max(20, 'El código es demasiado largo.');
 
 /** Aplica la regla de coherencia kind <-> tipo <-> valor <-> moneda sobre un objeto ya parseado. */
 function refineValueCoherence(
@@ -84,6 +115,9 @@ export const createCostServiceSchema = z
   .object({
     name: z.string().trim().min(1, 'El nombre es obligatorio.'),
     kind: z.nativeEnum(ServiceKind),
+    /** Opcional en el cuerpo: sin ella la API aplica `DEFAULT_COST_CATEGORY`. */
+    category: costCategorySchema.optional(),
+    electronicInvoiceCode: electronicInvoiceCodeSchema.nullable().optional(),
     valueType: z.nativeEnum(ServiceValueType),
     defaultValue: z.number().nonnegative('El valor no puede ser negativo.').nullable().optional(),
     currency: currencySchema.nullable().optional(),
@@ -101,6 +135,9 @@ export const updateCostServiceSchema = z
   .object({
     name: z.string().trim().min(1, 'El nombre es obligatorio.').optional(),
     kind: z.nativeEnum(ServiceKind).optional(),
+    category: costCategorySchema.optional(),
+    /** `null` borra el codigo (el concepto deja de llevarlo en la proforma). */
+    electronicInvoiceCode: electronicInvoiceCodeSchema.nullable().optional(),
     valueType: z.nativeEnum(ServiceValueType).optional(),
     defaultValue: z.number().nonnegative('El valor no puede ser negativo.').nullable().optional(),
     currency: currencySchema.nullable().optional(),
@@ -113,6 +150,8 @@ export type UpdateCostServiceInput = z.infer<typeof updateCostServiceSchema>;
 export const listCostServicesQuerySchema = z.object({
   q: z.string().trim().optional(),
   kind: z.nativeEnum(ServiceKind).optional(),
+  /** Aqui SI se admite `flete`: filtrar no crea nada (aunque no habra filas). */
+  category: z.nativeEnum(CostCategory).optional(),
   valueType: z.nativeEnum(ServiceValueType).optional(),
   enabled: z
     .enum(['true', 'false'])

@@ -25,6 +25,7 @@ import {
   can,
   createShipmentSchema,
   editableFieldsAt,
+  formatDua,
   updateShipmentSchema,
   usesPackageFields,
 } from '@courier/shared';
@@ -64,6 +65,21 @@ export function allowedTypesFor(role: Role, boardTypes: readonly ShipmentType[] 
   return boardTypes.length > 0 ? types.filter((t) => boardTypes.includes(t)) : types;
 }
 
+const countDigits = (text: string) => text.replace(/\D/g, '').length;
+
+/**
+ * Posicion del cursor justo despues del digito n-esimo de un valor con mascara.
+ * Es el ancla estable al reformatear: los guiones se mueven, los digitos no.
+ */
+function caretAfterDigits(value: string, digits: number): number {
+  if (digits <= 0) return 0;
+  let seen = 0;
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] >= '0' && value[i] <= '9' && ++seen === digits) return i + 1;
+  }
+  return value.length;
+}
+
 export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSaved }: Props) {
   const typeOptions = allowedTypesFor(role, boardTypes);
 
@@ -86,6 +102,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
   const [billingNotes, setBillingNotes] = useState(row?.billingNotes ?? '');
   const [warehouse, setWarehouse] = useState(row?.warehouse ?? '');
   const [dua, setDua] = useState(row?.dua ?? '');
+  const [feNumber, setFeNumber] = useState(row?.electronicInvoiceNumber ?? '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -100,7 +117,15 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
    */
   const editable = mode === 'edit' && row ? editableFieldsAt(row.flow, row.state) : null;
   const canEdit = (field: ShipmentField) => editable === null || editable.includes(field);
-  const allFrozen = editable !== null && editable.length === 0;
+  /**
+   * "Congelado" = ya no se puede tocar ningun DATO del tramite. Se mide contra la
+   * ventana sin el consecutivo de FE: ese campo sigue abierto justamente en los
+   * estados congelados (llega despues de emitir la factura), asi que contarlo
+   * dejaria el aviso sin salir nunca a partir de "En bodega - Pendiente pago".
+   */
+  const allFrozen =
+    editable !== null &&
+    editable.filter((f) => f !== ShipmentField.ElectronicInvoiceNumber).length === 0;
   /**
    * El peso alimenta la factura: aunque la maquina lo deje editable en
    * "Facturación en proceso", si la factura ya se congelo (hay monto aprobado) la
@@ -109,7 +134,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
   const weightLocked = mode === 'edit' && row != null && row.invoiceTotalUsd != null;
   // Campos visibles del formulario para este tipo; sirve para avisar si alguno quedo bloqueado.
   const relevantFields = isPackage
-    ? [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg, ShipmentField.DeclaredValue, ShipmentField.InsuredValue, ShipmentField.TariffPosition, ShipmentField.Retain]
+    ? [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg, ShipmentField.DeclaredValue, ShipmentField.InsuredValue, ShipmentField.TariffPosition, ShipmentField.Retain, ShipmentField.BillingNotes]
     : [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Warehouse, ShipmentField.Dua, ShipmentField.BillingNotes];
   const someFrozen = editable !== null && (weightLocked || relevantFields.some((f) => !editable.includes(f)));
 
@@ -128,6 +153,27 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
     const t = setTimeout(loadClients, 250); // debounce de la busqueda
     return () => clearTimeout(t);
   }, [loadClients]);
+
+  /**
+   * DUA con mascara: el usuario digita solo numeros y `formatDua` intercala los
+   * guiones (###-####-######).
+   *
+   * Al insertar un guion la posicion del cursor se corre, asi que se recoloca a
+   * mano contando digitos: sin esto, corregir un numero en medio del campo
+   * mandaria el cursor al final en cada tecla. Se escribe el valor en el DOM
+   * antes del `setDua` para que el cursor quede fijo aunque React no re-renderice
+   * (teclas ignoradas, p. ej. una letra: el valor formateado no cambia).
+   */
+  function onDuaChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const el = e.currentTarget;
+    const caret = el.selectionStart ?? el.value.length;
+    const digitsBefore = countDigits(el.value.slice(0, caret));
+    const next = formatDua(el.value);
+    el.value = next;
+    const at = caretAfterDigits(next, digitsBefore);
+    el.setSelectionRange(at, at);
+    setDua(next);
+  }
 
   /** El peso se redondea hacia arriba al guardar; se avisa antes de enviar. */
   const weightPreview =
@@ -157,7 +203,9 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
                 tariffPosition: tariffPosition.trim() || undefined,
                 retain,
               }
-            : { billingNotes: billingNotes.trim() || undefined }),
+            : {}),
+          // Comun a los dos flujos desde que el reporte las pide en ambos.
+          billingNotes: billingNotes.trim() || undefined,
         });
         if (!parsed.success) {
           setError(parsed.error.issues[0]?.message ?? 'Datos inválidos.');
@@ -193,8 +241,10 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
       } else {
         put('warehouse', warehouse, row.warehouse);
         put('dua', dua, row.dua);
-        put('billingNotes', billingNotes, row.billingNotes);
       }
+      // Fuera del if: los dos flujos los llevan.
+      put('billingNotes', billingNotes, row.billingNotes);
+      put('electronicInvoiceNumber', feNumber.trim().toUpperCase(), row.electronicInvoiceNumber);
 
       if (Object.keys(patch).length === 0) {
         onSaved();
@@ -231,7 +281,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
           {mode === 'edit' && someFrozen && row && (
             <div className="banner col-full" style={{ background: 'var(--paper-2)', color: 'var(--muted)' }}>
               {allFrozen
-                ? `Con el trámite en «${STATE_LABELS[row.state]}» los datos ya no se pueden modificar, solo avanzar de estado.`
+                ? `Con el trámite en «${STATE_LABELS[row.state]}» los datos ya no se pueden modificar: solo queda anotar la factura electrónica y avanzar de estado.`
                 : `Algunos campos están bloqueados: el trámite en «${STATE_LABELS[row.state]}» solo admite cambios en los datos aún abiertos.`}
             </div>
           )}
@@ -399,26 +449,47 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
                     <label className="field-label" htmlFor="t-dua">DUA</label>
                     <input
                       id="t-dua" className="input" value={dua} placeholder="###-####-######"
+                      inputMode="numeric" autoComplete="off"
                       disabled={!canEdit(ShipmentField.Dua)}
-                      onChange={(e) => setDua(e.target.value)}
+                      onChange={onDuaChange}
                     />
+                    <div className="field-hint">Escribe solo los números: los guiones se ponen solos.</div>
                   </div>
                 </>
               )}
-              <div className="col-full">
-                <label className="field-label" htmlFor="t-notes">Notas para facturar</label>
-                <textarea
-                  id="t-notes" className="input" rows={3} value={billingNotes}
-                  disabled={!canEdit(ShipmentField.BillingNotes)}
-                  onChange={(e) => setBillingNotes(e.target.value)}
-                />
-              </div>
               {mode === 'create' && (
                 <div className="banner ok col-full" style={{ background: 'var(--paper-2)', color: 'var(--muted)' }}>
                   El almacén y el DUA se completan al editar el trámite, una vez guardado.
                 </div>
               )}
             </>
+          )}
+
+          {/* Facturación: comun a los dos flujos. Las notas las pide el reporte en
+              ambos, y el consecutivo de FE es lo unico que sigue escribiendose
+              cuando el resto del tramite ya esta congelado. */}
+          <div className="col-full">
+            <label className="field-label" htmlFor="t-notes">Notas para facturar</label>
+            <textarea
+              id="t-notes" className="input" rows={3} value={billingNotes}
+              disabled={!canEdit(ShipmentField.BillingNotes)}
+              onChange={(e) => setBillingNotes(e.target.value)}
+            />
+          </div>
+
+          {mode === 'edit' && (
+            <div>
+              <label className="field-label" htmlFor="t-fe">Factura electrónica (FE)</label>
+              <input
+                id="t-fe" className="input" value={feNumber} placeholder="Consecutivo"
+                autoComplete="off"
+                disabled={!canEdit(ShipmentField.ElectronicInvoiceNumber)}
+                onChange={(e) => setFeNumber(e.target.value)}
+              />
+              <div className="field-hint">
+                Consecutivo que emitió el sistema de factura electrónica. Se anota al facturar.
+              </div>
+            </div>
           )}
         </div>
 

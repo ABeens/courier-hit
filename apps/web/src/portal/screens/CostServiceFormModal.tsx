@@ -9,8 +9,13 @@
 import { useState } from 'react';
 import { ModalOverlay } from '../components/ModalOverlay';
 import {
+  COST_CATEGORY_DESCRIPTIONS,
+  COST_CATEGORY_LABELS,
   CURRENCY_LABELS,
+  CostCategory,
   Currency,
+  DEFAULT_COST_CATEGORY,
+  SELECTABLE_COST_CATEGORIES,
   SERVICE_KIND_LABELS,
   SERVICE_VALUE_TYPE_LABELS,
   ServiceKind,
@@ -37,6 +42,8 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
     row?.defaultValue !== null && row?.defaultValue !== undefined ? String(row.defaultValue) : '',
   );
   const [currency, setCurrency] = useState<Currency>(row?.currency ?? Currency.USD);
+  const [category, setCategory] = useState<CostCategory>(row?.category ?? DEFAULT_COST_CATEGORY);
+  const [feCode, setFeCode] = useState(row?.electronicInvoiceCode ?? '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -67,6 +74,8 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
         const parsed = createCostServiceSchema.safeParse({
           name,
           kind,
+          category,
+          electronicInvoiceCode: feCode.trim() || null,
           valueType,
           defaultValue: needsValue ? parsedValue : undefined,
           currency: needsCurrency ? currency : undefined,
@@ -82,6 +91,11 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
         // Solo enviamos lo que cambio. Tipo de servicio, tipo y valor van acoplados.
         const patch: Record<string, unknown> = {};
         if (name.trim() !== row.name) patch.name = name.trim();
+        if (category !== row.category) patch.category = category;
+        const nextFeCode = feCode.trim() || null;
+        if (nextFeCode !== (row.electronicInvoiceCode ?? null)) {
+          patch.electronicInvoiceCode = nextFeCode;
+        }
         const valueChanged = needsValue
           ? parsedValue !== row.defaultValue
           : row.defaultValue !== null;
@@ -100,6 +114,8 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
         const check = createCostServiceSchema.safeParse({
           name: name.trim() || row.name,
           kind,
+          category,
+          electronicInvoiceCode: nextFeCode,
           valueType,
           defaultValue: needsValue ? parsedValue : undefined,
           currency: needsCurrency ? currency : undefined,
@@ -148,6 +164,32 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
                 <option key={k} value={k}>{SERVICE_KIND_LABELS[k]}</option>
               ))}
             </select>
+          </div>
+
+          {/* De quién es el dinero. Decide si el concepto cuenta como costo del
+              trámite o como margen, y de ahí salen el PROFIT y el % del reporte. */}
+          <div>
+            <label className="field-label" htmlFor="s-category">¿De quién es este dinero?</label>
+            <select
+              id="s-category" className="input" value={category}
+              onChange={(e) => setCategory(e.target.value as CostCategory)}
+            >
+              {SELECTABLE_COST_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{COST_CATEGORY_LABELS[c]}</option>
+              ))}
+            </select>
+            <div className="field-hint">{COST_CATEGORY_DESCRIPTIONS[category]}</div>
+          </div>
+
+          <div>
+            <label className="field-label" htmlFor="s-fe">Cód. sistema FE (opcional)</label>
+            <input
+              id="s-fe" className="input" value={feCode} placeholder="Ej: 44"
+              onChange={(e) => setFeCode(e.target.value)}
+            />
+            <div className="field-hint">
+              Código del concepto en el sistema de factura electrónica. Se imprime en la proforma.
+            </div>
           </div>
 
           <div>

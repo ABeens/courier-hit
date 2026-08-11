@@ -6,7 +6,7 @@
  * de copiarse a la fila del tramite: si el administrador reasigna la ruta de un
  * distrito, los tramites en curso la reflejan sin migrar datos.
  */
-import { and, desc, eq, gte, ilike, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, ilike, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { HelgaSyncStatus } from '@courier/shared';
 import type { ListShipmentsQuery, State } from '@courier/shared';
@@ -36,6 +36,7 @@ const columns = {
   warehouse: shipments.warehouse,
   dua: shipments.dua,
   billingNotes: shipments.billingNotes,
+  electronicInvoiceNumber: shipments.electronicInvoiceNumber,
   invoiceTotalUsd: shipments.invoiceTotalUsd,
   invoiceTotalCrc: shipments.invoiceTotalCrc,
   /**
@@ -130,6 +131,42 @@ export const shipmentsRepo = {
       .where(and(eq(shipments.tracking, tracking), sql`${shipments.state} <> 'entregado'`))
       .limit(1);
     return row ?? null;
+  },
+
+  /**
+   * Cuantos tramites del casillero siguen EN CURSO. Mismo criterio de "activo"
+   * que `findActiveByTracking` y que el indice unico parcial: todo lo que no
+   * llego a `entregado`, unico estado terminal de las tres maquinas. Incluye
+   * `devuelto_bodega` a proposito: ese tramite vuelve a salir a ruta, asi que
+   * todavia necesita una direccion estable.
+   *
+   * Lo consulta el candado de la direccion de entrega (`clientsService
+   * .updateAddress`): la hoja del mensajero y la proforma leen la direccion del
+   * casillero EN VIVO, no una copia congelada en el tramite, asi que moverla con
+   * paquetes en curso les cambiaria el destino a mitad de camino.
+   *
+   * Se apoya en `shipments_client_idx`.
+   */
+  async countActiveByClient(clientId: string): Promise<number> {
+    const [row] = await db
+      .select({ n: count() })
+      .from(shipments)
+      .where(and(eq(shipments.clientId, clientId), sql`${shipments.state} <> 'entregado'`));
+    return row?.n ?? 0;
+  },
+
+  /**
+   * Tramites ACTIVOS (no entregados) con ese HAWB (LES), el identificador que se
+   * escanea en la mesa de bodega. Devuelve hasta dos: el HAWB no tiene indice
+   * unico, asi que quien llama necesita poder distinguir "no hay" de "hay mas de
+   * uno" en vez de quedarse con el primero que devuelva la BD.
+   */
+  async findActiveByHawb(hawb: string) {
+    return db
+      .select({ id: shipments.id, code: shipments.code })
+      .from(shipments)
+      .where(and(eq(shipments.hawb, hawb), sql`${shipments.state} <> 'entregado'`))
+      .limit(2);
   },
 
   /** Siguiente numero de la secuencia del consecutivo (el formato lo pone shared). */

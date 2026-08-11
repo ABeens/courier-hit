@@ -29,8 +29,19 @@ interface ReportResponse {
   rows: ReportRow[];
 }
 
+/** Una proforma lista para descargar (trámite ya facturado). */
+interface ProformaItem {
+  shipmentId: string;
+  number: string;
+  clientName: string;
+  totalUsd: number;
+}
+
 export function ReportsScreen() {
   const [catalog, setCatalog] = useState<CatalogItem[] | null>(null);
+  /** Si el rol puede emitir proformas. Lo decide la API, no esta pantalla. */
+  const [canProforma, setCanProforma] = useState(false);
+  const [ready, setReady] = useState<ProformaItem[] | null>(null);
   const [kind, setKind] = useState<ReportKind | ''>('');
   const [type, setType] = useState('');
   const [from, setFrom] = useState('');
@@ -41,9 +52,10 @@ export function ReportsScreen() {
 
   useEffect(() => {
     api
-      .get<{ items: CatalogItem[] }>('/reports/catalog')
+      .get<{ items: CatalogItem[]; proforma: boolean }>('/reports/catalog')
       .then((data) => {
         setCatalog(data.items);
+        setCanProforma(data.proforma);
         // Se preselecciona el primero al que el rol tiene acceso: la pantalla
         // abre con algo utilizable en vez de un selector vacío.
         setKind(data.items[0]?.kind ?? '');
@@ -79,6 +91,46 @@ export function ReportsScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * Filtros de la proforma: los MISMOS del reporte menos el reporte elegido. Una
+   * proforma no depende de que reporte se esté viendo, solo del alcance.
+   */
+  const proformaParams = useCallback(() => {
+    const params = buildParams();
+    params.delete('kind');
+    return params;
+  }, [buildParams]);
+
+  /**
+   * Cuántas proformas hay listas para ese filtro. Se consulta para poder decirlo
+   * ANTES de bajarlas: "descargar todas" sin saber cuántas son es exactamente
+   * como alguien acaba abriendo un documento de trescientas páginas sin querer.
+   */
+  useEffect(() => {
+    if (!canProforma) return;
+    let cancelled = false;
+    api
+      .get<{ items: ProformaItem[] }>(`/reports/proformas?${proformaParams().toString()}`)
+      .then((data) => {
+        if (!cancelled) setReady(data.items);
+      })
+      .catch(() => {
+        if (!cancelled) setReady(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canProforma, proformaParams]);
+
+  /**
+   * Las proformas se abren en una pestaña, no se piden con `fetch`: son un
+   * documento HTML para leer o imprimir a PDF, y la cookie de sesión viaja igual
+   * por ser el mismo origen (mismo criterio que la descarga del CSV).
+   */
+  function openProformas() {
+    window.open(`${API_BASE}/api/reports/proformas/document?${proformaParams().toString()}`, '_blank');
+  }
 
   /**
    * La descarga es una navegación normal y no un `fetch`: el navegador tiene que
@@ -122,9 +174,25 @@ export function ReportsScreen() {
           <div className="title">Reportes</div>
           {selected && <div className="count">{selected.description}</div>}
         </div>
-        <button className="btn btn-primary" onClick={downloadCsv} disabled={!report || !kind}>
-          Descargar CSV
-        </button>
+        <div className="actions">
+          {canProforma && (
+            <button
+              className="btn btn-ghost"
+              onClick={openProformas}
+              disabled={!ready || ready.length === 0}
+              title="Trámites ya facturados dentro del filtro actual"
+            >
+              {ready === null
+                ? 'Proformas'
+                : ready.length === 0
+                  ? 'Sin proformas listas'
+                  : `Proformas (${ready.length})`}
+            </button>
+          )}
+          <button className="btn btn-primary" onClick={downloadCsv} disabled={!report || !kind}>
+            Descargar CSV
+          </button>
+        </div>
       </div>
 
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}

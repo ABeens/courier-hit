@@ -9,6 +9,7 @@
  */
 import { z } from 'zod';
 import { Currency } from '../money/currency';
+import { CostCategory } from './cost-service';
 import { CostLineSource } from './shipment-cost';
 
 /** Moneda de un campo monetario. Explicita siempre (regla M2). */
@@ -85,6 +86,10 @@ export interface CostLineDto {
   id: string;
   costServiceId: string | null;
   label: string;
+  /** De quien es el dinero, congelado al cargar (ver `CostCategory`). */
+  category: CostCategory;
+  /** COD SIS FE del concepto, copiado del catalogo. Lo imprime la proforma. */
+  electronicInvoiceCode: string | null;
   source: CostLineSource;
   percentage: number | null;
   amount: number;
@@ -100,6 +105,12 @@ export interface CostLineDto {
 export interface SuggestedCostLine {
   costServiceId: string | null;
   label: string;
+  /**
+   * Categoria que tendra la linea si se agrega. Viaja en la sugerencia para que
+   * la pantalla pueda decir "esto cuenta como costo" antes de guardar; el valor
+   * que se persiste NO sale de aqui sino del catalogo, en el servidor.
+   */
+  category: CostCategory;
   source: CostLineSource;
   percentage: number | null;
   /** Importe sugerido; null cuando el servicio es de valor manual. */

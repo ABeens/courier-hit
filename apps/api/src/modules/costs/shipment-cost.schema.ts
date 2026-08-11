@@ -25,10 +25,10 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { COST_LINE_SOURCE_VALUES } from '@courier/shared';
+import { COST_LINE_SOURCE_VALUES, DEFAULT_COST_CATEGORY } from '@courier/shared';
 import { currencyEnum } from '../../core/currency.schema';
 import { users } from '../auth/auth.schema';
-import { costServices } from '../cost-services/cost-service.schema';
+import { costCategoryEnum, costServices } from '../cost-services/cost-service.schema';
 import { shipments } from '../shipments/shipments.schema';
 
 export const costLineSourceEnum = pgEnum('cost_line_source', COST_LINE_SOURCE_VALUES);
@@ -44,6 +44,18 @@ export const shipmentCosts = pgTable(
     costServiceId: uuid('cost_service_id').references(() => costServices.id, { onDelete: 'set null' }),
     /** Etiqueta congelada al cargar: nunca se relee del catalogo. */
     label: text('label').notNull(),
+    /**
+     * De quien es el dinero, congelada al cargar igual que la etiqueta. La copia
+     * del servicio del catalogo, salvo en el flete, donde la fija el sistema
+     * (`categoryForLine`). Es lo que permite separar IMPUESTOS de OTROS en el
+     * reporte de Paqueteria y calcular COSTOS ASOCIADOS en el de Agenciamiento.
+     *
+     * El default cubre las lineas cargadas antes de que la columna existiera: se
+     * les supone trasladadas, el mismo supuesto conservador del catalogo.
+     */
+    category: costCategoryEnum('category').notNull().default(DEFAULT_COST_CATEGORY),
+    /** COD SIS FE del concepto, copiado del catalogo. Lo imprime la proforma. */
+    electronicInvoiceCode: text('electronic_invoice_code'),
     source: costLineSourceEnum('source').notNull(),
     /** Porcentaje aplicado (0-100) cuando source = percentage; null en el resto. */
     percentage: doublePrecision('percentage'),

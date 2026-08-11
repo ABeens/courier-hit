@@ -16,6 +16,8 @@ const columns = {
   id: shipmentCosts.id,
   costServiceId: shipmentCosts.costServiceId,
   label: shipmentCosts.label,
+  category: shipmentCosts.category,
+  electronicInvoiceCode: shipmentCosts.electronicInvoiceCode,
   source: shipmentCosts.source,
   percentage: shipmentCosts.percentage,
   amount: shipmentCosts.amount,
@@ -46,17 +48,26 @@ export const costsRepo = {
   /**
    * Congela el total aprobado en el tramite. Guarda las DOS monedas juntas
    * (regla M2) y quien/cuando aprobo: a partir de aqui la factura no se toca.
+   *
+   * Junto al total se congela la TARIFA de transporte internacional vigente. No
+   * entra en ninguna cifra de la factura (el cliente no la ve): es el costo con
+   * el que el reporte calculara el margen de este paquete, y guardarlo aqui es lo
+   * que impide que subir la tarifa manana reescriba la rentabilidad de los meses
+   * ya cerrados. `null` cuando no aplica (no es Paqueteria) o cuando nadie ha
+   * fijado la tarifa todavia.
    */
   async freezeInvoice(
     shipmentId: string,
     totals: { usd: number; crc: number },
     approvedBy: string,
+    freightRateUsdPerLb: number | null,
   ) {
     await db
       .update(shipments)
       .set({
         invoiceTotalUsd: totals.usd,
         invoiceTotalCrc: totals.crc,
+        freightRateUsdPerLb,
         costsApprovedAt: new Date(),
         costsApprovedBy: approvedBy,
         updatedAt: new Date(),
@@ -66,9 +77,12 @@ export const costsRepo = {
 
   /**
    * Descongela la factura: deja el tramite como si nunca se hubieran aprobado los
-   * costos. Es el inverso exacto de `freezeInvoice`, y limpia los CINCO campos que
+   * costos. Es el inverso exacto de `freezeInvoice`, y limpia los SEIS campos que
    * aquella escribe: dejar `costsApprovedBy` o una sola de las dos monedas daria
    * un tramite medio aprobado, que ninguna consulta sabe leer.
+   *
+   * La tarifa de flete se limpia con el resto: al reaprobar se vuelve a tomar la
+   * vigente, que es la que corresponde a la factura que de verdad se emitio.
    *
    * Las lineas de costo NO se borran: se conservan para que el operador vea que
    * habia cargado y corrija en vez de rehacer desde cero.
@@ -79,6 +93,7 @@ export const costsRepo = {
       .set({
         invoiceTotalUsd: null,
         invoiceTotalCrc: null,
+        freightRateUsdPerLb: null,
         costsApprovedAt: null,
         costsApprovedBy: null,
         updatedAt: new Date(),

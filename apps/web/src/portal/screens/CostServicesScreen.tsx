@@ -7,6 +7,8 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
+  COST_CATEGORY_LABELS,
+  type CostCategory,
   type Currency,
   SERVICE_KIND_LABELS,
   SERVICE_VALUE_TYPE_LABELS,
@@ -23,6 +25,10 @@ export interface CostServiceRow {
   id: string;
   name: string;
   kind: ServiceKind;
+  /** De quién es el dinero: decide si el concepto es costo o margen en el reporte. */
+  category: CostCategory;
+  /** COD SIS FE del concepto; lo imprime la proforma. */
+  electronicInvoiceCode: string | null;
   valueType: ServiceValueType;
   defaultValue: number | null;
   currency: Currency | null;
@@ -176,6 +182,8 @@ export function CostServicesScreen() {
             <tr>
               <th>Servicio</th>
               <th>Tipo de servicio</th>
+              <th>Dinero de</th>
+              <th>Cód. FE</th>
               <th>Tipo de valor</th>
               <th>Valor por defecto</th>
               <th>Estado</th>
@@ -189,6 +197,8 @@ export function CostServicesScreen() {
                   <div className="cell-name">{row.name}</div>
                 </td>
                 <td>{SERVICE_KIND_LABELS[row.kind]}</td>
+                <td>{COST_CATEGORY_LABELS[row.category]}</td>
+                <td>{row.electronicInvoiceCode ?? <span className="empty-val">—</span>}</td>
                 <td>{SERVICE_VALUE_TYPE_LABELS[row.valueType]}</td>
                 <td>{formatValue(row)}</td>
                 <td>

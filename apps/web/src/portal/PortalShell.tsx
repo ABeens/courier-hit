@@ -40,10 +40,11 @@ interface NavItem { resource: Resource; label: string }
  * abre `ClientShipmentModal`), porque el cliente avisa de un paquete para verlo
  * aparecer en ese mismo listado.
  *
- * "Otros tramites" es esa misma idea para lo que NO es Paqueteria (aereo,
- * maritimo, agenciamiento): son tramites con otro flujo, otros campos y otra
- * guia (AWB/BL), asi que no caben en un listado que se llama "Mis paquetes" ni
- * se avisan con una prealerta. Cada modulo registra y lista lo suyo.
+ * "Otros tramites" es el listado de lo que NO es Paqueteria (aereo, maritimo,
+ * agenciamiento): son tramites con otro flujo, otros campos y otra guia (AWB/BL),
+ * asi que no caben en un listado que se llama "Mis paquetes". Es SOLO CONSULTA y
+ * no tiene boton de alta: esos tramites no se prealertan, los registra el staff
+ * (`tramite.manage`) tras acordar la gestion con el cliente.
  */
 const CLIENT_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   {
@@ -266,7 +267,10 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
             // Hoy la pantalla es solo la tasa de cambio, pero el recurso es
             // "ajustes generales": lo que se sume despues entra aqui, no en una
             // entrada de menu nueva por cada valor.
-            <SettingsScreen canEdit={can(me.role, Permission.ExchangeRateWrite)} />
+            <SettingsScreen
+              canEdit={can(me.role, Permission.ExchangeRateWrite)}
+              canEditFreight={can(me.role, Permission.FreightRateWrite)}
+            />
           ) : current === Resource.Routes ? (
             <RoutesScreen />
           ) : current === Resource.Package ? (

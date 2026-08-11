@@ -54,9 +54,16 @@ export type UpdateClientInput = z.infer<typeof updateClientSchema>;
  * Edicion del propio perfil por el cliente (Parte 2, "Editar Perfil": nombre,
  * cedula, telefono y correo).
  *
- * La direccion NO esta aqui a proposito: el distrito determina la ruta de
- * reparto (asociacion 1 a 1 con las rutas del panel admin), asi que moverla es
- * una decision operativa y no un dato de contacto.
+ * La direccion NO esta aqui: se edita por su propio endpoint
+ * (`PATCH /clients/me/address`, esquema `deliveryAddressSchema`) porque no es un
+ * dato de contacto mas. Dos motivos la separan del resto:
+ *
+ *   1. Es una TERNA indivisible (provincia/canton/distrito) mas las señas: un
+ *      PATCH parcial permitiria dejar un canton que no cuelga de la provincia.
+ *   2. Tiene una PRECONDICION propia: solo se puede mover si el casillero no
+ *      tiene tramites en curso, porque el distrito determina la ruta de reparto
+ *      y la hoja del mensajero lee la direccion en vivo. Ver
+ *      `clientsService.updateAddress`.
  *
  * Cambiar el correo cambia el USUARIO DE LOGIN, asi que la API lo trata aparte:
  * exige verificar la nueva direccion antes de volver a dar acceso. Ver

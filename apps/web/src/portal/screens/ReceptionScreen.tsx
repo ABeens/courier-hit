@@ -2,9 +2,12 @@
  * Pantalla "Recepción" (permiso package.receive) — Requerimientos Parte 4.
  *
  * Es una mesa de bodega: el operador escanea con pistola y el cursor no debe
- * salir nunca del campo de tracking. Por eso el input se re-enfoca solo tras
- * cada registro y el formulario se envía con Enter, que es lo que la pistola
- * emite al terminar de leer un código.
+ * salir nunca del campo del LES. Por eso el input se re-enfoca solo tras cada
+ * registro y el formulario se envía con Enter, que es lo que la pistola emite al
+ * terminar de leer un código.
+ *
+ * Lo que se escanea es el LES (HAWB), el número que la bodega de Miami imprime
+ * en la etiqueta del bulto, no el tracking de la tienda.
  *
  * Dos desenlaces, los dos del manual:
  *   - el trámite existe  -> pasa a "Facturación en proceso";
@@ -21,14 +24,14 @@ import { formatDateTime } from '../lib/datetime';
 /** Lo registrado en esta sesión de trabajo, del más reciente al más antiguo. */
 interface LogEntry {
   at: string;
-  tracking: string;
+  hawb: string;
   shipment: ShipmentDto | null;
   message: string;
   ok: boolean;
 }
 
 export function ReceptionScreen() {
-  const [tracking, setTracking] = useState('');
+  const [hawb, setHawb] = useState('');
   const [log, setLog] = useState<LogEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -39,16 +42,16 @@ export function ReceptionScreen() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const value = tracking.trim().toUpperCase();
+    const value = hawb.trim();
     if (!value || busy) return;
 
     setBusy(true);
     try {
-      const shipment = await api.post<ShipmentDto>('/shipments/receive', { tracking: value });
+      const shipment = await api.post<ShipmentDto>('/shipments/receive', { hawb: value });
       setLog((prev) => [
         {
           at: new Date().toISOString(),
-          tracking: value,
+          hawb: value,
           shipment,
           message: `${shipment.code} · ${shipment.client.name} → ${STATE_LABELS[shipment.state]}`,
           ok: true,
@@ -59,7 +62,7 @@ export function ReceptionScreen() {
       setLog((prev) => [
         {
           at: new Date().toISOString(),
-          tracking: value,
+          hawb: value,
           shipment: null,
           message:
             err instanceof ApiError ? err.message : 'No se pudo registrar la recepción.',
@@ -68,7 +71,7 @@ export function ReceptionScreen() {
         ...prev,
       ]);
     } finally {
-      setTracking('');
+      setHawb('');
       setBusy(false);
       // El foco vuelve al campo para que el siguiente escaneo entre solo.
       inputRef.current?.focus();
@@ -92,10 +95,11 @@ export function ReceptionScreen() {
         <input
           ref={inputRef}
           className="input search mono"
-          placeholder="Escanea o digita el tracking…"
-          value={tracking}
+          placeholder="Escanea o digita el LES (HAWB)…"
+          value={hawb}
           autoComplete="off"
-          onChange={(e) => setTracking(e.target.value)}
+          inputMode="numeric"
+          onChange={(e) => setHawb(e.target.value)}
         />
         <button className="btn btn-primary" type="submit" disabled={busy}>
           {busy ? 'Registrando…' : 'Registrar'}
@@ -106,11 +110,11 @@ export function ReceptionScreen() {
         {log.map((entry) => (
           <article
             className={`card-item ${entry.ok ? 'tone-ok' : 'tone-warn'}`}
-            key={`${entry.at}-${entry.tracking}`}
+            key={`${entry.at}-${entry.hawb}`}
           >
             <div className="card-item-head">
               <div className="card-item-ident">
-                <div className="card-item-code mono">{entry.tracking}</div>
+                <div className="card-item-code mono">{entry.hawb}</div>
                 <div className="card-item-title">{entry.message}</div>
                 {entry.shipment && (
                   <div className="card-item-sub">

@@ -2,8 +2,14 @@
  * Pantalla "Configuración" (permiso exchange_rate.write para escribir).
  *
  * Ajustes GENERALES del sistema: los valores que se aplican igual a todos los
- * trámites. Hoy solo la tasa de cambio; es el sitio donde van a entrar los que
- * vengan, por eso la pantalla se arma por bloques y no como un formulario suelto.
+ * trámites. Hoy la tasa de cambio y la tarifa de transporte internacional; es el
+ * sitio donde van a entrar los que vengan, por eso la pantalla se arma por
+ * bloques y no como un formulario suelto.
+ *
+ * Los dos valores se parecen pero no son lo mismo: la tasa CONVIERTE (afecta lo
+ * que se le cobra al cliente) y la tarifa de flete es un COSTO nuestro que no
+ * aparece en ninguna factura, solo en el margen del reporte. Por eso van en
+ * bloques separados y con permisos distintos.
  *
  * La tasa vigente y la del BCCR NO son lo mismo y se muestran separadas a
  * propósito: la primera es la que el sistema usa para convertir, la segunda es
@@ -11,7 +17,11 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Currency, formatMoney } from '@courier/shared';
-import type { ExchangeRateHistoryEntryDto, ExchangeRateSettingDto } from '@courier/shared';
+import type {
+  ExchangeRateHistoryEntryDto,
+  ExchangeRateSettingDto,
+  FreightRateSettingDto,
+} from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { formatDate, formatDateTime } from '../lib/datetime';
 
@@ -20,11 +30,26 @@ function formatRate(rate: number): string {
   return `${formatMoney(rate, Currency.CRC)} por 1 USD`;
 }
 
-export function SettingsScreen({ canEdit }: { canEdit: boolean }) {
+/** La tarifa de flete son dólares por libra: dinero en dólares, por unidad de peso. */
+function formatFreight(usdPerLb: number): string {
+  return `${formatMoney(usdPerLb, Currency.USD)} por libra`;
+}
+
+export function SettingsScreen({
+  canEdit,
+  canEditFreight,
+}: {
+  canEdit: boolean;
+  canEditFreight: boolean;
+}) {
   const [setting, setSetting] = useState<ExchangeRateSettingDto | null>(null);
   const [history, setHistory] = useState<ExchangeRateHistoryEntryDto[]>([]);
   const [rate, setRate] = useState('');
   const [note, setNote] = useState('');
+  const [freight, setFreight] = useState<FreightRateSettingDto | null>(null);
+  const [freightRate, setFreightRate] = useState('');
+  const [freightNote, setFreightNote] = useState('');
+  const [savingFreight, setSavingFreight] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -44,6 +69,10 @@ export function SettingsScreen({ canEdit }: { canEdit: boolean }) {
         );
         setHistory(log.items);
       }
+
+      const freightDto = await api.get<FreightRateSettingDto>('/settings/freight-rate');
+      setFreight(freightDto);
+      setFreightRate(freightDto.usdPerLb != null ? String(freightDto.usdPerLb) : '');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cargar la configuración.');
     }
@@ -78,6 +107,34 @@ export function SettingsScreen({ canEdit }: { canEdit: boolean }) {
       setError(err instanceof ApiError ? err.message : 'No se pudo guardar la tasa.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  const parsedFreight = Number(freightRate);
+  const freightOk = freightRate.trim() !== '' && Number.isFinite(parsedFreight) && parsedFreight > 0;
+  const freightUnchanged = freight?.usdPerLb != null && parsedFreight === freight.usdPerLb;
+
+  async function saveFreight(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setNotice(null);
+    if (!freightOk) {
+      setError('Digita la tarifa de transporte internacional (dólares por libra).');
+      return;
+    }
+    setSavingFreight(true);
+    try {
+      await api.put<FreightRateSettingDto>('/settings/freight-rate', {
+        usdPerLb: parsedFreight,
+        ...(freightNote.trim() ? { note: freightNote.trim() } : {}),
+      });
+      setFreightNote('');
+      setNotice(`Tarifa de transporte internacional actualizada: ${formatFreight(parsedFreight)}.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo guardar la tarifa.');
+    } finally {
+      setSavingFreight(false);
     }
   }
 
@@ -177,6 +234,71 @@ export function SettingsScreen({ canEdit }: { canEdit: boolean }) {
           <div className="field-hint">
             La tasa de cambio es un valor general del sistema: solo un administrador puede
             modificarla.
+          </div>
+        )}
+      </div>
+
+      {/* Tarifa de transporte internacional: el otro valor general del sistema.
+          Es lo que a HS Global le CUESTA traer una libra, no lo que cobra, y de
+          ahí sale el margen del reporte de Paquetería. */}
+      <div className="card form-stack" style={{ marginTop: 18 }}>
+        <div>
+          <div className="field-label" style={{ marginBottom: 6 }}>
+            Transporte internacional (costo por libra)
+          </div>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 26, color: 'var(--ink)' }}>
+            {freight?.usdPerLb != null ? formatFreight(freight.usdPerLb) : 'Sin definir'}
+          </div>
+          <div className="field-hint">
+            {freight?.usdPerLb != null
+              ? `Fijada por ${freight.updatedByName ?? 'un administrador'}${
+                  freight.updatedAt ? ` el ${formatDateTime(freight.updatedAt)}` : ''
+                }.`
+              : 'Sin esta tarifa el reporte de Paquetería no puede calcular el costo del flete ni el margen.'}
+          </div>
+        </div>
+
+        {canEditFreight ? (
+          <form className="form-stack" onSubmit={saveFreight}>
+            <div className="field-pair">
+              <div>
+                <label className="field-label" htmlFor="s-freight">
+                  Nueva tarifa (dólares por libra)
+                </label>
+                <input
+                  id="s-freight" className="input" type="number" min="0" step="0.01"
+                  value={freightRate} placeholder="3.66" disabled={savingFreight}
+                  onChange={(e) => setFreightRate(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="s-freight-note">
+                  Nota (opcional)
+                </label>
+                <input
+                  id="s-freight-note" className="input" type="text" maxLength={200}
+                  value={freightNote} placeholder="Por qué se cambia" disabled={savingFreight}
+                  onChange={(e) => setFreightNote(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="field-hint">
+              Los trámites ya facturados conservan la tarifa con la que se cerraron: cambiarla
+              aquí no reescribe el margen de los meses anteriores.
+            </div>
+            <div>
+              <button
+                className="btn btn-primary" type="submit"
+                disabled={savingFreight || !freightOk || freightUnchanged}
+              >
+                {savingFreight ? 'Guardando…' : 'Guardar tarifa'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="field-hint">
+            La tarifa de transporte internacional es un valor general del sistema: solo un
+            administrador puede modificarla.
           </div>
         )}
       </div>
