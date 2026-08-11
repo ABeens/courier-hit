@@ -23,17 +23,21 @@
  */
 import { useEffect, useState } from 'react';
 import {
-  BANK_ACCOUNT_LABELS,
+  BANK_ACCOUNTS,
   BankAccount,
+  CURRENCY_LABELS,
   Currency,
   PAYMENT_METHOD_LABELS,
   PAYMENT_STATUS_LABELS,
   PaymentMethod,
   PaymentStatus,
+  bankAccountOptionLabel,
+  billingAmounts,
+  billingCurrencyFor,
+  convertMoney,
   formatMoney,
-  pendingAmount,
 } from '@courier/shared';
-import type { PaymentDto, PaymentIntentDto, ShipmentDto } from '@courier/shared';
+import type { PaymentDto, PaymentIntentDto, Role, ShipmentDto } from '@courier/shared';
 import { API_BASE, ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { formatDate } from '../lib/datetime';
@@ -46,14 +50,31 @@ interface Quote {
   invoiceTotalCrc: number | null;
   settledUsd: number;
   settledCrc: number;
+  pendingCrc: number;
+  pendingUsd: number;
+  /** Saldo en colones: lo que se le cobra a la tarjeta, se muestre o no así. */
   dueCrc: number;
   settled: boolean;
+  /** El saldo ya está cubierto por un abono sin validar: no se puede pagar otra vez. */
+  inValidation: boolean;
   availableMethods: PaymentMethod[];
+  /**
+   * Cuentas a las que este trámite admite depósito: en Paquetería solo las de
+   * dólares. Llega de la API porque es la MISMA lista contra la que el servidor
+   * revalida; deducirla aquí sería ofrecer opciones que acaban en un 403.
+   */
+  availableBankAccounts: BankAccount[];
   payableState: boolean;
 }
 
 interface Props {
   shipment: ShipmentDto;
+  /**
+   * Quien abrio el modal. Solo decide en que MONEDA se le habla del cobro
+   * (`billingCurrencyFor`): hoy solo el cliente tiene el permiso de pagar, pero
+   * dar por supuesto el rol aqui seria enterrar esa condicion en la pantalla.
+   */
+  role: Role;
   onClose: () => void;
   /**
    * Cierra el modal anunciando lo que PASO. El mensaje viaja desde aqui porque
@@ -67,11 +88,16 @@ interface Props {
   onPaid: (message: string) => void;
 }
 
-export function PaymentModal({ shipment, onClose, onPaid }: Props) {
+export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [payments, setPayments] = useState<PaymentDto[]>([]);
   const [method, setMethod] = useState<PaymentMethod | null>(null);
-  const [bankAccount, setBankAccount] = useState<BankAccount>(BankAccount.BAC);
+  /**
+   * Cuenta elegida. Arranca en null y la fija la cotización con la primera que
+   * el trámite admite: cuál es la primera depende del tipo de trámite, así que
+   * un valor por defecto escrito aquí sería justo el que Paquetería no acepta.
+   */
+  const [bankAccount, setBankAccount] = useState<BankAccount | null>(null);
   const [receiptNumber, setReceiptNumber] = useState('');
   const [depositDate, setDepositDate] = useState('');
   const [receipt, setReceipt] = useState<File | null>(null);
@@ -88,12 +114,32 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
   );
 
   /**
-   * Lo ya abonado y sin validar. Sale de la lista de pagos que esta pantalla ya
-   * tiene, no de una consulta nueva, y con la misma funcion compartida que usa la
-   * bandera del listado: dos cifras distintas para el mismo hecho serian dos
-   * respuestas a "¿mi pago llegó?".
+   * Lo ya abonado y sin validar, tal como lo calcula el servidor. No se recalcula
+   * aqui sobre la lista de pagos: la cifra que se le enseña al cliente y la que
+   * usa la guarda que rechaza un segundo abono tienen que ser la misma, o el
+   * modal acabaria ofreciendo un boton que la API contesta con un 409.
    */
-  const pendingCrc = pendingAmount(payments, Currency.CRC);
+  const pendingCrc = quote?.pendingCrc ?? 0;
+
+  /**
+   * Las cifras del cobro en la moneda que le toca leer a quien abrio el modal: en
+   * Paqueteria, dolares sin convertir a colones (`billingCurrencyFor`). Es la
+   * MISMA proyeccion que hace la ficha del listado, para que el saldo de la
+   * bandera y el de esta pantalla no se lean en monedas distintas.
+   *
+   * Solo cambia como se DICE el importe. Lo que se le cobra a la tarjeta lo
+   * decide el servidor, y eso sigue siendo el saldo en colones.
+   */
+  const currency = billingCurrencyFor(shipment.shipmentType, role);
+  const amounts = quote ? billingAmounts(quote, currency, quote.settled) : null;
+
+  /**
+   * ¿Se puede pagar ahora mismo? No basta con que quede saldo: un comprobante ya
+   * subido y sin resolver deja el tramite EN VALIDACION, y ahi el cliente no
+   * vuelve a pagar —pagaria dos veces el mismo saldo, porque un abono pendiente
+   * no lo baja—. Solo mira su comprobante y espera.
+   */
+  const canPay = quote != null && !quote.settled && !quote.inValidation;
 
   useEffect(() => {
     Promise.all([
@@ -104,6 +150,7 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
         setQuote(q);
         setPayments(list.items);
         setMethod(q.availableMethods[0] ?? null);
+        setBankAccount(q.availableBankAccounts[0] ?? null);
       })
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : 'No se pudo cargar el pago.'),
@@ -113,6 +160,13 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!method) return;
+    // Un depósito sin cuenta no se puede conciliar: quien valida tendría que
+    // buscar el comprobante en los cuatro estados de cuenta. El servidor lo
+    // rechaza igual; decirlo aquí ahorra el viaje.
+    if (method === PaymentMethod.DepositoBancario && !bankAccount) {
+      setError('Elige la cuenta donde hiciste el depósito.');
+      return;
+    }
     setError(null);
     setSaving(true);
 
@@ -218,29 +272,35 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
           {error && <div className="banner err">{error}</div>}
           {notice && <div className="banner ok">{notice}</div>}
 
-          {quote && (
+          {quote && amounts && (
             <div className="card-sec is-money">
               <div className="card-sec-title">Monto a pagar</div>
               <dl className="card-sec-fields">
                 <div className="card-item-field">
                   <span className="field-label">Factura</span>
                   <span>
-                    {quote.invoiceTotalCrc != null
-                      ? formatMoney(quote.invoiceTotalCrc, Currency.CRC)
+                    {amounts.invoiceTotal != null
+                      ? formatMoney(amounts.invoiceTotal, amounts.currency)
                       : '—'}
-                    {quote.invoiceTotalUsd != null && (
+                    {/*
+                      El equivalente en la otra moneda solo acompaña al cobro en
+                      colones. En Paquetería el cobro ES en dólares y ponerle al
+                      lado el importe en colones sería exactamente la conversión
+                      que no se le enseña al cliente.
+                    */}
+                    {amounts.currency === Currency.CRC && quote.invoiceTotalUsd != null && (
                       <> · {formatMoney(quote.invoiceTotalUsd, Currency.USD)}</>
                     )}
                   </span>
                 </div>
                 <div className="card-item-field">
                   <span className="field-label">Abonado</span>
-                  <span>{formatMoney(quote.settledCrc, Currency.CRC)}</span>
+                  <span>{formatMoney(amounts.paid, amounts.currency)}</span>
                 </div>
                 <div className="card-item-field">
                   <span className="field-label">Saldo</span>
                   <span>
-                    <strong>{formatMoney(quote.dueCrc, Currency.CRC)}</strong>
+                    <strong>{formatMoney(amounts.due, amounts.currency)}</strong>
                   </span>
                 </div>
               </dl>
@@ -256,21 +316,27 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
             saldo de arriba sigue completo —un comprobante sin validar no es
             dinero recibido— y sin este aviso el cliente lee ese saldo como que
             su depósito nunca llegó.
+
+            Si ese abono cubre el saldo, además desaparece todo el formulario: el
+            aviso queda como única respuesta, y por eso dice explícitamente que no
+            hay que volver a pagar. Verlo junto a un botón de pagar activo es lo
+            que hacía que el cliente pagara dos veces.
           */}
-          {quote && !quote.settled && pendingCrc > 0 && (
+          {quote && amounts && !quote.settled && pendingCrc > 0 && (
             <div className="banner">
-              Recibimos {formatMoney(pendingCrc, Currency.CRC)} y estamos validando el
+              Recibimos {formatMoney(amounts.pending, amounts.currency)} y estamos validando el
               comprobante. Te avisaremos apenas quede confirmado.
+              {quote.inValidation && <> No hace falta que pagues de nuevo.</>}
             </div>
           )}
 
-          {quote && !quote.settled && quote.availableMethods.length === 0 && (
+          {canPay && quote.availableMethods.length === 0 && (
             <div className="banner warn">
               No hay medios de pago disponibles en este momento. Contáctanos para coordinar.
             </div>
           )}
 
-          {quote && !quote.settled && quote.availableMethods.length > 0 && !cardIntent && (
+          {canPay && quote.availableMethods.length > 0 && !cardIntent && (
             <div>
               <span className="field-label">Medio de pago</span>
               {quote.availableMethods.map((m) => (
@@ -287,7 +353,7 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
             </div>
           )}
 
-          {method === PaymentMethod.DepositoBancario && quote && !quote.settled && (
+          {method === PaymentMethod.DepositoBancario && canPay && (
             <>
               <div className="banner">
                 Deposita a nombre de <strong>HS Global Services</strong> y adjunta el
@@ -300,12 +366,12 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
                   <select
                     id="p-bank"
                     className="input"
-                    value={bankAccount}
+                    value={bankAccount ?? ''}
                     onChange={(e) => setBankAccount(e.target.value as BankAccount)}
                   >
-                    {Object.values(BankAccount).map((b) => (
+                    {quote.availableBankAccounts.map((b) => (
                       <option key={b} value={b}>
-                        {BANK_ACCOUNT_LABELS[b]}
+                        {bankAccountOptionLabel(b)}
                       </option>
                     ))}
                   </select>
@@ -321,6 +387,42 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
                   />
                 </div>
               </div>
+
+              {/*
+                Los datos completos de la cuenta elegida. El select ya lleva el
+                número, pero el IBAN es lo que se necesita para transferir desde
+                otro banco y no cabe en una opción: sin esto el cliente tiene que
+                pedirlo por WhatsApp, que es exactamente el problema del ticket.
+              */}
+              {bankAccount && (
+                <div className="card-sec">
+                  <div className="card-sec-title">Datos de la cuenta</div>
+                  <dl className="card-sec-fields">
+                    <div className="card-item-field">
+                      <span className="field-label">Titular</span>
+                      <span>HS Global Services</span>
+                    </div>
+                    <div className="card-item-field">
+                      <span className="field-label">Banco</span>
+                      <span>{BANK_ACCOUNTS[bankAccount].bank}</span>
+                    </div>
+                    <div className="card-item-field">
+                      <span className="field-label">Moneda</span>
+                      <span>{CURRENCY_LABELS[BANK_ACCOUNTS[bankAccount].currency]}</span>
+                    </div>
+                    {BANK_ACCOUNTS[bankAccount].number && (
+                      <div className="card-item-field">
+                        <span className="field-label">Cuenta</span>
+                        <span className="mono">{BANK_ACCOUNTS[bankAccount].number}</span>
+                      </div>
+                    )}
+                    <div className="card-item-field">
+                      <span className="field-label">IBAN</span>
+                      <span className="mono">{BANK_ACCOUNTS[bankAccount].iban}</span>
+                    </div>
+                  </dl>
+                </div>
+              )}
 
               <div>
                 <label className="field-label" htmlFor="p-receipt-no">Número de comprobante</label>
@@ -345,7 +447,7 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
             </>
           )}
 
-          {method === PaymentMethod.Tarjeta && !cardIntent && quote && !quote.settled && (
+          {method === PaymentMethod.Tarjeta && !cardIntent && canPay && (
             <div className="banner">
               Al continuar abriremos el formulario seguro de pago con tarjeta.
             </div>
@@ -398,7 +500,24 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
                       {formatDate(payment.createdAt)} · {PAYMENT_METHOD_LABELS[payment.method]}
                     </span>
                     <span>
-                      {formatMoney(payment.amount, payment.currency)} —{' '}
+                      {/*
+                        El abono se reexpresa a la moneda en que esta pantalla
+                        habla del cobro, y con SU PROPIA tasa congelada (regla
+                        M5), que es la misma aritmética de `settledAmount`. Sin
+                        esto, el cliente de Paquetería leería "Abonado $48.76"
+                        arriba y "₡25.000" aquí abajo: dos cifras para el mismo
+                        depósito.
+                      */}
+                      {formatMoney(
+                        convertMoney(
+                          payment.amount,
+                          payment.currency,
+                          currency,
+                          payment.exchangeRate,
+                        ),
+                        currency,
+                      )}{' '}
+                      —{' '}
                       <span
                         className={
                           payment.status === PaymentStatus.Confirmado ? 'spill ok' : 'spill'
@@ -421,8 +540,9 @@ export function PaymentModal({ shipment, onClose, onPaid }: Props) {
           {/*
             Con un cobro ya iniciado el botón desaparece: el pago existe en el
             servidor y volver a enviarlo abriría un segundo cobro por el mismo saldo.
+            Con un abono en validación desaparece por la misma razón.
           */}
-          {quote && !quote.settled && method && !cardIntent && (
+          {canPay && method && !cardIntent && (
             <button type="submit" className="btn btn-primary" disabled={saving}>
               {saving ? 'Registrando…' : 'Registrar pago'}
             </button>

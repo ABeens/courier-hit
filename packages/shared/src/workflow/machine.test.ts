@@ -15,9 +15,15 @@ import { State } from './states';
 import { ShipmentField } from '../shipments/shipment';
 import { canEditField, editableFieldsAt, nextStates, statesOf } from './machine';
 
-/** Campos exclusivos de cada familia de tramite (coherencia tipo <-> campo). */
+/**
+ * Campos exclusivos de cada familia de tramite (coherencia tipo <-> campo).
+ *
+ * `BillingNotes` NO esta en TRANSPORT_ONLY: las notas para facturar son comunes a
+ * los dos flujos (el reporte las pide en ambos, campo 20). Tampoco
+ * `ElectronicInvoiceNumber`, por lo mismo.
+ */
 const PACKAGE_ONLY = [ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg];
-const TRANSPORT_ONLY = [ShipmentField.Warehouse, ShipmentField.Dua, ShipmentField.BillingNotes];
+const TRANSPORT_ONLY = [ShipmentField.Warehouse, ShipmentField.Dua];
 
 /** Estados de bodega/entrega: tras el congelamiento de factura no se editan datos. */
 const FROZEN_PACKAGE = [
@@ -46,7 +52,12 @@ test('Paqueteria: en transito solo descriptivos y peso (tienda/transportista ya 
     const f = set(editableFieldsAt(Flow.Paqueteria, state));
     assert.deepEqual(
       f,
-      set([ShipmentField.Description, ShipmentField.Hawb, ShipmentField.WeightKg]),
+      set([
+        ShipmentField.Description,
+        ShipmentField.Hawb,
+        ShipmentField.WeightKg,
+        ShipmentField.BillingNotes,
+      ]),
       `ventana inesperada en ${state}`,
     );
   }
@@ -59,9 +70,19 @@ test('Paqueteria: en facturacion el peso sigue editable (ultimo tramo antes de a
   assert.ok(!f.has(ShipmentField.Tracking));
 });
 
-test('Estados de bodega/entrega no admiten NINGUN cambio de datos', () => {
+/**
+ * Tras el congelamiento de factura la unica escritura que queda es el consecutivo
+ * de factura electronica, que por definicion llega DESPUES de emitirla. El test se
+ * afirma sobre el conjunto exacto, no sobre "esta el FE": lo que hay que proteger
+ * es que no se cuele ningun otro campo por esa ventana.
+ */
+test('Estados de bodega/entrega solo admiten el consecutivo de factura electronica', () => {
   for (const state of FROZEN_PACKAGE) {
-    assert.equal(editableFieldsAt(Flow.Paqueteria, state).length, 0, `${state} deberia estar congelado`);
+    assert.deepEqual(
+      set(editableFieldsAt(Flow.Paqueteria, state)),
+      set([ShipmentField.ElectronicInvoiceNumber]),
+      `${state} deberia admitir solo el FE`,
+    );
   }
 });
 

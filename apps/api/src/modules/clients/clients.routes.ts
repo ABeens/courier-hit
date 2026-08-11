@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import {
   Permission,
+  deliveryAddressSchema,
   listProviderLinksSchema,
   updateClientSchema,
   updateProfileSchema,
@@ -45,6 +46,17 @@ clientsRoutes.get('/me', async (c) => {
 
 clientsRoutes.patch('/me', zValidator('json', updateProfileSchema), async (c) => {
   return c.json(await clientsService.updateProfile(c.get('session'), c.req.valid('json')));
+});
+
+/**
+ * Direccion de entrega del titular. Endpoint propio y cuerpo COMPLETO (no un
+ * PATCH campo a campo) porque la terna territorial solo se valida entera, y
+ * porque el cambio tiene su propia precondicion: cero tramites en curso. La
+ * comprueba el servicio, que responde 409 `CLIENT_ADDRESS_LOCKED` si no se
+ * cumple. Ver `clientsService.updateAddress`.
+ */
+clientsRoutes.patch('/me/address', zValidator('json', deliveryAddressSchema), async (c) => {
+  return c.json(await clientsService.updateAddress(c.get('session'), c.req.valid('json')));
 });
 
 // --- Panel administrador: enlace con el proveedor (docs/13) ---

@@ -9,10 +9,20 @@
  */
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { Permission, REPORT_DESCRIPTIONS, REPORT_LABELS, reportQuerySchema, reportsFor } from '@courier/shared';
+import {
+  Permission,
+  REPORT_DESCRIPTIONS,
+  REPORT_LABELS,
+  can,
+  proformaQuerySchema,
+  reportQuerySchema,
+  reportsFor,
+} from '@courier/shared';
 import type { AppEnv } from '../../core/http';
 import { requireAnyPermission } from '../../core/middleware/requireAnyPermission';
 import { requireSession } from '../../core/middleware/requireSession';
+import { renderProformas } from './proforma.render';
+import { proformaService } from './proforma.service';
 import { reportsService, toCsv } from './reports.service';
 
 export const reportsRoutes = new Hono<AppEnv>();
@@ -24,19 +34,62 @@ reportsRoutes.use(
     Permission.ReportsOperationalBasic,
     Permission.ReportsOperationalFull,
     Permission.ReportsFinancial,
+    Permission.ReportsFull,
+    Permission.ReportsOperational,
+    Permission.ReportsProforma,
   ),
 );
 
-/** Reportes que el rol de la sesion puede generar; la pantalla arma el selector. */
+/**
+ * Reportes que el rol de la sesion puede generar; la pantalla arma el selector.
+ *
+ * `proforma` viaja aparte de la lista porque no es un reporte: es otra accion
+ * sobre el mismo filtro y con otro permiso. Se responde aqui para que la pantalla
+ * no tenga que replicar la matriz de roles solo para decidir si pinta un boton.
+ */
 reportsRoutes.get('/catalog', async (c) => {
-  const kinds = reportsFor(c.get('session').role);
+  const { role } = c.get('session');
+  const kinds = reportsFor(role);
   return c.json({
     items: kinds.map((kind) => ({
       kind,
       label: REPORT_LABELS[kind],
       description: REPORT_DESCRIPTIONS[kind],
     })),
+    proforma: can(role, Permission.ReportsProforma),
   });
+});
+
+/**
+ * PROFORMAS. Van en este modulo y no en uno propio porque comparten los filtros
+ * de alcance con los reportes y la misma pantalla las ofrece; lo que NO comparten
+ * es la barrera, asi que el permiso lo comprueba el servicio (`ReportsProforma`),
+ * igual que los reportes comprueban el suyo.
+ *
+ * Se devuelven como HTML y no como JSON ni CSV: una proforma es un documento que
+ * se imprime o se manda, no una tabla que se filtra. Ver `proforma.render.ts`.
+ */
+
+/** Las que estan listas (tramites ya facturados), para poder contarlas antes de bajarlas. */
+reportsRoutes.get('/proformas', zValidator('query', proformaQuerySchema), async (c) => {
+  const items = await proformaService.ready(c.get('session'), c.req.valid('query'));
+  return c.json({ items });
+});
+
+/** Todas las listas en UN documento, una por pagina. */
+reportsRoutes.get('/proformas/document', zValidator('query', proformaQuerySchema), async (c) => {
+  const query = c.req.valid('query');
+  const [proformas, omitted] = await Promise.all([
+    proformaService.batch(c.get('session'), query),
+    proformaService.omittedFrom(query),
+  ]);
+  return c.html(renderProformas(proformas, omitted));
+});
+
+/** La proforma de UN tramite. */
+reportsRoutes.get('/proforma/:shipmentId', async (c) => {
+  const proforma = await proformaService.get(c.get('session'), c.req.param('shipmentId'));
+  return c.html(renderProformas([proforma]));
 });
 
 reportsRoutes.get('/', zValidator('query', reportQuerySchema), async (c) => {

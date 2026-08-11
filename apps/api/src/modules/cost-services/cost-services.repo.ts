@@ -2,7 +2,7 @@
  * Acceso a datos del catalogo de servicios de costo. La unicidad de nombre se
  * comprueba case-insensitive (ilike) ademas del UNIQUE de la BD.
  */
-import { and, count, desc, eq, ilike, ne } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, ne } from 'drizzle-orm';
 import type { ListCostServicesQuery } from '@courier/shared';
 import { db } from '../../core/db';
 import { costServices } from './cost-service.schema';
@@ -11,6 +11,8 @@ const columns = {
   id: costServices.id,
   name: costServices.name,
   kind: costServices.kind,
+  category: costServices.category,
+  electronicInvoiceCode: costServices.electronicInvoiceCode,
   valueType: costServices.valueType,
   defaultValue: costServices.defaultValue,
   currency: costServices.currency,
@@ -25,6 +27,7 @@ export const costServicesRepo = {
     const conds = [];
     if (f.q) conds.push(ilike(costServices.name, `%${f.q}%`));
     if (f.kind) conds.push(eq(costServices.kind, f.kind));
+    if (f.category) conds.push(eq(costServices.category, f.category));
     if (f.valueType) conds.push(eq(costServices.valueType, f.valueType));
     if (f.enabled !== undefined) conds.push(eq(costServices.enabled, f.enabled));
     return db
@@ -47,6 +50,16 @@ export const costServicesRepo = {
   async findById(id: string) {
     const [row] = await db.select(columns).from(costServices).where(eq(costServices.id, id)).limit(1);
     return row ?? null;
+  },
+
+  /**
+   * Servicios por id, para copiar su categoria y su COD SIS FE a las lineas al
+   * guardar los costos. Una sola consulta con IN y no una por linea: guardar una
+   * factura de diez conceptos no puede costar diez viajes a la BD.
+   */
+  async listByIds(ids: string[]) {
+    if (ids.length === 0) return [];
+    return db.select(columns).from(costServices).where(inArray(costServices.id, ids));
   },
 
   /** True si existe otro servicio con ese nombre (case-insensitive), excluyendo `exceptId`. */

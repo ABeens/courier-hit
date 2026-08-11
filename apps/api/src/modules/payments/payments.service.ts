@@ -19,15 +19,19 @@
  *    "En ruta de entrega" a un paquete que sigue en la estanteria.
  */
 import {
+  BANK_ACCOUNT_LABELS,
   Currency,
   PaymentMethod,
   PaymentStatus,
   Role,
   State,
+  awaitsValidation,
+  bankAccountsFor,
   canSetExchangeRate,
   exchangeRateSchema,
   isSettled,
   outstandingCrc,
+  pendingAmount,
   roundMoney,
   settledAmount,
 } from '@courier/shared';
@@ -37,6 +41,7 @@ import type {
   ResolvePaymentInput,
   Session,
   StartPaymentInput,
+  UpdateBankAccountInput,
 } from '@courier/shared';
 import { PaymentErrors, ShipmentErrors } from '../../core/errors';
 import { storage } from '../../core/storage';
@@ -146,6 +151,7 @@ export const paymentsService = {
 
     const settledCrc = settledAmount(paid, Currency.CRC);
     const settledUsd = settledAmount(paid, Currency.USD);
+    const pendingCrc = pendingAmount(paid, Currency.CRC);
 
     const methods: PaymentMethod[] = [];
     if (rate?.allowsCard && isOnvoEnabled()) methods.push(PaymentMethod.Tarjeta);
@@ -159,11 +165,37 @@ export const paymentsService = {
       invoiceTotalCrc: shipment.invoiceTotalCrc,
       settledUsd,
       settledCrc,
+      /** Abonos subidos y aun sin resolver. No es dinero recibido. */
+      pendingCrc,
+      /**
+       * El mismo par en dolares. Va SIEMPRE, no solo en Paqueteria: la moneda en
+       * que la pantalla le habla al cliente la decide `billingCurrencyFor`, y sin
+       * las dos columnas tendria que reexpresar con la tasa de hoy, que no es la
+       * que se congelo en cada abono (regla M5).
+       */
+      pendingUsd: pendingAmount(paid, Currency.USD),
       /** Saldo pendiente en colones; nunca negativo (un sobrepago no genera deuda). */
       dueCrc: outstandingCrc(settledCrc, shipment.invoiceTotalCrc),
       settled: isSettled(paid, shipment.invoiceTotalCrc),
+      /**
+       * El saldo ya esta cubierto por un abono en validacion: la pantalla debe
+       * mostrar el comprobante en revision, no un formulario para pagar otra vez.
+       * Lo decide el servidor con la MISMA funcion que rechaza el segundo pago en
+       * `start`, para que no pueda ofrecer un boton que la API va a rechazar.
+       */
+      inValidation: awaitsValidation(settledCrc, pendingCrc, shipment.invoiceTotalCrc),
       availableMethods: methods,
-      /** Datos de la cuenta para el deposito; los muestra la pantalla de pago. */
+      /**
+       * A que cuentas puede depositar este tramite: Paqueteria solo las de
+       * dolares, Transporte y Agenciamiento las de las dos monedas.
+       *
+       * Lo decide la API y no la web por la misma razon que `availableMethods`:
+       * `start` revalida contra esta misma lista, asi que una pantalla que
+       * ofreciera otra cosa solo produciria un rechazo. Los numeros de cuenta no
+       * viajan aqui, los pone la web desde `BANK_ACCOUNTS`: son constantes del
+       * dominio compartido, no un dato de este tramite.
+       */
+      availableBankAccounts: bankAccountsFor(shipment.shipmentType),
       payableState: shipment.state === State.EnBodegaPendientePago,
     };
   },
@@ -201,6 +233,29 @@ export const paymentsService = {
     const paid = await paymentsRepo.settlementView(input.shipmentId);
     if (isSettled(paid, shipment.invoiceTotalCrc)) throw PaymentErrors.alreadySettled();
 
+    /**
+     * UN SOLO PAGO ABIERTO POR SALDO. Con un abono que ya cubre lo que falta y
+     * sigue sin validar, el tramite no admite otro: el segundo cobraria de nuevo
+     * el mismo saldo (el importe lo pone el servidor y el pendiente no lo baja),
+     * y quien lo valide se encontraria con dos comprobantes por una sola deuda.
+     *
+     * Que la pantalla ya esconda el boton no basta: la peticion se puede repetir
+     * desde una pestaña vieja, desde el reintento de una red lenta o a mano.
+     * Cobrar dos veces al cliente es justo el fallo que no se puede dejar a la UI.
+     *
+     * No cierra la puerta para siempre: un pago RECHAZADO deja de estar pendiente
+     * y el cliente puede volver a intentarlo enseguida.
+     */
+    if (
+      awaitsValidation(
+        settledAmount(paid, Currency.CRC),
+        pendingAmount(paid, Currency.CRC),
+        shipment.invoiceTotalCrc,
+      )
+    ) {
+      throw PaymentErrors.inValidation();
+    }
+
     // La tarifa manda sobre el medio de pago (decision 2).
     const rate = await clientsRepo.paymentOptionsFor(shipment.clientId);
     if (input.method === PaymentMethod.Tarjeta && !rate?.allowsCard) {
@@ -208,6 +263,21 @@ export const paymentsService = {
     }
     if (input.method === PaymentMethod.DepositoBancario && rate && !rate.allowsBankDeposit) {
       throw PaymentErrors.methodNotAllowed();
+    }
+
+    /**
+     * La cuenta tiene que ser una de las que este tramite admite (Paqueteria solo
+     * las de dolares). Se revalida aqui y no solo en el select por lo de siempre:
+     * el cuerpo de la peticion se puede escribir a mano. El esquema Zod ya exigio
+     * que venga una en los depositos; lo que no podia saber es CUALES valen, que
+     * depende del tipo de tramite.
+     */
+    if (
+      input.method === PaymentMethod.DepositoBancario &&
+      input.bankAccount &&
+      !bankAccountsFor(shipment.shipmentType).includes(input.bankAccount)
+    ) {
+      throw PaymentErrors.bankAccountNotAllowed();
     }
 
     /**
@@ -340,6 +410,55 @@ export const paymentsService = {
       note: input.note ?? payment.note,
       confirmedBy: session.userId,
       confirmedAt: new Date(),
+    });
+
+    const updated = await paymentsRepo.findById(paymentId);
+    if (!updated) throw PaymentErrors.notFound();
+    return toDto(updated);
+  },
+
+  /**
+   * El staff CORRIGE a que cuenta entro un deposito ("un operario o
+   * administrador luego puede indicar que se deposito a otro tipo de cuenta").
+   *
+   * Tres decisiones:
+   *
+   * 1. VALE EN CUALQUIER SITUACION DEL PAGO, tambien confirmado. El estado de
+   *    cuenta suele aparecer despues de haber dado el abono por bueno, y es
+   *    justo entonces cuando se descubre que el dinero no estaba donde el
+   *    cliente dijo. Limitarlo a los pendientes dejaria el dato imposible de
+   *    arreglar en el unico momento en que se sabe que esta mal.
+   * 2. SIN EL FILTRO POR TIPO DE TRAMITE (`bankAccountsForStaff`). El filtro
+   *    orienta al cliente sobre donde depositar; el operario registra lo que el
+   *    banco dice, y ahi el sistema no tiene nada que opinar.
+   * 3. DEJA RASTRO EN LA NOTA. La cuenta anterior se conserva ahi: es un dato de
+   *    conciliacion, y perder el valor viejo en silencio convierte una
+   *    correccion en una discusion sin evidencia. El monto, la moneda y la tasa
+   *    siguen intocables (son snapshot).
+   */
+  async updateBankAccount(
+    _session: Session,
+    paymentId: string,
+    input: UpdateBankAccountInput,
+  ): Promise<PaymentDto> {
+    const payment = await paymentsRepo.findById(paymentId);
+    if (!payment) throw PaymentErrors.notFound();
+    if (payment.method !== PaymentMethod.DepositoBancario) {
+      throw PaymentErrors.bankAccountNotApplicable();
+    }
+
+    // Cambiarla por la que ya tiene no es un error, pero tampoco merece una
+    // linea de rastro que solo ensucia la nota.
+    if (payment.bankAccount === input.bankAccount) return toDto(payment);
+
+    const previous = payment.bankAccount
+      ? BANK_ACCOUNT_LABELS[payment.bankAccount]
+      : 'sin cuenta registrada';
+    const trail = `Cuenta corregida de ${previous} a ${BANK_ACCOUNT_LABELS[input.bankAccount]}.`;
+
+    await paymentsRepo.update(paymentId, {
+      bankAccount: input.bankAccount,
+      note: [payment.note, input.note?.trim(), trail].filter(Boolean).join(' '),
     });
 
     const updated = await paymentsRepo.findById(paymentId);

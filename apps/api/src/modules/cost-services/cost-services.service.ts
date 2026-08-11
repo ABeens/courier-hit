@@ -10,6 +10,7 @@
  */
 import {
   Currency,
+  DEFAULT_COST_CATEGORY,
   ServiceKind,
   ServiceValueType,
   isCurrencyAllowed,
@@ -62,6 +63,10 @@ export const costServicesService = {
     return costServicesRepo.insert({
       name: input.name,
       kind: input.kind,
+      // Sin categoria explicita se aplica el default conservador (trasladado):
+      // un concepto sin clasificar cuenta como costo, nunca como margen.
+      category: input.category ?? DEFAULT_COST_CATEGORY,
+      electronicInvoiceCode: input.electronicInvoiceCode ?? null,
       valueType: input.valueType,
       defaultValue: resolveDefaultValue(input.kind, input.valueType, input.defaultValue),
       currency: resolveCurrency(input.kind, input.valueType, input.currency),
@@ -93,6 +98,12 @@ export const costServicesService = {
     const updated = await costServicesRepo.update(id, {
       ...(patch.name !== undefined ? { name: patch.name } : {}),
       ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
+      // Categoria y codigo FE son independientes de la coherencia tipo <-> valor:
+      // no participan del recomputo de arriba, se aplican tal cual.
+      ...(patch.category !== undefined ? { category: patch.category } : {}),
+      ...('electronicInvoiceCode' in patch
+        ? { electronicInvoiceCode: patch.electronicInvoiceCode ?? null }
+        : {}),
       ...(patch.valueType !== undefined ? { valueType: patch.valueType } : {}),
       ...(coherenceChanged
         ? {

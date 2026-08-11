@@ -22,6 +22,7 @@
  *    lineas ya no se editan.
  */
 import {
+  CostCategory,
   CostLineSource,
   Currency,
   Flow,
@@ -32,6 +33,7 @@ import {
   can,
   canSetExchangeRate,
   canTransition,
+  categoryForLine,
   computeTotals,
   costLineExchangeRateSchema,
   flowForType,
@@ -88,6 +90,8 @@ function toLineDto(row: Awaited<ReturnType<typeof costsRepo.listLines>>[number])
     id: row.id,
     costServiceId: row.costServiceId,
     label: row.label,
+    category: row.category,
+    electronicInvoiceCode: row.electronicInvoiceCode,
     source: row.source,
     percentage: row.percentage,
     amount: row.amount,
@@ -118,6 +122,7 @@ async function buildFreight(
   return {
     costServiceId: null,
     label: `Flete (${rate.rateName})`,
+    category: CostCategory.Flete,
     source: CostLineSource.Freight,
     percentage: null,
     amount: roundMoney(row.weightKg * rate.pricePerKg, rate.currency),
@@ -147,6 +152,7 @@ async function buildSuggestions(row: ShipmentRow): Promise<SuggestedCostLine[]> 
     suggestions.push({
       costServiceId: service.id,
       label: service.name,
+      category: service.category,
       source: isPercentage ? CostLineSource.Percentage : CostLineSource.Service,
       percentage: isPercentage ? service.defaultValue : null,
       amount: isPercentage ? null : service.defaultValue,
@@ -338,11 +344,33 @@ export const costsService = {
       inputLines = inputLines.map((l) => ({ ...l, exchangeRate: rate }));
     }
 
-    const lines = resolveLines(await withFreight(shipment, inputLines)).map((l) => ({
-      ...l,
-      shipmentId,
-      createdBy: session.userId,
-    }));
+    const resolved = resolveLines(await withFreight(shipment, inputLines));
+
+    /**
+     * Categoria y COD SIS FE se copian del catalogo AQUI, al guardar, y no se
+     * leen del catalogo al reportar. Es la misma regla que ya rige la etiqueta y
+     * el monto: la linea es un SNAPSHOT. Si el administrador reclasifica manana
+     * "Permiso de importacion" de trasladado a honorario propio, el margen de las
+     * facturas ya emitidas no se puede mover solo.
+     *
+     * La linea de flete no consulta nada: `categoryForLine` le impone
+     * `CostCategory.Flete` porque no sale de ningun servicio del catalogo.
+     */
+    const serviceIds = [...new Set(resolved.map((l) => l.costServiceId).filter((id) => id !== null))];
+    const services = await costServicesRepo.listByIds(serviceIds);
+    const byId = new Map(services.map((s) => [s.id, s]));
+
+    const lines = resolved.map((l) => {
+      const service = l.costServiceId ? byId.get(l.costServiceId) : undefined;
+      return {
+        ...l,
+        category: categoryForLine(l.source, service?.category),
+        electronicInvoiceCode: service?.electronicInvoiceCode ?? null,
+        shipmentId,
+        createdBy: session.userId,
+      };
+    });
+
     await costsRepo.replaceLines(shipmentId, lines);
     return this.get(session, shipmentId);
   },
@@ -371,7 +399,19 @@ export const costsService = {
     }
 
     const totals = computeTotals(rows);
-    await costsRepo.freezeInvoice(shipmentId, totals, session.userId);
+    /**
+     * La tarifa de transporte internacional se congela junto al total, y solo en
+     * Paqueteria: es el unico flujo cuyo reporte la usa (campo 21). Se lee de
+     * Configuración en este instante, que es el unico en que la factura de este
+     * paquete y esa tarifa coexisten.
+     *
+     * Que no haya tarifa fijada NO impide aprobar: la factura del cliente no
+     * depende de ella. El paquete queda sin costo de flete en el reporte, que es
+     * la verdad (nadie dijo cuanto costo) y no un cero que la disimule.
+     */
+    const freightRate =
+      flow === Flow.Paqueteria ? await settingsRepo.currentFreightRate() : null;
+    await costsRepo.freezeInvoice(shipmentId, totals, session.userId, freightRate);
 
     /**
      * El avance lo hace `transitionsService` y no el repo directamente: asi la

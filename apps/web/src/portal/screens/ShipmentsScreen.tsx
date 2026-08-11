@@ -10,9 +10,10 @@
  * staff (la API ya acota el listado a lo suyo); la vista las parte por flujo,
  * que es como el cliente las tiene en el menu:
  *   - 'propios'         -> "Mis paquetes": Paqueteria, y ahi se PREALERTA.
- *   - 'propios-tramites' -> "Otros tramites": aereo, maritimo y agenciamiento.
- * Antes solo existia la primera, asi que un tramite no-Paqueteria registrado por
- * el cliente no aparecia en ningun listado suyo.
+ *   - 'propios-tramites' -> "Otros tramites": aereo, maritimo y agenciamiento,
+ *     SOLO CONSULTA. El cliente no prealerta transporte ni agenciamiento: esos
+ *     tramites los registra el staff (`tramite.manage`), asi que ese tablero no
+ *     ofrece boton de alta. La API aplica la misma regla en /shipments/prealert.
  *
  * El "Monto de Factura" que pide el manual sale del modulo de costos y solo
  * existe una vez APROBADOS: hasta entonces la ficha no lo muestra, para no dar
@@ -28,13 +29,14 @@ import {
   STATE_LABELS,
   ShipmentType,
   State,
+  billingAmounts,
+  billingCurrencyFor,
   can,
   formatMoney,
-  outstandingCrc,
   statesOf,
   usesPackageFields,
 } from '@courier/shared';
-import type { Role, ShipmentDto } from '@courier/shared';
+import type { BillingAmounts, Role, ShipmentDto } from '@courier/shared';
 import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
 import { PayFlag, awaitingValidation } from '../components/PayFlag';
@@ -138,25 +140,32 @@ function guideFields(row: ShipmentDto): CardField[] {
  * Bloque de facturacion, o `null` si el tramite todavia no tiene costos
  * aprobados. El manual pide el monto "($ y ₡)": van como dos campos, no como
  * una cadena, para que cada moneda se lea sola.
+ *
+ * Esas DOS monedas son para la operación. Al cliente, un paquete se le factura
+ * en dólares y no se le convierte a colones (`billingCurrencyFor`), así que ahí
+ * el bloque habla en una sola moneda: enseñarle las dos le da dos cifras para la
+ * misma deuda y la pregunta de con cuál se le va a cobrar.
  */
-function moneySection(row: ShipmentDto): CardSection | null {
+function moneySection(row: ShipmentDto, amounts: BillingAmounts): CardSection | null {
   if (row.invoiceTotalUsd == null || row.invoiceTotalCrc == null) return null;
+  const { currency } = amounts;
   return {
     title: 'Facturación',
     money: true,
     fields: [
-      { label: 'Dólares', value: formatMoney(row.invoiceTotalUsd, Currency.USD) },
-      { label: 'Colones', value: formatMoney(row.invoiceTotalCrc, Currency.CRC) },
+      ...(currency === Currency.CRC
+        ? [
+            { label: 'Dólares', value: formatMoney(row.invoiceTotalUsd, Currency.USD) },
+            { label: 'Colones', value: formatMoney(row.invoiceTotalCrc, Currency.CRC) },
+          ]
+        : [{ label: 'Factura', value: formatMoney(amounts.invoiceTotal ?? 0, currency) }]),
       /**
        * El cobro va junto a la factura, no en un bloque aparte: quien mira este
        * bloque pregunta "cuánto es y ya lo pagó". La bandera de la cabecera da la
        * respuesta de un vistazo; estas dos líneas, la cifra exacta.
        */
-      { label: 'Abonado', value: formatMoney(row.settledCrc, Currency.CRC) },
-      {
-        label: 'Saldo',
-        value: formatMoney(outstandingCrc(row.settledCrc, row.invoiceTotalCrc), Currency.CRC),
-      },
+      { label: 'Abonado', value: formatMoney(amounts.paid, currency) },
+      { label: 'Saldo', value: formatMoney(amounts.due, currency) },
     ],
   };
 }
@@ -170,8 +179,8 @@ function moneySection(row: ShipmentDto): CardSection | null {
  * almacen). Los tableros mixtos se quedan con lo comun para no inventar
  * columnas que la mitad de las filas no tiene.
  */
-function sectionsFor(row: ShipmentDto, view: ShipmentView): CardSection[] {
-  const money = moneySection(row);
+function sectionsFor(row: ShipmentDto, view: ShipmentView, amounts: BillingAmounts): CardSection[] {
+  const money = moneySection(row, amounts);
   const entrega: CardField = {
     label: 'Ruta',
     value: row.routeNumber != null ? `Ruta ${row.routeNumber}` : null,
@@ -361,12 +370,16 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
           )}
         </div>
         {isOwn ? (
-          /* El alta del titular: en Paqueteria es avisar de una compra que viene
-             en camino (prealerta); en los demas flujos es registrar el tramite.
-             Son la misma pantalla y el mismo modal, pero no la misma cosa. */
-          <button className="btn btn-primary" onClick={() => setRegistering(true)}>
-            {isOwnPackages ? '+ Prealertar' : '+ Nuevo trámite'}
-          </button>
+          /* El unico alta del titular es la PREALERTA de Paqueteria: avisar de una
+             compra que viene en camino a Miami. "Otros tramites" (transporte y
+             agenciamiento) es solo consulta: esos tramites nacen de una gestion
+             que negocia el staff y los registra quien tiene `tramite.manage`, asi
+             que ahi no se ofrece boton. La API aplica la misma regla. */
+          isOwnPackages && (
+            <button className="btn btn-primary" onClick={() => setRegistering(true)}>
+              + Prealertar
+            </button>
+          )
         ) : (
           canWrite && creatableTypes.length > 0 && (
             <button className="btn btn-primary" onClick={() => setModal({ mode: 'create' })}>
@@ -439,7 +452,19 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
       </FilterBar>
 
       <div className="cards">
-        {data?.items.map((row) => (
+        {data?.items.map((row) => {
+          /**
+           * Moneda en la que esta ficha habla de dinero. Se resuelve UNA vez por
+           * fila y la usan la bandera y el bloque de facturación: son la misma
+           * deuda contada dos veces, y verla en dos monedas distintas dentro de
+           * la misma tarjeta es peor que no verla.
+           */
+          const amounts = billingAmounts(
+            row,
+            billingCurrencyFor(row.shipmentType, role),
+            row.settled,
+          );
+          return (
           <article
             className={`card-item tone-${STATE_TONE[row.state]}${isOwn ? ' is-clickable' : ''}`}
             key={row.id}
@@ -499,6 +524,7 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
                   settledCrc={row.settledCrc}
                   settled={row.settled}
                   pendingCrc={row.pendingCrc}
+                  amounts={amounts}
                 />
                 {/*
                   Al cliente NO se le muestra "En bodega - Pendiente pago". Es la
@@ -577,7 +603,7 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
             </div>
 
             <div className="card-item-body">
-              {sectionsFor(row, view).map((section) => (
+              {sectionsFor(row, view, amounts).map((section) => (
                 <section className={`card-sec${section.money ? ' is-money' : ''}`} key={section.title}>
                   <div className="card-sec-title">{section.title}</div>
                   <dl className="card-sec-fields">
@@ -589,7 +615,8 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
               ))}
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
 
       {data && data.items.length === 0 && <div className="empty">No hay trámites que coincidan.</div>}
@@ -624,6 +651,7 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
       {paying && (
         <PaymentModal
           shipment={paying}
+          role={role}
           /*
             Recargar tambien al cerrar: dentro del modal se puede haber rechazado
             un cobro con tarjeta sin llegar a `onPaid`, y la ficha de atras
@@ -653,12 +681,9 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
       )}
 
       {registering && (
+        /* Solo se abre desde "Mis paquetes": el modal es la prealerta de
+           Paqueteria y no admite otro tipo. */
         <ClientShipmentModal
-          /* Cada tablero del cliente da de alta LO QUE LISTA: un tramite creado
-             fuera de su filtro desapareceria al guardar, que es justo lo que
-             pasaba cuando el selector ofrecia los cinco tipos desde "Mis
-             paquetes". */
-          types={TYPES_BY_VIEW[view]}
           /*
             Recargar tambien al cerrar: el modal se queda abierto tras registrar
             (permite encadenar varios y reintentar el documento), asi que el

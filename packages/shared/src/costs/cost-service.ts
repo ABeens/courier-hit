@@ -51,6 +51,98 @@ export const SERVICE_VALUE_TYPE_LABELS: Record<ServiceValueType, string> = {
 };
 
 /**
+ * DE QUIEN es el dinero de un concepto. Enum de dominio.
+ *
+ * Nace de una pregunta que el sistema no podia responder: `shipment_costs` se
+ * llama "costos" pero sus lineas son la FACTURA DEL CLIENTE. Sumarlas para
+ * obtener el costo del tramite da, exactamente, el monto de factura, y el
+ * PROFIT del reporte de Agenciamiento (campo 12 menos campo 20) sale en cero en
+ * todas las filas. La resta solo significa algo si se sabe que parte de lo
+ * facturado es plata de terceros que HS Global unicamente traslada (impuestos,
+ * almacen fiscal, naviera) y que parte son honorarios propios.
+ *
+ * Ademas resuelve el corte de columnas del reporte de Paqueteria, que pide
+ * IMPUESTOS y OTROS / COMPRAS por separado (campos 22 y 23): la linea solo
+ * guarda una etiqueta de texto libre, asi que sin esto habria que adivinar la
+ * columna por el nombre.
+ *
+ * Lo marca el ADMINISTRADOR una vez por servicio del catalogo, y la linea lo
+ * copia como snapshot igual que la etiqueta: recategorizar un servicio no debe
+ * mover un reporte ya emitido.
+ */
+export enum CostCategory {
+  /**
+   * Flete de Paqueteria (peso x tarifa del casillero). Lo asigna el SISTEMA a la
+   * linea de `CostLineSource.Freight`; no se elige en el catalogo.
+   *
+   * No es costo: es el cobro base al cliente. Lo que el flete nos CUESTA es otra
+   * cifra y el reporte la calcula aparte (campo 21, TRANSPORTE INTL).
+   */
+  Flete = 'flete',
+  /** Impuestos y liquidacion aduanal. Dinero de terceros (columna IMPUESTOS). */
+  Impuestos = 'impuestos',
+  /**
+   * Resto de conceptos de terceros que se trasladan al cliente: permisos,
+   * almacen fiscal, mensajeria, compras (columna OTROS / COMPRAS).
+   */
+  Otros = 'otros',
+  /**
+   * Honorarios de HS Global: el servicio que se vende (agencia aduanal, gestion,
+   * asesoria). No es costo, es el ingreso del tramite.
+   */
+  Propio = 'propio',
+}
+
+export const COST_CATEGORY_LABELS: Record<CostCategory, string> = {
+  [CostCategory.Flete]: 'Flete',
+  [CostCategory.Impuestos]: 'Impuestos',
+  [CostCategory.Otros]: 'Otros / Compras',
+  [CostCategory.Propio]: 'Honorarios propios',
+};
+
+/** Ayuda de la pantalla del catalogo: por que existe cada opcion. */
+export const COST_CATEGORY_DESCRIPTIONS: Record<CostCategory, string> = {
+  [CostCategory.Flete]: 'Cobro base por peso. Lo calcula el sistema con la tarifa del casillero.',
+  [CostCategory.Impuestos]: 'Se le paga a Hacienda. Se traslada al cliente y no deja margen.',
+  [CostCategory.Otros]: 'Se le paga a un tercero (almacén, naviera, mensajería). Se traslada al cliente.',
+  [CostCategory.Propio]: 'Es el servicio que vende HS Global. Es el margen del trámite.',
+};
+
+/**
+ * Categorias que el administrador elige en el catalogo. `Flete` no esta: no hay
+ * servicio de catalogo que sea el flete, lo genera el sistema.
+ */
+export const SELECTABLE_COST_CATEGORIES: readonly CostCategory[] = [
+  CostCategory.Impuestos,
+  CostCategory.Otros,
+  CostCategory.Propio,
+];
+
+/**
+ * Categoria de un servicio nuevo, y la que se le supone a los que existian antes
+ * de que esta columna existiera.
+ *
+ * Es `Otros` —trasladado— y no `Propio` a proposito: es el supuesto
+ * CONSERVADOR. Un servicio sin clasificar cuenta como costo, asi que el margen
+ * sale subestimado y quien lea el reporte va a ir a marcar lo que falta. Al
+ * reves, todo lo no clasificado se contaria como ingreso y el reporte mentiria
+ * hacia arriba sin que nada lo delate.
+ */
+export const DEFAULT_COST_CATEGORY = CostCategory.Otros;
+
+/**
+ * True si la categoria es dinero de TERCEROS que solo trasladamos, es decir, lo
+ * que de verdad cuesta el tramite.
+ *
+ * Punto unico de esa decision: la usan la columna COSTOS ASOCIADOS del reporte
+ * de Agenciamiento y las columnas de costo del de Paqueteria. `Flete` y `Propio`
+ * quedan fuera porque son ingreso, no costo.
+ */
+export function isPassThroughCost(category: CostCategory): boolean {
+  return category === CostCategory.Impuestos || category === CostCategory.Otros;
+}
+
+/**
  * Tipos de valor admitidos segun el tipo de servicio.
  *
  * Los costos de Transporte y Agenciamiento se cargan al momento de recibir el
@@ -88,6 +180,18 @@ export interface CostService {
   name: string;
   /** Familia de tramites a la que aplica. */
   kind: ServiceKind;
+  /** De quien es el dinero del concepto (ver `CostCategory`). */
+  category: CostCategory;
+  /**
+   * Codigo del concepto en el sistema de Factura Electronica ("COD SIS FE" de la
+   * proforma: 25 para el flete aereo, 44 para impuestos, 97 para permisos).
+   *
+   * Es un identificador EXTERNO, no nuestro: lo emite el sistema de facturacion
+   * y la proforma lo imprime al lado de cada linea. Texto y no entero porque no
+   * hacemos aritmetica con el y el proveedor puede pasar a codigos con letras.
+   * Null mientras no se le haya asignado uno (la proforma deja la celda vacia).
+   */
+  electronicInvoiceCode: string | null;
   valueType: ServiceValueType;
   /** Porcentaje (Percentage) o importe (Fixed); null cuando es Manual. */
   defaultValue: number | null;
@@ -103,6 +207,7 @@ export interface CostService {
 
 /** Valores para construir los enums de la BD (Drizzle pgEnum), sin repetirlos. */
 export const SERVICE_KIND_VALUES = Object.values(ServiceKind) as [ServiceKind, ...ServiceKind[]];
+export const COST_CATEGORY_VALUES = Object.values(CostCategory) as [CostCategory, ...CostCategory[]];
 export const SERVICE_VALUE_TYPE_VALUES = Object.values(ServiceValueType) as [
   ServiceValueType,
   ...ServiceValueType[],

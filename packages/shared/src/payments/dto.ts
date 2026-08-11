@@ -60,17 +60,58 @@ const noteSchema = z.string().trim().max(500, 'La nota es demasiado larga.');
  * `/payments/:id/receipt`: mezclar archivo y JSON en un mismo cuerpo obligaria a
  * validar el pago y el adjunto en la misma transaccion.
  */
-export const startPaymentSchema = z.object({
-  shipmentId: z.string().uuid('Trámite inválido.'),
-  method: z.nativeEnum(PaymentMethod, {
-    errorMap: () => ({ message: 'Elige un medio de pago válido.' }),
-  }),
-  /** Solo deposito: datos que el cliente ya conoce al subir su comprobante. */
-  bankAccount: z.nativeEnum(BankAccount).optional(),
-  receiptNumber: receiptNumberSchema.optional(),
-  depositedAt: instantSchema.optional(),
-});
+export const startPaymentSchema = z
+  .object({
+    shipmentId: z.string().uuid('Trámite inválido.'),
+    method: z.nativeEnum(PaymentMethod, {
+      errorMap: () => ({ message: 'Elige un medio de pago válido.' }),
+    }),
+    /** Solo deposito: datos que el cliente ya conoce al subir su comprobante. */
+    bankAccount: z
+      .nativeEnum(BankAccount, {
+        errorMap: () => ({ message: 'Elige la cuenta donde hiciste el depósito.' }),
+      })
+      .optional(),
+    receiptNumber: receiptNumberSchema.optional(),
+    depositedAt: instantSchema.optional(),
+  })
+  .superRefine((data, ctx) => {
+    /**
+     * En deposito la cuenta es OBLIGATORIA: el requerimiento pide guardar "a cual
+     * cuenta realizo el deposito", y un abono sin cuenta obliga a quien valida a
+     * revisar los cuatro estados de cuenta para encontrarlo. Con tarjeta no aplica
+     * y el servidor la ignora. QUE cuentas son validas depende del tipo de tramite
+     * y eso lo decide el servidor, que es quien conoce el tramite.
+     */
+    if (data.method === PaymentMethod.DepositoBancario && !data.bankAccount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['bankAccount'],
+        message: 'Elige la cuenta donde hiciste el depósito.',
+      });
+    }
+  });
 export type StartPaymentInput = z.infer<typeof startPaymentSchema>;
+
+/**
+ * Correccion de la cuenta de un deposito por el staff, con la nota de por que.
+ *
+ * Va por su propia puerta y no dentro de `resolvePaymentSchema` porque el
+ * requerimiento dice "LUEGO puede indicar": la correccion tambien ocurre sobre
+ * pagos ya confirmados, cuando el estado de cuenta aparece dias despues y el
+ * dinero no estaba donde el cliente dijo. Colgarla de la validacion la habria
+ * dejado disponible solo en la ventana en que el pago esta pendiente.
+ *
+ * Es lo UNICO que se puede corregir de un pago: el monto, la moneda y la tasa
+ * siguen siendo un snapshot inmutable (ver payments.schema.ts).
+ */
+export const updateBankAccountSchema = z.object({
+  bankAccount: z.nativeEnum(BankAccount, {
+    errorMap: () => ({ message: 'Elige la cuenta donde entró el depósito.' }),
+  }),
+  note: noteSchema.optional(),
+});
+export type UpdateBankAccountInput = z.infer<typeof updateBankAccountSchema>;
 
 // ---------------------------------------------------------------------------
 // Registro manual por el staff (permiso payments.validate)

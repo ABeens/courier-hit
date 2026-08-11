@@ -148,6 +148,20 @@
       "when": 1785991967224,
       "tag": "0020_nostalgic_namorita",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786404028114,
+      "tag": "0021_public_robin_chapel",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786405144390,
+      "tag": "0022_glamorous_the_watchers",
+      "breakpoints": true
     }
   ]
 }

@@ -41,6 +41,15 @@ export const CURRENCY_DECIMALS: Record<Currency, number> = {
   [Currency.USD]: 2,
 };
 
+/**
+ * Unidad MAS PEQUEÑA que la moneda sabe representar: $0.01 y ₡1. Es el suelo de
+ * cualquier importe distinto de cero, y por eso el minimo con el que se puede
+ * enseñar una deuda abierta sin que se lea como saldada (ver `billingView`).
+ */
+export function smallestUnit(currency: Currency): number {
+  return 1 / 10 ** CURRENCY_DECIMALS[currency];
+}
+
 /** Valores para construir el enum de la BD (Drizzle pgEnum), sin repetirlos. */
 export const CURRENCY_VALUES = Object.values(Currency) as [Currency, ...Currency[]];
 

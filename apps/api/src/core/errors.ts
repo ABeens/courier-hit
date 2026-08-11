@@ -213,6 +213,28 @@ export const ProviderLinkErrors = {
     ),
 };
 
+/** Errores del casillero visto por su propio titular (portal del cliente). */
+export const ClientErrors = {
+  /**
+   * La direccion de entrega se puede cambiar, pero no con tramites en curso: el
+   * distrito determina la ruta de reparto y tanto la hoja del mensajero como la
+   * proforma leen la direccion del casillero EN VIVO (no una copia congelada en
+   * el tramite). Moverla a mitad de camino le cambiaria el destino a un paquete
+   * que quiza ya va en la ruta equivocada.
+   *
+   * 409 y no 403: no es falta de permiso sino un conflicto con el estado actual,
+   * y se resuelve solo cuando esos tramites se entreguen.
+   */
+  addressLockedByActiveShipments: (activeCount: number) =>
+    new AppError(
+      'CLIENT_ADDRESS_LOCKED',
+      activeCount === 1
+        ? 'No puedes cambiar tu dirección de entrega mientras tengas un trámite en curso. Podrás editarla cuando se entregue; si es urgente, contáctanos.'
+        : `No puedes cambiar tu dirección de entrega mientras tengas trámites en curso (${activeCount}). Podrás editarla cuando se entreguen; si es urgente, contáctanos.`,
+      409,
+    ),
+};
+
 /** Errores del modulo de tramites (docs/manuales/flujo.md L30-145). */
 export const ShipmentErrors = {
   notFound: () => new AppError('SHIPMENT_NOT_FOUND', 'Trámite no encontrado.', 404),
@@ -310,6 +332,17 @@ export const PaymentErrors = {
     new AppError('PAYMENT_NO_INVOICE', 'El trámite todavía no tiene un monto de factura aprobado.', 409),
   alreadySettled: () =>
     new AppError('PAYMENT_ALREADY_SETTLED', 'Este trámite ya está pagado.', 409),
+  /**
+   * Ya hay un abono que cubre el saldo esperando validacion. No es un error del
+   * cliente —hizo lo que tenia que hacer— sino un conflicto con el estado del
+   * tramite: 409, y el mensaje dice que espere en vez de sugerirle reintentar.
+   */
+  inValidation: () =>
+    new AppError(
+      'PAYMENT_IN_VALIDATION',
+      'Ya recibimos un pago de este trámite y lo estamos validando. Te avisaremos apenas quede confirmado.',
+      409,
+    ),
   alreadyResolved: () =>
     new AppError('PAYMENT_ALREADY_RESOLVED', 'Este pago ya fue confirmado o rechazado.', 409),
   methodNotAllowed: () =>
@@ -317,6 +350,24 @@ export const PaymentErrors = {
       'PAYMENT_METHOD_NOT_ALLOWED',
       'Tu tarifa no admite ese medio de pago. Elige otro.',
       403,
+    ),
+  /**
+   * La cuenta elegida no es de las que ese tramite admite (Paqueteria solo
+   * recibe depositos en las cuentas de dolares). 403 y no 400: el valor es
+   * valido, lo que no esta permitido es usarlo en ESTE tramite.
+   */
+  bankAccountNotAllowed: () =>
+    new AppError(
+      'PAYMENT_BANK_ACCOUNT_NOT_ALLOWED',
+      'Esa cuenta no está disponible para este trámite. Elige una de las que se muestran.',
+      403,
+    ),
+  /** Solo un deposito tiene cuenta bancaria; un cobro con tarjeta no. */
+  bankAccountNotApplicable: () =>
+    new AppError(
+      'PAYMENT_BANK_ACCOUNT_NOT_APPLICABLE',
+      'Solo los pagos por depósito bancario tienen cuenta.',
+      409,
     ),
   /**
    * La pasarela no esta configurada. Es un fallo de configuracion del sistema, no
@@ -375,15 +426,26 @@ export const DeliveryErrors = {
 /** Errores de la recepcion en bodega (Parte 4, "Recepción de Paquete"). */
 export const ReceptionErrors = {
   /**
-   * El tracking no existe en nuestro sistema. NO es un 404 seco: el manual pide
+   * El HAWB (LES) no existe en nuestro sistema. NO es un 404 seco: el manual pide
    * que ese caso derive al alta manual, asi que el codigo es estable y la web
    * ramifica sobre el para abrir el formulario.
    */
-  unknownTracking: (tracking: string) =>
+  unknownHawb: (hawb: string) =>
     new AppError(
-      'RECEPTION_UNKNOWN_TRACKING',
-      `No hay ningún trámite con el tracking ${tracking}. Ingrésalo manualmente.`,
+      'RECEPTION_UNKNOWN_HAWB',
+      `No hay ningún trámite con el LES (HAWB) ${hawb}. Ingrésalo manualmente.`,
       404,
+    ),
+  /**
+   * El HAWB no tiene indice unico en la BD, asi que dos tramites activos pueden
+   * quedar con el mismo. Recibir uno al azar movería de estado el trámite
+   * equivocado, asi que la recepcion se detiene y lo deriva a un humano.
+   */
+  ambiguousHawb: (hawb: string) =>
+    new AppError(
+      'RECEPTION_AMBIGUOUS_HAWB',
+      `Hay más de un trámite activo con el LES (HAWB) ${hawb}. Resuélvelo desde Trámites antes de recibirlo.`,
+      409,
     ),
   alreadyReceived: (state: string) =>
     new AppError('RECEPTION_ALREADY_RECEIVED', `El trámite ya está en "${state}".`, 409),

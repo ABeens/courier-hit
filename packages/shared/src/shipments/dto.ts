@@ -61,6 +61,32 @@ export const duaSchema = z
   .trim()
   .regex(/^\d{3}-\d{4}-\d{6}$/, 'El DUA debe tener el formato ###-####-######.');
 
+/** Digitos del DUA por bloque: ###-####-###### = 3 + 4 + 6. */
+const DUA_BLOCKS = [3, 4, 6];
+export const DUA_DIGITS = DUA_BLOCKS.reduce((a, b) => a + b, 0);
+/** Largo del DUA ya formateado (digitos + separadores), para `maxLength` en la UI. */
+export const DUA_LENGTH = DUA_DIGITS + DUA_BLOCKS.length - 1;
+
+/**
+ * Da forma ###-####-###### a lo que el usuario digita: el guion lo pone la
+ * mascara, no la persona (se escriben solo los digitos). Sirve igual para pegar
+ * un DUA ya formateado, con espacios o con otros separadores.
+ *
+ * Solo separa bloques que existen: con 3 digitos devuelve "123", no "123-", para
+ * que borrar hacia atras no se quede atascado en un guion que se repone solo.
+ */
+export function formatDua(input: string): string {
+  const digits = input.replace(/\D/g, '').slice(0, DUA_DIGITS);
+  const blocks: string[] = [];
+  let at = 0;
+  for (const size of DUA_BLOCKS) {
+    if (at >= digits.length) break;
+    blocks.push(digits.slice(at, at + size));
+    at += size;
+  }
+  return blocks.join('-');
+}
+
 /**
  * Peso declarado en kilos. Se acepta con decimales (la bascula los da) y el
  * servidor lo redondea hacia arriba al guardar con `roundWeightKg`.
@@ -79,7 +105,26 @@ const carrierSchema = z.enum(CARRIERS, {
 });
 
 const warehouseSchema = z.string().trim().min(1).max(100);
+
+/**
+ * Notas para facturar. Comunes a los DOS flujos: el reporte las pide igual en
+ * Paqueteria (campo 20) que en Agenciamiento (campo 19).
+ */
 const billingNotesSchema = z.string().trim().min(1).max(500);
+
+/**
+ * Consecutivo de la factura electronica. Es un identificador EXTERNO: lo emite el
+ * sistema de facturacion y aqui solo se anota, asi que se acepta tal cual (letras,
+ * digitos y separadores) sin imponerle un formato que el proveedor podria cambiar.
+ * Se normaliza a mayusculas para que buscar por el no dependa de como se digito.
+ */
+const electronicInvoiceNumberSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .min(1, 'El número de factura electrónica no puede ir vacío.')
+  .max(40, 'El número de factura electrónica es demasiado largo.')
+  .regex(/^[A-Z0-9][A-Z0-9-]*$/, 'El número solo admite letras, números y guiones.');
 
 /**
  * Valor comercial declarado, en USD (moneda explicita, regla M2; solo USD como
@@ -112,9 +157,14 @@ const tariffPositionSchema = z.string().trim().min(1).max(30);
 
 /**
  * Los campos de Paqueteria (tienda, transportista, HAWB, peso) y los de
- * Transporte/Agenciamiento (notas para facturar, almacen, DUA) son excluyentes:
- * pertenecen a flujos distintos. Enviar un campo del flujo equivocado es un
- * error del cliente, no algo que se ignore en silencio.
+ * Transporte/Agenciamiento (almacen, DUA) son excluyentes: pertenecen a flujos
+ * distintos. Enviar un campo del flujo equivocado es un error del cliente, no
+ * algo que se ignore en silencio.
+ *
+ * Las notas para facturar NO estan en ninguna de las dos listas: nacieron como
+ * campo de Transporte porque asi las listaba el manual, pero facturar un paquete
+ * necesita las mismas anotaciones y el reporte las pide en los dos flujos. Lo
+ * mismo el consecutivo de factura electronica.
  */
 function refineTypeFieldCoherence(
   data: {
@@ -129,7 +179,6 @@ function refineTypeFieldCoherence(
     retain?: unknown;
     warehouse?: unknown;
     dua?: unknown;
-    billingNotes?: unknown;
   },
   ctx: z.RefinementCtx,
 ): void {
@@ -144,7 +193,7 @@ function refineTypeFieldCoherence(
     'tariffPosition',
     'retain',
   ] as const;
-  const transportOnly = ['warehouse', 'dua', 'billingNotes'] as const;
+  const transportOnly = ['warehouse', 'dua'] as const;
 
   for (const field of isPackage ? transportOnly : packageOnly) {
     if (data[field] !== undefined && data[field] !== null) {
@@ -166,13 +215,25 @@ function refineTypeFieldCoherence(
 /**
  * Prealerta hecha por el titular del casillero. NO lleva `clientId`: el dueño es
  * siempre el de la sesion, para que un cliente no pueda prealertar a nombre de
- * otro. Paqueteria exige tienda y transportista; Transporte y Agenciamiento solo
- * la guia y la descripcion (Parte 2 L68-71).
+ * otro.
+ *
+ * SOLO PAQUETERIA. El tipo es un literal, no el enum: el cliente unicamente
+ * avisa de compras que vienen en camino a Miami. Los tramites de Transporte
+ * (aereo, maritimo FCL/LCL) y de Agenciamiento nacen de una gestion que negocia
+ * el staff (guia aerea/BL, almacen, DUA), asi que los registra quien tiene
+ * `tramite.manage` por el alta normal (`createShipmentSchema`); el titular solo
+ * los consulta en "Otros tramites" (`tramite.read.own`).
+ *
+ * Que sea un literal y no una comprobacion en el refine es deliberado: asi el
+ * tipo inferido de `PrealertShipmentInput` ya excluye los demas tipos y ningun
+ * llamador puede construir una prealerta de agenciamiento ni por descuido.
  */
 export const prealertShipmentSchema = z
   .object({
-    shipmentType: z.nativeEnum(ShipmentType, {
-      errorMap: () => ({ message: 'Elige un tipo de trámite válido.' }),
+    shipmentType: z.literal(ShipmentType.Paqueteria, {
+      errorMap: () => ({
+        message: 'Solo puedes prealertar paquetes de Paquetería; los trámites de transporte y agenciamiento los registra HS Global Services.',
+      }),
     }),
     tracking: trackingSchema,
     description: descriptionSchema,
@@ -182,10 +243,6 @@ export const prealertShipmentSchema = z
     declaredValueUsd: declaredValueUsdSchema.optional(),
   })
   .superRefine((data, ctx) => {
-    if (!usesPackageFields(data.shipmentType)) {
-      refineTypeFieldCoherence(data, ctx);
-      return;
-    }
     if (!data.store) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['store'], message: 'Elige la tienda.' });
     }
@@ -233,7 +290,7 @@ export const createShipmentSchema = z
     insuredValueUsd: insuredValueUsdSchema.optional(),
     tariffPosition: tariffPositionSchema.optional(),
     retain: z.boolean().optional(),
-    // Transporte y Agenciamiento
+    // Comun a los dos flujos
     billingNotes: billingNotesSchema.optional(),
   })
   .superRefine((data, ctx) => {
@@ -279,6 +336,7 @@ export const updateShipmentSchema = z
     warehouse: warehouseSchema.nullable().optional(),
     dua: duaSchema.nullable().optional(),
     billingNotes: billingNotesSchema.nullable().optional(),
+    electronicInvoiceNumber: electronicInvoiceNumberSchema.nullable().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No hay cambios que aplicar.' });
 export type UpdateShipmentInput = z.infer<typeof updateShipmentSchema>;
@@ -329,13 +387,15 @@ export const correctStateSchema = z.object({
 export type CorrectStateInput = z.infer<typeof correctStateSchema>;
 
 /**
- * Recepcion en bodega por tracking (Parte 4, "Recepción de Paquete"). El operador
- * escanea o digita el tracking y el sistema resuelve el resto: si el tramite
- * existe lo mueve a "Facturación en proceso"; si no, responde con un codigo
- * estable para que la web abra el alta manual.
+ * Recepcion en bodega por HAWB (LES) (Parte 4, "Recepción de Paquete"). Lo que
+ * la pistola lee en la etiqueta del paquete es el LES, no el tracking de la
+ * tienda: ese es el identificador que entra al sistema. El operador escanea o
+ * digita el LES y el sistema resuelve el resto: si el tramite existe lo mueve a
+ * "Facturación en proceso"; si no, responde con un codigo estable para que la
+ * web abra el alta manual.
  */
 export const receiveShipmentSchema = z.object({
-  tracking: trackingSchema,
+  hawb: hawbSchema,
 });
 export type ReceiveShipmentInput = z.infer<typeof receiveShipmentSchema>;
 

@@ -9,24 +9,47 @@
  * cambio (aviso, envío del patch, cierre de sesión) queda comentado en su sitio
  * para reactivarlo junto con el paso de verificación. Ver `clients.service.ts`.
  *
- * La dirección se muestra pero no se edita: el distrito determina la ruta de
- * reparto, así que moverla es una gestión operativa que pasa por soporte.
+ * La dirección de entrega tiene su propio formulario y su propio endpoint
+ * (`PATCH /clients/me/address`) porque no es un dato de contacto más: se guarda
+ * completa (la terna provincia/cantón/distrito solo se valida junta) y solo se
+ * puede mover con el casillero en calma, sin trámites en curso. El servidor es
+ * quien manda; `canEditAddress` llega en el perfil para poder explicar el
+ * candado ANTES de que el cliente llene el formulario, no al fallar el guardado.
  */
 import { useEffect, useState } from 'react';
-import { findCanton, findDistrict, findProvince, formatLockerCode } from '@courier/shared';
+import {
+  PROVINCES,
+  deliveryAddressSchema,
+  formatLockerCode,
+  getCantons,
+  getDistricts,
+} from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 
-interface Profile {
-  code: string;
-  name: string;
-  email: string;
-  phone: string | null;
-  idNumber: string;
+interface Address {
   provinceCode: string;
   cantonCode: string;
   districtCode: string;
   addressLine: string;
 }
+
+interface Profile extends Address {
+  code: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  idNumber: string;
+  /** Trámites en curso; mientras haya alguno la dirección no se puede mover. */
+  activeShipmentCount: number;
+  canEditAddress: boolean;
+}
+
+const addressOf = (p: Profile): Address => ({
+  provinceCode: p.provinceCode,
+  cantonCode: p.cantonCode,
+  districtCode: p.districtCode,
+  addressLine: p.addressLine,
+});
 
 export function ProfileScreen({ onLoggedOut }: { onLoggedOut: () => void }) {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -38,16 +61,27 @@ export function ProfileScreen({ onLoggedOut }: { onLoggedOut: () => void }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // La dirección lleva su propio estado de formulario y sus propios mensajes: se
+  // guarda por separado, así que un error suyo no debe aparecer sobre el bloque
+  // de contacto (ni al revés).
+  const [address, setAddress] = useState<Address | null>(null);
+  const [addressError, setAddressError] = useState<string | null>(null);
+  const [addressNotice, setAddressNotice] = useState<string | null>(null);
+  const [savingAddress, setSavingAddress] = useState(false);
+
+  function hydrate(data: Profile) {
+    setProfile(data);
+    setName(data.name);
+    setIdNumber(data.idNumber);
+    setPhone(data.phone ?? '');
+    setEmail(data.email);
+    setAddress(addressOf(data));
+  }
+
   useEffect(() => {
     api
       .get<Profile>('/clients/me')
-      .then((data) => {
-        setProfile(data);
-        setName(data.name);
-        setIdNumber(data.idNumber);
-        setPhone(data.phone ?? '');
-        setEmail(data.email);
-      })
+      .then(hydrate)
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : 'No se pudo cargar tu perfil.'),
       );
@@ -102,6 +136,62 @@ export function ProfileScreen({ onLoggedOut }: { onLoggedOut: () => void }) {
       setSaving(false);
     }
   }
+
+  /** Al cambiar provincia o cantón hay que soltar lo que colgaba debajo. */
+  function setProvince(provinceCode: string) {
+    setAddress((a) => a && { ...a, provinceCode, cantonCode: '', districtCode: '' });
+  }
+  function setCanton(cantonCode: string) {
+    setAddress((a) => a && { ...a, cantonCode, districtCode: '' });
+  }
+
+  async function submitAddress(e: React.FormEvent) {
+    e.preventDefault();
+    if (!profile || !address) return;
+    setAddressError(null);
+    setAddressNotice(null);
+
+    const unchanged =
+      address.provinceCode === profile.provinceCode &&
+      address.cantonCode === profile.cantonCode &&
+      address.districtCode === profile.districtCode &&
+      address.addressLine === profile.addressLine;
+    if (unchanged) {
+      setAddressNotice('No hay cambios que guardar.');
+      return;
+    }
+
+    // Mismo esquema que usa la API: los mensajes de la terna incompleta o mal
+    // combinada salen sin ir al servidor.
+    const parsed = deliveryAddressSchema.safeParse(address);
+    if (!parsed.success) {
+      setAddressError(parsed.error.issues[0]?.message ?? 'Revisa los datos de la dirección.');
+      return;
+    }
+
+    setSavingAddress(true);
+    try {
+      const updated = await api.patch<Profile>('/clients/me/address', parsed.data);
+      hydrate(updated);
+      setAddressNotice('Dirección de entrega actualizada.');
+    } catch (err) {
+      setAddressError(
+        err instanceof ApiError ? err.message : 'No se pudo guardar la dirección.',
+      );
+      // Si el candado se cerró mientras el formulario estaba abierto (le entró un
+      // trámite), se recarga el perfil para que la pantalla lo refleje en vez de
+      // seguir ofreciendo un guardado que ya no procede.
+      if (err instanceof ApiError && err.code === 'CLIENT_ADDRESS_LOCKED') {
+        api.get<Profile>('/clients/me').then(hydrate).catch(() => {});
+      }
+    } finally {
+      setSavingAddress(false);
+    }
+  }
+
+  const canEditAddress = profile?.canEditAddress ?? false;
+  const cantons = address?.provinceCode ? getCantons(address.provinceCode) : [];
+  const districts = address?.cantonCode ? getDistricts(address.cantonCode) : [];
 
   return (
     <div className="fadeIn">
@@ -165,36 +255,97 @@ export function ProfileScreen({ onLoggedOut }: { onLoggedOut: () => void }) {
             */}
           </div>
 
-          <div className="card-sec">
-            <div className="card-sec-title">Dirección de entrega</div>
-            <dl className="card-sec-fields">
-              <div className="card-item-field">
-                <span className="field-label">Provincia</span>
-                <span>{findProvince(profile.provinceCode)?.name}</span>
-              </div>
-              <div className="card-item-field">
-                <span className="field-label">Cantón</span>
-                <span>{findCanton(profile.cantonCode)?.name}</span>
-              </div>
-              <div className="card-item-field">
-                <span className="field-label">Distrito</span>
-                <span>{findDistrict(profile.districtCode)?.name}</span>
-              </div>
-              <div className="card-item-field">
-                <span className="field-label">Otras señas</span>
-                <span>{profile.addressLine}</span>
-              </div>
-            </dl>
-            <div className="field-hint">
-              Para cambiar tu dirección de entrega, contáctanos: afecta la ruta de reparto.
-            </div>
-          </div>
-
           <div className="form-actions">
             <button className="btn btn-primary" type="submit" disabled={saving}>
               {saving ? 'Guardando…' : 'Guardar cambios'}
             </button>
           </div>
+        </form>
+      )}
+
+      {/* Formulario aparte, no anidado: es otro endpoint y otra regla de guardado. */}
+      {profile && address && (
+        <form
+          className="form-stack" onSubmit={submitAddress}
+          style={{ maxWidth: 620, marginTop: 24 }}
+        >
+          <fieldset className="form-section" disabled={!canEditAddress}>
+            <legend>Dirección de entrega</legend>
+
+            {!canEditAddress && (
+              <div className="banner info" style={{ marginBottom: 12 }}>
+                {profile.activeShipmentCount === 1
+                  ? 'No puedes cambiar tu dirección mientras tengas un trámite en curso: es a donde va el reparto. Podrás editarla cuando se entregue.'
+                  : `No puedes cambiar tu dirección mientras tengas trámites en curso (${profile.activeShipmentCount}): es a donde va el reparto. Podrás editarla cuando se entreguen.`}
+              </div>
+            )}
+            {addressError && (
+              <div className="banner err" style={{ marginBottom: 12 }}>{addressError}</div>
+            )}
+            {addressNotice && (
+              <div className="banner ok" style={{ marginBottom: 12 }}>{addressNotice}</div>
+            )}
+
+            <div className="form-grid cols-3">
+              <div>
+                <label className="field-label" htmlFor="p-province">Provincia</label>
+                <select
+                  id="p-province" className="input"
+                  value={address.provinceCode} onChange={(e) => setProvince(e.target.value)}
+                >
+                  <option value="">Elige…</option>
+                  {PROVINCES.map((p) => (
+                    <option key={p.code} value={p.code}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="field-label" htmlFor="p-canton">Cantón</label>
+                <select
+                  id="p-canton" className="input" disabled={!address.provinceCode}
+                  value={address.cantonCode} onChange={(e) => setCanton(e.target.value)}
+                >
+                  <option value="">Elige…</option>
+                  {cantons.map((c) => (
+                    <option key={c.code} value={c.code}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="field-label" htmlFor="p-district">Distrito</label>
+                <select
+                  id="p-district" className="input" disabled={!address.cantonCode}
+                  value={address.districtCode}
+                  onChange={(e) => setAddress({ ...address, districtCode: e.target.value })}
+                >
+                  <option value="">Elige…</option>
+                  {districts.map((d) => (
+                    <option key={d.code} value={d.code}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-full">
+                <label className="field-label" htmlFor="p-address-line">Otras señas</label>
+                <textarea
+                  id="p-address-line" className="input" rows={3} autoComplete="street-address"
+                  value={address.addressLine}
+                  onChange={(e) => setAddress({ ...address, addressLine: e.target.value })}
+                  placeholder="Del super La Central 200 m norte, casa color celeste a mano derecha."
+                />
+              </div>
+            </div>
+
+            <div className="field-hint">
+              El distrito define la ruta de reparto, por eso solo se puede cambiar cuando
+              no tienes nada en camino.
+            </div>
+
+            <div className="form-actions">
+              <button className="btn btn-primary" type="submit" disabled={savingAddress}>
+                {savingAddress ? 'Guardando…' : 'Guardar dirección'}
+              </button>
+            </div>
+          </fieldset>
         </form>
       )}
     </div>

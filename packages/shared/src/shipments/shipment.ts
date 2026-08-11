@@ -83,6 +83,12 @@ export interface ShipmentDto {
   warehouse: string | null;
   /** DUA con formato ###-####-######. */
   dua: string | null;
+
+  /**
+   * Notas para facturar. COMUN a los dos flujos: el reporte las pide igual en
+   * Paqueteria (campo 20) que en Agenciamiento (campo 19). Nacio como campo de
+   * Transporte porque asi lo listaba el manual.
+   */
   billingNotes: string | null;
 
   /**
@@ -101,6 +107,20 @@ export interface ShipmentDto {
    */
   invoiceTotalUsd: number | null;
   invoiceTotalCrc: number | null;
+
+  /**
+   * Consecutivo de la FACTURA ELECTRONICA del tramite (campo FE del reporte:
+   * numero 27 en Paqueteria, 23 en Agenciamiento).
+   *
+   * Lo emite el sistema de facturacion electronica, no nosotros: aqui solo se
+   * GUARDA el consecutivo para poder cruzar nuestro tramite con esa factura. Por
+   * eso es texto libre y no una secuencia propia, y por eso llega a mano.
+   *
+   * Va en el tramite y no en una tabla aparte porque la regla del negocio es una
+   * factura por tramite (las proformas no se agrupan). Null mientras no se haya
+   * emitido, que es el caso de todo tramite antes de facturarse.
+   */
+  electronicInvoiceNumber: string | null;
 
   /**
    * Estado del COBRO, derivado en cada lectura de los pagos confirmados del
@@ -127,6 +147,21 @@ export interface ShipmentDto {
    * distintas: la primera lo lleva a pagar otra vez.
    */
   pendingCrc: number;
+  /**
+   * Los MISMOS dos importes reexpresados en dolares, cada abono con SU propia
+   * tasa (regla M5), igual que sus hermanos en colones.
+   *
+   * No son un lujo del formato: al cliente el cobro de Paqueteria se le expresa
+   * en dolares y sin convertir a colones (`billingCurrencyFor`), asi que la
+   * pantalla necesita el par completo. Se calculan aqui y no en la web porque la
+   * tasa de cada abono no viaja en este DTO, y reexpresar con la tasa de hoy
+   * daria una cifra distinta a la del servidor.
+   *
+   * `settled` NO tiene gemelo en dolares a proposito: si el tramite esta cubierto
+   * se decide en colones y en un unico sitio (`isSettled`).
+   */
+  settledUsd: number;
+  pendingUsd: number;
 
   /** Instantes en UTC, ISO 8601. La hora local se arma en la presentacion. */
   createdAt: string;
@@ -191,6 +226,19 @@ export function usesPackageFields(type: ShipmentType): boolean {
 export enum ShipmentField {
   Tracking = 'tracking',
   Description = 'description',
+  /**
+   * Notas para facturar. Comun a los DOS flujos: el reporte de Paqueteria las
+   * pide igual que el de Agenciamiento (campo 20 en ambos). Nacio como campo de
+   * Transporte y Agenciamiento porque asi lo listaba el manual, pero facturar un
+   * paquete necesita las mismas anotaciones que facturar un tramite.
+   */
+  BillingNotes = 'billingNotes',
+  /**
+   * Consecutivo de la factura electronica. Comun a los dos flujos y editable
+   * DESPUES de facturar, cuando el resto del tramite ya esta congelado: el
+   * numero no existe hasta que la factura se emite.
+   */
+  ElectronicInvoiceNumber = 'electronicInvoiceNumber',
   // Solo Paqueteria
   Store = 'store',
   Carrier = 'carrier',
@@ -207,7 +255,6 @@ export enum ShipmentField {
   // Solo Transporte y Agenciamiento
   Warehouse = 'warehouse',
   Dua = 'dua',
-  BillingNotes = 'billingNotes',
 }
 
 /** Tipos de tramite que el administrador captura y mueve a mano (todo menos Paqueteria). */

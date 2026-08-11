@@ -34,7 +34,9 @@ import {
   BankAccount,
   CARRIERS,
   ClientReviewStatus,
+  CostCategory,
   CostLineSource,
+  categoryForLine,
   Currency,
   DeliveryOutcome,
   Flow,
@@ -52,6 +54,7 @@ import {
   State,
   UserStatus,
   applyPercentage,
+  bankAccountsFor,
   canTransition,
   computeTotals,
   convertMoney,
@@ -73,7 +76,12 @@ import { deliveryAttempts } from './modules/deliveries/deliveries.schema';
 import { payments } from './modules/payments/payments.schema';
 import { districtRoutes } from './modules/routes/district-route.schema';
 import { shipmentEvents, shipments } from './modules/shipments/shipments.schema';
-import { SETTINGS_ROW_ID, appSettings, exchangeRateHistory } from './modules/settings/settings.schema';
+import {
+  SETTINGS_ROW_ID,
+  appSettings,
+  exchangeRateHistory,
+  freightRateHistory,
+} from './modules/settings/settings.schema';
 import { clientRates } from './modules/tariffs/tariffs.schema';
 
 /**
@@ -88,6 +96,14 @@ const DEMO_EXCHANGE_RATE = 512.75;
 /** Marca del registro de historial que siembra este archivo (lo borra `--reset`). */
 const DEMO_RATE_NOTE = 'Tasa inicial de la demo.';
 
+/**
+ * Tarifa de transporte internacional de la demo, en USD por libra. Es la del
+ * mapeo de campos validado con el negocio ("× 3.66"), para que el reporte FULL
+ * de Paqueteria de las mismas cifras que la hoja con la que se cuadra.
+ */
+const DEMO_FREIGHT_RATE = 3.66;
+const DEMO_FREIGHT_NOTE = 'Tarifa inicial de la demo.';
+
 /** Dominio de correo que marca a un usuario como sembrado por esta demo. */
 const DEMO_DOMAIN = 'demo.hsglobal.ltd';
 const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD ?? 'Demo1234!';
@@ -99,6 +115,17 @@ const inDays = (d: number): Date => new Date(NOW.getTime() + d * DAY);
 /** `date` de Postgres se persiste como texto YYYY-MM-DD. */
 const isoDay = (d: Date): string => d.toISOString().slice(0, 10);
 const email = (handle: string): string => `${handle}@${DEMO_DOMAIN}`;
+
+/**
+ * Cuenta bancaria de un deposito de demo: una de las que ese tipo de tramite
+ * admite, alternando por indice para que la demo no muestre siempre el mismo
+ * banco. Sale de `bankAccountsFor` y no de una lista propia para que los datos
+ * de demo cumplan la misma regla que el formulario del cliente.
+ */
+const pickAccount = (type: ShipmentType, i: number): BankAccount => {
+  const options = bankAccountsFor(type);
+  return options[i % options.length]!;
+};
 
 // ---------------------------------------------------------------------------
 // 1. Catalogo de datos falsos (todo lo que este seed crea sale de estas listas)
@@ -319,6 +346,10 @@ const CLIENTS: readonly ClientSpec[] = [
 interface ServiceSpec {
   name: string;
   kind: ServiceKind;
+  /** De quien es el dinero: decide si el concepto es costo o margen en el reporte. */
+  category: CostCategory;
+  /** COD SIS FE del concepto; lo imprime la proforma. */
+  electronicInvoiceCode: string;
   valueType: ServiceValueType;
   defaultValue: number | null;
   /** Solo cuando valueType = Fixed (es dinero). Regla M2. */
@@ -330,19 +361,26 @@ interface ServiceSpec {
  * Catalogo de servicios de costo. Transporte y agenciamiento solo admite valor
  * Manual (`allowedValueTypes`); Paqueteria admite los tres y solo USD (M6).
  */
+/**
+ * `category` separa lo que HS Global solo TRASLADA (impuestos, almacen fiscal,
+ * naviera) de lo que son honorarios propios. Sin ese corte, COSTOS ASOCIADOS del
+ * reporte de Agenciamiento sumaria la factura entera y el PROFIT saldria en cero
+ * en todas las filas de la demo. `electronicInvoiceCode` es el COD SIS FE que
+ * imprime la proforma.
+ */
 const SERVICES: readonly ServiceSpec[] = [
-  { name: 'Impuesto de aduana', kind: ServiceKind.TransporteAgenciamiento, valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Almacenaje fiscal', kind: ServiceKind.TransporteAgenciamiento, valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Transporte terrestre', kind: ServiceKind.TransporteAgenciamiento, valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Honorarios de agenciamiento', kind: ServiceKind.TransporteAgenciamiento, valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Inspección Dekra', kind: ServiceKind.TransporteAgenciamiento, valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Desalmacenaje', kind: ServiceKind.TransporteAgenciamiento, valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Permisos de Importación', kind: ServiceKind.Paqueteria, valueType: ServiceValueType.Percentage, defaultValue: 10, currency: null },
-  { name: 'Seguro de mercancía', kind: ServiceKind.Paqueteria, valueType: ServiceValueType.Percentage, defaultValue: 2.5, currency: null },
-  { name: 'Manejo en bodega Miami', kind: ServiceKind.Paqueteria, valueType: ServiceValueType.Fixed, defaultValue: 3.5, currency: Currency.USD },
-  { name: 'Empaque especial', kind: ServiceKind.Paqueteria, valueType: ServiceValueType.Fixed, defaultValue: 7, currency: Currency.USD },
-  { name: 'Asesoría de compra por Internet', kind: ServiceKind.Paqueteria, valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Sobrecargo de combustible', kind: ServiceKind.Paqueteria, valueType: ServiceValueType.Fixed, defaultValue: 1.75, currency: Currency.USD, enabled: false },
+  { name: 'Impuesto de aduana', kind: ServiceKind.TransporteAgenciamiento, category: CostCategory.Impuestos, electronicInvoiceCode: '44', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
+  { name: 'Almacenaje fiscal', kind: ServiceKind.TransporteAgenciamiento, category: CostCategory.Otros, electronicInvoiceCode: '61', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
+  { name: 'Transporte terrestre', kind: ServiceKind.TransporteAgenciamiento, category: CostCategory.Otros, electronicInvoiceCode: '25', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
+  { name: 'Honorarios de agenciamiento', kind: ServiceKind.TransporteAgenciamiento, category: CostCategory.Propio, electronicInvoiceCode: '10', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
+  { name: 'Inspección Dekra', kind: ServiceKind.TransporteAgenciamiento, category: CostCategory.Otros, electronicInvoiceCode: '73', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
+  { name: 'Desalmacenaje', kind: ServiceKind.TransporteAgenciamiento, category: CostCategory.Propio, electronicInvoiceCode: '11', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
+  { name: 'Permisos de Importación', kind: ServiceKind.Paqueteria, category: CostCategory.Otros, electronicInvoiceCode: '97', valueType: ServiceValueType.Percentage, defaultValue: 10, currency: null },
+  { name: 'Seguro de mercancía', kind: ServiceKind.Paqueteria, category: CostCategory.Otros, electronicInvoiceCode: '52', valueType: ServiceValueType.Percentage, defaultValue: 2.5, currency: null },
+  { name: 'Manejo en bodega Miami', kind: ServiceKind.Paqueteria, category: CostCategory.Propio, electronicInvoiceCode: '31', valueType: ServiceValueType.Fixed, defaultValue: 3.5, currency: Currency.USD },
+  { name: 'Empaque especial', kind: ServiceKind.Paqueteria, category: CostCategory.Propio, electronicInvoiceCode: '32', valueType: ServiceValueType.Fixed, defaultValue: 7, currency: Currency.USD },
+  { name: 'Asesoría de compra por Internet', kind: ServiceKind.Paqueteria, category: CostCategory.Propio, electronicInvoiceCode: '33', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
+  { name: 'Sobrecargo de combustible', kind: ServiceKind.Paqueteria, category: CostCategory.Otros, electronicInvoiceCode: '26', valueType: ServiceValueType.Fixed, defaultValue: 1.75, currency: Currency.USD, enabled: false },
 ];
 
 /**
@@ -773,6 +811,8 @@ async function seed(tx: Tx): Promise<void> {
       SERVICES.map((s) => ({
         name: s.name,
         kind: s.kind,
+        category: s.category,
+        electronicInvoiceCode: s.electronicInvoiceCode,
         valueType: s.valueType,
         defaultValue: s.defaultValue,
         currency: s.currency,
@@ -783,6 +823,17 @@ async function seed(tx: Tx): Promise<void> {
   const serviceRows = await tx.select({ id: costServices.id, name: costServices.name }).from(costServices);
   const serviceByName = new Map(serviceRows.map((s) => [s.name, s.id]));
   const serviceId = (name: string): string | null => serviceByName.get(name) ?? null;
+  /**
+   * Spec del catalogo por ID, para copiarle categoria y COD SIS FE a cada linea
+   * de costo igual que hace la API al guardar (la linea es un snapshot, no una
+   * lectura en vivo del catalogo).
+   */
+  const specById = new Map(
+    SERVICES.flatMap((s) => {
+      const id = serviceByName.get(s.name);
+      return id ? [[id, s] as const] : [];
+    }),
+  );
 
   // --- Rutas por distrito ---
   await tx
@@ -820,6 +871,11 @@ async function seed(tx: Tx): Promise<void> {
       exchangeRate: DEMO_EXCHANGE_RATE,
       exchangeRateSetBy: adminId,
       exchangeRateSetAt: rateSetAt,
+      // La tarifa de flete viaja en el mismo upsert: sin ella el reporte FULL de
+      // Paqueteria sale sin costo de transporte y, por tanto, sin margen.
+      freightRateUsdPerLb: DEMO_FREIGHT_RATE,
+      freightRateSetBy: adminId,
+      freightRateSetAt: rateSetAt,
       updatedAt: rateSetAt,
     })
     .onConflictDoNothing()
@@ -829,6 +885,13 @@ async function seed(tx: Tx): Promise<void> {
       rate: DEMO_EXCHANGE_RATE,
       previousRate: null,
       note: DEMO_RATE_NOTE,
+      setBy: adminId,
+      setAt: rateSetAt,
+    });
+    await tx.insert(freightRateHistory).values({
+      usdPerLb: DEMO_FREIGHT_RATE,
+      previousUsdPerLb: null,
+      note: DEMO_FREIGHT_NOTE,
       setBy: adminId,
       setAt: rateSetAt,
     });
@@ -1011,6 +1074,9 @@ async function seed(tx: Tx): Promise<void> {
         billingNotes: isPackage ? null : cargo.notes,
         invoiceTotalUsd: approved ? totals!.usd : null,
         invoiceTotalCrc: approved ? totals!.crc : null,
+        // Snapshot de la tarifa de flete, igual que `costsRepo.freezeInvoice`:
+        // solo Paqueteria, y solo cuando la factura quedo congelada.
+        freightRateUsdPerLb: approved && isPackage ? DEMO_FREIGHT_RATE : null,
         costsApprovedAt: approved ? approvedAt : null,
         costsApprovedBy: approved ? financeId : null,
         helgaPrealertStatus: isPackage
@@ -1061,10 +1127,15 @@ async function seed(tx: Tx): Promise<void> {
 
     // 4) Lineas de costo (cada una con su moneda y su tasa: snapshot, M2 + M5).
     for (const line of lines) {
+      const spec = line.costServiceId ? specById.get(line.costServiceId) : undefined;
       costRows.push({
         shipmentId,
         costServiceId: line.costServiceId,
         label: line.label,
+        // Snapshot del catalogo, igual que en `costsService.save`. El flete no
+        // sale de ningun servicio: `categoryForLine` le impone CostCategory.Flete.
+        category: categoryForLine(line.source, spec?.category),
+        electronicInvoiceCode: spec?.electronicInvoiceCode ?? null,
         source: line.source,
         percentage: line.percentage,
         amount: line.amount,
@@ -1090,7 +1161,13 @@ async function seed(tx: Tx): Promise<void> {
         amount,
         currency: Currency.CRC,
         exchangeRate,
-        bankAccount: i % 2 === 0 ? BankAccount.BAC : BankAccount.BCR,
+        /**
+         * Una cuenta de las que ESE tramite admite (Paqueteria solo las de
+         * dolares), alternando banco. Elegirla a mano dejaria depositos de
+         * Paqueteria en cuentas de colones, que es justo lo que el formulario
+         * del cliente no permite: datos de demo que no se pueden reproducir.
+         */
+        bankAccount: pickAccount(sc.type, i),
         receiptNumber: receipt,
         depositedAt: paidAt,
         receiptFileKey: `receipts/demo-${shipment!.code}.pdf`,

@@ -8,6 +8,7 @@ export * from './auth/dto';
 // Despues de auth/*: depende del RBAC (quien puede fijar la tasa).
 export * from './money/exchange-rate';
 export * from './settings/exchange-rate-dto';
+export * from './settings/freight-rate-dto';
 export * from './users/dto';
 export * from './tariffs/dto';
 export * from './costs/cost-service';
@@ -17,6 +18,8 @@ export * from './costs/shipment-cost-dto';
 export * from './providers/helga-states';
 export * from './reports/report';
 export * from './reports/dto';
+export * from './reports/financials';
+export * from './reports/proforma';
 export * from './payments/payment';
 export * from './payments/dto';
 export * from './deliveries/delivery';

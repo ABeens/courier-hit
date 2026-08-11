@@ -9,7 +9,12 @@
 import { desc, eq } from 'drizzle-orm';
 import { db } from '../../core/db';
 import { users } from '../auth/auth.schema';
-import { SETTINGS_ROW_ID, appSettings, exchangeRateHistory } from './settings.schema';
+import {
+  SETTINGS_ROW_ID,
+  appSettings,
+  exchangeRateHistory,
+  freightRateHistory,
+} from './settings.schema';
 
 export const settingsRepo = {
   /** Tasa vigente, o null si todavia nadie la fijo. */
@@ -88,6 +93,85 @@ export const settingsRepo = {
       });
 
       return { previousRate };
+    });
+  },
+
+  /**
+   * Tarifa de transporte internacional vigente (USD por libra), o null si nadie
+   * la fijo. Camino caliente igual que la tasa: la consulta cada aprobacion de
+   * costos de Paqueteria, asi que toca una fila por clave primaria.
+   */
+  async currentFreightRate(): Promise<number | null> {
+    const [row] = await db
+      .select({ rate: appSettings.freightRateUsdPerLb })
+      .from(appSettings)
+      .where(eq(appSettings.id, SETTINGS_ROW_ID))
+      .limit(1);
+    return row?.rate ?? null;
+  },
+
+  /** Tarifa vigente con su sello (quien la fijo y cuando). */
+  async freightRateSetting() {
+    const [row] = await db
+      .select({
+        usdPerLb: appSettings.freightRateUsdPerLb,
+        setAt: appSettings.freightRateSetAt,
+        setByName: users.name,
+      })
+      .from(appSettings)
+      .leftJoin(users, eq(users.id, appSettings.freightRateSetBy))
+      .where(eq(appSettings.id, SETTINGS_ROW_ID))
+      .limit(1);
+    return row ?? { usdPerLb: null, setAt: null, setByName: null };
+  },
+
+  /**
+   * Fija la tarifa vigente y deja el cambio en el historial, en UNA transaccion.
+   * Mismo patron que `setExchangeRate` y por el mismo motivo: un valor vigente sin
+   * su registro de auditoria es justo lo que el historial existe para evitar.
+   */
+  async setFreightRate(input: {
+    usdPerLb: number;
+    note: string | null;
+    userId: string;
+  }): Promise<{ previousUsdPerLb: number | null }> {
+    return db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({ rate: appSettings.freightRateUsdPerLb })
+        .from(appSettings)
+        .where(eq(appSettings.id, SETTINGS_ROW_ID))
+        .limit(1);
+      const previousUsdPerLb = existing?.rate ?? null;
+      const now = new Date();
+
+      await tx
+        .insert(appSettings)
+        .values({
+          id: SETTINGS_ROW_ID,
+          freightRateUsdPerLb: input.usdPerLb,
+          freightRateSetBy: input.userId,
+          freightRateSetAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: appSettings.id,
+          set: {
+            freightRateUsdPerLb: input.usdPerLb,
+            freightRateSetBy: input.userId,
+            freightRateSetAt: now,
+            updatedAt: now,
+          },
+        });
+
+      await tx.insert(freightRateHistory).values({
+        usdPerLb: input.usdPerLb,
+        previousUsdPerLb,
+        note: input.note,
+        setBy: input.userId,
+        setAt: now,
+      });
+
+      return { previousUsdPerLb };
     });
   },
 

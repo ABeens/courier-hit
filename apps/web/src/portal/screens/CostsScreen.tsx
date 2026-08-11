@@ -13,15 +13,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Currency,
+  Permission,
   SHIPMENT_TYPE_LABELS,
   STATE_LABELS,
   State,
+  can,
   formatMoney,
 } from '@courier/shared';
 import type { Role, ShipmentDto } from '@courier/shared';
 import { FilterBar } from '../components/FilterBar';
 import { PayFlag } from '../components/PayFlag';
-import { ApiError, api } from '../lib/api';
+import { API_BASE, ApiError, api } from '../lib/api';
 import { formatDate } from '../lib/datetime';
 import { CostsEditorModal } from './CostsEditorModal';
 
@@ -37,6 +39,15 @@ const VIEW_STATE: Record<CostsView, State> = {
   facturados: State.EnBodegaPendientePago,
 };
 
+/**
+ * Abre la proforma de un tramite en otra pestaña. Navegacion normal y no `fetch`:
+ * es un documento para leer o imprimir, y la cookie de sesion viaja igual por ser
+ * el mismo origen (mismo criterio que la descarga del CSV de reportes).
+ */
+function openProforma(shipmentId: string) {
+  window.open(`${API_BASE}/api/reports/proforma/${shipmentId}`, '_blank');
+}
+
 /** Monto de factura en las dos monedas; guion si aun no se aprobo. */
 function invoiceLabel(row: ShipmentDto): string {
   if (row.invoiceTotalUsd === null || row.invoiceTotalCrc === null) return '—';
@@ -50,6 +61,12 @@ function invoiceLabel(row: ShipmentDto): string {
  */
 export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; initialView?: CostsView }) {
   const [view, setView] = useState<CostsView>(initialView);
+  /**
+   * Quién puede emitir proformas sale del permiso, igual que en el servidor. Se
+   * pregunta con `can` y no se deduce del rol: sumar el permiso a otro rol tiene
+   * que bastar para que le aparezca el botón.
+   */
+  const canProforma = can(role, Permission.ReportsProforma);
   const [data, setData] = useState<ListResponse | null>(null);
   const [q, setQ] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +177,14 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
                     <button className="btn btn-ghost btn-sm" onClick={() => setEditing(row)}>
                       {view === 'pendientes' ? 'Cargar costos' : 'Ver factura'}
                     </button>
+                    {/* Proforma de UN trámite: es la descarga "de una en una" del
+                        requerimiento, y va aquí porque es donde se trabaja un
+                        trámite concreto. El lote vive en Reportes, sobre el filtro. */}
+                    {canProforma && view === 'facturados' && (
+                      <button className="btn btn-ghost btn-sm" onClick={() => openProforma(row.id)}>
+                        Proforma
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

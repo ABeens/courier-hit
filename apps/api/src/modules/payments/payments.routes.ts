@@ -18,6 +18,7 @@ import {
   resolvePaymentSchema,
   simulatePaymentSchema,
   startPaymentSchema,
+  updateBankAccountSchema,
 } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
 import { StorageErrors } from '../../core/storage';
@@ -148,6 +149,25 @@ paymentsRoutes.post(
   async (c) => {
     const created = await paymentsService.record(c.get('session'), c.req.valid('json'));
     return c.json(created, 201);
+  },
+);
+
+/**
+ * El staff corrige a que cuenta entro un deposito. Va aparte de `/resolve`
+ * porque tambien aplica a pagos YA confirmados: el estado de cuenta que revela
+ * el error suele llegar despues de haber validado el abono.
+ */
+paymentsRoutes.patch(
+  '/:id/bank-account',
+  requirePermission(Permission.PaymentsValidate),
+  zValidator('json', updateBankAccountSchema),
+  async (c) => {
+    const updated = await paymentsService.updateBankAccount(
+      c.get('session'),
+      c.req.param('id'),
+      c.req.valid('json'),
+    );
+    return c.json(updated);
   },
 );
 

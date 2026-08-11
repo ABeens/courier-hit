@@ -113,7 +113,26 @@ export const shipments = pgTable(
     // --- Solo Transporte y Agenciamiento ---
     warehouse: text('warehouse'),
     dua: text('dua'),
+
+    // --- Facturacion, comun a los dos flujos ---
+    /**
+     * Notas para facturar. Nacio como campo de Transporte y Agenciamiento porque
+     * asi lo listaba el manual, pero el reporte las pide en los DOS flujos
+     * (campo 20 de Paqueteria, 19 de Agenciamiento) y facturar un paquete
+     * necesita las mismas anotaciones. La columna no cambia; lo que cambio es que
+     * la coherencia tipo <-> campo ya no la excluye en Paqueteria.
+     */
     billingNotes: text('billing_notes'),
+    /**
+     * Consecutivo de la FACTURA ELECTRONICA (campo FE del reporte). Lo emite un
+     * sistema externo; aqui solo se anota para poder cruzar el tramite con esa
+     * factura. Null hasta que se emite.
+     *
+     * Sin indice unico a proposito: el numero lo controla el sistema de
+     * facturacion, no nosotros, y un unique nuestro convertiria un dedazo suyo en
+     * un error que bloquea al operador en vez de una correccion.
+     */
+    electronicInvoiceNumber: text('electronic_invoice_number'),
 
     // --- Snapshot de la factura (se congela al APROBAR los costos) ---
     /**
@@ -125,6 +144,21 @@ export const shipments = pgTable(
      */
     invoiceTotalUsd: doublePrecision('invoice_total_usd'),
     invoiceTotalCrc: doublePrecision('invoice_total_crc'),
+    /**
+     * Tarifa de transporte internacional (USD por libra) VIGENTE al aprobar los
+     * costos. Solo Paqueteria; null en el resto y mientras no se apruebe.
+     *
+     * Es un snapshot por la misma razon que el total de factura: el campo 21 del
+     * reporte (TRANSPORTE INTL) se calcula con esta tarifa, y si el reporte la
+     * leyera de Configuración, subir el flete en marzo cambiaria el margen de
+     * todos los paquetes de enero. El costo de un envio es el que fue el dia que
+     * se facturo, no el de hoy.
+     *
+     * No es un monto transaccional sino un precio unitario de referencia: no
+     * lleva moneda por columna (va en el nombre, regla M2) ni tasa de cambio
+     * (M5 no aplica), igual que `client_rates.price_per_kg`.
+     */
+    freightRateUsdPerLb: doublePrecision('freight_rate_usd_per_lb'),
     costsApprovedAt: timestamp('costs_approved_at', { withTimezone: true }),
     costsApprovedBy: uuid('costs_approved_by').references(() => users.id, { onDelete: 'set null' }),
 

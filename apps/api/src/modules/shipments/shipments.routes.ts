@@ -84,7 +84,7 @@ shipmentsRoutes.post('/sync-provider', requirePermission(Permission.ConfigManage
 });
 
 /**
- * Recepcion en bodega por tracking (Parte 4). Va ANTES de `/:id` porque Hono
+ * Recepcion en bodega por HAWB (LES) (Parte 4). Va ANTES de `/:id` porque Hono
  * resuelve por orden: `/receive` encajaria en el patron del detalle.
  */
 shipmentsRoutes.post(
