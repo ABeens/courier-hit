@@ -31,6 +31,22 @@ const moverName = sql<string | null>`(
 )`;
 
 /**
+ * Instante en que el tramite entro POR PRIMERA VEZ a un estado.
+ *
+ * El `.mapWith` no es adorno: en una expresion `sql` cruda Drizzle no sabe que
+ * tipo devuelve y entrega el valor tal como lo da el driver, que para un
+ * `min(timestamptz)` es una CADENA. Anotar `sql<Date>` a secas es una promesa
+ * que TypeScript se cree y que en ejecucion no se cumple: quien haga
+ * `.toISOString()` sobre el resultado revienta. `mapWith` aplica el mismo
+ * conversor de la columna original, asi que lo que sale es un Date de verdad.
+ *
+ * El PRIMER evento y no el ultimo (`min`, no `max`): un paquete puede volver a
+ * bodega y salir de nuevo, y la fecha de entrega que interesa es la de la
+ * entrega, no la del ultimo reintento.
+ */
+const firstEventAt = sql<Date>`min(${shipmentEvents.createdAt})`.mapWith(shipmentEvents.createdAt);
+
+/**
  * Filtros comunes a todos los reportes, sobre la fecha de ingreso del tramite.
  * Toma `ProformaQuery` (los campos de alcance) y no `ReportQuery` completo: el
  * `kind` no acota nada aqui, y pedirlo obligaria a inventarle uno a la descarga
@@ -239,17 +255,13 @@ export const reportsRepo = {
        * Fechas de arribo a Miami y de entrega. NO son columnas del tramite: son
        * el momento en que entro a un estado, y eso ya vive en el historial
        * append-only. Agregar dos columnas duplicaria un dato que el historial
-       * responde igual de bien y que ademas puede corregirse.
-       *
-       * Se toma el PRIMER evento de cada estado (`min`): un paquete puede volver
-       * a bodega y salir de nuevo, y la fecha de entrega que interesa es la de la
-       * entrega, no la del ultimo reintento.
+       * responde igual de bien y que ademas puede corregirse. Ver `firstEventAt`.
        */
       db
         .select({
           shipmentId: shipmentEvents.shipmentId,
           state: shipmentEvents.state,
-          at: sql<Date>`min(${shipmentEvents.createdAt})`,
+          at: firstEventAt,
         })
         .from(shipmentEvents)
         .where(
@@ -330,7 +342,7 @@ export const reportsRepo = {
         .orderBy(shipmentCosts.createdAt),
 
       db
-        .select({ at: sql<Date>`min(${shipmentEvents.createdAt})` })
+        .select({ at: firstEventAt })
         .from(shipmentEvents)
         .where(
           and(

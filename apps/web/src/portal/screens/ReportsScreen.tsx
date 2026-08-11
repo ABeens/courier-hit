@@ -115,8 +115,17 @@ export function ReportsScreen() {
       .then((data) => {
         if (!cancelled) setReady(data.items);
       })
-      .catch(() => {
-        if (!cancelled) setReady(null);
+      .catch((err) => {
+        if (cancelled) return;
+        setReady([]);
+        /**
+         * El fallo se DICE. Tragárselo dejaba el botón apagado sin distinguir
+         * "no hay proformas listas" de "la consulta se cayó", que son dos
+         * problemas distintos y solo uno se arregla cambiando el filtro.
+         */
+        setError(
+          err instanceof ApiError ? err.message : 'No se pudieron consultar las proformas.',
+        );
       });
     return () => {
       cancelled = true;
