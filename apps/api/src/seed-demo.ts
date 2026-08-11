@@ -1063,7 +1063,9 @@ async function seed(tx: Tx): Promise<void> {
         description: isPackage ? item.description : cargo.description,
         store: isPackage ? item.store : null,
         carrier: isPackage ? item.carrier : null,
-        hawb: isPackage && receivedInMiami ? `HAWB-${String(880_400 + i * 19)}` : null,
+        // Formato de la etiqueta real ("LES48450141"). Con el prefijo "HAWB-" los
+        // datos demo no se podian recibir en bodega: lo que se escanea es esto.
+        hawb: isPackage && receivedInMiami ? `LES${String(48_450_100 + i * 19)}` : null,
         weightKg,
         declaredValueUsd: isPackage ? roundMoney(45 + ((i * 37) % 420), Currency.USD) : null,
         insuredValueUsd: isPackage && i % 4 === 0 ? roundMoney(120 + (i % 6) * 45, Currency.USD) : null,

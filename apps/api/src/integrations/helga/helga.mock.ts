@@ -390,7 +390,10 @@ function opCreatePrealert(body: Record<string, unknown>): Response {
   w.nextPrealert += 1;
   const pkg: MockPackage = {
     tracking,
-    hawb: `SIM${String(9_000_000 + seq)}`,
+    // Mismo formato que la etiqueta real ("LES48450141"): el HAWB simulado entra
+    // a `shipments` por el descubrimiento y despues alguien lo escanea en la mesa
+    // de bodega, asi que un formato de fantasia dejaria paquetes irrecibibles.
+    hawb: `LES${String(48_000_000 + seq)}`,
     recipientId,
     content: String(body.contenido ?? '').trim() || 'SIN DESCRIPCION',
     store: String(body.tienda ?? '').trim() || 'POR DEFINIR',
@@ -616,7 +619,10 @@ export function mockInjectPackage(input: {
   w.nextPrealert += 1;
   const pkg: MockPackage = {
     tracking,
-    hawb: `SIM${String(9_000_000 + seq)}`,
+    // Mismo formato que la etiqueta real ("LES48450141"): el HAWB simulado entra
+    // a `shipments` por el descubrimiento y despues alguien lo escanea en la mesa
+    // de bodega, asi que un formato de fantasia dejaria paquetes irrecibibles.
+    hawb: `LES${String(48_000_000 + seq)}`,
     recipientId: input.recipientId,
     content: input.content?.trim() || 'COMPRA NO DECLARADA',
     store: input.store?.trim() || 'POR DEFINIR',

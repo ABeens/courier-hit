@@ -4,7 +4,7 @@
  */
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+import { zValidator } from '../../core/validator';
 import { deleteCookie, setCookie } from 'hono/cookie';
 import { acceptInviteSchema, loginSchema, registerSchema, verifySchema } from '@courier/shared';
 import { config, isProd, miamiLinkEnabled } from '../../core/config';

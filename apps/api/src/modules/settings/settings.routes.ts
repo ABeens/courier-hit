@@ -7,7 +7,7 @@
  * dejaria al operador sin poder ver con que tasa esta facturando.
  */
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+import { zValidator } from '../../core/validator';
 import { Permission, setExchangeRateSchema, setFreightRateSchema } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
 import { requireAnyPermission } from '../../core/middleware/requireAnyPermission';

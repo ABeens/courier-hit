@@ -160,12 +160,19 @@ export const shipmentsRepo = {
    * escanea en la mesa de bodega. Devuelve hasta dos: el HAWB no tiene indice
    * unico, asi que quien llama necesita poder distinguir "no hay" de "hay mas de
    * uno" en vez de quedarse con el primero que devuelva la BD.
+   *
+   * La comparacion ignora mayusculas: el HAWB que llega por el descubrimiento se
+   * guarda tal como lo emite el proveedor, y no siempre en la misma caja que el
+   * que se digita en la mesa. Sin indice que aprovechar, el `upper()` no cuesta
+   * nada aqui.
    */
   async findActiveByHawb(hawb: string) {
     return db
       .select({ id: shipments.id, code: shipments.code })
       .from(shipments)
-      .where(and(eq(shipments.hawb, hawb), sql`${shipments.state} <> 'entregado'`))
+      .where(
+        and(sql`upper(${shipments.hawb}) = upper(${hawb})`, sql`${shipments.state} <> 'entregado'`),
+      )
       .limit(2);
   },
 

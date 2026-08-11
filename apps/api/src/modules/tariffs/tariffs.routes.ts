@@ -3,7 +3,7 @@
  * permiso tariffs.manage (solo admin). La barrera real esta aqui, no en el menu.
  */
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+import { zValidator } from '../../core/validator';
 import { Permission, createClientRateSchema, updateClientRateSchema } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
 import { requirePermission } from '../../core/middleware/requirePermission';

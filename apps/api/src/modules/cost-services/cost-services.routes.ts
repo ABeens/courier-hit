@@ -4,7 +4,7 @@
  * Pantalla: docs/manuales/flujo.md L1-20.
  */
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+import { zValidator } from '../../core/validator';
 import {
   Permission,
   createCostServiceSchema,

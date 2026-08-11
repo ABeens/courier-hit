@@ -11,7 +11,7 @@
  * de cada endpoint se lea junto a el y no dependa del orden de registro.
  */
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+import { zValidator } from '../../core/validator';
 import {
   Permission,
   Role,

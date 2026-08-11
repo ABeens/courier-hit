@@ -48,12 +48,20 @@ export const descriptionSchema = z
 /**
  * HAWB, el identificador que le pone la bodega de Miami al paquete. La operacion
  * lo llama LES, y asi se nombra en la UI ("HAWB (LES)"): es el nombre por el que
- * el cliente lo pregunta. Numerico (docs/manuales/flujo.md L114).
+ * el cliente lo pregunta.
+ *
+ * Formato de la etiqueta: prefijo de letras + consecutivo, p. ej. "LES48450141".
+ * El manual lo describia como numerico (docs/manuales/flujo.md L114), pero lo
+ * que la pistola lee en la mesa de bodega es la cadena COMPLETA, prefijo
+ * incluido; exigir solo digitos hacia que ningun paquete real se pudiera
+ * recibir. Se normaliza a MAYUSCULAS porque el mismo LES escaneado en otra caja
+ * no puede resolver a un tramite distinto.
  */
 export const hawbSchema = z
   .string()
   .trim()
-  .regex(/^\d{1,30}$/, 'El HAWB (LES) debe contener solo números.');
+  .toUpperCase()
+  .regex(/^[A-Z0-9-]{1,30}$/, 'El HAWB (LES) solo admite letras, números y guiones.');
 
 /** DUA con el formato del manual: ###-####-###### (docs/manuales/flujo.md L82). */
 export const duaSchema = z
