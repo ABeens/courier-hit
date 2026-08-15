@@ -33,7 +33,18 @@ export interface ShipmentDto {
   /** Derivado de `shipmentType`; viaja en la respuesta para no recalcularlo en la UI. */
   flow: Flow;
   state: State;
-  client: ShipmentClientRef;
+  /**
+   * Titular del tramite, o `null` cuando el paquete llego a bodega sin dueño
+   * conocido y todavia espera en la sala de control (`isUnassigned`).
+   *
+   * Un tramite sin dueño es un callejon sin salida a proposito: no avanza de
+   * estado, no se cotiza, no se cobra y no se entrega, porque las cuatro cosas
+   * necesitan saber a quien. Lo unico que se puede hacer con el es corregirlo,
+   * asignarlo o descartarlo. Por eso el resto del sistema NO lo ve: las consultas
+   * del panel, las entregas, los reportes y las notificaciones cruzan contra el
+   * casillero y una fila sin casillero se queda fuera sola.
+   */
+  client: ShipmentClientRef | null;
   /** Guia: tracking en Paqueteria, AWB/BL en Transporte y Agenciamiento. */
   tracking: string;
   /** Descripcion / REF. */
@@ -163,9 +174,69 @@ export interface ShipmentDto {
   settledUsd: number;
   pendingUsd: number;
 
+  /**
+   * Descarte de un paquete sin dueño: el instante en que un administrador decidio
+   * que ese bulto no da para mas (llego destrozado, era basura de relleno, se
+   * devolvio al operador de Miami). Null en todo tramite vivo.
+   *
+   * Es un ARCHIVADO, no un DELETE. La fila se queda porque documenta que ese
+   * paquete estuvo fisicamente en la bodega, que es justo lo que alguien va a
+   * preguntar dentro de seis meses; lo que desaparece es de las pantallas. Solo
+   * se puede descartar mientras el paquete no tiene dueño: en cuanto se le asigna
+   * uno pasa a ser un tramite normal, y esos se enmiendan por el flujo (corregir
+   * estado, reversar costos), no borrandolos.
+   */
+  discardedAt: string | null;
+  /** Motivo del descarte, obligatorio al descartar. Null si el tramite esta vivo. */
+  discardReason: string | null;
+
   /** Instantes en UTC, ISO 8601. La hora local se arma en la presentacion. */
   createdAt: string;
   updatedAt: string;
+}
+
+/** Etiqueta con la que la UI nombra un tramite todavia sin dueño. */
+export const UNASSIGNED_CLIENT_LABEL = 'Sin asignar';
+
+/**
+ * Nombre del titular tal como se muestra, o la etiqueta de "sin dueño".
+ *
+ * Vive aqui y no en cada pantalla porque el hueco se pinta en siete sitios
+ * distintos (tablero, costos, recepcion, avanzar, corregir…) y cada uno
+ * inventandose su texto acabaria diciendo "—", "N/D" y "Sin cliente" para la
+ * misma cosa.
+ */
+export function clientName(client: ShipmentClientRef | null): string {
+  return client?.name ?? UNASSIGNED_CLIENT_LABEL;
+}
+
+/** `HS-1000 — Ana Pérez`, o la etiqueta de "sin dueño" cuando no hay titular. */
+export function clientFullLabel(client: ShipmentClientRef | null): string {
+  return client ? `${client.code} — ${client.name}` : UNASSIGNED_CLIENT_LABEL;
+}
+
+/** True si el paquete llego a bodega sin dueño conocido y sigue esperando uno. */
+export function isUnassigned(shipment: Pick<ShipmentDto, 'client'>): boolean {
+  return shipment.client === null;
+}
+
+/** True si el paquete fue descartado desde la sala de control. */
+export function isDiscarded(shipment: Pick<ShipmentDto, 'discardedAt'>): boolean {
+  return shipment.discardedAt !== null;
+}
+
+/**
+ * Guia del tramite tal como se muestra, o `null` cuando no se conoce ninguna.
+ *
+ * Un paquete que aparece en bodega sin etiqueta legible no tiene tracking, pero
+ * la columna es obligatoria (es la llave contra el proveedor y contra el indice
+ * de duplicados). En vez de aflojar esa regla por un caso excepcional, el alta
+ * sin guia SIEMBRA el consecutivo como tracking: es unico por construccion y no
+ * se puede confundir con la guia de una tienda. Aqui se deshace esa siembra para
+ * que la pantalla muestre el hueco en vez de un numero que nadie puede rastrear.
+ */
+export function knownTracking(shipment: Pick<ShipmentDto, 'code' | 'tracking'>): string | null {
+  return shipment.tracking === shipment.code ? null : shipment.tracking;
 }
 
 /**

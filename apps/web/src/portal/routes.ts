@@ -23,6 +23,7 @@ export const RESOURCE_SLUGS: Record<Resource, string> = {
   [Resource.Reports]: 'reportes',
   [Resource.Clients]: 'clientes',
   [Resource.Config]: 'enlace-miami',
+  [Resource.ControlRoom]: 'sala-de-control',
   [Resource.Settings]: 'configuracion',
   [Resource.Tariffs]: 'tarifas',
   [Resource.Routes]: 'rutas',

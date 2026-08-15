@@ -22,6 +22,7 @@ import {
   State,
   can,
   canSetExchangeRate,
+  clientFullLabel,
   computeTotals,
   formatMoney,
 } from '@courier/shared';
@@ -261,7 +262,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
         <div className="modal-head">
           <h3>Costos · {shipment.code}</h3>
           <p>
-            {shipment.client.code} — {shipment.client.name} · {shipment.description}
+            {clientFullLabel(shipment.client)} · {shipment.description}
           </p>
         </div>
 

@@ -13,7 +13,7 @@
  *   - Queda en el historial marcada como correccion, no como avance.
  */
 import { useState } from 'react';
-import { Condition, STATE_LABELS, conditionsFor, statesOf } from '@courier/shared';
+import { Condition, STATE_LABELS, clientName, conditionsFor, statesOf } from '@courier/shared';
 import type { ShipmentDto, State } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
@@ -80,7 +80,7 @@ export function StateCorrectModal({ row, onClose, onSaved }: Props) {
         <div className="modal-head">
           <h3>Corregir estado</h3>
           <p>
-            {row.code} · {row.client.name}
+            {row.code} · {clientName(row.client)}
           </p>
         </div>
 

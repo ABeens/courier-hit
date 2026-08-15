@@ -42,9 +42,24 @@ export const shipments = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     /** Consecutivo `HSX000001000` (clave de negocio, nunca se usa como FK). */
     code: text('code').notNull().unique(),
-    clientId: uuid('client_id')
-      .notNull()
-      .references(() => clients.id),
+    /**
+     * Casillero dueño del tramite. NULL solo en un caso, y es el que justifica
+     * que la columna sea opcional: el paquete llego a la bodega de HS Global sin
+     * que nadie lo anunciara (ni prealerta del cliente ni aviso del operador de
+     * Miami) y todavia espera en la sala de control a que se le identifique dueño.
+     *
+     * La alternativa era una tabla aparte de "paquetes desconocidos" que al
+     * asignarse se convirtiera en tramite. Se prefirio esta: el bulto es el mismo
+     * objeto antes y despues de saber de quien es, y duplicar la entidad obligaba
+     * a mantener dos altas, dos correcciones y dos historiales del mismo paquete.
+     *
+     * El precio es que TODO lector debe tolerar el hueco. Lo pagan casi todos sin
+     * escribir una linea: las consultas del panel, las entregas, los reportes, la
+     * sincronizacion con el proveedor y las notificaciones cruzan contra
+     * `clients` con INNER JOIN, asi que una fila sin casillero se queda fuera
+     * sola. Los que si lo miran de frente estan enumerados en `ShipmentDto.client`.
+     */
+    clientId: uuid('client_id').references(() => clients.id),
     shipmentType: shipmentTypeEnum('shipment_type').notNull(),
     /**
      * Estado actual. El flow NO se guarda: se deriva del tipo con `flowForType`.
@@ -188,6 +203,21 @@ export const shipments = pgTable(
     /** Ultimo error del proveedor al replicar; para diagnostico de la reconciliacion. */
     helgaPrealertError: text('helga_prealert_error'),
 
+    // --- Descarte desde la sala de control (solo paquetes sin dueño) ---
+    /**
+     * Instante del descarte, o NULL en todo tramite vivo. Es un ARCHIVADO, no un
+     * borrado: la fila documenta que ese bulto estuvo fisicamente en la bodega, y
+     * eso no se tira aunque el paquete acabe en la basura.
+     *
+     * Las lecturas lo excluyen por defecto (`shipmentsRepo.list`), y el indice
+     * unico de tracking activo tambien: un descartado no puede seguir ocupando la
+     * guia de un paquete que quiza llegue de verdad manaña.
+     */
+    discardedAt: timestamp('discarded_at', { withTimezone: true }),
+    discardedBy: uuid('discarded_by').references(() => users.id, { onDelete: 'set null' }),
+    /** Motivo del descarte; obligatorio al descartar (el schema Zod lo exige). */
+    discardReason: text('discard_reason'),
+
     /** Quien lo dio de alta: el propio cliente (prealerta) o un usuario de staff. */
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -201,10 +231,25 @@ export const shipments = pgTable(
      * Un mismo tracking no puede estar activo dos veces, pero SI puede repetirse
      * historicamente (los transportistas reciclan numeros de guia). Por eso el
      * indice unico es PARCIAL: solo aplica a los tramites que aun no terminaron.
+     *
+     * Los DESCARTADOS tampoco cuentan. Un paquete desconocido que se registro con
+     * una guia mal leida y luego se descarto no puede bloquear el alta del
+     * paquete legitimo que traiga esa guia: quedaria un error de bodega
+     * impidiendo registrar un envio real, y sin forma de resolverlo desde la
+     * pantalla.
      */
     uniqueIndex('shipments_active_tracking')
       .on(t.tracking)
-      .where(sql`${t.state} <> 'entregado'`),
+      .where(sql`${t.state} <> 'entregado' and ${t.discardedAt} is null`),
+    /**
+     * Cola de la sala de control: los paquetes vivos que todavia no tienen dueño.
+     * Parcial porque son un puñado frente a la tabla entera, y es la unica
+     * consulta que barre `client_id is null` (el resto del sistema los descarta
+     * por el join).
+     */
+    index('shipments_unassigned_idx')
+      .on(t.createdAt)
+      .where(sql`${t.clientId} is null and ${t.discardedAt} is null`),
   ],
 );
 

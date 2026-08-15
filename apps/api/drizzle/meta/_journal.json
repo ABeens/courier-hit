@@ -162,6 +162,20 @@
       "when": 1786405144390,
       "tag": "0022_glamorous_the_watchers",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786508006991,
+      "tag": "0023_lucky_green_goblin",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786523983333,
+      "tag": "0024_quick_vance_astro",
+      "breakpoints": true
     }
   ]
 }

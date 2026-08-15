@@ -20,6 +20,7 @@ import {
   Condition,
   STATE_LABELS,
   can,
+  clientName,
   conditionsFor,
   isProviderDrivenState,
   nextStates,
@@ -113,7 +114,7 @@ export function StateAdvanceModal({ row, role, onClose, onSaved }: Props) {
         <div className="modal-head">
           <h3>Avanzar trámite</h3>
           <p>
-            {row.code} · {row.client.name}
+            {row.code} · {clientName(row.client)}
           </p>
         </div>
 

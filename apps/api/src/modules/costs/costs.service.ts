@@ -59,8 +59,15 @@ import { exchangeRateReference } from '../settings/bccr-reference';
 import { settingsRepo } from '../settings/settings.repo';
 import { costsRepo } from './costs.repo';
 
-/** Fila del tramite tal como la devuelve el repo de tramites. */
-type ShipmentRow = NonNullable<Awaited<ReturnType<typeof shipmentsRepo.findById>>>;
+/**
+ * Fila del tramite tal como la devuelve el repo de tramites, con el casillero YA
+ * garantizado. Todo este modulo cotiza contra la tarifa del dueño, asi que un
+ * tramite sin dueño no entra: lo filtra `loadShipment` en la puerta y de ahi
+ * hacia dentro `clientId` es un string, no un hueco que revisar en cada calculo.
+ */
+type ShipmentRow = NonNullable<Awaited<ReturnType<typeof shipmentsRepo.findById>>> & {
+  clientId: string;
+};
 
 /**
  * Permiso para cargar costos de ese flow. Se DERIVA del step de facturacion de la
@@ -289,8 +296,16 @@ export const costsService = {
   async loadShipment(session: Session, shipmentId: string): Promise<ShipmentRow> {
     const row = await shipmentsRepo.findById(shipmentId);
     if (!row) throw ShipmentErrors.notFound();
-    assertCanCost(session, row);
-    return row;
+    if (row.discardedAt !== null) throw ShipmentErrors.discarded();
+    /**
+     * Sin dueño no hay a quien cotizar: el flete sale de la tarifa por kilo del
+     * casillero (`clientsRepo.rateFor`) y la factura se le presenta a alguien.
+     * Un paquete desconocido espera en la sala de control hasta que se sepa de
+     * quien es; entonces entra a costos como cualquier otro.
+     */
+    if (row.clientId === null) throw ShipmentErrors.unassigned();
+    assertCanCost(session, { ...row, clientId: row.clientId });
+    return { ...row, clientId: row.clientId };
   },
 
   /** Lineas guardadas + sugerencias + totales + tasa vigente y referencia. */

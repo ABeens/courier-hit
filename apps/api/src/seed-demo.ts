@@ -58,6 +58,7 @@ import {
   canTransition,
   computeTotals,
   convertMoney,
+  findCanton,
   findDistrict,
   flowForType,
   formatShipmentCode,
@@ -74,6 +75,7 @@ import { costServices } from './modules/cost-services/cost-service.schema';
 import { shipmentCosts } from './modules/costs/shipment-cost.schema';
 import { deliveryAttempts } from './modules/deliveries/deliveries.schema';
 import { payments } from './modules/payments/payments.schema';
+import { cantonRoutes } from './modules/routes/canton-route.schema';
 import { districtRoutes } from './modules/routes/district-route.schema';
 import { shipmentEvents, shipments } from './modules/shipments/shipments.schema';
 import {
@@ -400,6 +402,18 @@ const ROUTES: readonly { routeNumber: number; districts: readonly string[] }[] =
   { routeNumber: 9, districts: ['70101', '70201'] },
 ];
 
+/**
+ * Rutas asignadas a un CANTON entero: las heredan todos sus distritos salvo los
+ * que tengan ruta propia en `ROUTES`. Desamparados esta a proposito: su cabecera
+ * (10301) quedo arriba en la ruta 2, asi que la demo ensena las dos mitades de
+ * la regla a la vez, el canton cubierto de una sola vez y la excepcion que la
+ * asignacion del canton no se lleva por delante.
+ */
+const CANTON_ROUTES: readonly { cantonCode: string; routeNumber: number }[] = [
+  { cantonCode: '101', routeNumber: 1 }, // San José centro
+  { cantonCode: '103', routeNumber: 5 }, // Desamparados (10301 se queda en la ruta 2)
+];
+
 interface AnnouncementSpec {
   title: string;
   message: string;
@@ -680,6 +694,9 @@ async function resetDemo(tx: Tx): Promise<void> {
   await tx
     .delete(districtRoutes)
     .where(inArray(districtRoutes.districtCode, ROUTES.flatMap((r) => r.districts)));
+  await tx
+    .delete(cantonRoutes)
+    .where(inArray(cantonRoutes.cantonCode, CANTON_ROUTES.map((r) => r.cantonCode)));
 
   console.log('[seed-demo] Datos de demo anteriores eliminados.');
 }
@@ -835,7 +852,20 @@ async function seed(tx: Tx): Promise<void> {
     }),
   );
 
-  // --- Rutas por distrito ---
+  // --- Rutas por canton (las heredan sus distritos sin ruta propia) ---
+  await tx
+    .insert(cantonRoutes)
+    .values(
+      CANTON_ROUTES.map((r) => {
+        if (!findCanton(r.cantonCode)) {
+          throw new Error(`[seed-demo] Cantón inexistente en la definición de rutas: ${r.cantonCode}`);
+        }
+        return { cantonCode: r.cantonCode, routeNumber: r.routeNumber };
+      }),
+    )
+    .onConflictDoNothing();
+
+  // --- Rutas por distrito (excepciones: mandan sobre la del canton) ---
   await tx
     .insert(districtRoutes)
     .values(

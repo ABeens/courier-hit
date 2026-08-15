@@ -36,6 +36,17 @@ export enum Resource {
   Clients = 'clients',
   Config = 'config',
   /**
+   * Sala de control: los paquetes que llegaron a bodega SIN dueño conocido y la
+   * reasignacion de dueño de un tramite ya registrado.
+   *
+   * Es un modulo propio y no una accion mas sobre Package porque tiene su propia
+   * pantalla y su propia poblacion: el tablero de Paqueteria opera tramites que
+   * fluyen, y esto es el cuarto de atras donde se arregla lo que entro mal. La
+   * matriz del manual lo lista como fila aparte ("Paquetes — reasignar cliente
+   * (desconocidos/homónimos)", docs/manuales/roles.md L38).
+   */
+  ControlRoom = 'control_room',
+  /**
    * Ajustes generales del sistema (pantalla "Configuración"). Son los valores
    * que el sistema aplica IGUAL a todos los tramites, no datos de uno: hoy solo
    * la tasa de cambio, y es el cajon donde entraran los que vengan.
@@ -101,7 +112,23 @@ export enum Permission {
   PackageReceive = 'package.receive',
   PackageRead = 'package.read',
   PackageWrite = 'package.write',
-  PackageReassign = 'package.reassign',
+  /**
+   * Sala de control: registrar un paquete que llego a bodega sin que nadie lo
+   * anunciara, corregir sus datos, asignarle dueño (o cambiarselo a uno que ya lo
+   * tiene) y descartarlo.
+   *
+   * Las cuatro acciones van en UN permiso porque son la misma pantalla y el mismo
+   * acto: enmendar el registro de un paquete cuyo origen se perdio. Separarlas
+   * daria roles que pueden dar de alta un desconocido pero no asignarlo, que es
+   * dejar el trabajo a medias.
+   *
+   * Solo `admin`, por el criterio de aceptacion del requerimiento. OJO: la matriz
+   * del manual (docs/manuales/roles.md L11 y L38) tambien se lo da a Operativo
+   * —es bodega quien encuentra el bulto—; abrirselo es sumar este permiso a
+   * `Role.Operativo` en ROLE_PERMISSIONS y nada mas: la pantalla, el menu y los
+   * endpoints preguntan por el PERMISO, nunca por el rol.
+   */
+  ControlRoomManage = 'control_room.manage',
   TramiteManage = 'tramite.manage',
   /**
    * Corregir el estado de un tramite fuera de la maquina (retroceder o saltar) y
@@ -192,7 +219,9 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   [Permission.PackageReceive]: { resource: Resource.Reception, action: Action.Receive, scope: Scope.All },
   [Permission.PackageRead]: { resource: Resource.Package, action: Action.Read, scope: Scope.All },
   [Permission.PackageWrite]: { resource: Resource.Package, action: Action.Write, scope: Scope.All },
-  [Permission.PackageReassign]: { resource: Resource.Package, action: Action.Reassign, scope: Scope.All },
+  // Resource.ControlRoom: SI abre un modulo del menu (la sala de control), a
+  // diferencia de shipment.correct, que es una accion suelta sobre el tramite.
+  [Permission.ControlRoomManage]: { resource: Resource.ControlRoom, action: Action.Reassign, scope: Scope.All },
   [Permission.TramiteManage]: { resource: Resource.Tramite, action: Action.Manage, scope: Scope.All },
   // Resource.Package y no uno nuevo: corregir no es un modulo del menu, es una
   // accion excepcional sobre el tramite (de cualquier tipo).
@@ -227,10 +256,10 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   Permission.PackageReceive,
   Permission.PackageRead,
   Permission.PackageWrite,
-  Permission.PackageReassign,
   Permission.TramiteManage,
-  // Solo admin: es la puerta para deshacer, no para operar.
+  // Solo admin: son las dos puertas para deshacer, no para operar.
   Permission.ShipmentCorrect,
+  Permission.ControlRoomManage,
   Permission.CostsManage,
   Permission.CostsTramiteManage,
   // Solo admin: son valores generales del sistema, no datos del tramite.
@@ -282,7 +311,6 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.PackageReceive,
     Permission.PackageRead,
     Permission.PackageWrite,
-    Permission.PackageReassign,
     Permission.CostsManage,
     Permission.ReportsOperationalBasic,
     Permission.ReportsOperational,

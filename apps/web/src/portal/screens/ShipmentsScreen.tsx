@@ -32,6 +32,7 @@ import {
   billingAmounts,
   billingCurrencyFor,
   can,
+  clientFullLabel,
   formatMoney,
   statesOf,
   usesPackageFields,
@@ -48,6 +49,7 @@ import { ShipmentFormModal, allowedTypesFor } from './ShipmentFormModal';
 import { ShipmentHistoryModal } from './ShipmentHistoryModal';
 import { StateAdvanceModal, reachableStates } from './StateAdvanceModal';
 import { StateCorrectModal } from './StateCorrectModal';
+import { AssignOwnerModal } from './AssignOwnerModal';
 import { PaymentModal } from './PaymentModal';
 
 /** Que tablero se esta mirando. */
@@ -245,6 +247,8 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
   const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; row: ShipmentDto } | null>(null);
   const [advancing, setAdvancing] = useState<ShipmentDto | null>(null);
   const [correcting, setCorrecting] = useState<ShipmentDto | null>(null);
+  /** Trámite al que se le está cambiando el dueño (sala de control). */
+  const [reassigning, setReassigning] = useState<ShipmentDto | null>(null);
   const [paying, setPaying] = useState<ShipmentDto | null>(null);
   /** Trámite cuyo historial de estados se está mirando (clic sobre la ficha). */
   const [tracing, setTracing] = useState<ShipmentDto | null>(null);
@@ -262,6 +266,14 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
    * Paquetería mal avanzado por el robot o por la bodega tampoco tenía arreglo.
    */
   const canCorrect = can(role, Permission.ShipmentCorrect);
+  /**
+   * Cambiar el dueño de un trámite ya registrado es la otra mitad de la sala de
+   * control, y el botón vive aquí y no allí a propósito: uno se da cuenta de que
+   * el paquete está cargado al cliente equivocado mirando ESTA ficha, no una
+   * lista de desconocidos. La pantalla de la sala de control lleva la cola de
+   * los que todavía no tienen dueño; esto es el mismo acto sobre los que sí.
+   */
+  const canReassign = can(role, Permission.ControlRoomManage);
 
   /**
    * Tipos que se pueden dar de alta DESDE ESTE TABLERO: el alta hereda el filtro
@@ -507,7 +519,7 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
                   <span className="sub-type">{SHIPMENT_TYPE_LABELS[row.shipmentType]}</span>
                   {!isOwn && (
                     <span className="sub-client">
-                      {row.client.code} — {row.client.name}
+                      {clientFullLabel(row.client)}
                     </span>
                   )}
                   <span className="sub-date">Ingresó {formatDate(row.createdAt)}</span>
@@ -575,6 +587,11 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
                     Corregir
                   </button>
                 )}
+                {canReassign && !isOwn && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => setReassigning(row)}>
+                    Reasignar
+                  </button>
+                )}
                 {/*
                   El cobro solo tiene sentido con la factura ya aprobada, que es
                   justo lo que significa "En bodega - Pendiente pago".
@@ -628,6 +645,19 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
           onClose={() => setAdvancing(null)}
           onSaved={(message) => {
             setAdvancing(null);
+            setNotice(message);
+            setError(null);
+            void load();
+          }}
+        />
+      )}
+
+      {reassigning && (
+        <AssignOwnerModal
+          row={reassigning}
+          onClose={() => setReassigning(null)}
+          onSaved={(message) => {
+            setReassigning(null);
             setNotice(message);
             setError(null);
             void load();
