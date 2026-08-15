@@ -44,6 +44,24 @@ import { shipmentsRepo } from './shipments.repo';
 type ShipmentRow = NonNullable<Awaited<ReturnType<typeof shipmentsRepo.findById>>>;
 
 /**
+ * Barrera 0: el tramite tiene que ser operable. La comparten el avance y la
+ * correccion, que es lo que la hace util: son las DOS puertas por las que un
+ * tramite se mueve, y las dos deben negarse por lo mismo.
+ *
+ * - SIN DUEÑO: un paquete que llego a bodega sin identificar no puede avanzar.
+ *   Todo lo que viene despues de "Facturación en proceso" pregunta por el
+ *   casillero —la tarifa para cotizar, la cuenta para cobrar, la direccion para
+ *   entregar—, asi que dejarlo avanzar lo llevaria a un estado desde el que
+ *   ninguna de esas tres cosas se puede hacer. Se queda quieto hasta que la sala
+ *   de control le ponga dueño.
+ * - DESCARTADO: esta archivado. Primero se restaura, despues se opera.
+ */
+function assertOperable(row: ShipmentRow): void {
+  if (row.discardedAt !== null) throw ShipmentErrors.discarded();
+  if (row.clientId === null) throw ShipmentErrors.unassigned();
+}
+
+/**
  * Comprueba las guardas de datos del estado destino. Cada Condition se traduce a
  * la pregunta que la responde; una Condition sin traducir aqui es un olvido, no
  * un permiso, asi que el `switch` es exhaustivo a proposito.
@@ -92,6 +110,7 @@ export const transitionsService = {
   ) {
     const row = await shipmentsRepo.findById(id);
     if (!row) throw ShipmentErrors.notFound();
+    assertOperable(row);
 
     const flow = flowForType(row.shipmentType);
     const to = input.state;
@@ -149,6 +168,7 @@ export const transitionsService = {
   async correct(session: Session, id: string, input: CorrectStateInput) {
     const row = await shipmentsRepo.findById(id);
     if (!row) throw ShipmentErrors.notFound();
+    assertOperable(row);
 
     const flow = flowForType(row.shipmentType);
     const to = input.state;

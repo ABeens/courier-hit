@@ -21,10 +21,11 @@
  * trámite fantasma, que es peor que no haber escaneado nada.
  */
 import { useEffect, useRef, useState } from 'react';
-import { SHIPMENT_TYPE_LABELS, STATE_LABELS, receiveShipmentSchema } from '@courier/shared';
+import { SHIPMENT_TYPE_LABELS, STATE_LABELS, clientName, receiveShipmentSchema } from '@courier/shared';
 import type { ShipmentDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { formatDateTime } from '../lib/datetime';
+import { UnassignedFormModal } from './UnassignedFormModal';
 
 /** Lo registrado en esta sesión de trabajo, del más reciente al más antiguo. */
 interface LogEntry {
@@ -37,6 +38,12 @@ interface LogEntry {
   label: string;
   /** Clase de tono de la tarjeta; ver `.tone-*` en portal.css. */
   tone: string;
+  /**
+   * El LES no resolvió a ningún trámite. Es la única rama que ofrece registrar el
+   * bulto como paquete sin dueño; las demás (duplicado, ya recibido, LES mal
+   * digitado) se resuelven en otro sitio, y dar de alta ahí crearía un fantasma.
+   */
+  unknown?: boolean;
 }
 
 /**
@@ -44,7 +51,7 @@ interface LogEntry {
  * manual; el resto son cosas que se resuelven en otro lado, y decirle "ingresar
  * manual" al operador lo llevaría a duplicar un trámite que ya existe.
  */
-function outcomeFor(err: unknown): Pick<LogEntry, 'label' | 'tone' | 'message'> {
+function outcomeFor(err: unknown): Pick<LogEntry, 'label' | 'tone' | 'message' | 'unknown'> {
   const code = err instanceof ApiError ? err.code : 'NETWORK';
   const message =
     err instanceof ApiError && err.message
@@ -53,7 +60,7 @@ function outcomeFor(err: unknown): Pick<LogEntry, 'label' | 'tone' | 'message'> 
 
   switch (code) {
     case 'RECEPTION_UNKNOWN_HAWB':
-      return { label: 'Ingresar manual', tone: 'tone-warn', message };
+      return { label: 'Ingresar manual', tone: 'tone-warn', message, unknown: true };
     case 'RECEPTION_ALREADY_RECEIVED':
       return { label: 'Ya recibido', tone: 'tone-info', message };
     case 'RECEPTION_AMBIGUOUS_HAWB':
@@ -65,10 +72,19 @@ function outcomeFor(err: unknown): Pick<LogEntry, 'label' | 'tone' | 'message'> 
   }
 }
 
-export function ReceptionScreen() {
+/**
+ * `canRegisterUnassigned` (permiso control_room.manage) abre el atajo del LES
+ * desconocido: registrar ahí mismo el bulto como paquete sin dueño, con el
+ * código ya escaneado. Sin el permiso la bitácora sigue diciendo «Ingresar
+ * manual», que es lo que había: quien no puede registrar desconocidos tiene que
+ * escalarlo, no quedarse mirando un botón que le va a devolver un 403.
+ */
+export function ReceptionScreen({ canRegisterUnassigned = false }: { canRegisterUnassigned?: boolean }) {
   const [hawb, setHawb] = useState('');
   const [log, setLog] = useState<LogEntry[]>([]);
   const [busy, setBusy] = useState(false);
+  /** LES desconocido que se está dando de alta como paquete sin dueño. */
+  const [registering, setRegistering] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -116,7 +132,7 @@ export function ReceptionScreen() {
       record({
         hawb: parsed.data.hawb,
         shipment,
-        message: `${shipment.code} · ${shipment.client.name} → ${STATE_LABELS[shipment.state]}`,
+        message: `${shipment.code} · ${clientName(shipment.client)} → ${STATE_LABELS[shipment.state]}`,
         ok: true,
         label: 'Recibido',
         tone: 'tone-ok',
@@ -174,6 +190,16 @@ export function ReceptionScreen() {
                   <span className="dot" />
                   {entry.label}
                 </span>
+                {/* El bulto está en la mesa AHORA: registrarlo aquí, con el LES
+                    ya escaneado, evita el viaje a otra pantalla a redigitarlo. */}
+                {entry.unknown && canRegisterUnassigned && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setRegistering(entry.hawb)}
+                  >
+                    Registrar sin dueño
+                  </button>
+                )}
                 <div className="card-item-sub">{formatDateTime(entry.at)}</div>
               </div>
             </div>
@@ -186,6 +212,25 @@ export function ReceptionScreen() {
           Escanea el primer paquete para empezar. Los que no estén en el sistema se marcarán
           para ingresarlos a mano.
         </div>
+      )}
+
+      {registering !== null && (
+        <UnassignedFormModal
+          mode="create"
+          initialHawb={registering}
+          onClose={() => setRegistering(null)}
+          onSaved={(message) => {
+            setRegistering(null);
+            record({
+              hawb: registering,
+              shipment: null,
+              ok: true,
+              label: 'Sin dueño',
+              tone: 'tone-info',
+              message,
+            });
+          }}
+        />
       )}
     </div>
   );

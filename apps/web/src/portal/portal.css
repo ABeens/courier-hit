@@ -1142,6 +1142,17 @@ button.dash-row:focus-visible { outline: 2px solid var(--brand); outline-offset:
 .table-dense .spill .dot { width: 6px; height: 6px; }
 .table-wrap .table-dense { min-width: 720px; }
 
+/* ---- Definicion de rutas: cabecera de canton dentro de la tabla ----
+   La ruta se asigna en dos niveles y el del canton manda sobre sus distritos, asi
+   que su control vive EN la tabla, como cabecera del grupo que gobierna, y no en
+   un panel aparte donde no se veria a quien afecta. */
+.canton-row td { background: var(--paper-2); border-bottom: 1px solid var(--line); }
+.table tbody tr.canton-row:hover td { background: var(--paper-2); }
+.canton-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.canton-title { font-weight: 700; color: var(--ink); }
+.canton-assign { display: flex; align-items: center; gap: 8px; }
+.canton-assign .field-label { margin-bottom: 0; white-space: nowrap; }
+
 @media (max-width: 560px) {
   .dash-queues { grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); }
   .dash-tile { padding: 12px 13px; }

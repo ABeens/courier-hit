@@ -8,7 +8,8 @@ import { config } from './config';
 import * as authSchema from '../modules/auth/auth.schema';
 import * as costServicesSchema from '../modules/cost-services/cost-service.schema';
 import * as tariffsSchema from '../modules/tariffs/tariffs.schema';
-import * as routesSchema from '../modules/routes/district-route.schema';
+import * as districtRoutesSchema from '../modules/routes/district-route.schema';
+import * as cantonRoutesSchema from '../modules/routes/canton-route.schema';
 import * as announcementsSchema from '../modules/announcements/announcement.schema';
 import * as shipmentsSchema from '../modules/shipments/shipments.schema';
 import * as shipmentCostsSchema from '../modules/costs/shipment-cost.schema';
@@ -29,7 +30,8 @@ export const schema = {
   ...authSchema,
   ...costServicesSchema,
   ...tariffsSchema,
-  ...routesSchema,
+  ...districtRoutesSchema,
+  ...cantonRoutesSchema,
   ...shipmentsSchema,
   ...shipmentCostsSchema,
   ...paymentsSchema,

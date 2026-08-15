@@ -1,7 +1,7 @@
 /**
  * Acceso a datos del modulo de entregas. Dueño de `delivery_attempts`; lee
- * `shipments` + `clients` + `users` + `district_routes` para armar la cola del
- * mensajero (que necesita saber a nombre de quien va y por que ruta).
+ * `shipments` + `clients` + `users` + la definicion de rutas para armar la cola
+ * del mensajero (que necesita saber a nombre de quien va y por que ruta).
  */
 import { and, asc, eq, ilike, or } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
@@ -10,7 +10,9 @@ import type { ListDeliveryQueueQuery } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { settlementColumn } from '../payments/settlement';
+import { cantonRoutes } from '../routes/canton-route.schema';
 import { districtRoutes } from '../routes/district-route.schema';
+import { cantonRouteJoin, districtRouteJoin, effectiveRouteNumber } from '../routes/effective-route';
 import { shipments } from '../shipments/shipments.schema';
 import { deliveryAttempts } from './deliveries.schema';
 
@@ -25,7 +27,7 @@ export const deliveriesRepo = {
     const conds: SQL[] = [eq(shipments.state, State.EnRutaEntrega)];
 
     if (query.routeNumber !== undefined) {
-      conds.push(eq(districtRoutes.routeNumber, query.routeNumber));
+      conds.push(eq(effectiveRouteNumber, query.routeNumber));
     }
     if (query.q) {
       const term = `%${query.q}%`;
@@ -50,7 +52,7 @@ export const deliveriesRepo = {
         cantonCode: clients.cantonCode,
         districtCode: clients.districtCode,
         addressLine: clients.addressLine,
-        routeNumber: districtRoutes.routeNumber,
+        routeNumber: effectiveRouteNumber,
         invoiceTotalCrc: shipments.invoiceTotalCrc,
         /**
          * Abonos del tramite: el mensajero tiene que ver si sale con un paquete
@@ -63,10 +65,11 @@ export const deliveriesRepo = {
       .from(shipments)
       .innerJoin(clients, eq(shipments.clientId, clients.id))
       .innerJoin(users, eq(clients.userId, users.id))
-      .leftJoin(districtRoutes, eq(clients.districtCode, districtRoutes.districtCode))
+      .leftJoin(districtRoutes, districtRouteJoin)
+      .leftJoin(cantonRoutes, cantonRouteJoin)
       .where(and(...conds))
       // Por ruta y luego por antiguedad: es el orden en que se arma un recorrido.
-      .orderBy(asc(districtRoutes.routeNumber), asc(shipments.updatedAt));
+      .orderBy(asc(effectiveRouteNumber), asc(shipments.updatedAt));
   },
 
   /** Intentos de un tramite, del mas antiguo al mas reciente. */

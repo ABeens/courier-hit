@@ -285,6 +285,65 @@ export const ShipmentErrors = {
   /** Se pidio el documento de un tramite que no tiene ninguno adjunto. */
   documentMissing: () =>
     new AppError('SHIPMENT_DOCUMENT_MISSING', 'El trámite no tiene documento adjunto.', 404),
+
+  // --- Sala de control: paquetes sin dueño (docs/06 §9) ---
+  /**
+   * Se intento operar el proceso sobre un paquete que todavia no tiene dueño:
+   * avanzarlo, cotizarlo, cobrarlo o entregarlo. Las cuatro cosas necesitan saber
+   * a quien, asi que el paquete se queda quieto hasta que la sala de control le
+   * asigne casillero. 409: no falta un dato del cuerpo, falta un paso previo.
+   */
+  unassigned: () =>
+    new AppError(
+      'SHIPMENT_UNASSIGNED',
+      'El paquete todavía no tiene dueño. Asígnale un casillero desde la sala de control antes de continuar.',
+      409,
+    ),
+  /** Se llamo a una operacion de paquete sin dueño sobre un tramite que ya lo tiene. */
+  alreadyAssigned: (clientCode: string) =>
+    new AppError('SHIPMENT_ALREADY_ASSIGNED', `El paquete ya pertenece al casillero ${clientCode}.`, 409),
+  /** Reasignar al mismo casillero que ya lo tiene: no hay nada que cambiar. */
+  sameOwner: () =>
+    new AppError('SHIPMENT_SAME_OWNER', 'El paquete ya pertenece a ese casillero.', 409),
+  /**
+   * Cambiar de dueño con la factura ya congelada moveria una deuda de un cliente
+   * a otro sin que ninguna de las dos cuentas se entere. Se reversan los costos
+   * primero, que es el acto que si deja rastro contable.
+   */
+  ownerLockedAfterInvoice: () =>
+    new AppError(
+      'SHIPMENT_OWNER_LOCKED',
+      'No se puede cambiar el dueño: la factura ya fue aprobada. Reversa los costos del trámite primero.',
+      409,
+    ),
+  /** Hay abonos registrados a nombre del dueño actual; cambiarlo dejaria pagos huerfanos. */
+  ownerLockedByPayments: () =>
+    new AppError(
+      'SHIPMENT_OWNER_LOCKED_PAYMENTS',
+      'No se puede cambiar el dueño: el trámite ya tiene pagos registrados a nombre del cliente actual.',
+      409,
+    ),
+  /** El tramite esta archivado: primero se restaura, despues se opera. */
+  discarded: () =>
+    new AppError(
+      'SHIPMENT_DISCARDED',
+      'El paquete está descartado. Restáuralo desde la sala de control para volver a trabajarlo.',
+      409,
+    ),
+  /** Se pidio restaurar algo que no estaba descartado. */
+  notDiscarded: () =>
+    new AppError('SHIPMENT_NOT_DISCARDED', 'El paquete no está descartado.', 409),
+  /**
+   * Descartar es la salida de un paquete que nunca tuvo dueño. Uno que ya lo
+   * tiene es un tramite normal y se enmienda por el flujo (corregir estado,
+   * reversar costos), no archivandolo por la puerta de atras.
+   */
+  discardOnlyUnassigned: () =>
+    new AppError(
+      'SHIPMENT_DISCARD_ONLY_UNASSIGNED',
+      'Solo se pueden descartar paquetes sin dueño. Este ya tiene casillero asignado.',
+      409,
+    ),
 };
 
 /**
@@ -466,6 +525,14 @@ export const AnnouncementErrors = {
 export const RouteErrors = {
   notFound: () => new AppError('DISTRICT_ROUTE_NOT_FOUND', 'El distrito no tiene una ruta asignada.', 404),
   districtNotFound: () => new AppError('DISTRICT_NOT_FOUND', 'Distrito no encontrado.', 404),
+  /**
+   * Quitar la ruta de un canton solo falla si el canton no la tenia puesta a
+   * mano; que sus distritos queden sin ruta al hacerlo es lo esperado (dejan de
+   * heredar), no un error.
+   */
+  cantonRouteNotFound: () =>
+    new AppError('CANTON_ROUTE_NOT_FOUND', 'El cantón no tiene una ruta asignada.', 404),
+  cantonNotFound: () => new AppError('CANTON_NOT_FOUND', 'Cantón no encontrado.', 404),
 };
 
 export function onError(err: Error, c: Context) {

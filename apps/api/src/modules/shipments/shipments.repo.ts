@@ -2,18 +2,21 @@
  * Acceso a datos de los tramites. Solo toca SUS tablas mas los joins de lectura
  * que necesitan los dashboards (cliente y ruta del distrito).
  *
- * La ruta operativa se resuelve con un LEFT JOIN contra `district_routes` en vez
- * de copiarse a la fila del tramite: si el administrador reasigna la ruta de un
- * distrito, los tramites en curso la reflejan sin migrar datos.
+ * La ruta operativa se resuelve con LEFT JOIN contra la definicion de rutas en
+ * vez de copiarse a la fila del tramite: si el administrador reasigna la ruta de
+ * un distrito o de un canton, los tramites en curso la reflejan sin migrar
+ * datos. La precedencia entre los dos niveles vive en `routes/effective-route`.
  */
-import { and, count, desc, eq, gte, ilike, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { HelgaSyncStatus } from '@courier/shared';
 import type { ListShipmentsQuery, State } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { settlementColumn } from '../payments/settlement';
+import { cantonRoutes } from '../routes/canton-route.schema';
 import { districtRoutes } from '../routes/district-route.schema';
+import { cantonRouteJoin, districtRouteJoin, effectiveRouteNumber } from '../routes/effective-route';
 import { shipmentEvents, shipments } from './shipments.schema';
 
 /** Columnas de la vista de lectura: el tramite + el cliente + la ruta. */
@@ -54,22 +57,35 @@ const columns = {
   costsApprovedAt: shipments.costsApprovedAt,
   // Id de la prealerta en Helga: lo necesita el rehacer por cambio de tracking.
   helgaPrealertId: shipments.helgaPrealertId,
+  // Archivado de la sala de control: null en todo tramite vivo.
+  discardedAt: shipments.discardedAt,
+  discardReason: shipments.discardReason,
   createdAt: shipments.createdAt,
   updatedAt: shipments.updatedAt,
   clientId: clients.id,
   clientCode: clients.code,
   clientName: users.name,
-  routeNumber: districtRoutes.routeNumber,
+  routeNumber: effectiveRouteNumber,
 };
 
-/** Consulta base con los joins de lectura; se le encadenan los filtros. */
+/**
+ * Consulta base con los joins de lectura; se le encadenan los filtros.
+ *
+ * El casillero entra con LEFT JOIN porque un paquete que llego a bodega sin dueño
+ * todavia no tiene ninguno (`shipments.client_id` es nullable). Es el UNICO
+ * lugar del sistema donde ese join se afloja: los demas modulos —panel, entregas,
+ * reportes, notificaciones, sincronizacion con el proveedor— lo mantienen INNER y
+ * asi dejan fuera solos a los paquetes sin dueño, que es exactamente lo que
+ * necesitan (no se cotizan, no se cobran, no se entregan y no reciben correos).
+ */
 function baseQuery() {
   return db
     .select(columns)
     .from(shipments)
-    .innerJoin(clients, eq(shipments.clientId, clients.id))
-    .innerJoin(users, eq(clients.userId, users.id))
-    .leftJoin(districtRoutes, eq(clients.districtCode, districtRoutes.districtCode));
+    .leftJoin(clients, eq(shipments.clientId, clients.id))
+    .leftJoin(users, eq(clients.userId, users.id))
+    .leftJoin(districtRoutes, districtRouteJoin)
+    .leftJoin(cantonRoutes, cantonRouteJoin);
 }
 
 /**
@@ -79,6 +95,22 @@ function baseQuery() {
  */
 function buildConditions(query: ListShipmentsQuery, ownerClientId?: string): SQL[] {
   const conds: SQL[] = [];
+
+  /**
+   * Eje "archivado": o los vivos o los descartados, nunca los dos juntos. El
+   * default esconde los descartados en TODAS las pantallas, incluida la que no
+   * sabe que existen.
+   */
+  conds.push(query.discarded ? isNotNull(shipments.discardedAt) : isNull(shipments.discardedAt));
+
+  /**
+   * Eje "dueño". Sin filtro explicito se devuelven solo los que YA tienen dueño:
+   * un paquete sin asignar no avanza ni se cobra, y colarlo en la cola de
+   * operacion llenaria el tablero de filas inertes. La sala de control pide
+   * 'unassigned' a proposito.
+   */
+  if (query.owner === 'unassigned') conds.push(isNull(shipments.clientId));
+  else if (query.owner !== 'all') conds.push(isNotNull(shipments.clientId));
 
   if (ownerClientId) conds.push(eq(shipments.clientId, ownerClientId));
   if (query.clientId) conds.push(eq(shipments.clientId, query.clientId));
@@ -120,15 +152,21 @@ export const shipmentsRepo = {
   },
 
   /**
-   * Tramite ACTIVO (no entregado) con ese tracking, si existe. Refleja el mismo
-   * criterio que el indice unico parcial: da un error claro antes de chocar con
-   * la restriccion de la BD.
+   * Tramite ACTIVO (no entregado ni descartado) con ese tracking, si existe.
+   * Refleja el mismo criterio que el indice unico parcial: da un error claro
+   * antes de chocar con la restriccion de la BD.
    */
   async findActiveByTracking(tracking: string) {
     const [row] = await db
       .select({ id: shipments.id, code: shipments.code })
       .from(shipments)
-      .where(and(eq(shipments.tracking, tracking), sql`${shipments.state} <> 'entregado'`))
+      .where(
+        and(
+          eq(shipments.tracking, tracking),
+          sql`${shipments.state} <> 'entregado'`,
+          isNull(shipments.discardedAt),
+        ),
+      )
       .limit(1);
     return row ?? null;
   },
@@ -171,7 +209,13 @@ export const shipmentsRepo = {
       .select({ id: shipments.id, code: shipments.code })
       .from(shipments)
       .where(
-        and(sql`upper(${shipments.hawb}) = upper(${hawb})`, sql`${shipments.state} <> 'entregado'`),
+        and(
+          sql`upper(${shipments.hawb}) = upper(${hawb})`,
+          sql`${shipments.state} <> 'entregado'`,
+          // Un bulto descartado no reclama su LES: si vuelve a escanearse, lo que
+          // hay que hacer es darlo de alta otra vez, no resucitar el archivado.
+          isNull(shipments.discardedAt),
+        ),
       )
       .limit(2);
   },
@@ -189,17 +233,68 @@ export const shipmentsRepo = {
   /**
    * Inserta el tramite y su primer evento en la MISMA transaccion: un tramite sin
    * historial seria un registro sin trazabilidad desde su origen.
+   *
+   * `note` la usa el alta que necesita explicar POR QUE el tramite nace donde
+   * nace: el paquete sin dueño de la sala de control no arranca en "Prealertado"
+   * como los demas, y sin esa linea el historial empezaria en mitad del flujo sin
+   * decir de donde salio.
    */
-  async insert(values: typeof shipments.$inferInsert) {
+  async insert(values: typeof shipments.$inferInsert, note?: string) {
     return db.transaction(async (tx) => {
       const [row] = await tx.insert(shipments).values(values).returning({ id: shipments.id });
       if (!row) throw new Error('No se pudo crear el trámite.');
       await tx.insert(shipmentEvents).values({
         shipmentId: row.id,
         state: values.state,
+        note: note ?? null,
         createdBy: values.createdBy ?? null,
       });
       return row.id;
+    });
+  },
+
+  /**
+   * Escribe el dueño del tramite y deja el asiento del cambio en el historial,
+   * las dos cosas en la MISMA transaccion.
+   *
+   * El evento repite el estado ACTUAL: el paquete no se movio, cambio de manos.
+   * Es la unica forma de dejar rastro sin inventar un estado que la maquina no
+   * conoce, y encaja con la convencion que ya existia para las enmiendas (la nota
+   * lleva `CORRECTION_NOTE_PREFIX`, que es lo que hace que el titular no la vea).
+   */
+  async assignOwner(id: string, state: State, clientId: string, userId: string, note: string) {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(shipments)
+        .set({ clientId, updatedAt: new Date() })
+        .where(eq(shipments.id, id));
+      await tx.insert(shipmentEvents).values({ shipmentId: id, state, note, createdBy: userId });
+    });
+  },
+
+  /**
+   * Archiva (o desarchiva) un paquete sin dueño, con su asiento en el historial.
+   * `reason` null = restaurar: se limpian las tres columnas del descarte para que
+   * el tramite vuelva a ser indistinguible de uno que nunca se archivo.
+   */
+  async setDiscarded(
+    id: string,
+    state: State,
+    userId: string,
+    reason: string | null,
+    note: string,
+  ) {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(shipments)
+        .set({
+          discardedAt: reason === null ? null : new Date(),
+          discardedBy: reason === null ? null : userId,
+          discardReason: reason,
+          updatedAt: new Date(),
+        })
+        .where(eq(shipments.id, id));
+      await tx.insert(shipmentEvents).values({ shipmentId: id, state, note, createdBy: userId });
     });
   },
 

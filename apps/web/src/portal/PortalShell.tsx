@@ -26,6 +26,7 @@ import { ClientsScreen } from './screens/ClientsScreen';
 import { ProviderLinksScreen } from './screens/ProviderLinksScreen';
 import { ReportsScreen } from './screens/ReportsScreen';
 import { ReceptionScreen } from './screens/ReceptionScreen';
+import { ControlRoomScreen } from './screens/ControlRoomScreen';
 import { LockerScreen } from './screens/LockerScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 
@@ -69,6 +70,9 @@ const STAFF_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
       { resource: Resource.Delivery, label: 'Entregas' },
       { resource: Resource.Clients, label: 'Clientes' },
       { resource: Resource.Tramite, label: 'Trámites' },
+      // Va al final de Operación y no en Gestión: se entra desde la mesa de
+      // bodega, con la caja en la mano, no cuando uno se sienta a administrar.
+      { resource: Resource.ControlRoom, label: 'Sala de control' },
     ],
   },
   {
@@ -296,7 +300,11 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
           ) : current === Resource.Dashboard ? (
             <DashboardScreen allowed={allowed} onNavigate={selectResource} />
           ) : current === Resource.Reception ? (
-            <ReceptionScreen />
+            <ReceptionScreen canRegisterUnassigned={can(me.role, Permission.ControlRoomManage)} />
+          ) : current === Resource.ControlRoom ? (
+            // El rol decide si además de cambiar el dueño puede corregir el
+            // estado: son dos permisos distintos (ver ControlRoomScreen).
+            <ControlRoomScreen role={me.role} />
           ) : current === Resource.Delivery ? (
             <DeliveriesScreen />
           ) : current === Resource.Clients ? (
@@ -420,6 +428,8 @@ function NavIcon({ resource }: { resource: Resource }) {
     [Resource.Settings]: <path d="M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />,
     [Resource.Users]: <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13A4 4 0 0116 11" />,
     [Resource.Announcements]: <path d="M3 11l18-5v12L3 13v-2zM11.6 16.8a3 3 0 11-5.8-1.6" />,
+    // Caja con interrogante: el bulto que llegó sin que nadie sepa de quién es.
+    [Resource.ControlRoom]: <path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v3M12 19h.01" />,
   };
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

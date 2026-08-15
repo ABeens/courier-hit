@@ -21,6 +21,8 @@ import {
   Role,
   STATE_LABELS,
   ShipmentField,
+  ShipmentType,
+  State,
   can,
   conditionsFor,
   editableFieldsAt,
@@ -34,15 +36,17 @@ import {
   usesPackageFields,
 } from '@courier/shared';
 import type {
+  AssignShipmentOwnerInput,
+  CorrectUnassignedShipmentInput,
   CreateShipmentInput,
+  DiscardShipmentInput,
   Flow,
   ListShipmentsQuery,
   PrealertShipmentInput,
+  RegisterUnassignedShipmentInput,
   Session,
   ShipmentDto,
   ShipmentEventsResponse,
-  ShipmentType,
-  State,
   UpdateShipmentInput,
 } from '@courier/shared';
 import { AuthErrors, ShipmentErrors } from '../../core/errors';
@@ -125,7 +129,16 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     shipmentType: row.shipmentType,
     flow: flowForType(row.shipmentType),
     state: row.state,
-    client: { id: row.clientId, code: row.clientCode, name: row.clientName },
+    /**
+     * `null` cuando el paquete llego a bodega sin dueño y espera en la sala de
+     * control. Los tres campos vienen del mismo LEFT JOIN, asi que o estan los
+     * tres o no esta ninguno; se comprueba `clientId` y los otros dos se dan por
+     * buenos en vez de repetir la pregunta tres veces.
+     */
+    client:
+      row.clientId === null
+        ? null
+        : { id: row.clientId, code: row.clientCode ?? '', name: row.clientName ?? '' },
     tracking: row.tracking,
     description: row.description,
     store: row.store,
@@ -166,6 +179,8 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
      */
     settledUsd: settledAmount(row.settlement, Currency.USD),
     pendingUsd: pendingAmount(row.settlement, Currency.USD),
+    discardedAt: row.discardedAt?.toISOString() ?? null,
+    discardReason: row.discardReason,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -175,6 +190,23 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
 async function assertTrackingFree(tracking: string): Promise<void> {
   const clash = await shipmentsRepo.findActiveByTracking(tracking);
   if (clash) throw ShipmentErrors.trackingInUse(clash.code);
+}
+
+/**
+ * Estado con el que nace un paquete registrado en la sala de control.
+ *
+ * "Facturación en proceso" y no "Prealertado": el paquete ya esta fisicamente en
+ * la bodega de HS Global —por eso lo estamos registrando—, y hacerlo nacer al
+ * principio del flujo seria mentir sobre donde esta. Es el mismo estado al que lo
+ * habria llevado la recepcion normal si el LES hubiera resuelto a un tramite, asi
+ * que en cuanto se le asigne dueño continua por donde le toca: costos, factura,
+ * cobro, entrega.
+ */
+const UNASSIGNED_INITIAL_STATE = State.FacturacionEnProceso;
+
+/** 409 si el tramite esta archivado: primero se restaura, despues se opera. */
+function assertNotDiscarded(row: { discardedAt: Date | null }): void {
+  if (row.discardedAt !== null) throw ShipmentErrors.discarded();
 }
 
 export const shipmentsService = {
@@ -341,7 +373,7 @@ export const shipmentsService = {
 
     const link = await clientsRepo.providerLinkFor(clientId);
     if (!link?.helgaClientId) {
-      console.warn(`[helga] casillero ${shipment.client.code} sin enlazar: prealerta no replicada.`);
+      console.warn(`[helga] casillero ${shipment.client?.code ?? '(sin dueño)'} sin enlazar: prealerta no replicada.`);
       return;
     }
 
@@ -499,6 +531,16 @@ export const shipmentsService = {
     const current = await shipmentsRepo.findById(id);
     if (!current) throw ShipmentErrors.notFound();
     assertCanWrite(session, current.shipmentType);
+    assertNotDiscarded(current);
+    /**
+     * Un paquete sin dueño no se edita por aqui. No es un capricho de ruta: este
+     * PATCH aplica la ventana de edicion por estado, y en "Facturación en
+     * proceso" —donde nacen los desconocidos— esa ventana ya congelo el tracking,
+     * el HAWB, la tienda y el transportista, que es justo lo que hay que poder
+     * corregir mientras se averigua de quien es la caja. Ese caso tiene su propia
+     * puerta (`correctUnassigned`), con su propio permiso.
+     */
+    if (current.clientId === null) throw ShipmentErrors.unassigned();
 
     const isPackage = usesPackageFields(current.shipmentType);
     // `billingNotes` y `electronicInvoiceNumber` no estan en ninguna de las dos
@@ -572,6 +614,269 @@ export const shipmentsService = {
     return dto;
   },
 
+  // -------------------------------------------------------------------------
+  // Sala de control: paquetes sin dueño (permiso control_room.manage)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Da de alta un paquete que aparecio en la bodega de HS Global y que nadie
+   * anuncio: ni el cliente lo prealerto ni el operador de Miami lo reporto.
+   *
+   * Tres cosas lo separan del alta normal, y las tres son consecuencia de no
+   * saber de quien es:
+   *
+   * 1. NACE SIN DUEÑO (`clientId: null`). Es el punto entero del alta.
+   * 2. NACE EN "FACTURACIÓN EN PROCESO", no en "Prealertado": el bulto ya esta
+   *    en la bodega (ver `UNASSIGNED_INITIAL_STATE`).
+   * 3. NO SE PREALERTA ANTE EL PROVEEDOR, y la bandera queda en `null` en vez de
+   *    'pending'. Prealertar es decirle a Helga "a este destinatario le viene un
+   *    paquete", y aqui no hay destinatario ni le viene nada: el paquete ya
+   *    cruzo. Con `null` la reconciliacion del robot no lo levanta nunca, que es
+   *    lo correcto: seguiria sin poder mandarlo, porque un paquete sin casillero
+   *    no tiene destinatario en Helga.
+   *
+   * El TIPO es siempre Paqueteria. Un aereo o un agenciamiento no aparecen solos
+   * en una bodega: nacen de una gestion negociada con un cliente concreto, asi que
+   * un tramite de esos sin dueño no describe ninguna situacion real.
+   */
+  async registerUnassigned(
+    session: Session,
+    input: RegisterUnassignedShipmentInput,
+  ): Promise<ShipmentDto> {
+    const code = formatShipmentCode(await shipmentsRepo.nextCodeSequence());
+    /**
+     * Sin guia legible se siembra el consecutivo como tracking. La columna es
+     * obligatoria (es la llave contra el proveedor y contra el indice de
+     * duplicados) y aflojarla por este caso obligaria a revisar el nulo en todos
+     * los cruces por tracking del sistema. El consecutivo es unico por
+     * construccion y no se puede confundir con la guia de ninguna tienda;
+     * `knownTracking` deshace la siembra al pintarlo.
+     */
+    const tracking = input.tracking ?? code;
+    await assertTrackingFree(tracking);
+
+    const id = await shipmentsRepo.insert(
+      {
+        code,
+        clientId: null,
+        shipmentType: ShipmentType.Paqueteria,
+        state: UNASSIGNED_INITIAL_STATE,
+        tracking,
+        description: input.description,
+        store: input.store ?? null,
+        carrier: input.carrier ?? null,
+        hawb: input.hawb ?? null,
+        weightKg: input.weightKg === undefined ? null : roundWeightKg(input.weightKg),
+        declaredValueUsd:
+          input.declaredValueUsd === undefined
+            ? null
+            : roundMoney(input.declaredValueUsd, Currency.USD),
+        billingNotes: input.billingNotes ?? null,
+        // Ver decision 3 de la cabecera: `null` = no aplica, no 'pending'.
+        helgaPrealertStatus: null,
+        createdBy: session.userId,
+      },
+      // El historial de este tramite empieza a media maquina; sin esta linea, en
+      // seis meses nadie sabria por que no tiene ni prealerta ni recepcion.
+      `${CORRECTION_NOTE_PREFIX}paquete encontrado en bodega sin aviso previo. Registrado sin dueño desde la sala de control.`,
+    );
+
+    const row = await shipmentsRepo.findById(id);
+    if (!row) throw ShipmentErrors.notFound();
+    return toDto(row);
+  },
+
+  /**
+   * Corrige los datos de un paquete que TODAVIA no tiene dueño.
+   *
+   * Se salta la ventana de edicion por estado a proposito (ver
+   * `correctUnassignedShipmentSchema`): esa ventana protege un tramite que fluye,
+   * y este no fluye. Lo que si se conserva es la unicidad del tracking, que no es
+   * politica de proceso sino integridad: dos tramites activos con la misma guia
+   * rompen la sincronizacion con el proveedor y la recepcion en bodega.
+   */
+  async correctUnassigned(
+    session: Session,
+    id: string,
+    patch: CorrectUnassignedShipmentInput,
+  ): Promise<ShipmentDto> {
+    const current = await shipmentsRepo.findById(id);
+    if (!current) throw ShipmentErrors.notFound();
+    assertNotDiscarded(current);
+    if (current.clientId !== null) {
+      throw ShipmentErrors.alreadyAssigned(current.clientCode ?? '');
+    }
+
+    if (patch.tracking !== undefined && patch.tracking !== current.tracking) {
+      await assertTrackingFree(patch.tracking);
+    }
+
+    await shipmentsRepo.update(id, {
+      ...(patch.tracking !== undefined ? { tracking: patch.tracking } : {}),
+      ...(patch.description !== undefined ? { description: patch.description } : {}),
+      ...(patch.store !== undefined ? { store: patch.store } : {}),
+      ...(patch.carrier !== undefined ? { carrier: patch.carrier } : {}),
+      ...(patch.hawb !== undefined ? { hawb: patch.hawb } : {}),
+      ...(patch.weightKg !== undefined
+        ? { weightKg: patch.weightKg === null ? null : roundWeightKg(patch.weightKg) }
+        : {}),
+      ...(patch.declaredValueUsd !== undefined
+        ? {
+            declaredValueUsd:
+              patch.declaredValueUsd === null
+                ? null
+                : roundMoney(patch.declaredValueUsd, Currency.USD),
+          }
+        : {}),
+      ...(patch.billingNotes !== undefined ? { billingNotes: patch.billingNotes } : {}),
+    });
+
+    const updated = await shipmentsRepo.findById(id);
+    if (!updated) throw ShipmentErrors.notFound();
+    return toDto(updated);
+  },
+
+  /**
+   * Escribe (o cambia) el dueño del tramite. UNA operacion para los dos casos de
+   * la sala de control, porque para el sistema son el mismo acto:
+   *
+   *   - ASIGNAR: el paquete desconocido encontro a su dueño.
+   *   - REASIGNAR: el paquete estaba cargado al casillero equivocado (homonimos,
+   *     dos cuentas de la misma familia, un dedazo en el alta).
+   *
+   * Lo que NO se toca: el estado. Asignar dueño no mueve el paquete, y un tramite
+   * que ya venia avanzado sigue donde estaba. Tampoco se notifica al cliente
+   * nuevo: se le esta corrigiendo un registro, no avisando de un avance, y el
+   * correo llegaria sin contexto ("su paquete esta en facturación" de un paquete
+   * del que nunca supo nada).
+   *
+   * Dos candados, y los dos son de dinero:
+   *
+   *   - FACTURA CONGELADA (`costsApprovedAt`): el total se calculo con la tarifa
+   *     del casillero actual y ya se le presento. Cambiar el dueño despues
+   *     traslada una deuda entre dos clientes sin asiento que lo explique.
+   *   - PAGOS REGISTRADOS: los abonos cuelgan del tramite, no del cliente, asi
+   *     que el nuevo dueño heredaria pagos que nunca hizo. Se exige resolverlos
+   *     antes (anular el pago o reversar los costos), que son actos con rastro.
+   *
+   * Ninguno aplica al paquete desconocido, que nace sin costos y sin pagos: los
+   * candados solo muerden en la reasignacion, que es donde hay algo que romper.
+   */
+  async assignOwner(
+    session: Session,
+    id: string,
+    input: AssignShipmentOwnerInput,
+  ): Promise<ShipmentDto> {
+    const current = await shipmentsRepo.findById(id);
+    if (!current) throw ShipmentErrors.notFound();
+    assertNotDiscarded(current);
+    if (current.clientId === input.clientId) throw ShipmentErrors.sameOwner();
+
+    const client = await clientsRepo.findById(input.clientId);
+    if (!client) throw ShipmentErrors.clientNotFound();
+
+    const isReassignment = current.clientId !== null;
+    if (isReassignment) {
+      if (current.costsApprovedAt != null) throw ShipmentErrors.ownerLockedAfterInvoice();
+      // `settlement` trae TODOS los abonos del tramite, no solo los confirmados:
+      // un comprobante en validacion tambien esta a nombre del dueño actual.
+      if (current.settlement.length > 0) throw ShipmentErrors.ownerLockedByPayments();
+    }
+
+    const previousOwner = isReassignment
+      ? `${current.clientCode ?? ''} (${current.clientName ?? ''})`
+      : 'sin dueño';
+    // El prefijo de correccion es lo que mantiene esta linea fuera del historial
+    // que ve el titular: el cliente nuevo no tiene por que leer a quien se le
+    // habia cargado su paquete por error.
+    const note =
+      `${CORRECTION_NOTE_PREFIX}dueño cambiado de ${previousOwner} a ` +
+      `${client.code} (${client.name}). ${input.note}`;
+
+    await shipmentsRepo.assignOwner(id, current.state, input.clientId, session.userId, note);
+
+    const updated = await shipmentsRepo.findById(id);
+    if (!updated) throw ShipmentErrors.notFound();
+    const dto = toDto(updated);
+
+    /**
+     * Prealerta ante el proveedor: solo tiene sentido si el paquete SIGUE en
+     * manos de Helga, y eso hoy solo pasa en "Prealertado" (los demas estados de
+     * la etapa de Miami los escribe la sincronizacion, que ya trabaja sobre un
+     * paquete que Helga tiene fisicamente y con destinatario asignado de su
+     * lado). Reasignar ahi es cambiar a quien le va a entregar, asi que la
+     * prealerta vieja se borra y se rehace a nombre del casillero nuevo.
+     *
+     * En cualquier otro estado —incluido el paquete desconocido, que nace ya en
+     * facturacion— no se toca nada del proveedor: el bulto ya cruzo y una
+     * prealerta nueva solo crearia un fantasma en su sistema.
+     */
+    if (usesPackageFields(dto.shipmentType) && dto.state === State.Prealertado) {
+      await this.reprealertAfterTrackingChange(dto, current.helgaPrealertId);
+    }
+
+    return dto;
+  },
+
+  /**
+   * Archiva un paquete sin dueño: llego destrozado, era relleno de la carga, se
+   * devolvio al operador de Miami o simplemente no da para mas.
+   *
+   * NO borra la fila. El bulto estuvo fisicamente en la bodega y esa evidencia es
+   * justo lo que alguien va a reclamar dentro de seis meses; lo que desaparece es
+   * de las pantallas y del indice de trackings activos, para que un desconocido
+   * mal digitado no bloquee el alta del envio legitimo que traiga esa guia.
+   *
+   * Solo aplica a paquetes SIN dueño. Uno que ya tiene casillero es un tramite
+   * normal, y esos se enmiendan por el flujo (corregir estado, reversar costos),
+   * no archivandolos por la puerta de atras.
+   */
+  async discard(session: Session, id: string, input: DiscardShipmentInput): Promise<ShipmentDto> {
+    const current = await shipmentsRepo.findById(id);
+    if (!current) throw ShipmentErrors.notFound();
+    if (current.discardedAt !== null) throw ShipmentErrors.discarded();
+    if (current.clientId !== null) throw ShipmentErrors.discardOnlyUnassigned();
+
+    await shipmentsRepo.setDiscarded(
+      id,
+      current.state,
+      session.userId,
+      input.reason,
+      `${CORRECTION_NOTE_PREFIX}paquete descartado. ${input.reason}`,
+    );
+
+    const updated = await shipmentsRepo.findById(id);
+    if (!updated) throw ShipmentErrors.notFound();
+    return toDto(updated);
+  },
+
+  /**
+   * Deshace un descarte. Existe porque descartar es un clic y equivocarse de fila
+   * en una lista de cajas anonimas es facil; sin vuelta atras, el unico arreglo
+   * seria dar de alta el paquete otra vez y perder su historial.
+   *
+   * El tracking vuelve a entrar al indice de activos, asi que se comprueba que
+   * nadie lo haya ocupado mientras estaba archivado.
+   */
+  async restore(session: Session, id: string): Promise<ShipmentDto> {
+    const current = await shipmentsRepo.findById(id);
+    if (!current) throw ShipmentErrors.notFound();
+    if (current.discardedAt === null) throw ShipmentErrors.notDiscarded();
+
+    await assertTrackingFree(current.tracking);
+    await shipmentsRepo.setDiscarded(
+      id,
+      current.state,
+      session.userId,
+      null,
+      `${CORRECTION_NOTE_PREFIX}descarte deshecho: el paquete vuelve a la sala de control.`,
+    );
+
+    const updated = await shipmentsRepo.findById(id);
+    if (!updated) throw ShipmentErrors.notFound();
+    return toDto(updated);
+  },
+
   /**
    * Rehace la prealerta cuando cambia el tracking: borra la anterior en Helga
    * (op. F) y crea una nueva con el tracking corregido.
@@ -589,6 +894,9 @@ export const shipmentsService = {
     previousPrealertId: string | null,
   ): Promise<void> {
     if (!isHelgaEnabled()) return;
+    // Sin casillero no hay destinatario al que prealertar. Solo puede pasar por
+    // la sala de control (un paquete sin dueño), y ahi la prealerta no aplica.
+    if (!shipment.client) return;
 
     if (previousPrealertId) {
       try {

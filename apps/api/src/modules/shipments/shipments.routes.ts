@@ -14,11 +14,15 @@ import { Hono } from 'hono';
 import { zValidator } from '../../core/validator';
 import {
   Permission,
+  assignShipmentOwnerSchema,
   correctStateSchema,
+  correctUnassignedShipmentSchema,
   createShipmentSchema,
+  discardShipmentSchema,
   listShipmentsQuerySchema,
   prealertShipmentSchema,
   receiveShipmentSchema,
+  registerUnassignedShipmentSchema,
   transitionShipmentSchema,
   updateShipmentSchema,
 } from '@courier/shared';
@@ -94,6 +98,46 @@ shipmentsRoutes.post(
   async (c) => {
     const row = await receptionService.receive(c.get('session'), c.req.valid('json'));
     return c.json(toDto(row));
+  },
+);
+
+/**
+ * Sala de control (permiso control_room.manage, solo Admin). Las dos rutas de
+ * `/unassigned` van ANTES de `/:id` porque Hono resuelve por orden: "unassigned"
+ * encajaria en el patron del detalle.
+ *
+ * El resto de operaciones cuelgan de `/:id` porque actuan sobre un tramite que ya
+ * existe, y una de ellas —reasignar— se usa tambien sobre paquetes que SI tienen
+ * dueño (el cargado al casillero equivocado). Por eso `assign` no vive bajo
+ * `/unassigned`: no es una operacion de paquetes desconocidos, es la operacion de
+ * poner dueño, y el caso desconocido es solo su version sin dueño previo.
+ */
+const canManageControlRoom = requirePermission(Permission.ControlRoomManage);
+
+/** Alta de un paquete que llego a bodega sin que nadie lo anunciara. */
+shipmentsRoutes.post(
+  '/unassigned',
+  canManageControlRoom,
+  zValidator('json', registerUnassignedShipmentSchema),
+  async (c) => {
+    const created = await shipmentsService.registerUnassigned(c.get('session'), c.req.valid('json'));
+    return c.json(created, 201);
+  },
+);
+
+/** Correccion de los datos de un paquete que todavia no tiene dueño. */
+shipmentsRoutes.patch(
+  '/unassigned/:id',
+  canManageControlRoom,
+  zValidator('json', correctUnassignedShipmentSchema),
+  async (c) => {
+    return c.json(
+      await shipmentsService.correctUnassigned(
+        c.get('session'),
+        c.req.param('id'),
+        c.req.valid('json'),
+      ),
+    );
   },
 );
 
@@ -179,3 +223,36 @@ shipmentsRoutes.post(
     return c.json(toDto(row));
   },
 );
+
+/**
+ * Asignar o cambiar el dueño del tramite. Un solo endpoint para los dos casos:
+ * el paquete desconocido que encontro dueño y el que estaba cargado al casillero
+ * equivocado. Ver `shipmentsService.assignOwner`.
+ */
+shipmentsRoutes.post(
+  '/:id/assign',
+  canManageControlRoom,
+  zValidator('json', assignShipmentOwnerSchema),
+  async (c) => {
+    return c.json(
+      await shipmentsService.assignOwner(c.get('session'), c.req.param('id'), c.req.valid('json')),
+    );
+  },
+);
+
+/** Archiva un paquete sin dueño con su motivo (no borra la fila). */
+shipmentsRoutes.post(
+  '/:id/discard',
+  canManageControlRoom,
+  zValidator('json', discardShipmentSchema),
+  async (c) => {
+    return c.json(
+      await shipmentsService.discard(c.get('session'), c.req.param('id'), c.req.valid('json')),
+    );
+  },
+);
+
+/** Deshace un descarte: el paquete vuelve a la cola de la sala de control. */
+shipmentsRoutes.post('/:id/restore', canManageControlRoom, async (c) => {
+  return c.json(await shipmentsService.restore(c.get('session'), c.req.param('id')));
+});

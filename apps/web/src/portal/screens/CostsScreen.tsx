@@ -18,6 +18,7 @@ import {
   STATE_LABELS,
   State,
   can,
+  clientName,
   formatMoney,
 } from '@courier/shared';
 import type { Role, ShipmentDto } from '@courier/shared';
@@ -153,8 +154,8 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
                 <td><span className="mono">{row.code}</span></td>
                 <td>{SHIPMENT_TYPE_LABELS[row.shipmentType]}</td>
                 <td>
-                  <div className="cell-name">{row.client.name}</div>
-                  <span className="mono muted">{row.client.code}</span>
+                  <div className="cell-name">{clientName(row.client)}</div>
+                  {row.client && <span className="mono muted">{row.client.code}</span>}
                 </td>
                 <td>{row.description}</td>
                 <td>

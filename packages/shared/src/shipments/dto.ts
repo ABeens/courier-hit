@@ -350,6 +350,102 @@ export const updateShipmentSchema = z
 export type UpdateShipmentInput = z.infer<typeof updateShipmentSchema>;
 
 // ---------------------------------------------------------------------------
+// Sala de control: paquetes sin dueño (permiso control_room.manage)
+// ---------------------------------------------------------------------------
+
+/**
+ * Alta de un paquete que aparecio en la bodega de HS Global y que el operador de
+ * Miami nunca anuncio: no hay prealerta del cliente, no hay fila en la op. E del
+ * proveedor y el LES escaneado no resuelve a ningun tramite.
+ *
+ * Todo es OPCIONAL salvo la descripcion, y esa es la diferencia de fondo con el
+ * alta normal:
+ *
+ *   - NO lleva `clientId`. Es el motivo de existir de este alta: el dueño se
+ *     averigua despues, y hasta entonces el paquete vive sin casillero.
+ *   - NO lleva `tracking` obligatorio. Una caja con la etiqueta rota no tiene
+ *     guia que digitar, y exigirsela obligaria al operador a inventarse una.
+ *   - `store` y `carrier` no se exigen (el alta normal si): son datos de la
+ *     compra, y aqui no se sabe ni quien compro.
+ *
+ * Lo que si se pide es la descripcion, porque es lo unico con lo que un humano
+ * va a reconocer el bulto en la estanteria cuando aparezca su dueño.
+ */
+export const registerUnassignedShipmentSchema = z.object({
+  description: descriptionSchema,
+  tracking: trackingSchema.optional(),
+  hawb: hawbSchema.optional(),
+  store: storeSchema.optional(),
+  carrier: carrierSchema.optional(),
+  weightKg: weightKgSchema.optional(),
+  declaredValueUsd: declaredValueUsdSchema.optional(),
+  /** Notas de bodega: en que estado llego, donde esta guardado, que dice la caja. */
+  billingNotes: billingNotesSchema.optional(),
+});
+export type RegisterUnassignedShipmentInput = z.infer<typeof registerUnassignedShipmentSchema>;
+
+/**
+ * Correccion de un paquete SIN DUEÑO desde la sala de control.
+ *
+ * Va aparte del PATCH normal (`updateShipmentSchema`) porque se salta la ventana
+ * de edicion por estado, y eso solo es defendible aqui: esa ventana protege un
+ * tramite que esta FLUYENDO —congela el tracking al recibir, el peso al
+ * facturar— y un paquete sin dueño no fluye (no avanza, no se cotiza, no se
+ * cobra). Sus datos no son historicos, son un borrador que se completa a medida
+ * que alguien identifica la caja, asi que aqui todos los campos siguen abiertos.
+ *
+ * `null` limpia el campo; `tracking` no admite `null` porque la columna es
+ * obligatoria (ver `knownTracking`).
+ */
+export const correctUnassignedShipmentSchema = z
+  .object({
+    description: descriptionSchema.optional(),
+    tracking: trackingSchema.optional(),
+    hawb: hawbSchema.nullable().optional(),
+    store: storeSchema.nullable().optional(),
+    carrier: carrierSchema.nullable().optional(),
+    weightKg: weightKgSchema.nullable().optional(),
+    declaredValueUsd: declaredValueUsdSchema.nullable().optional(),
+    billingNotes: billingNotesSchema.nullable().optional(),
+  })
+  .refine((o) => Object.keys(o).length > 0, { message: 'No hay cambios que aplicar.' });
+export type CorrectUnassignedShipmentInput = z.infer<typeof correctUnassignedShipmentSchema>;
+
+/**
+ * Asignar dueño. UN solo esquema para las dos operaciones de la sala de control,
+ * porque para el sistema son el mismo acto: escribir un casillero en la columna
+ * `client_id`. Que antes hubiera un `null` (paquete desconocido) o el casillero
+ * equivocado (homonimos, un paquete que se cargo al cliente de al lado) cambia el
+ * mensaje que ve el usuario, no la operacion.
+ *
+ * La nota es OBLIGATORIA por la misma razon que en la correccion de estado: en
+ * seis meses, un tramite que cambio de dueño sin motivo escrito es
+ * indistinguible de un error.
+ */
+export const assignShipmentOwnerSchema = z.object({
+  clientId: z.string().uuid('Elige un cliente.'),
+  note: z
+    .string()
+    .trim()
+    .min(1, 'Indica con qué se identificó al dueño.')
+    .max(500, 'El comentario es demasiado largo.'),
+});
+export type AssignShipmentOwnerInput = z.infer<typeof assignShipmentOwnerSchema>;
+
+/**
+ * Descartar un paquete sin dueño. Archiva la fila con su motivo en vez de
+ * borrarla: el bulto existio en la bodega y esa evidencia no se tira.
+ */
+export const discardShipmentSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(1, 'Indica por qué se descarta el paquete.')
+    .max(500, 'El motivo es demasiado largo.'),
+});
+export type DiscardShipmentInput = z.infer<typeof discardShipmentSchema>;
+
+// ---------------------------------------------------------------------------
 // Cambio de estado
 // ---------------------------------------------------------------------------
 
@@ -429,8 +525,30 @@ const instantSchema = z.string().datetime({ offset: true, message: 'Fecha invál
  * endpoint sirva los tres dashboards del manual (Paqueteria, Transporte y
  * Agenciamiento, y Todos) sin multiplicar rutas.
  */
+/**
+ * Que hacer con los paquetes SIN DUEÑO en un listado. El default es dejarlos
+ * fuera, y no es una preferencia de pantalla sino la unica opcion segura: son
+ * tramites que no avanzan ni se cobran, y mezclarlos con la cola de operacion
+ * llenaria el tablero de filas sobre las que ningun boton funciona. Quien los
+ * quiere ver pide `unassigned` explicitamente, que es lo que hace la sala de
+ * control.
+ */
+export const OWNER_FILTERS = ['assigned', 'unassigned', 'all'] as const;
+export type OwnerFilter = (typeof OWNER_FILTERS)[number];
+
 export const listShipmentsQuerySchema = z.object({
   q: z.string().trim().optional(),
+  owner: z.enum(OWNER_FILTERS).optional(),
+  /**
+   * Descartados: `false` (el default) los esconde, `true` muestra SOLO esos. No
+   * es un tercer valor de `owner` porque son ejes distintos: descartar archiva la
+   * fila, asignar le pone dueño, y la sala de control necesita la pestaña de
+   * archivados sin perder el filtro de sin dueño.
+   */
+  discarded: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
   shipmentType: z
     .string()
     .optional()

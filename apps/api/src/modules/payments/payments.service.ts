@@ -56,7 +56,14 @@ import { settingsRepo } from '../settings/settings.repo';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { paymentsRepo } from './payments.repo';
 
-type ShipmentRow = NonNullable<Awaited<ReturnType<typeof shipmentsRepo.findById>>>;
+/**
+ * Fila del tramite sobre el que se cobra, con el casillero YA garantizado: los
+ * medios de pago salen de la tarifa del dueño, asi que aqui dentro `clientId`
+ * nunca es un hueco. Lo asegura `loadBillableShipment`.
+ */
+type ShipmentRow = NonNullable<Awaited<ReturnType<typeof shipmentsRepo.findById>>> & {
+  clientId: string;
+};
 type PaymentRowView = Awaited<ReturnType<typeof paymentsRepo.findById>>;
 
 /** Fila de BD -> DTO de la API (fechas en ISO/UTC). */
@@ -121,11 +128,26 @@ async function loadBillableShipment(shipmentId: string): Promise<ShipmentRow> {
   const row = await shipmentsRepo.findById(shipmentId);
   if (!row) throw ShipmentErrors.notFound();
   if (row.invoiceTotalCrc == null || row.invoiceTotalUsd == null) throw PaymentErrors.noInvoice();
-  return row;
+  /**
+   * Sin dueño no hay a quien cobrarle. En la practica no se llega aqui —un
+   * paquete sin casillero no puede aprobar costos, asi que nunca tiene factura y
+   * ya habria fallado arriba—, pero la comprobacion se escribe igual: es la que
+   * garantiza el tipo del resto del modulo y la que sobrevive si algun dia se
+   * factura por otra via.
+   */
+  if (row.clientId === null) throw ShipmentErrors.unassigned();
+  return { ...row, clientId: row.clientId };
 }
 
-/** Un cliente solo puede pagar lo suyo (404, no 403: no revela existencia). */
-function assertOwnership(session: Session, row: ShipmentRow): void {
+/**
+ * Un cliente solo puede pagar lo suyo (404, no 403: no revela existencia).
+ *
+ * Pide el casillero suelto y no un `ShipmentRow` porque tambien la llaman las
+ * rutas que arrancan de un pago y cargan el tramite crudo, sin pasar por
+ * `loadBillableShipment`. Un tramite sin dueño nunca es "lo suyo" de nadie: el
+ * `!==` contra un `null` niega el acceso, que es lo correcto.
+ */
+function assertOwnership(session: Session, row: { clientId: string | null }): void {
   if (session.role !== Role.Client) return;
   if (!session.clientId) throw ShipmentErrors.missingClientProfile();
   if (row.clientId !== session.clientId) throw ShipmentErrors.notFound();

@@ -12,7 +12,9 @@ import { State } from '@courier/shared';
 import type { ProformaQuery, ReportQuery } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
+import { cantonRoutes } from '../routes/canton-route.schema';
 import { districtRoutes } from '../routes/district-route.schema';
+import { cantonRouteJoin, districtRouteJoin, effectiveRouteNumber } from '../routes/effective-route';
 import { payments } from '../payments/payments.schema';
 import { shipmentCosts } from '../costs/shipment-cost.schema';
 import { shipmentEvents, shipments } from '../shipments/shipments.schema';
@@ -85,12 +87,13 @@ export const reportsRepo = {
         createdAt: shipments.createdAt,
         clientCode: clients.code,
         clientName: users.name,
-        routeNumber: districtRoutes.routeNumber,
+        routeNumber: effectiveRouteNumber,
       })
       .from(shipments)
       .innerJoin(clients, eq(shipments.clientId, clients.id))
       .innerJoin(users, eq(clients.userId, users.id))
-      .leftJoin(districtRoutes, eq(clients.districtCode, districtRoutes.districtCode))
+      .leftJoin(districtRoutes, districtRouteJoin)
+      .leftJoin(cantonRoutes, cantonRouteJoin)
       .where(conds.length > 0 ? and(...conds) : undefined)
       .orderBy(desc(shipments.createdAt));
 

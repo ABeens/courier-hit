@@ -23,6 +23,7 @@ import {
   STORES,
   CARRIERS,
   can,
+  clientFullLabel,
   createShipmentSchema,
   editableFieldsAt,
   formatDua,
@@ -86,7 +87,9 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
   const [shipmentType, setShipmentType] = useState<ShipmentType>(
     row?.shipmentType ?? typeOptions[0] ?? ShipmentType.Paqueteria,
   );
-  const [clientId, setClientId] = useState(row?.client.id ?? '');
+  // `row.client` puede venir vacío (paquete sin dueño), aunque esos no se editan
+  // desde aquí sino desde la sala de control.
+  const [clientId, setClientId] = useState(row?.client?.id ?? '');
   const [clientQuery, setClientQuery] = useState('');
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [tracking, setTracking] = useState(row?.tracking ?? '');
@@ -328,7 +331,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
             <div className="col-full">
               <label className="field-label">Cliente</label>
               <div className="input" style={{ background: 'var(--paper-2)' }}>
-                {row?.client.code} — {row?.client.name}
+                {clientFullLabel(row?.client ?? null)}
               </div>
             </div>
           )}
