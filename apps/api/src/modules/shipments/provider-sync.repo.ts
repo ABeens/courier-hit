@@ -2,7 +2,7 @@
  * Lecturas de la sincronizacion con el proveedor. Solo consulta: los cambios de
  * estado los escribe `shipmentsRepo.transition`, que es el punto unico.
  */
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { Flow, ShipmentType, State, flowForType } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients } from '../auth/auth.schema';
@@ -74,11 +74,18 @@ export const providerSyncRepo = {
    * descubrimiento (flujo 2, docs/13 §3.3) para descartar de una sola consulta lo
    * que ya entro por el flujo 1.
    *
-   * El criterio es "activo" (`state <> 'entregado'`), el MISMO del indice unico
-   * parcial `shipments_active_tracking`. Cruzar contra el historico completo seria
-   * un error: los transportistas reciclan numeros de guia, asi que un tracking ya
-   * entregado puede pertenecer a un paquete nuevo y legitimo, y descartarlo lo
-   * dejaria fuera del sistema para siempre.
+   * El criterio es "activo", el MISMO del indice unico parcial
+   * `shipments_active_tracking`: ni entregado ni descartado. Cruzar contra el
+   * historico completo seria un error por partida doble. Los transportistas
+   * reciclan numeros de guia, asi que un tracking ya entregado puede pertenecer a
+   * un paquete nuevo y legitimo; y un bulto descartado no reclama su guia, igual
+   * que en `findActiveByHawb`. En los dos casos el indice unico deja pasar el alta
+   * nueva, asi que darla por conocida aqui dejaria el paquete fuera del sistema
+   * sin que nadie se entere.
+   *
+   * Los dos filtros tienen que estar los DOS para que el indice sirva: Postgres
+   * solo usa un indice parcial cuando el WHERE de la consulta implica el predicado
+   * del indice, y sin `discarded_at is null` no puede probarlo y barre la tabla.
    */
   async activeTrackings(trackings: string[]): Promise<Set<string>> {
     if (trackings.length === 0) return new Set();
@@ -86,7 +93,11 @@ export const providerSyncRepo = {
       .select({ tracking: shipments.tracking })
       .from(shipments)
       .where(
-        and(inArray(shipments.tracking, trackings), sql`${shipments.state} <> 'entregado'`),
+        and(
+          inArray(shipments.tracking, trackings),
+          sql`${shipments.state} <> 'entregado'`,
+          isNull(shipments.discardedAt),
+        ),
       );
     return new Set(rows.map((r) => r.tracking));
   },

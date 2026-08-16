@@ -15,6 +15,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import {
@@ -76,62 +77,84 @@ export const users = pgTable(
  * proveedor nunca viajan (docs/13 §3.6); alli va la direccion fija de
  * consolidacion y un correo derivado.
  */
-export const clients = pgTable('clients', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id')
-    .notNull()
-    .unique()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  code: text('code').notNull().unique(),
-  /** Cedula normalizada a solo digitos (@courier/shared: idNumberSchema). */
-  idNumber: text('id_number').notNull().unique(),
-  // Direccion de entrega en Costa Rica: codigos del catalogo territorial
-  // compartido (no FKs: el catalogo es codigo, no tabla) + otras senas.
-  provinceCode: text('province_code').notNull(),
-  cantonCode: text('canton_code').notNull(),
-  districtCode: text('district_code').notNull(),
-  addressLine: text('address_line').notNull(),
-  /** Todo casillero nace 'nuevo' para que un admin lo revise despues. */
-  reviewStatus: clientReviewStatusEnum('review_status').notNull().default(ClientReviewStatus.Nuevo),
-  /**
-   * Tarifa asignada. Al registrarse se asigna la tarifa por defecto del sistema.
-   * `set null` al borrar la tarifa: el servicio de tarifas ya impide borrar la
-   * default, y un casillero sin tarifa es preferible a perder el casillero.
-   */
-  clientRateId: uuid('client_rate_id').references(() => clientRates.id, { onDelete: 'set null' }),
-  /**
-   * Limite de credito (Parte 3, "Editar Cliente"). Techo de politica comercial,
-   * no un monto transaccional: lleva moneda explicita (regla M2) pero NO tasa de
-   * cambio, igual que `client_rates.price_per_kg`. Ver money-rules.config.json.
-   * `null` = sin limite definido, distinto de 0 (no fiarle nada).
-   */
-  creditLimit: doublePrecision('credit_limit'),
-  creditLimitCurrency: currencyEnum('credit_limit_currency'),
-  /** Enlace con el proveedor: id del cliente/destinatario en Helga (docs/13). */
-  helgaClientId: text('helga_client_id').unique(),
-  /**
-   * `sub_casillero` que asigna Helga (p. ej. `SJO008835S033`): la direccion con
-   * la que el cliente recibe en Miami. Es lo que debe ver en el portal y usar al
-   * comprar; sin el, su paquete llega a la cuenta de HS Global sin dueño.
-   */
-  helgaSubLocker: text('helga_sub_locker'),
-  helgaSyncedAt: timestamp('helga_synced_at', { withTimezone: true }),
-  /**
-   * Estado del enlace con el proveedor. Nace 'pending': el casillero existe de
-   * nuestro lado aunque aun no este en Helga. La reconciliacion lo llevara a
-   * 'synced' (o 'failed' si el proveedor rechaza). Gobierna el acceso del
-   * cliente mientras la integracion este encendida (ver auth.service login).
-   */
-  helgaSyncStatus: helgaSyncStatusEnum('helga_sync_status')
-    .notNull()
-    .default(HelgaSyncStatus.Pending),
-  /** Intentos de enlace ya realizados; 0 si la integracion estaba apagada. */
-  helgaSyncAttempts: integer('helga_sync_attempts').notNull().default(0),
-  /** Ultimo error del proveedor al intentar enlazar; para diagnostico del robot. */
-  helgaLastError: text('helga_last_error'),
-  memberSince: date('member_since'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const clients = pgTable(
+  'clients',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .unique()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    code: text('code').notNull().unique(),
+    /** Cedula normalizada a solo digitos (@courier/shared: idNumberSchema). */
+    idNumber: text('id_number').notNull().unique(),
+    // Direccion de entrega en Costa Rica: codigos del catalogo territorial
+    // compartido (no FKs: el catalogo es codigo, no tabla) + otras senas.
+    provinceCode: text('province_code').notNull(),
+    cantonCode: text('canton_code').notNull(),
+    districtCode: text('district_code').notNull(),
+    addressLine: text('address_line').notNull(),
+    /** Todo casillero nace 'nuevo' para que un admin lo revise despues. */
+    reviewStatus: clientReviewStatusEnum('review_status')
+      .notNull()
+      .default(ClientReviewStatus.Nuevo),
+    /**
+     * Tarifa asignada. Al registrarse se asigna la tarifa por defecto del sistema.
+     * `set null` al borrar la tarifa: el servicio de tarifas ya impide borrar la
+     * default, y un casillero sin tarifa es preferible a perder el casillero.
+     */
+    clientRateId: uuid('client_rate_id').references(() => clientRates.id, {
+      onDelete: 'set null',
+    }),
+    /**
+     * Limite de credito (Parte 3, "Editar Cliente"). Techo de politica comercial,
+     * no un monto transaccional: lleva moneda explicita (regla M2) pero NO tasa de
+     * cambio, igual que `client_rates.price_per_kg`. Ver money-rules.config.json.
+     * `null` = sin limite definido, distinto de 0 (no fiarle nada).
+     */
+    creditLimit: doublePrecision('credit_limit'),
+    creditLimitCurrency: currencyEnum('credit_limit_currency'),
+    /** Enlace con el proveedor: id del cliente/destinatario en Helga (docs/13). */
+    helgaClientId: text('helga_client_id').unique(),
+    /**
+     * `sub_casillero` que asigna Helga (p. ej. `SJO008835S033`): la direccion con
+     * la que el cliente recibe en Miami. Es lo que debe ver en el portal y usar al
+     * comprar; sin el, su paquete llega a la cuenta de HS Global sin dueño.
+     */
+    helgaSubLocker: text('helga_sub_locker'),
+    helgaSyncedAt: timestamp('helga_synced_at', { withTimezone: true }),
+    /**
+     * Estado del enlace con el proveedor. Nace 'pending': el casillero existe de
+     * nuestro lado aunque aun no este en Helga. La reconciliacion lo llevara a
+     * 'synced' (o 'failed' si el proveedor rechaza). Gobierna el acceso del
+     * cliente mientras la integracion este encendida (ver auth.service login).
+     */
+    helgaSyncStatus: helgaSyncStatusEnum('helga_sync_status')
+      .notNull()
+      .default(HelgaSyncStatus.Pending),
+    /** Intentos de enlace ya realizados; 0 si la integracion estaba apagada. */
+    helgaSyncAttempts: integer('helga_sync_attempts').notNull().default(0),
+    /** Ultimo error del proveedor al intentar enlazar; para diagnostico del robot. */
+    helgaLastError: text('helga_last_error'),
+    memberSince: date('member_since'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /**
+     * Los casilleros que el enlace con el proveedor dejo a medias. Es la cola del
+     * robot (`authRepo.findClientsToReconcile`) y la vista por defecto del panel
+     * de enlaces, y las dos preguntan por el mismo puñado de filas.
+     *
+     * Parcial a proposito: en regimen normal casi todo casillero acaba en
+     * 'synced', asi que el indice guarda solo los rotos y se mantiene diminuto por
+     * mucho que crezca la tabla. Va sobre `created_at` porque el robot drena por
+     * antiguedad con tope, y asi el lote sale del indice ya ordenado.
+     */
+    index('clients_unlinked_idx')
+      .on(t.createdAt)
+      .where(sql`${t.helgaSyncStatus} in ('pending', 'failed')`),
+  ],
+);
 
 /** Sesion por cookie httpOnly; store en Postgres => revocacion inmediata. */
 export const sessions = pgTable(
@@ -162,7 +185,10 @@ export const emailVerifications = pgTable(
     attempts: integer('attempts').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('email_verifications_user_idx').on(t.userId)],
+  // El unico lector (`authRepo.latestVerification`) pide el ULTIMO codigo del
+  // usuario, asi que el indice lleva tambien la fecha: el `limit 1` sale del
+  // indice sin ordenar nada (Postgres lo recorre hacia atras para el `desc`).
+  (t) => [index('email_verifications_user_idx').on(t.userId, t.createdAt)],
 );
 
 /**
@@ -183,7 +209,19 @@ export const passwordResets = pgTable(
     usedAt: timestamp('used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('password_resets_user_idx').on(t.userId)],
+  (t) => [
+    index('password_resets_user_idx').on(t.userId),
+    /**
+     * El token es la UNICA forma de encontrar la fila: `findValidPasswordReset`
+     * llega con el hash y nada mas, en el camino de cada invitacion de staff y de
+     * cada "olvide mi contrasena". Sin indice, esa lectura barria la tabla, que
+     * ademas crece sin techo porque los tokens gastados nunca se borran.
+     *
+     * Unico y no a secas: dos filas con el mismo hash significarian dos tokens
+     * indistinguibles, y `limit 1` elegiria uno de los dos al azar.
+     */
+    uniqueIndex('password_resets_token_hash_idx').on(t.tokenHash),
+  ],
 );
 
 export type UserRow = typeof users.$inferSelect;
