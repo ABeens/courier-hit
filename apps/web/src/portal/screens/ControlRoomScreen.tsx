@@ -20,7 +20,7 @@
  * atrás). La API aplica las dos reglas; aquí solo se dejan de ofrecer los botones
  * que iba a rechazar.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Currency,
   Permission,
@@ -32,7 +32,10 @@ import {
   knownTracking,
 } from '@courier/shared';
 import type { Role, ShipmentDto } from '@courier/shared';
+import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
+import { Pagination } from '../components/Pagination';
 import { ApiError, api } from '../lib/api';
+import { usePagedList } from '../lib/usePagedList';
 import { formatDate, formatDateTime } from '../lib/datetime';
 import { STATE_TONE } from '../lib/tone';
 import { AssignOwnerModal } from './AssignOwnerModal';
@@ -40,10 +43,6 @@ import { DiscardPackageModal } from './DiscardPackageModal';
 import { ShipmentHistoryModal } from './ShipmentHistoryModal';
 import { StateCorrectModal } from './StateCorrectModal';
 import { UnassignedFormModal } from './UnassignedFormModal';
-
-interface ListResponse {
-  items: ShipmentDto[];
-}
 
 /** Qué pila se está mirando. */
 type ControlRoomView = 'sin-dueno' | 'todos' | 'descartados';
@@ -80,9 +79,7 @@ function Field({ label, value, mono }: { label: string; value: string | null; mo
 
 export function ControlRoomScreen({ role }: { role: Role }) {
   const [view, setView] = useState<ControlRoomView>('sin-dueno');
-  const [data, setData] = useState<ListResponse | null>(null);
   const [q, setQ] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -101,21 +98,13 @@ export function ControlRoomScreen({ role }: { role: Role }) {
    */
   const canCorrectState = can(role, Permission.ShipmentCorrect);
 
-  const load = useCallback(async () => {
-    const params = new URLSearchParams(VIEW_PARAMS[view]);
-    if (q.trim()) params.set('q', q.trim());
-    try {
-      setData(await api.get<ListResponse>(`/shipments?${params.toString()}`));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo cargar la sala de control.');
-    }
-  }, [q, view]);
-
-  useEffect(() => {
-    const t = setTimeout(load, 250); // debounce de la búsqueda
-    return () => clearTimeout(t);
-  }, [load]);
+  /** La pila que se está mirando, paginada. Los dos ejes se filtran en la API. */
+  const list = usePagedList<ShipmentDto>(
+    '/shipments',
+    { ...VIEW_PARAMS[view], q: q.trim() || undefined },
+    { errorMessage: 'No se pudo cargar la sala de control.' },
+  );
+  const { error, setError, reload: load } = list;
 
   /** Cierra el modal que estuviera abierto, avisa y recarga. */
   function afterChange(message: string) {
@@ -146,16 +135,17 @@ export function ControlRoomScreen({ role }: { role: Role }) {
     }
   }
 
-  const items = data?.items ?? [];
+  const items = list.items;
 
   return (
     <div className="fadeIn">
       <div className="head-row">
         <div>
           <div className="title">Sala de control</div>
-          {data && (
+          {/* El total de la pila, no las filas de la pagina. */}
+          {list.data && (
             <div className="count">
-              {items.length} {VIEW_COUNT_LABEL[view]}
+              {list.total.toLocaleString('es-CR')} {VIEW_COUNT_LABEL[view]}
             </div>
           )}
         </div>
@@ -195,7 +185,10 @@ export function ControlRoomScreen({ role }: { role: Role }) {
         </select>
       </div>
 
-      <div className="cards">
+      {list.loading && <CardsSkeleton />}
+
+      <ListBody refreshing={list.refreshing}>
+        <div className="cards">
         {items.map((row) => {
           const unassigned = row.client === null;
           // Se guarda el instante, no un booleano: así el aviso del descarte lo
@@ -333,19 +326,28 @@ export function ControlRoomScreen({ role }: { role: Role }) {
             </article>
           );
         })}
-      </div>
-
-      {data && items.length === 0 && (
-        <div className="empty">
-          {view === 'sin-dueno'
-            ? q
-              ? 'Ningún paquete sin dueño coincide con la búsqueda.'
-              : 'No hay paquetes sin dueño. Cuando aparezca uno en bodega que el sistema no reconozca, regístralo aquí.'
-            : view === 'todos'
-              ? 'Ningún trámite coincide con la búsqueda.'
-              : 'No hay paquetes descartados.'}
         </div>
-      )}
+
+        <Pagination
+          page={list.page}
+          pageSize={list.pageSize}
+          total={list.total}
+          totalPages={list.totalPages}
+          onPage={list.goToPage}
+          busy={list.refreshing}
+          noun={VIEW_COUNT_LABEL[view]}
+        />
+      </ListBody>
+
+      <EmptyList loading={list.loading} empty={items.length === 0}>
+        {view === 'sin-dueno'
+          ? q
+            ? 'Ningún paquete sin dueño coincide con la búsqueda.'
+            : 'No hay paquetes sin dueño. Cuando aparezca uno en bodega que el sistema no reconozca, regístralo aquí.'
+          : view === 'todos'
+            ? 'Ningún trámite coincide con la búsqueda.'
+            : 'No hay paquetes descartados.'}
+      </EmptyList>
 
       {registering && (
         <UnassignedFormModal

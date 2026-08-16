@@ -307,9 +307,11 @@
   display: block; margin-top: 3px; font-weight: 600; font-size: 10px;
   letter-spacing: 0.18em; text-transform: uppercase; color: oklch(0.86 0.09 263);
 }
-.side-group-label {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
-  color: oklch(1 0 0 / .58); padding: 16px 10px 6px;
+/* La navegacion scrollea sola si no cabe (secciones abiertas + pantalla baja);
+   la marca de arriba se queda fija. */
+.side-nav {
+  display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: oklch(1 0 0 / .22) transparent;
 }
 .navitem {
   display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
@@ -323,6 +325,33 @@
    --brand-700). El blanco contrasta parejo en todo el alto de la columna. */
 .navitem.active { background: oklch(1 0 0 / .17); color: #fff; }
 .navitem svg { width: 18px; height: 18px; flex: none; }
+
+/* ---- Secciones plegables del menu ---- */
+.navsection { display: contents; }
+/* La etiqueta empuja el chevron al borde derecho sin anclarlo a un ancho fijo. */
+.navsection-label { flex: 1; min-width: 0; }
+.navsection-btn { color: oklch(1 0 0 / .68); }
+.navsection-btn.open { color: #fff; }
+/* Selector completo (no `!important`) para ganarle a `.navitem svg`, que fija 18px. */
+.navsection-btn .navsection-chev {
+  width: 15px; height: 15px; color: oklch(1 0 0 / .5); transition: transform .16s ease;
+}
+.navsection-btn.open .navsection-chev { transform: rotate(180deg); }
+/* Seccion plegada que contiene la pantalla activa: un punto basta para ubicarse
+   sin tener que abrirla. */
+.navsection-btn.has-active .navsection-label::after {
+  content: ''; display: inline-block; vertical-align: middle;
+  width: 6px; height: 6px; margin-left: 8px; border-radius: 50%; background: currentColor;
+}
+/* La guia vertical ata los items a su cabecera; el padding izquierdo alinea sus
+   iconos un escalon adentro del icono de la seccion. */
+.navsection-items {
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 2px 0 4px 21px; padding-left: 10px;
+  border-left: 1px solid oklch(1 0 0 / .14);
+}
+.navitem-sub { font-weight: 500; font-size: 13.5px; padding: 8px 10px; }
+.navitem-sub svg { width: 16px; height: 16px; }
 
 /* ---- Area principal ---- */
 .main { min-width: 0; background: var(--paper); }
@@ -1165,4 +1194,97 @@ button.dash-row:focus-visible { outline: 2px solid var(--brand); outline-offset:
   /* En movil el cuadro se queda con la cifra y la etiqueta: la explicacion
      alarga la columna sin aportar a quien ya conoce sus colas. */
   .dash-tile-hint { display: none; }
+}
+
+/* ---- Carga de un listado (componentes de ListLoading) ----
+   Dos estados y no uno: el esqueleto de la PRIMERA carga (no hay nada que
+   enseñar) y la atenuacion de una RECARGA (ya hay filas y no se vacian, porque
+   vaciar en cada tecla del buscador es un parpadeo). */
+
+/* Envoltorio de la lista. `relative` porque la barra de actividad se ancla a el. */
+.list-body { position: relative; }
+.list-body > * { transition: opacity .16s ease; }
+/* Atenuado y sin raton: pulsar "Avanzar" sobre una fila que esta a punto de ser
+   reemplazada es un clic sobre el tramite equivocado. */
+.list-body.is-refreshing > *:not(.list-refresh-bar) { opacity: .45; pointer-events: none; }
+
+.list-refresh-bar {
+  position: absolute; top: -7px; left: 0; right: 0; height: 2px; z-index: 2;
+  background: var(--line-2); border-radius: 2px; overflow: hidden;
+}
+.list-refresh-bar::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 38%;
+  background: var(--brand); border-radius: 2px;
+  animation: listSweep 1.05s ease-in-out infinite;
+}
+@keyframes listSweep {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(365%); }
+}
+
+/* Esqueleto: la silueta de la ficha real, sin contenido inventado. Reserva el
+   hueco para que la pagina no de un salto cuando lleguen los datos. */
+.card-skeleton {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+  box-shadow: var(--sh-1); padding: 18px 22px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.card-skeleton-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.card-skeleton-body {
+  display: flex; flex-wrap: wrap; gap: 14px 28px;
+  border-top: 1px solid var(--line-2); padding-top: 15px;
+}
+.skel-lines { display: flex; flex-direction: column; gap: 7px; min-width: 0; flex: 1; }
+.skel-line, .skel-pill {
+  display: block; background: var(--line); border-radius: 6px;
+  animation: pulseDot 1.5s ease-in-out infinite;
+}
+.skel-pill { width: 104px; height: 26px; border-radius: var(--r-pill); flex: none; }
+.skel-line.w-code  { width: 78px;  height: 9px; }
+.skel-line.w-title { width: min(300px, 55%); height: 14px; }
+.skel-line.w-sub   { width: min(230px, 42%); height: 9px; }
+.skel-line.w-field { flex: 1 1 150px; height: 11px; }
+.skel-line.w-cell  { width: 72%; height: 11px; }
+/* Desfase por ficha: pulsando todas a la vez parece un fallo de pintado, no una
+   carga en curso. */
+.card-skeleton:nth-child(2) .skel-line, .card-skeleton:nth-child(2) .skel-pill { animation-delay: .12s; }
+.card-skeleton:nth-child(3) .skel-line, .card-skeleton:nth-child(3) .skel-pill { animation-delay: .24s; }
+.card-skeleton:nth-child(4) .skel-line, .card-skeleton:nth-child(4) .skel-pill { animation-delay: .36s; }
+.card-skeleton:nth-child(n+5) .skel-line { animation-delay: .48s; }
+
+/* Quien pide menos movimiento se queda con el hueco quieto: sigue diciendo lo
+   mismo (aqui va una lista) sin la animacion. */
+@media (prefers-reduced-motion: reduce) {
+  .skel-line, .skel-pill, .list-refresh-bar::after { animation: none; }
+}
+
+/* ---- Pie de paginacion (componente Pagination) ----
+   Solo aparece con mas de una pagina. El rango de la izquierda es la mitad que
+   importa: dice si esta pagina es todo lo que hay o el principio de mil. */
+.pager {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line-2);
+}
+.pager-range { font-size: 13px; color: var(--muted); }
+.pager-pages { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.pager-step { gap: 5px; }
+.pager-step svg { width: 13px; height: 13px; }
+.pager-num {
+  min-width: 32px; height: 32px; padding: 0 8px;
+  border: 1px solid transparent; border-radius: var(--r-md); background: transparent;
+  color: var(--ink-2); font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: background .14s ease, color .14s ease, border-color .14s ease;
+}
+.pager-num:hover:not(:disabled):not(.is-current) { background: var(--paper-2); color: var(--ink); }
+.pager-num.is-current { background: var(--brand); border-color: var(--brand); color: #fff; cursor: default; }
+.pager-num:disabled { cursor: default; opacity: .55; }
+.pager-num:focus-visible, .pager-step:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.pager-gap { color: var(--faint); padding: 0 2px; user-select: none; }
+
+@media (max-width: 560px) {
+  /* En movil los numeros sueltos no caben junto al rango: se apilan y el rango
+     pasa a segunda linea, que es el dato que se consulta y no se pulsa. */
+  .pager { flex-direction: column-reverse; align-items: stretch; gap: 10px; }
+  .pager-pages { justify-content: center; }
+  .pager-range { text-align: center; }
 }

@@ -10,7 +10,7 @@
  * ya facturado, para consultar una factura congelada sin poder editarla.
  * Fuente: docs/06-modulo-administrativo.md §3.3.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Currency,
   Permission,
@@ -23,14 +23,13 @@ import {
 } from '@courier/shared';
 import type { Role, ShipmentDto } from '@courier/shared';
 import { FilterBar } from '../components/FilterBar';
+import { EmptyList, ListBody, TableSkeleton } from '../components/ListLoading';
+import { Pagination } from '../components/Pagination';
 import { PayFlag } from '../components/PayFlag';
-import { API_BASE, ApiError, api } from '../lib/api';
+import { API_BASE } from '../lib/api';
+import { usePagedList } from '../lib/usePagedList';
 import { formatDate } from '../lib/datetime';
 import { CostsEditorModal } from './CostsEditorModal';
-
-interface ListResponse {
-  items: ShipmentDto[];
-}
 
 /** Que cola se esta mirando. */
 export type CostsView = 'pendientes' | 'facturados';
@@ -68,39 +67,30 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
    * que bastar para que le aparezca el botón.
    */
   const canProforma = can(role, Permission.ReportsProforma);
-  const [data, setData] = useState<ListResponse | null>(null);
   const [q, setQ] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<ShipmentDto | null>(null);
 
-  const load = useCallback(async () => {
-    const params = new URLSearchParams({ state: VIEW_STATE[view] });
-    if (q.trim()) params.set('q', q.trim());
-    try {
-      setData(await api.get<ListResponse>(`/shipments?${params.toString()}`));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo cargar la cola.');
-    }
-  }, [q, view]);
+  /** La cola, paginada. La cola y la busqueda son filtros de SQL, no de pantalla. */
+  const list = usePagedList<ShipmentDto>(
+    '/shipments',
+    { state: VIEW_STATE[view], q: q.trim() || undefined },
+    { errorMessage: 'No se pudo cargar la cola.' },
+  );
+  const { error, setError, reload: load } = list;
 
-  useEffect(() => {
-    const t = setTimeout(load, 250); // debounce de la busqueda
-    return () => clearTimeout(t);
-  }, [load]);
+  /** Columnas de la tabla; el esqueleto necesita cuadrar con ellas. */
+  const columnCount = view === 'facturados' ? 9 : 8;
+  const noun = view === 'pendientes' ? 'trámites por facturar' : 'trámites facturados';
 
   return (
     <div className="fadeIn">
       <div className="head-row">
         <div>
           <div className="title">Costos</div>
-          {data && (
-            <div className="count">
-              {data.items.length}{' '}
-              {view === 'pendientes' ? 'trámites por facturar' : 'trámites facturados'}
-            </div>
-          )}
+          {/* El total de la cola, no las filas de la pagina: es el tamaño del
+              trabajo pendiente y por eso se mira. */}
+          {list.data && <div className="count">{list.total.toLocaleString('es-CR')} {noun}</div>}
         </div>
       </div>
 
@@ -130,6 +120,7 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
         </div>
       </FilterBar>
 
+      <ListBody refreshing={list.refreshing}>
       <div className="table-wrap">
         <table className="table">
           <thead>
@@ -148,8 +139,11 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
               <th style={{ textAlign: 'right' }}>Acciones</th>
             </tr>
           </thead>
+          {/* La cabecera se pinta siempre: mientras carga, ya dice qué va a
+              llegar. El esqueleto solo reemplaza las filas. */}
+          {list.loading && <TableSkeleton cols={columnCount} />}
           <tbody>
-            {data?.items.map((row) => (
+            {list.items.map((row) => (
               <tr key={row.id}>
                 <td><span className="mono">{row.code}</span></td>
                 <td>{SHIPMENT_TYPE_LABELS[row.shipmentType]}</td>
@@ -194,13 +188,22 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
         </table>
       </div>
 
-      {data && data.items.length === 0 && (
-        <div className="empty">
-          {view === 'pendientes'
-            ? 'No hay trámites esperando facturación.'
-            : 'Aún no hay trámites facturados.'}
-        </div>
-      )}
+        <Pagination
+          page={list.page}
+          pageSize={list.pageSize}
+          total={list.total}
+          totalPages={list.totalPages}
+          onPage={list.goToPage}
+          busy={list.refreshing}
+          noun={noun}
+        />
+      </ListBody>
+
+      <EmptyList loading={list.loading} empty={list.items.length === 0}>
+        {view === 'pendientes'
+          ? 'No hay trámites esperando facturación.'
+          : 'Aún no hay trámites facturados.'}
+      </EmptyList>
 
       {editing && (
         <CostsEditorModal

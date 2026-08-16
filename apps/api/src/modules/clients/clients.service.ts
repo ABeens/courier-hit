@@ -25,9 +25,11 @@
  *    la ruta de reparto y la operacion lee la direccion en vivo. Ver
  *    `updateAddress`.
  */
-import { ClientReviewStatus, lockerAddressFor } from '@courier/shared';
+import { ClientReviewStatus, lockerAddressFor, paged } from '@courier/shared';
 import type {
   DeliveryAddressInput,
+  ListClientsQuery,
+  Page,
   Session,
   UpdateClientInput,
   UpdateProfileInput,
@@ -62,10 +64,28 @@ export interface ClientListItem {
   shipmentCount: number;
 }
 
+/**
+ * Listado de casilleros: el sobre de paginacion mas el contador de la cola de
+ * revision, que es la razon de ser de la pantalla y por eso viaja siempre.
+ */
+export interface ClientListResponse extends Page<ClientListItem> {
+  /** Casilleros por revisar dentro de la busqueda, al margen del filtro de revision. */
+  pendingReview: number;
+}
+
 export const clientsService = {
-  async list(q?: string): Promise<{ items: ClientListItem[] }> {
-    const rows = await clientsRepo.list(q);
-    return { items: rows.map(({ createdAt: _createdAt, ...item }) => item) };
+  /**
+   * Una pagina del dashboard de casilleros. Las tres consultas van en paralelo:
+   * son independientes y encadenarlas triplicaria la latencia de la pantalla.
+   */
+  async list(query: ListClientsQuery): Promise<ClientListResponse> {
+    const [rows, total, pendingReview] = await Promise.all([
+      clientsRepo.list(query),
+      clientsRepo.countList(query),
+      clientsRepo.countPendingReview(query),
+    ]);
+    const items = rows.map(({ createdAt: _createdAt, ...item }) => item);
+    return { ...paged(items, total, query), pendingReview };
   },
 
   async get(id: string): Promise<ClientListItem> {

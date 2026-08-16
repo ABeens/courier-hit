@@ -9,7 +9,7 @@
  */
 import { and, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
-import { HelgaSyncStatus } from '@courier/shared';
+import { HelgaSyncStatus, toSlice } from '@courier/shared';
 import type { ListShipmentsQuery, State } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
@@ -138,11 +138,50 @@ function buildConditions(query: ListShipmentsQuery, ownerClientId?: string): SQL
 }
 
 export const shipmentsRepo = {
-  /** Lista filtrada, del mas reciente al mas antiguo. */
+  /**
+   * Una PAGINA del listado filtrado, del mas reciente al mas antiguo.
+   *
+   * El desempate por `id` no es cosmetico: sin el, la paginacion se rompe. Los
+   * lotes de la sincronizacion con el proveedor y de la recepcion se insertan
+   * dentro de una transaccion, y `now()` da el mismo instante a toda la
+   * transaccion, asi que `created_at` empatado es la norma y no la excepcion. Con
+   * el orden ambiguo, Postgres puede devolver esas filas en distinto orden entre
+   * dos peticiones y la misma fila sale en la pagina 1 y en la 2 mientras otra no
+   * sale en ninguna.
+   */
   async list(query: ListShipmentsQuery, ownerClientId?: string) {
     const conds = buildConditions(query, ownerClientId);
-    const q = baseQuery().orderBy(desc(shipments.createdAt));
-    return conds.length > 0 ? q.where(and(...conds)) : q;
+    const { limit, offset } = toSlice(query);
+    return baseQuery()
+      .where(and(...conds))
+      .orderBy(desc(shipments.createdAt), desc(shipments.id))
+      .limit(limit)
+      .offset(offset);
+  },
+
+  /**
+   * Cuantos tramites hay con esos filtros. Es el numero de la cabecera y el que
+   * decide cuantas paginas existen, asi que corre SIEMPRE junto al listado.
+   *
+   * Se queda con los joins minimos: `clients` y `users` porque la busqueda `q`
+   * mira el codigo de casillero y el nombre del titular, y nada mas. Fuera quedan
+   * los dos joins de rutas (solo aportan una columna de presentacion) y, sobre
+   * todo, `settlementColumn`, que es una subconsulta correlacionada por fila:
+   * contar con ella dispararia un recorrido de `payments` por cada tramite del
+   * filtro para no leer ni uno de los resultados.
+   *
+   * Los dos joins que quedan son LEFT sobre claves unicas, asi que no multiplican
+   * filas y el conteo coincide exactamente con el del listado.
+   */
+  async countList(query: ListShipmentsQuery, ownerClientId?: string) {
+    const conds = buildConditions(query, ownerClientId);
+    const [row] = await db
+      .select({ n: count() })
+      .from(shipments)
+      .leftJoin(clients, eq(shipments.clientId, clients.id))
+      .leftJoin(users, eq(clients.userId, users.id))
+      .where(and(...conds));
+    return row?.n ?? 0;
   },
 
   /** Un tramite por id, con cliente y ruta. */

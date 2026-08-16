@@ -11,7 +11,27 @@
  */
 import { z } from 'zod';
 import { Currency } from '../money/currency';
+import { ClientReviewStatus } from '../auth/user';
 import { emailSchema, idNumberSchema, nameSchema, phoneSchema } from '../auth/dto';
+import { paginationQuerySchema } from '../http/pagination';
+
+/**
+ * Filtros del dashboard de casilleros (Parte 3).
+ *
+ * `reviewStatus` es filtro de SERVIDOR, no de navegador. Antes se aplicaba sobre
+ * lo ya cargado con el argumento de que alternarlo no debia costar un viaje: eso
+ * dejo de ser cierto al paginar, porque entonces solo recortaria la pagina
+ * visible y el contador de "por revisar" contaria cincuenta filas en vez de
+ * todas. La cola de nuevos es justo la que genera trabajo, asi que tiene que
+ * salir completa.
+ */
+export const listClientsQuerySchema = z
+  .object({
+    q: z.string().trim().min(1).max(80).optional(),
+    reviewStatus: z.nativeEnum(ClientReviewStatus).optional(),
+  })
+  .merge(paginationQuerySchema);
+export type ListClientsQuery = z.infer<typeof listClientsQuerySchema>;
 
 /**
  * Limite de credito del casillero (Parte 3 L48: "ingresarles un límite de

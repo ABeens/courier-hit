@@ -1,4 +1,6 @@
 /** @courier/shared — dominio compartido entre API y web. */
+// Antes que nada: el sobre de paginacion lo fusionan los DTO de casi todos los modulos.
+export * from './http/pagination';
 export * from './money/currency';
 export * from './auth/roles';
 export * from './auth/permissions';

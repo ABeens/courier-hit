@@ -19,7 +19,7 @@
  * existe una vez APROBADOS: hasta entonces la ficha no lo muestra, para no dar
  * por firme una cifra que todavia se esta armando.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Currency,
   Flow,
@@ -40,8 +40,11 @@ import {
 import type { BillingAmounts, Role, ShipmentDto } from '@courier/shared';
 import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
+import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
+import { Pagination } from '../components/Pagination';
 import { PayFlag, awaitingValidation } from '../components/PayFlag';
-import { API_BASE, ApiError, api } from '../lib/api';
+import { API_BASE } from '../lib/api';
+import { usePagedList } from '../lib/usePagedList';
 import { formatDate, formatDayInput, startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
 import { STATE_TONE } from '../lib/tone';
 import { ClientShipmentModal } from './ClientShipmentModal';
@@ -67,10 +70,6 @@ const TYPES_BY_VIEW: Record<ShipmentView, ShipmentType[]> = {
   propios: [ShipmentType.Paqueteria],
   'propios-tramites': [...MANUAL_SHIPMENT_TYPES],
 };
-
-interface ListResponse {
-  items: ShipmentDto[];
-}
 
 /**
  * Par etiqueta/valor de una ficha. Centraliza el guion de "sin dato" para que
@@ -237,12 +236,10 @@ interface Props {
 
 export function ShipmentsScreen({ role, initialView, initialState, initialQuery }: Props) {
   const [view, setView] = useState<ShipmentView>(initialView);
-  const [data, setData] = useState<ListResponse | null>(null);
   const [q, setQ] = useState(initialQuery ?? '');
   const [state, setState] = useState<string>(initialState ?? '');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; row: ShipmentDto } | null>(null);
   const [advancing, setAdvancing] = useState<ShipmentDto | null>(null);
@@ -316,28 +313,24 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
     if (state && !stateOptions.includes(state as State)) setState('');
   }, [state, stateOptions]);
 
-  const load = useCallback(async () => {
-    const params = new URLSearchParams();
-    if (q.trim()) params.set('q', q.trim());
-    if (state) params.set('state', state);
-    const types = TYPES_BY_VIEW[view];
-    if (types.length > 0) params.set('shipmentType', types.join(','));
-    // El usuario elige dias en su hora local; el rango viaja como instantes UTC.
-    if (from) params.set('from', startOfLocalDayUtc(from));
-    if (to) params.set('to', startOfNextLocalDayUtc(to));
-    const qs = params.toString();
-    try {
-      setData(await api.get<ListResponse>(`/shipments${qs ? `?${qs}` : ''}`));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo cargar el listado.');
-    }
-  }, [q, state, view, from, to]);
-
-  useEffect(() => {
-    const t = setTimeout(load, 250); // debounce de la busqueda
-    return () => clearTimeout(t);
-  }, [load]);
+  /**
+   * El listado. TODOS los filtros viajan a la API: ninguno se aplica sobre lo ya
+   * cargado, porque con el listado paginado eso solo recortaria la pagina visible
+   * y el contador de la cabecera diria una cifra que no es.
+   */
+  const list = usePagedList<ShipmentDto>(
+    '/shipments',
+    {
+      q: q.trim() || undefined,
+      state: state || undefined,
+      shipmentType: TYPES_BY_VIEW[view].join(',') || undefined,
+      // El usuario elige dias en su hora local; el rango viaja como instantes UTC.
+      from: from ? startOfLocalDayUtc(from) : undefined,
+      to: to ? startOfNextLocalDayUtc(to) : undefined,
+    },
+    { errorMessage: 'No se pudo cargar el listado.' },
+  );
+  const { error, setError, reload: load } = list;
 
   /**
    * Lo que se está aplicando ademas del buscador, en el mismo orden en que sale
@@ -357,6 +350,9 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
     setTo('');
   }
 
+  /** Como se llama lo que se lista; lo usan el contador y el pie de paginacion. */
+  const noun = isOwnPackages ? 'paquetes' : 'trámites';
+
   const title = isOwnPackages
     ? 'Mis paquetes'
     : view === 'propios-tramites'
@@ -372,12 +368,15 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
       <div className="head-row">
         <div>
           <div className="title">{title}</div>
-          {data && (
+          {list.data && (
             <div className="count">
-              {data.items.length} {isOwnPackages ? 'paquetes' : 'trámites'}
+              {/* El TOTAL del filtro, no las filas de la pagina: con la lista
+                  paginada, "50 trámites" bajo un filtro que devuelve mil seria
+                  una cifra falsa, y es la cifra por la que se pregunta. */}
+              {list.total.toLocaleString('es-CR')} {noun}
               {/* La ficha pulsable no se anuncia sola: sin esta linea el historial
                   solo lo encuentra quien pruebe a hacer clic por curiosidad. */}
-              {isOwn && data.items.length > 0 && ' · toca uno para ver su historial'}
+              {isOwn && list.total > 0 && ' · toca uno para ver su historial'}
             </div>
           )}
         </div>
@@ -463,8 +462,11 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
         )}
       </FilterBar>
 
-      <div className="cards">
-        {data?.items.map((row) => {
+      {list.loading && <CardsSkeleton />}
+
+      <ListBody refreshing={list.refreshing}>
+        <div className="cards">
+        {list.items.map((row) => {
           /**
            * Moneda en la que esta ficha habla de dinero. Se resuelve UNA vez por
            * fila y la usan la bandera y el bloque de facturación: son la misma
@@ -634,9 +636,22 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
           </article>
           );
         })}
-      </div>
+        </div>
 
-      {data && data.items.length === 0 && <div className="empty">No hay trámites que coincidan.</div>}
+        <Pagination
+          page={list.page}
+          pageSize={list.pageSize}
+          total={list.total}
+          totalPages={list.totalPages}
+          onPage={list.goToPage}
+          busy={list.refreshing}
+          noun={noun}
+        />
+      </ListBody>
+
+      <EmptyList loading={list.loading} empty={list.items.length === 0}>
+        No hay trámites que coincidan.
+      </EmptyList>
 
       {advancing && (
         <StateAdvanceModal

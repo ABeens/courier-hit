@@ -9,7 +9,7 @@
  * por él: la lista completa sirve para consultar, pero la de nuevos es la que
  * genera trabajo.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   ClientReviewStatus,
   Currency,
@@ -19,7 +19,9 @@ import {
   formatMoney,
 } from '@courier/shared';
 import { FilterBar } from '../components/FilterBar';
-import { ApiError, api } from '../lib/api';
+import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
+import { Pagination } from '../components/Pagination';
+import { usePagedList } from '../lib/usePagedList';
 import { ClientEditModal } from './ClientEditModal';
 
 export interface ClientRow {
@@ -84,56 +86,40 @@ const CLIENT_STATUS_LABEL: Record<ClientReviewStatus, string> = {
 };
 
 export function ClientsScreen({ canWrite }: { canWrite: boolean }) {
-  const [items, setItems] = useState<ClientRow[] | null>(null);
   const [q, setQ] = useState('');
   const [onlyNew, setOnlyNew] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<ClientRow | null>(null);
 
-  const load = useCallback(async () => {
-    const qs = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : '';
-    try {
-      const data = await api.get<{ items: ClientRow[] }>(`/clients${qs}`);
-      setItems(data.items);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo cargar el listado.');
-    }
-  }, [q]);
-
-  useEffect(() => {
-    const t = setTimeout(load, 250); // debounce de la busqueda
-    return () => clearTimeout(t);
-  }, [load]);
-
   /**
-   * El filtro de "nuevos" se aplica en el cliente y no en la API a proposito: es
-   * un subconjunto de lo ya cargado, asi que alternarlo no debe costar un viaje
-   * al servidor. La busqueda si va al servidor porque ahi si puede haber filas
-   * que no estan en memoria.
+   * Los DOS filtros van a la API. El de "nuevos" se resolvia antes en el
+   * navegador, con el argumento de que era un subconjunto de lo ya cargado y no
+   * debia costar un viaje: eso dejo de ser cierto al paginar, porque entonces
+   * filtraria solo las cincuenta filas visibles y esconderia el resto de la cola,
+   * que es justo la que genera el trabajo de esta pantalla.
+   *
+   * `pendingReview` viene con la respuesta y se cuenta en el servidor sobre TODOS
+   * los casilleros de la busqueda, no sobre la pagina.
    */
-  const visible = useMemo(
-    () =>
-      onlyNew
-        ? (items ?? []).filter((c) => c.reviewStatus === ClientReviewStatus.Nuevo)
-        : (items ?? []),
-    [items, onlyNew],
+  const list = usePagedList<ClientRow, { pendingReview: number }>(
+    '/clients',
+    {
+      q: q.trim() || undefined,
+      reviewStatus: onlyNew ? ClientReviewStatus.Nuevo : undefined,
+    },
+    { errorMessage: 'No se pudo cargar el listado.' },
   );
-
-  const newCount = useMemo(
-    () => (items ?? []).filter((c) => c.reviewStatus === ClientReviewStatus.Nuevo).length,
-    [items],
-  );
+  const { error, setError, reload: load } = list;
 
   return (
     <div className="fadeIn">
       <div className="head-row">
         <div>
           <div className="title">Clientes</div>
-          {items && (
+          {list.data && (
             <div className="count">
-              {items.length} casilleros · {newCount} por revisar
+              {list.total.toLocaleString('es-CR')} casilleros ·{' '}
+              {list.data.pendingReview.toLocaleString('es-CR')} por revisar
             </div>
           )}
         </div>
@@ -169,8 +155,11 @@ export function ClientsScreen({ canWrite }: { canWrite: boolean }) {
         </div>
       </FilterBar>
 
-      <div className="cards">
-        {visible.map((row) => {
+      {list.loading && <CardsSkeleton />}
+
+      <ListBody refreshing={list.refreshing}>
+        <div className="cards">
+        {list.items.map((row) => {
           const province = findProvince(row.provinceCode)?.name ?? null;
           const canton = findCanton(row.cantonCode)?.name ?? null;
           const district = findDistrict(row.districtCode)?.name ?? null;
@@ -233,11 +222,22 @@ export function ClientsScreen({ canWrite }: { canWrite: boolean }) {
             </article>
           );
         })}
-      </div>
+        </div>
 
-      {items && visible.length === 0 && (
-        <div className="empty">No hay casilleros que coincidan.</div>
-      )}
+        <Pagination
+          page={list.page}
+          pageSize={list.pageSize}
+          total={list.total}
+          totalPages={list.totalPages}
+          onPage={list.goToPage}
+          busy={list.refreshing}
+          noun="casilleros"
+        />
+      </ListBody>
+
+      <EmptyList loading={list.loading} empty={list.items.length === 0}>
+        No hay casilleros que coincidan.
+      </EmptyList>
 
       {editing && (
         <ClientEditModal

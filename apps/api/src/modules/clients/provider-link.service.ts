@@ -14,12 +14,13 @@
  *
  * Toda correccion queda en `client_provider_link_events` con su autor y su motivo.
  */
-import { HelgaSyncStatus, ProviderLinkSource } from '@courier/shared';
+import { HelgaSyncStatus, ProviderLinkSource, paged } from '@courier/shared';
 import type {
   ListProviderLinksQuery,
   ProviderLinkDetailDto,
   ProviderLinkDto,
   ProviderLinkEventDto,
+  ProviderLinkListDto,
   Session,
   UpdateProviderLinkInput,
 } from '@courier/shared';
@@ -89,10 +90,22 @@ function diffOf(
 }
 
 export const providerLinkService = {
-  /** Casilleros con problema de enlace (o filtrados por estado/busqueda). */
-  async list(query: ListProviderLinksQuery): Promise<{ items: ProviderLinkDto[] }> {
-    const rows = await providerLinkRepo.list(query);
-    return { items: rows.map(toDto) };
+  /**
+   * Una pagina de casilleros con problema de enlace (o filtrados por
+   * estado/busqueda), mas cuantos de todo el filtro estan bloqueando un login.
+   *
+   * `blockedCount` se pregunta a la BD solo con la integracion encendida: con
+   * Helga apagado, un casillero sin enlazar es normal y no deja a nadie fuera, asi
+   * que el conteo seria una consulta para devolver siempre cero. Es el mismo
+   * criterio con el que `toDto` calcula `blocksLogin` fila a fila.
+   */
+  async list(query: ListProviderLinksQuery): Promise<ProviderLinkListDto> {
+    const [rows, total, blockedCount] = await Promise.all([
+      providerLinkRepo.list(query),
+      providerLinkRepo.countList(query),
+      isHelgaEnabled() ? providerLinkRepo.countUnsynced(query) : Promise.resolve(0),
+    ]);
+    return { ...paged(rows.map(toDto), total, query), blockedCount };
   },
 
   /** Un enlace con su bitacora completa: es la pantalla de diagnostico. */

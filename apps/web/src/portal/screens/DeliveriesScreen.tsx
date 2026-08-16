@@ -10,7 +10,7 @@
  * La foto se toma con la camara del propio telefono: `capture="environment"`
  * abre la camara trasera directamente en vez del explorador de archivos.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   DELIVERY_OUTCOME_LABELS,
   DeliveryOutcome,
@@ -21,8 +21,11 @@ import {
 } from '@courier/shared';
 import type { ShipmentType } from '@courier/shared';
 import { FilterBar } from '../components/FilterBar';
+import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
+import { Pagination } from '../components/Pagination';
 import { PayFlag } from '../components/PayFlag';
-import { API_BASE, ApiError, api } from '../lib/api';
+import { API_BASE } from '../lib/api';
+import { usePagedList } from '../lib/usePagedList';
 import { DeliveryConfirmModal } from './DeliveryConfirmModal';
 
 export interface DeliveryQueueRow {
@@ -54,40 +57,31 @@ export interface DeliveryQueueRow {
 type ModalState = { row: DeliveryQueueRow; outcome: DeliveryOutcome } | null;
 
 export function DeliveriesScreen() {
-  const [items, setItems] = useState<DeliveryQueueRow[] | null>(null);
   const [q, setQ] = useState('');
   const [route, setRoute] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
 
-  const load = useCallback(async () => {
-    const params = new URLSearchParams();
-    if (q.trim()) params.set('q', q.trim());
-    if (route.trim()) params.set('routeNumber', route.trim());
-    const qs = params.toString();
-    try {
-      const data = await api.get<{ items: DeliveryQueueRow[] }>(
-        `/deliveries/queue${qs ? `?${qs}` : ''}`,
-      );
-      setItems(data.items);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo cargar la ruta.');
-    }
-  }, [q, route]);
-
-  useEffect(() => {
-    const t = setTimeout(load, 250); // debounce de la busqueda
-    return () => clearTimeout(t);
-  }, [load]);
+  /**
+   * La cola del dia, paginada. Los dos filtros del manual (nombre/tracking y
+   * ruta) se aplican en SQL: el mensajero que filtra por su ruta tiene que ver
+   * SU recorrido entero, no la parte de el que cabia en la primera pagina.
+   */
+  const list = usePagedList<DeliveryQueueRow>(
+    '/deliveries/queue',
+    { q: q.trim() || undefined, routeNumber: route.trim() || undefined },
+    { errorMessage: 'No se pudo cargar la ruta.' },
+  );
+  const { error, setError, reload: load } = list;
 
   return (
     <div className="fadeIn">
       <div className="head-row">
         <div>
           <div className="title">Entregas</div>
-          {items && <div className="count">{items.length} paquetes en ruta</div>}
+          {list.data && (
+            <div className="count">{list.total.toLocaleString('es-CR')} paquetes en ruta</div>
+          )}
         </div>
       </div>
 
@@ -113,8 +107,11 @@ export function DeliveriesScreen() {
         </div>
       </FilterBar>
 
-      <div className="cards">
-        {items?.map((row) => (
+      {list.loading && <CardsSkeleton rows={3} />}
+
+      <ListBody refreshing={list.refreshing}>
+        <div className="cards">
+        {list.items.map((row) => (
           <article className="card-item tone-info" key={row.id}>
             <div className="card-item-head">
               <div className="card-item-ident">
@@ -180,11 +177,22 @@ export function DeliveriesScreen() {
             </div>
           </article>
         ))}
-      </div>
+        </div>
 
-      {items && items.length === 0 && (
-        <div className="empty">No hay paquetes en ruta que coincidan.</div>
-      )}
+        <Pagination
+          page={list.page}
+          pageSize={list.pageSize}
+          total={list.total}
+          totalPages={list.totalPages}
+          onPage={list.goToPage}
+          busy={list.refreshing}
+          noun="paquetes"
+        />
+      </ListBody>
+
+      <EmptyList loading={list.loading} empty={list.items.length === 0}>
+        No hay paquetes en ruta que coincidan.
+      </EmptyList>
 
       {modal && (
         <DeliveryConfirmModal

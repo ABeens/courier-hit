@@ -5,8 +5,10 @@
  * Las tablas `clients`/`users` las declara el modulo auth: este modulo las lee
  * pero no las modifica; su dueño sigue siendo auth.
  */
-import { and, count, eq, ilike, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
+import { ClientReviewStatus, toSlice } from '@courier/shared';
+import type { ListClientsQuery } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { shipments } from '../shipments/shipments.schema';
@@ -51,22 +53,82 @@ function baseQuery() {
     .leftJoin(clientRates, eq(clients.clientRateId, clientRates.id));
 }
 
+/**
+ * Filtros del dashboard traducidos a SQL. Los DOS se aplican aqui: la busqueda y
+ * el estado de revision. El segundo se resolvia antes en el navegador; con el
+ * listado paginado eso recortaria solo la pagina visible.
+ */
+function buildConditions(query: ListClientsQuery): SQL[] {
+  const conds: SQL[] = [];
+
+  if (query.q) {
+    const term = `%${query.q}%`;
+    const match = or(
+      ilike(users.name, term),
+      ilike(clients.code, term),
+      ilike(clients.idNumber, term),
+      ilike(users.email, term),
+    );
+    if (match) conds.push(match);
+  }
+  if (query.reviewStatus) conds.push(eq(clients.reviewStatus, query.reviewStatus));
+
+  return conds;
+}
+
+/** `and()` de una lista que puede venir vacia (sin filtros no hay `WHERE`). */
+function whereOf(conds: SQL[]): SQL | undefined {
+  return conds.length > 0 ? and(...conds) : undefined;
+}
+
 export const clientsRepo = {
-  /** Listado del dashboard de casilleros; `q` busca por nombre, codigo, cedula o correo. */
-  async list(q?: string) {
-    const conds: SQL[] = [];
-    if (q) {
-      const term = `%${q}%`;
-      const match = or(
-        ilike(users.name, term),
-        ilike(clients.code, term),
-        ilike(clients.idNumber, term),
-        ilike(users.email, term),
-      );
-      if (match) conds.push(match);
-    }
-    const query = baseQuery().orderBy(users.name);
-    return conds.length > 0 ? query.where(and(...conds)) : query;
+  /**
+   * Una PAGINA del dashboard de casilleros; `q` busca por nombre, codigo, cedula
+   * o correo.
+   *
+   * Ordena por nombre y desempata por `id`: dos titulares homonimos (que los hay,
+   * y son justo el caso que trae a alguien a esta pantalla) tendrian orden
+   * ambiguo, y con orden ambiguo la paginacion repite y se salta filas.
+   */
+  async list(query: ListClientsQuery) {
+    const { limit, offset } = toSlice(query);
+    return baseQuery()
+      .where(whereOf(buildConditions(query)))
+      .orderBy(asc(users.name), asc(clients.id))
+      .limit(limit)
+      .offset(offset);
+  },
+
+  /**
+   * Cuantos casilleros hay con esos filtros. Sin la subconsulta de conteo de
+   * tramites ni el join de tarifas: ninguno de los dos filtra, y el de tramites
+   * es una subconsulta correlacionada que recorreria `shipments` por cada
+   * casillero solo para descartar el resultado.
+   */
+  async countList(query: ListClientsQuery) {
+    const [row] = await db
+      .select({ n: count() })
+      .from(clients)
+      .innerJoin(users, eq(clients.userId, users.id))
+      .where(whereOf(buildConditions(query)));
+    return row?.n ?? 0;
+  },
+
+  /**
+   * Cuantos casilleros estan SIN REVISAR dentro de la busqueda actual.
+   *
+   * Respeta `q` pero ignora `reviewStatus` a proposito: es el numero de la
+   * cabecera ("N casilleros · M por revisar"), y tiene que seguir diciendo cuanto
+   * trabajo queda tambien mientras se esta mirando la pila de revisados.
+   */
+  async countPendingReview(query: ListClientsQuery) {
+    const conds = buildConditions({ ...query, reviewStatus: ClientReviewStatus.Nuevo });
+    const [row] = await db
+      .select({ n: count() })
+      .from(clients)
+      .innerJoin(users, eq(clients.userId, users.id))
+      .where(whereOf(conds));
+    return row?.n ?? 0;
   },
 
   async findById(id: string) {

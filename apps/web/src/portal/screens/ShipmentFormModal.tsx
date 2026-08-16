@@ -30,7 +30,7 @@ import {
   updateShipmentSchema,
   usesPackageFields,
 } from '@courier/shared';
-import type { Role, ShipmentDto } from '@courier/shared';
+import type { Page, Role, ShipmentDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 
 interface ClientOption {
@@ -39,6 +39,16 @@ interface ClientOption {
   name: string;
   idNumber: string;
 }
+
+/**
+ * Cuantos casilleros se ofrecen en el desplegable de cliente.
+ *
+ * Antes se pedian TODOS y se pintaba un `<option>` por casillero: con unos pocos
+ * miles el desplegable es inservible y el modal tarda en abrir. El buscador de
+ * arriba es el que resuelve; este tope es lo que queda a la vista mientras se
+ * escribe, y si sobran se dice.
+ */
+const CLIENT_OPTIONS = 50;
 
 interface Props {
   mode: 'create' | 'edit';
@@ -92,6 +102,8 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
   const [clientId, setClientId] = useState(row?.client?.id ?? '');
   const [clientQuery, setClientQuery] = useState('');
   const [clients, setClients] = useState<ClientOption[]>([]);
+  /** Cuantos casilleros hay en total con esa busqueda, para avisar si sobran. */
+  const [clientMatches, setClientMatches] = useState(0);
   const [tracking, setTracking] = useState(row?.tracking ?? '');
   const [description, setDescription] = useState(row?.description ?? '');
   const [store, setStore] = useState(row?.store ?? '');
@@ -143,12 +155,16 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
 
   const loadClients = useCallback(async () => {
     if (mode === 'edit') return; // el cliente de un tramite no se reasigna aqui
-    const qs = clientQuery.trim() ? `?q=${encodeURIComponent(clientQuery.trim())}` : '';
+    const params = new URLSearchParams({ pageSize: String(CLIENT_OPTIONS) });
+    if (clientQuery.trim()) params.set('q', clientQuery.trim());
     try {
-      const res = await api.get<{ items: ClientOption[] }>(`/clients${qs}`);
+      const res = await api.get<Page<ClientOption>>(`/clients?${params.toString()}`);
       setClients(res.items);
+      setClientMatches(res.total);
     } catch {
-      setClients([]); // el error se vera al enviar; no bloqueamos el formulario
+      // el error se vera al enviar; no bloqueamos el formulario
+      setClients([]);
+      setClientMatches(0);
     }
   }, [clientQuery, mode]);
 
@@ -326,6 +342,15 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
                   </option>
                 ))}
               </select>
+              {/* El desplegable esta recortado y hay que decirlo: quien no ve a su
+                  cliente ahi tiene que saber que no es que no exista, sino que hay
+                  mas de los que caben. */}
+              {clientMatches > clients.length && (
+                <div className="field-hint">
+                  {clients.length} de {clientMatches.toLocaleString('es-CR')} casilleros. Afina la
+                  búsqueda para ver el resto.
+                </div>
+              )}
             </div>
           ) : (
             <div className="col-full">

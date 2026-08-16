@@ -232,10 +232,20 @@ export const shipments = pgTable(
      *
      * `client_id` sigue siendo el prefijo, asi que este indice tambien sirve todo
      * lo que servia el anterior por casillero a secas (p. ej. `countActiveByClient`).
+     *
+     * `id` cierra el indice porque el listado ordena por `(created_at, id)`: es el
+     * desempate que hace determinista la paginacion (ver `http/pagination`), y sin
+     * el en el indice cada pagina del tablero del cliente pagaria un sort.
      */
-    index('shipments_client_created_idx').on(t.clientId, t.createdAt),
+    index('shipments_client_created_idx').on(t.clientId, t.createdAt, t.id),
     index('shipments_state_idx').on(t.state), // colas de bodega / entrega
-    index('shipments_created_at_idx').on(t.createdAt), // filtro por rango de fechas
+    /**
+     * Filtro por rango de fechas y, sobre todo, ORDEN del listado paginado. Lleva
+     * `id` por lo mismo que el anterior: es la clave de orden completa, asi que
+     * Postgres saca la pagina recorriendo el indice hacia atras y se detiene al
+     * llegar al `limit`, en vez de ordenar todas las filas del filtro.
+     */
+    index('shipments_created_at_idx').on(t.createdAt, t.id),
     /**
      * El LES que se escanea en la mesa de bodega (`findActiveByHawb`). La busqueda
      * ignora mayusculas porque el HAWB que llega del proveedor y el que se digita
@@ -278,7 +288,7 @@ export const shipments = pgTable(
      * por el join).
      */
     index('shipments_unassigned_idx')
-      .on(t.createdAt)
+      .on(t.createdAt, t.id)
       .where(sql`${t.clientId} is null and ${t.discardedAt} is null`),
   ],
 );

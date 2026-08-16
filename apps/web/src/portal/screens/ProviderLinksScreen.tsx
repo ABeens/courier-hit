@@ -10,7 +10,7 @@
  * Por eso el listado arranca mostrando **solo los casos con problema**: los
  * casilleros sanos no generan trabajo, y mezclarlos escondería los pocos que sí.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   HELGA_SYNC_STATUS_LABELS,
   HelgaSyncStatus,
@@ -18,8 +18,11 @@ import {
 } from '@courier/shared';
 import type { ProviderLinkDetailDto, ProviderLinkDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
+import { usePagedList } from '../lib/usePagedList';
 import { FilterBar } from '../components/FilterBar';
+import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { Pagination } from '../components/Pagination';
 import { ProviderLinkEditModal } from './ProviderLinkEditModal';
 
 /**
@@ -52,32 +55,24 @@ function formatDate(iso: string): string {
 }
 
 export function ProviderLinksScreen() {
-  const [items, setItems] = useState<ProviderLinkDto[] | null>(null);
   const [status, setStatus] = useState<HelgaSyncStatus | ''>('');
   const [q, setQ] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [detail, setDetail] = useState<ProviderLinkDetailDto | null>(null);
   const [editing, setEditing] = useState<ProviderLinkDto | null>(null);
 
-  const load = useCallback(async () => {
-    const params = new URLSearchParams();
-    if (status) params.set('status', status);
-    if (q.trim()) params.set('q', q.trim());
-    const qs = params.toString() ? `?${params}` : '';
-    try {
-      const data = await api.get<{ items: ProviderLinkDto[] }>(`/clients/provider-links${qs}`);
-      setItems(data.items);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo cargar el listado.');
-    }
-  }, [status, q]);
-
-  useEffect(() => {
-    const t = setTimeout(load, 250); // debounce de la busqueda
-    return () => clearTimeout(t);
-  }, [load]);
+  /**
+   * El listado, paginado. `blockedCount` llega con la respuesta y lo cuenta el
+   * servidor sobre el filtro completo: contando la pagina, un panel con treinta
+   * clientes encerrados fuera del portal diria tres, que es el numero que
+   * justifica la pantalla entera.
+   */
+  const list = usePagedList<ProviderLinkDto, { blockedCount: number }>(
+    '/clients/provider-links',
+    { status: status || undefined, q: q.trim() || undefined },
+    { errorMessage: 'No se pudo cargar el listado.' },
+  );
+  const { error, setError, reload: load } = list;
 
   /** Abre la bitácora de un casillero. Se pide al abrir: puede ser larga. */
   async function openDetail(clientId: string) {
@@ -89,17 +84,17 @@ export function ProviderLinksScreen() {
     }
   }
 
-  const blocked = (items ?? []).filter((r) => r.blocksLogin).length;
+  const blocked = list.data?.blockedCount ?? 0;
 
   return (
     <div className="fadeIn">
       <div className="head-row">
         <div>
           <div className="title">Enlace con el operador de Miami</div>
-          {items && (
+          {list.data && (
             <div className="count">
-              {items.length} casilleros
-              {blocked > 0 && ` · ${blocked} sin poder ingresar al portal`}
+              {list.total.toLocaleString('es-CR')} casilleros
+              {blocked > 0 && ` · ${blocked.toLocaleString('es-CR')} sin poder ingresar al portal`}
             </div>
           )}
         </div>
@@ -145,8 +140,11 @@ export function ProviderLinksScreen() {
         </div>
       </FilterBar>
 
-      <div className="cards">
-        {(items ?? []).map((row) => (
+      {list.loading && <CardsSkeleton rows={3} />}
+
+      <ListBody refreshing={list.refreshing}>
+        <div className="cards">
+        {list.items.map((row) => (
           <article className={`card-item tone-${LINK_TONE[row.status]}`} key={row.clientId}>
             <div className="card-item-head">
               <div className="card-item-ident">
@@ -198,15 +196,24 @@ export function ProviderLinksScreen() {
             </div>
           </article>
         ))}
-      </div>
-
-      {items && items.length === 0 && (
-        <div className="empty">
-          {status || q
-            ? 'No hay casilleros que coincidan.'
-            : 'Todos los casilleros están enlazados.'}
         </div>
-      )}
+
+        <Pagination
+          page={list.page}
+          pageSize={list.pageSize}
+          total={list.total}
+          totalPages={list.totalPages}
+          onPage={list.goToPage}
+          busy={list.refreshing}
+          noun="casilleros"
+        />
+      </ListBody>
+
+      <EmptyList loading={list.loading} empty={list.items.length === 0}>
+        {status || q
+          ? 'No hay casilleros que coincidan.'
+          : 'Todos los casilleros están enlazados.'}
+      </EmptyList>
 
       {detail && (
         <ProviderLinkHistory detail={detail} onClose={() => setDetail(null)} />
