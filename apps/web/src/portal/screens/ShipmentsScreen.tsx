@@ -52,8 +52,6 @@ import { ClientShipmentModal } from './ClientShipmentModal';
 import { ShipmentFormModal, allowedTypesFor } from './ShipmentFormModal';
 import { ShipmentHistoryModal } from './ShipmentHistoryModal';
 import { StateAdvanceModal, reachableStates } from './StateAdvanceModal';
-import { StateCorrectModal } from './StateCorrectModal';
-import { AssignOwnerModal } from './AssignOwnerModal';
 import { PaymentModal } from './PaymentModal';
 
 /** Que tablero se esta mirando. */
@@ -244,9 +242,6 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
   const [notice, setNotice] = useState<string | null>(null);
   const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; row: ShipmentDto } | null>(null);
   const [advancing, setAdvancing] = useState<ShipmentDto | null>(null);
-  const [correcting, setCorrecting] = useState<ShipmentDto | null>(null);
-  /** Trámite al que se le está cambiando el dueño (sala de control). */
-  const [reassigning, setReassigning] = useState<ShipmentDto | null>(null);
   const [paying, setPaying] = useState<ShipmentDto | null>(null);
   /** Trámite cuyo historial de estados se está mirando (clic sobre la ficha). */
   const [tracing, setTracing] = useState<ShipmentDto | null>(null);
@@ -259,19 +254,6 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
   const isOwnPackages = view === 'propios';
   const canWrite = can(role, Permission.PackageWrite) || can(role, Permission.TramiteManage);
   const canPay = can(role, Permission.PackagePay);
-  /**
-   * Corregir aplica a los TRES flujos, no solo a los manuales: un paquete de
-   * Paquetería mal avanzado por el robot o por la bodega tampoco tenía arreglo.
-   */
-  const canCorrect = can(role, Permission.ShipmentCorrect);
-  /**
-   * Cambiar el dueño de un trámite ya registrado es la otra mitad de la sala de
-   * control, y el botón vive aquí y no allí a propósito: uno se da cuenta de que
-   * el paquete está cargado al cliente equivocado mirando ESTA ficha, no una
-   * lista de desconocidos. La pantalla de la sala de control lleva la cola de
-   * los que todavía no tienen dueño; esto es el mismo acto sobre los que sí.
-   */
-  const canReassign = can(role, Permission.ControlRoomManage);
 
   /**
    * Tipos que se pueden dar de alta DESDE ESTE TABLERO: el alta hereda el filtro
@@ -578,12 +560,17 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
                 {canWrite && !isOwn && reachableStates(row, role).length > 0 && (
                   <IconButton label="Avanzar de estado" icon="arrowR" onClick={() => setAdvancing(row)} />
                 )}
-                {canCorrect && !isOwn && (
-                  <IconButton label="Corregir estado" icon="undo" onClick={() => setCorrecting(row)} />
-                )}
-                {canReassign && !isOwn && (
-                  <IconButton label="Reasignar dueño" icon="userSwap" onClick={() => setReassigning(row)} />
-                )}
+                {/*
+                  Aqui NO hay "Corregir estado" ni "Reasignar dueño". Los dos son
+                  cambios contra flujo y viven solo en la sala de control, que es
+                  la pantalla donde enmendar es lo que se va a hacer. Pegados al
+                  boton de avanzar eran un atajo para saltarse la maquina justo
+                  cuando esta bloquea (falta la factura, falta el pago), y le
+                  aparecian a roles que en este tablero solo consultan.
+
+                  Para enmendar: Sala de control -> pila "Todos los tramites",
+                  que busca por consecutivo, guia, casillero o cliente.
+                */}
                 {/*
                   El cobro solo tiene sentido con la factura ya aprobada, que es
                   justo lo que significa "En bodega - Pendiente pago".
@@ -646,32 +633,6 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
           onClose={() => setAdvancing(null)}
           onSaved={(message) => {
             setAdvancing(null);
-            setNotice(message);
-            setError(null);
-            void load();
-          }}
-        />
-      )}
-
-      {reassigning && (
-        <AssignOwnerModal
-          row={reassigning}
-          onClose={() => setReassigning(null)}
-          onSaved={(message) => {
-            setReassigning(null);
-            setNotice(message);
-            setError(null);
-            void load();
-          }}
-        />
-      )}
-
-      {correcting && (
-        <StateCorrectModal
-          row={correcting}
-          onClose={() => setCorrecting(null)}
-          onSaved={(message) => {
-            setCorrecting(null);
             setNotice(message);
             setError(null);
             void load();

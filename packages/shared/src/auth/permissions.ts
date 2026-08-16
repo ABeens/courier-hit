@@ -122,11 +122,15 @@ export enum Permission {
    * daria roles que pueden dar de alta un desconocido pero no asignarlo, que es
    * dejar el trabajo a medias.
    *
-   * Solo `admin`, por el criterio de aceptacion del requerimiento. OJO: la matriz
-   * del manual (docs/manuales/roles.md L11 y L38) tambien se lo da a Operativo
-   * —es bodega quien encuentra el bulto—; abrirselo es sumar este permiso a
-   * `Role.Operativo` en ROLE_PERMISSIONS y nada mas: la pantalla, el menu y los
-   * endpoints preguntan por el PERMISO, nunca por el rol.
+   * Solo `admin`. Se evaluo darselo tambien a Servicio al Cliente, que es quien
+   * recibe la llamada del paquete que no aparece, y a Operativo, que es quien
+   * encuentra el bulto en bodega (la matriz del manual, docs/manuales/roles.md
+   * L11 y L38, si se lo da a este ultimo). Se dejo en admin: estas acciones
+   * enmiendan el registro por fuera del flujo, y quien las ejecuta responde por el
+   * sistema, no lo opera.
+   *
+   * Abrirselo a otro rol es sumar este permiso en ROLE_PERMISSIONS y nada mas: la
+   * pantalla, el menu y los endpoints preguntan por el PERMISO, nunca por el rol.
    */
   ControlRoomManage = 'control_room.manage',
   TramiteManage = 'tramite.manage',
@@ -134,7 +138,17 @@ export enum Permission {
    * Corregir el estado de un tramite fuera de la maquina (retroceder o saltar) y
    * reversar unos costos ya aprobados. Son las dos unicas puertas para enmendar
    * un error, y ninguna forma parte del proceso: por eso van juntas en un permiso
-   * aparte que solo tiene `admin`. Ver `transitionsService.correct`.
+   * aparte de `control_room.manage`. Ver `transitionsService.correct`.
+   *
+   * Solo `admin`, igual que `control_room.manage`. Sigue siendo un permiso
+   * SEPARADO de aquel aunque hoy los lleve el mismo rol: si mañana la sala se le
+   * abre a Operativo, no se lleva de paso la puerta de saltarse la maquina.
+   *
+   * Desde que corregir el estado solo se ofrece DENTRO de la sala de control, este
+   * permiso no alcanza por si solo para nada: hace falta ademas
+   * `control_room.manage` para llegar a la pantalla. Lo unico que abre por su
+   * cuenta es reversar la factura, y aun eso exige los permisos de costos que pide
+   * su propio modulo (costs.routes.ts).
    */
   ShipmentCorrect = 'shipment.correct',
   CostsManage = 'costs.manage',
