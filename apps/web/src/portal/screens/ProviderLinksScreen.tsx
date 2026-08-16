@@ -19,6 +19,7 @@ import {
 import type { ProviderLinkDetailDto, ProviderLinkDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { usePagedList } from '../lib/usePagedList';
+import { IconButton } from '../components/IconButton';
 import { FilterBar } from '../components/FilterBar';
 import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
 import { ModalOverlay } from '../components/ModalOverlay';
@@ -160,12 +161,8 @@ export function ProviderLinksScreen() {
                   <span className="dot" />
                   {HELGA_SYNC_STATUS_LABELS[row.status]}
                 </span>
-                <button className="btn btn-ghost btn-sm" onClick={() => void openDetail(row.clientId)}>
-                  Bitácora
-                </button>
-                <button className="btn btn-primary btn-sm" onClick={() => setEditing(row)}>
-                  Corregir
-                </button>
+                <IconButton label="Ver bitácora" icon="clock" onClick={() => void openDetail(row.clientId)} />
+                <IconButton label="Corregir enlace" icon="edit" tone="primary" onClick={() => setEditing(row)} />
               </div>
             </div>
 

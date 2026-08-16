@@ -12,6 +12,7 @@
  *     "En bodega - Pendiente pago". Desde ahi ya no se edita.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { IconButton } from '../components/IconButton';
 import { ModalOverlay } from '../components/ModalOverlay';
 import {
   CURRENCY_LABELS,
@@ -370,12 +371,12 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
                     <td>
                       {/* El flete es cobro fijo del servicio: se ajusta el monto, no se quita. */}
                       {!approved && line.source !== CostLineSource.Freight && (
-                        <button
-                          className="btn btn-ghost btn-sm"
+                        <IconButton
+                          label={`Quitar ${line.label}`}
+                          icon="trash"
+                          tone="danger"
                           onClick={() => setLines((prev) => prev.filter((l) => l.key !== line.key))}
-                        >
-                          Quitar
-                        </button>
+                        />
                       )}
                     </td>
                   </tr>

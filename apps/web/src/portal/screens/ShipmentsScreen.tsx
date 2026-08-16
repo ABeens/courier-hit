@@ -40,6 +40,7 @@ import {
 import type { BillingAmounts, Role, ShipmentDto } from '@courier/shared';
 import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
+import { IconButton, IconLink } from '../components/IconButton';
 import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
 import { Pagination } from '../components/Pagination';
 import { PayFlag, awaitingValidation } from '../components/PayFlag';
@@ -557,19 +558,14 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
                     resuelve el navegador contra la API, que es quien comprueba
                     el permiso: la clave del almacén no viaja en la URL. */}
                 {row.documentFileKey && (
-                  <a
-                    className="btn btn-ghost btn-sm"
+                  <IconLink
+                    label="Ver documento"
+                    icon="download"
                     href={`${API_BASE}/api/shipments/${row.id}/document`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Documento
-                  </a>
+                  />
                 )}
                 {canWrite && !isOwn && (
-                  <button className="btn btn-ghost btn-sm" onClick={() => setModal({ mode: 'edit', row })}>
-                    Editar
-                  </button>
+                  <IconButton label="Editar trámite" icon="edit" onClick={() => setModal({ mode: 'edit', row })} />
                 )}
                 {/* Avance manual, en los TRES flujos. La frontera no es el tipo
                     de trámite sino quién reporta el hecho: `reachableStates` ya
@@ -580,19 +576,13 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
                     desde recepción, costos o rutas: no había forma de avanzar
                     un paquete desde el tablero. */}
                 {canWrite && !isOwn && reachableStates(row, role).length > 0 && (
-                  <button className="btn btn-ghost btn-sm" onClick={() => setAdvancing(row)}>
-                    Avanzar
-                  </button>
+                  <IconButton label="Avanzar de estado" icon="arrowR" onClick={() => setAdvancing(row)} />
                 )}
                 {canCorrect && !isOwn && (
-                  <button className="btn btn-ghost btn-sm" onClick={() => setCorrecting(row)}>
-                    Corregir
-                  </button>
+                  <IconButton label="Corregir estado" icon="undo" onClick={() => setCorrecting(row)} />
                 )}
                 {canReassign && !isOwn && (
-                  <button className="btn btn-ghost btn-sm" onClick={() => setReassigning(row)}>
-                    Reasignar
-                  </button>
+                  <IconButton label="Reasignar dueño" icon="userSwap" onClick={() => setReassigning(row)} />
                 )}
                 {/*
                   El cobro solo tiene sentido con la factura ya aprobada, que es
@@ -609,13 +599,9 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
                 */}
                 {canPay && row.state === State.EnBodegaPendientePago && !row.settled && (
                   awaitingValidation(row) ? (
-                    <button className="btn btn-ghost btn-sm" onClick={() => setPaying(row)}>
-                      Ver pago
-                    </button>
+                    <IconButton label="Ver el pago enviado" icon="receipt" onClick={() => setPaying(row)} />
                   ) : (
-                    <button className="btn btn-primary btn-sm" onClick={() => setPaying(row)}>
-                      Pagar
-                    </button>
+                    <IconButton label="Pagar" icon="card" tone="primary" onClick={() => setPaying(row)} />
                   )
                 )}
               </div>

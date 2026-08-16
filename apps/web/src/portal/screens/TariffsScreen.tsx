@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { type Currency, formatMoney } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
+import { IconButton } from '../components/IconButton';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { ClientRateFormModal } from './ClientRateFormModal';
 
@@ -124,22 +125,22 @@ export function TariffsScreen() {
                 </td>
                 <td>
                   <div className="actions">
-                    <button className="btn btn-ghost btn-sm" onClick={() => setModal({ mode: 'edit', row })}>
-                      Editar
-                    </button>
+                    <IconButton label="Editar tarifa" icon="edit" onClick={() => setModal({ mode: 'edit', row })} />
                     {!row.isDefault && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => makeDefault(row)}>
-                        Hacer predeterminada
-                      </button>
+                      <IconButton
+                        label="Hacer predeterminada"
+                        icon="star"
+                        onClick={() => makeDefault(row)}
+                      />
                     )}
-                    <button
-                      className="btn btn-ghost btn-sm"
+                    <IconButton
+                      label="Eliminar tarifa"
+                      icon="trash"
+                      tone="danger"
                       disabled={row.isDefault}
-                      title={row.isDefault ? 'La tarifa por defecto no se puede eliminar.' : undefined}
+                      hint={row.isDefault ? 'La tarifa por defecto no se puede eliminar.' : undefined}
                       onClick={() => setToDelete(row)}
-                    >
-                      Eliminar
-                    </button>
+                    />
                   </div>
                 </td>
               </tr>

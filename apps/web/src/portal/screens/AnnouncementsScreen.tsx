@@ -16,6 +16,7 @@ import {
   AnnouncementType,
 } from '@courier/shared';
 import type { AnnouncementDto } from '@courier/shared';
+import { IconButton } from '../components/IconButton';
 import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
 import { ApiError, api } from '../lib/api';
@@ -211,15 +212,13 @@ export function AnnouncementsScreen() {
                 </td>
                 <td>
                   <div className="actions">
-                    <button className="btn btn-ghost btn-sm" onClick={() => setModal({ mode: 'edit', row })}>
-                      Editar
-                    </button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => toggleEnabled(row)}>
-                      {row.enabled ? 'Desactivar' : 'Activar'}
-                    </button>
-                    <button className="btn btn-ghost btn-sm btn-danger-ghost" onClick={() => remove(row)}>
-                      Borrar
-                    </button>
+                    <IconButton label="Editar anuncio" icon="edit" onClick={() => setModal({ mode: 'edit', row })} />
+                    {row.enabled ? (
+                      <IconButton label="Desactivar anuncio" icon="ban" onClick={() => toggleEnabled(row)} />
+                    ) : (
+                      <IconButton label="Activar anuncio" icon="checkCircle" onClick={() => toggleEnabled(row)} />
+                    )}
+                    <IconButton label="Borrar anuncio" icon="trash" tone="danger" onClick={() => remove(row)} />
                   </div>
                 </td>
               </tr>

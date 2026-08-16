@@ -29,6 +29,12 @@
 .btn-dark:hover { background: oklch(0.30 0.025 263); }
 .btn-sm { height: 34px; padding: 0 13px; font-size: 13px; border-radius: var(--r-xs); }
 .btn-lg { height: 50px; padding: 0 26px; font-size: 15px; border-radius: var(--r-md); }
+/* Boton cuadrado, solo icono. Es la accion de fila de los listados: sin texto,
+   el ancho lo fija la altura y una fila entera de acciones cabe donde antes
+   cabia un solo boton. El nombre accesible lo pone quien lo usa (IconButton).
+   El ancho sale de `aspect-ratio` y no de una medida fija: asi sigue siendo
+   cuadrado con cualquier altura (.btn, .btn-sm, o la mas baja de una ficha). */
+.btn-icon { padding: 0; aspect-ratio: 1; flex: none; }
 .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 
 /* ---- Chip ---- */

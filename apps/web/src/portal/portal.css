@@ -524,18 +524,33 @@ select.input { cursor: pointer; padding-right: 30px; }
 /* ---- Tabla ---- */
 .table { width: 100%; border-collapse: collapse; background: var(--surface);
   border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+/* La fila de un listado es para BARRER, no para leer: la densidad es el
+   comportamiento base de la tabla y no una variante que haya que acordarse de
+   pedir. Misma escala que las fichas (`.card-item`), asi que las dos formas de
+   listar del portal pesan igual en pantalla. */
 .table thead th {
-  text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.03em; color: var(--muted); padding: 13px 16px; background: var(--paper-2);
+  text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.03em; color: var(--muted); padding: 9px 13px; background: var(--paper-2);
   border-bottom: 1px solid var(--line);
 }
-.table tbody td { padding: 14px 16px; border-bottom: 1px solid var(--line-2); font-size: 14px; }
+.table tbody td { padding: 8px 13px; border-bottom: 1px solid var(--line-2); font-size: 13px; line-height: 1.35; }
 .table tbody tr:last-child td { border-bottom: none; }
 .table tbody tr:hover { background: var(--brand-softer); }
+/* La pildora y los botones fijan la altura minima de la fila; sin bajarlos, el
+   resto de la densidad no se nota. */
+.table .spill { font-size: 11.5px; padding: 3px 9px 3px 8px; gap: 6px; }
+.table .spill .dot { width: 6px; height: 6px; }
+.table .btn-sm { height: 28px; padding: 0 10px; font-size: 12.5px; }
+.table .btn-icon { padding: 0; }
+.table .btn svg { width: 15px; height: 15px; }
+/* Un campo dentro de la fila (la ruta del canton, el monto de una linea de
+   costo) se edita al vuelo: no necesita el cuerpo de un campo de formulario, y
+   con el alto de captura la fila crece mas que con cualquier otra cosa. */
+.table .input { height: 32px; padding: 0 10px; font-size: 13px; }
 .cell-name { font-weight: 700; color: var(--ink); }
-.cell-sub { color: var(--muted); font-size: 12.5px; }
-.role-chip { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
-.actions { display: flex; gap: 8px; justify-content: flex-end; }
+.cell-sub { color: var(--muted); font-size: 12px; }
+.role-chip { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.actions { display: flex; gap: 6px; justify-content: flex-end; }
 
 /* ---- Pildora de estado ---- */
 .spill.ok { background: var(--ok-soft); color: var(--ok); }
@@ -607,13 +622,17 @@ select.input { cursor: pointer; padding-right: 30px; }
    columnas y las ultimas quedan fuera de la pantalla. Cada registro ocupa una
    fila completa y sus campos se reparten a lo ancho, asi que se leen todos sin
    scroll horizontal y a la vez se conserva el barrido vertical de una tabla. */
-.cards { display: flex; flex-direction: column; gap: 12px; }
+/* Densidad: la ficha compite con una tabla, asi que el aire es el justo para
+   separar cabecera de cuerpo y bloque de bloque. Todo lo demas (interlineados,
+   huecos entre campos, alturas de pildora y boton) va apretado para que quepan
+   mas registros por pantalla sin perder el barrido vertical. */
+.cards { display: flex; flex-direction: column; gap: 8px; }
 
 .card-item {
   position: relative; overflow: hidden;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
-  box-shadow: var(--sh-1); padding: 18px 22px;
-  display: flex; flex-direction: column; gap: 16px;
+  box-shadow: var(--sh-1); padding: 12px 16px;
+  display: flex; flex-direction: column; gap: 10px;
   transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
 }
 .card-item:hover { border-color: var(--line); box-shadow: var(--sh-2); transform: translateY(-1px); }
@@ -641,35 +660,56 @@ select.input { cursor: pointer; padding-right: 30px; }
 .spill.is-toned .dot { background: var(--tone); }
 
 /* Cabecera: identidad a la izquierda, estado y acciones a la derecha. */
-.card-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
-.card-item-ident { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.card-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.card-item-ident { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .card-item-code {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 12.5px; font-weight: 700; color: var(--muted); letter-spacing: 0.02em;
+  font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: 0.02em;
+  line-height: 1.35;
 }
-.card-item-title { font-family: var(--font-display); font-size: 17px; color: var(--ink); line-height: 1.3; }
+.card-item-title { font-family: var(--font-display); font-size: 15.5px; color: var(--ink); line-height: 1.25; }
 /* Meta de la ficha: tipo · cliente · fecha. Cada dato con su propio peso para
    que se distingan de un vistazo — el cliente manda, la fecha es secundaria —
    separados por un punto medio que pinta el CSS, no la cadena. */
 .card-item-sub {
   display: flex; flex-wrap: wrap; align-items: baseline; row-gap: 2px;
-  font-size: 12.5px; margin-top: 1px;
+  font-size: 12px; line-height: 1.35;
 }
 .card-item-sub > *:not(:first-child)::before {
-  content: '·'; margin: 0 8px; color: var(--faint); font-weight: 500;
+  content: '·'; margin: 0 7px; color: var(--faint); font-weight: 500;
 }
 .card-item-sub .sub-type { color: var(--muted); font-weight: 600; }
 .card-item-sub .sub-client { color: var(--ink-2); font-weight: 600; }
 .card-item-sub .sub-date { color: var(--faint); }
-.card-item-aside { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.card-item-aside { display: flex; align-items: center; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
+
+/* Pildora y botones de la ficha, mas bajos que el atomo global: dentro de una
+   lista densa son quienes marcan la altura minima de la fila. Fuera de la ficha
+   (tablas, modales) el atomo conserva su tamaño. */
+.card-item .spill { font-size: 12px; padding: 3px 9px 3px 8px; gap: 6px; }
+.card-item .spill .dot { width: 6px; height: 6px; }
+.card-item .btn-sm { height: 28px; padding: 0 10px; font-size: 12.5px; }
+/* Gana al `padding` de la linea de arriba, que es mas especifico que el atomo. */
+.card-item .btn-icon { padding: 0; }
+.card-item .btn svg { width: 15px; height: 15px; }
+
+/* Excepcion: la fila de acciones al pie de una ficha (hoy solo Entregas) es la
+   accion principal de esa pantalla, no un atajo junto al titulo. Se usa de pie y
+   con una mano, asi que no baja a 28px; en pantalla tactil sube a 44px, que es el
+   minimo con el que se acierta sin mirar. */
+.card-item .actions .btn-sm { height: 36px; }
+.card-item .actions .btn svg { width: 18px; height: 18px; }
+@media (pointer: coarse) {
+  .card-item .actions .btn-sm { height: 44px; }
+}
 
 /* Bandera de cobro. NO usa `--tone` como la pildora de estado: el pago es una
    dimension distinta del estado del tramite (uno "pendiente pago" puede estar ya
    cobrado), asi que lleva su propio color y no el del estado de la ficha. */
 .pay-flag {
   display: inline-flex; align-items: center;
-  font-size: 12px; font-weight: 800; letter-spacing: .02em;
-  padding: 5px 11px; border-radius: var(--r-pill); white-space: nowrap;
+  font-size: 11.5px; font-weight: 800; letter-spacing: .02em;
+  padding: 3px 9px; border-radius: var(--r-pill); white-space: nowrap;
   background: var(--ok-soft); color: var(--ok);
 }
 .pay-flag.is-due { background: var(--warn-soft); color: var(--warn); }
@@ -682,25 +722,25 @@ select.input { cursor: pointer; padding-right: 30px; }
    porque quien revisa la lista busca un bloque concreto, no un campo suelto.
    Que bloques lleva cada ficha lo decide la pantalla, no el CSS. */
 .card-item-body {
-  display: flex; flex-wrap: wrap; gap: 18px 28px;
-  border-top: 1px solid var(--line-2); padding-top: 15px;
+  display: flex; flex-wrap: wrap; gap: 10px 24px;
+  border-top: 1px solid var(--line-2); padding-top: 10px;
 }
 /* Cada bloque crece por igual y se va a otra linea cuando ya no cabe. Sin caja:
    fondo blanco de la ficha, separados por aire y un divisor fino a la izquierda
    para que la agrupacion se lea sin encerrar cada bloque en un recuadro gris. */
 .card-sec {
   flex: 1 1 170px; min-width: 0;
-  padding-left: 20px; border-left: 1px solid var(--line-2);
-  display: flex; flex-direction: column; gap: 10px;
+  padding-left: 16px; border-left: 1px solid var(--line-2);
+  display: flex; flex-direction: column; gap: 5px;
 }
 .card-sec:first-child { padding-left: 0; border-left: none; }
 /* Header del bloque: manda sobre las etiquetas de campo, asi que va mas oscuro
    y con mas peso; las etiquetas (dt) quedan tenues para que no compitan. */
 .card-sec-title {
-  font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--ink-2);
+  font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-2); line-height: 1.3;
 }
-.card-sec-fields { display: grid; gap: 10px 14px; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+.card-sec-fields { display: grid; gap: 6px 14px; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
 
 /* Facturacion: es la cifra que se le cobra al cliente, no un dato mas. Se
    distingue solo con color (fondo blanco como el resto), no con un recuadro. */
@@ -709,24 +749,25 @@ select.input { cursor: pointer; padding-right: 30px; }
 
 .card-item-field { min-width: 0; }
 .card-item-field dt {
-  font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
-  color: var(--faint); margin-bottom: 4px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--faint); margin-bottom: 1px; line-height: 1.3;
 }
 /* `dd` trae un margin-left de 40px por defecto del navegador: hay que anularlo
    o el valor queda desalineado de su etiqueta. Los trackings largos tampoco
    deben desbordar la ficha ni estirar la fila. */
 .card-item-field dd {
-  margin: 0; font-size: 13.5px; color: var(--ink); font-weight: 500; overflow-wrap: anywhere;
+  margin: 0; font-size: 13px; line-height: 1.3; color: var(--ink); font-weight: 500;
+  overflow-wrap: anywhere;
 }
 .card-item-field dd.mono {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 13px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 12.5px;
 }
 .card-item-field dd.empty-val { color: var(--faint); font-weight: 400; }
 
 @media (max-width: 560px) {
-  .card-item { padding: 15px 17px; }
+  .card-item { padding: 11px 13px; }
   /* En pantallas angostas los bloques se apilan: el divisor lateral estorba. */
-  .card-item-body { gap: 14px 0; }
+  .card-item-body { gap: 10px 0; }
   .card-sec { flex-basis: 100%; padding-left: 0; border-left: none; }
   .card-item-aside { width: 100%; justify-content: space-between; }
 }
@@ -929,10 +970,10 @@ select.input { cursor: pointer; padding-right: 30px; }
    Lista de eventos con barra lateral tenida por estado, reusando las mismas
    variables --tone que las fichas de tramite: un evento rechazado se reconoce
    por el mismo color aqui y en el listado. */
-.link-log { display: grid; gap: 10px; }
+.link-log { display: grid; gap: 6px; }
 .link-log-item {
   position: relative;
-  padding: 12px 14px 12px 16px;
+  padding: 8px 12px 8px 14px;
   border: 1px solid var(--line-2);
   border-radius: var(--r-sm);
   background: var(--paper-2);
@@ -941,10 +982,10 @@ select.input { cursor: pointer; padding-right: 30px; }
   content: ''; position: absolute; inset: 0 auto 0 0; width: 3px;
   border-radius: var(--r-sm) 0 0 var(--r-sm); background: var(--tone);
 }
-.link-log-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.link-log-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .link-log-head .sub-date { margin-left: auto; }
-.link-log-detail { margin-top: 6px; font-size: 13.5px; color: var(--ink-2); }
-.link-log-changes { margin-top: 6px; display: grid; gap: 3px; font-size: 13px; color: var(--muted); }
+.link-log-detail { margin-top: 3px; font-size: 13px; line-height: 1.35; color: var(--ink-2); }
+.link-log-changes { margin-top: 3px; display: grid; gap: 2px; font-size: 12.5px; line-height: 1.35; color: var(--muted); }
 
 /* --- Trazabilidad de un tramite (modal Historial) ---
    Linea de tiempo vertical: cada asiento es una marca sobre una linea continua,
@@ -1169,11 +1210,10 @@ button.dash-row:focus-visible { outline: 2px solid var(--brand); outline-offset:
 .table tbody tr.is-link:hover .cell-go { color: var(--brand); }
 .table tbody tr.is-link:hover .cell-go svg { transform: translateX(2px); }
 
-/* Tabla compacta: en un tablero la fila es para barrer, no para leer. */
-.table-dense thead th { padding: 9px 12px; font-size: 11px; }
-.table-dense tbody td { padding: 8px 12px; font-size: 13px; }
-.table-dense .spill { font-size: 11.5px; padding: 3px 9px 3px 8px; }
-.table-dense .spill .dot { width: 6px; height: 6px; }
+/* `.table-dense` ya no aprieta nada: la densidad que definia paso a ser la base
+   de `.table`. Sobrevive por lo unico que no es densidad, el ancho minimo: el
+   tablero lleva mas columnas que un listado normal y necesita mas sitio antes de
+   empezar a hacer scroll horizontal. */
 .table-wrap .table-dense { min-width: 720px; }
 
 /* ---- Definicion de rutas: cabecera de canton dentro de la tabla ----
@@ -1226,23 +1266,23 @@ button.dash-row:focus-visible { outline: 2px solid var(--brand); outline-offset:
    hueco para que la pagina no de un salto cuando lleguen los datos. */
 .card-skeleton {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
-  box-shadow: var(--sh-1); padding: 18px 22px;
-  display: flex; flex-direction: column; gap: 16px;
+  box-shadow: var(--sh-1); padding: 12px 16px;
+  display: flex; flex-direction: column; gap: 10px;
 }
-.card-skeleton-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.card-skeleton-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .card-skeleton-body {
-  display: flex; flex-wrap: wrap; gap: 14px 28px;
-  border-top: 1px solid var(--line-2); padding-top: 15px;
+  display: flex; flex-wrap: wrap; gap: 10px 24px;
+  border-top: 1px solid var(--line-2); padding-top: 10px;
 }
-.skel-lines { display: flex; flex-direction: column; gap: 7px; min-width: 0; flex: 1; }
+.skel-lines { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
 .skel-line, .skel-pill {
   display: block; background: var(--line); border-radius: 6px;
   animation: pulseDot 1.5s ease-in-out infinite;
 }
-.skel-pill { width: 104px; height: 26px; border-radius: var(--r-pill); flex: none; }
-.skel-line.w-code  { width: 78px;  height: 9px; }
-.skel-line.w-title { width: min(300px, 55%); height: 14px; }
-.skel-line.w-sub   { width: min(230px, 42%); height: 9px; }
+.skel-pill { width: 104px; height: 22px; border-radius: var(--r-pill); flex: none; }
+.skel-line.w-code  { width: 78px;  height: 8px; }
+.skel-line.w-title { width: min(300px, 55%); height: 13px; }
+.skel-line.w-sub   { width: min(230px, 42%); height: 8px; }
 .skel-line.w-field { flex: 1 1 150px; height: 11px; }
 .skel-line.w-cell  { width: 72%; height: 11px; }
 /* Desfase por ficha: pulsando todas a la vez parece un fallo de pintado, no una
