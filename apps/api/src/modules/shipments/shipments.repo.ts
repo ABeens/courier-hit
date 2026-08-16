@@ -183,7 +183,7 @@ export const shipmentsRepo = {
    * casillero EN VIVO, no una copia congelada en el tramite, asi que moverla con
    * paquetes en curso les cambiaria el destino a mitad de camino.
    *
-   * Se apoya en `shipments_client_idx`.
+   * Se apoya en `shipments_client_created_idx` (le basta el prefijo `client_id`).
    */
   async countActiveByClient(clientId: string): Promise<number> {
     const [row] = await db

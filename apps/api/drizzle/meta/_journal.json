@@ -176,6 +176,13 @@
       "when": 1786523983333,
       "tag": "0024_quick_vance_astro",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786846074854,
+      "tag": "0025_curvy_reaper",
+      "breakpoints": true
     }
   ]
 }

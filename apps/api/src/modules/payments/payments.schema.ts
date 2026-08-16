@@ -24,6 +24,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import {
@@ -86,6 +87,19 @@ export const payments = pgTable(
     index('payments_shipment_idx').on(t.shipmentId, t.createdAt),
     /** Bandeja de validacion del staff: "los depositos pendientes". */
     index('payments_status_idx').on(t.status),
+    /**
+     * Referencia de la pasarela: es la unica llave que trae el webhook de Onvo
+     * (`findByGatewayReference`), y Onvo REINTENTA las entregas fallidas, asi que
+     * sin indice cada reintento barria la tabla de pagos entera.
+     *
+     * Unico y parcial (solo las filas que la tienen): los abonos por deposito la
+     * dejan nula y no deben competir por el unico. Ademas de la lectura, el unico
+     * respalda el supuesto del que ya depende `resolveIfPending`: una referencia
+     * de la pasarela identifica UN abono, nunca dos.
+     */
+    uniqueIndex('payments_gateway_reference_idx')
+      .on(t.gatewayReference)
+      .where(sql`${t.gatewayReference} is not null`),
     /**
      * Las reglas de rango (M3) y de tasa presente y positiva (M5) tambien se
      * validan en Zod y en el servicio. Repetirlas aqui es deliberado: la BD es la

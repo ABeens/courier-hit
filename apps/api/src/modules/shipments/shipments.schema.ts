@@ -224,9 +224,39 @@ export const shipments = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    index('shipments_client_idx').on(t.clientId), // "mis paquetes"
+    /**
+     * "Mis paquetes": la consulta mas frecuente del portal, que filtra por
+     * casillero y ordena por fecha de ingreso descendente. La fecha va en el
+     * indice para que el orden salga de el y no de un sort de todas las filas del
+     * cliente (Postgres lo recorre hacia atras para el `desc`).
+     *
+     * `client_id` sigue siendo el prefijo, asi que este indice tambien sirve todo
+     * lo que servia el anterior por casillero a secas (p. ej. `countActiveByClient`).
+     */
+    index('shipments_client_created_idx').on(t.clientId, t.createdAt),
     index('shipments_state_idx').on(t.state), // colas de bodega / entrega
     index('shipments_created_at_idx').on(t.createdAt), // filtro por rango de fechas
+    /**
+     * El LES que se escanea en la mesa de bodega (`findActiveByHawb`). La busqueda
+     * ignora mayusculas porque el HAWB que llega del proveedor y el que se digita
+     * no siempre vienen en la misma caja, asi que el indice es sobre la MISMA
+     * expresion `upper(...)`: uno sobre la columna cruda no lo aprovecharia.
+     *
+     * Parcial sobre las filas que lo tienen: el HAWB es solo de Paqueteria y en el
+     * resto de tramites es nulo.
+     */
+    index('shipments_hawb_upper_idx')
+      .on(sql`upper(${t.hawb})`)
+      .where(sql`${t.hawb} is not null`),
+    /**
+     * Prealertas que el robot debe reenviar al proveedor
+     * (`findPrealertsToReconcile`). Mismo criterio y misma forma que
+     * `clients_unlinked_idx`: parcial sobre las que quedaron a medias, que son un
+     * puñado, y ordenado por antiguedad, que es como el robot drena el lote.
+     */
+    index('shipments_prealert_pending_idx')
+      .on(t.createdAt)
+      .where(sql`${t.helgaPrealertStatus} in ('pending', 'failed')`),
     /**
      * Un mismo tracking no puede estar activo dos veces, pero SI puede repetirse
      * historicamente (los transportistas reciclan numeros de guia). Por eso el
