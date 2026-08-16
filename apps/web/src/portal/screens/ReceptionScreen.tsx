@@ -23,6 +23,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { SHIPMENT_TYPE_LABELS, STATE_LABELS, clientName, receiveShipmentSchema } from '@courier/shared';
 import type { ShipmentDto } from '@courier/shared';
+import { IconButton } from '../components/IconButton';
 import { ApiError, api } from '../lib/api';
 import { formatDateTime } from '../lib/datetime';
 import { UnassignedFormModal } from './UnassignedFormModal';
@@ -193,12 +194,11 @@ export function ReceptionScreen({ canRegisterUnassigned = false }: { canRegister
                 {/* El bulto está en la mesa AHORA: registrarlo aquí, con el LES
                     ya escaneado, evita el viaje a otra pantalla a redigitarlo. */}
                 {entry.unknown && canRegisterUnassigned && (
-                  <button
-                    className="btn btn-ghost btn-sm"
+                  <IconButton
+                    label="Registrar sin dueño"
+                    icon="userPlus"
                     onClick={() => setRegistering(entry.hawb)}
-                  >
-                    Registrar sin dueño
-                  </button>
+                  />
                 )}
                 <div className="card-item-sub">{formatDateTime(entry.at)}</div>
               </div>

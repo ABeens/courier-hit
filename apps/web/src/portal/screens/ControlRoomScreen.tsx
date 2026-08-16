@@ -32,6 +32,7 @@ import {
   knownTracking,
 } from '@courier/shared';
 import type { Role, ShipmentDto } from '@courier/shared';
+import { IconButton } from '../components/IconButton';
 import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
 import { Pagination } from '../components/Pagination';
 import { ApiError, api } from '../lib/api';
@@ -220,18 +221,19 @@ export function ControlRoomScreen({ role }: { role: Role }) {
                     <span className="dot" />
                     {discarded ? 'Descartado' : unassigned ? 'Sin dueño' : STATE_LABELS[row.state]}
                   </span>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setTracing(row)}>
-                    Historial
-                  </button>
+                  <IconButton label="Ver historial" icon="clock" onClick={() => setTracing(row)} />
 
                   {discarded ? (
-                    <button
-                      className="btn btn-primary btn-sm"
+                    /* Sin texto no hay donde poner "Restaurando…", asi que el
+                       trabajo en curso lo dice el propio globo y el boton se
+                       apaga mientras tanto. */
+                    <IconButton
+                      label={busyId === row.id ? 'Restaurando…' : 'Restaurar paquete'}
+                      icon="undo"
+                      tone="primary"
                       disabled={busyId === row.id}
                       onClick={() => void restore(row)}
-                    >
-                      {busyId === row.id ? 'Restaurando…' : 'Restaurar'}
-                    </button>
+                    />
                   ) : (
                     <>
                       {/* Corregir los DATOS del bulto solo mientras no tenga
@@ -239,29 +241,31 @@ export function ControlRoomScreen({ role }: { role: Role }) {
                           abierta de par en par. En cuanto lo tiene, sus datos se
                           editan desde Paquetería con las reglas de siempre. */}
                       {unassigned && (
-                        <button className="btn btn-ghost btn-sm" onClick={() => setEditing(row)}>
-                          Corregir datos
-                        </button>
+                        <IconButton label="Corregir datos" icon="edit" onClick={() => setEditing(row)} />
                       )}
                       {/* Mover de estado NO se ofrece sin dueño: el paquete no
                           puede avanzar hasta que se sepa a quién cotizarle,
                           cobrarle y entregarle, y la API lo rechazaría. */}
                       {!unassigned && canCorrectState && (
-                        <button className="btn btn-ghost btn-sm" onClick={() => setCorrecting(row)}>
-                          Corregir estado
-                        </button>
+                        <IconButton label="Corregir estado" icon="undo" onClick={() => setCorrecting(row)} />
                       )}
                       {/* Descartar es la salida del que nunca tuvo dueño. Uno que
                           ya lo tiene es un trámite normal y se enmienda por el
                           flujo, no archivándolo. */}
                       {unassigned && (
-                        <button className="btn btn-ghost btn-sm" onClick={() => setDiscarding(row)}>
-                          Descartar
-                        </button>
+                        <IconButton
+                          label="Descartar paquete"
+                          icon="trash"
+                          tone="danger"
+                          onClick={() => setDiscarding(row)}
+                        />
                       )}
-                      <button className="btn btn-primary btn-sm" onClick={() => setAssigning(row)}>
-                        {unassigned ? 'Asignar dueño' : 'Cambiar dueño'}
-                      </button>
+                      <IconButton
+                        label={unassigned ? 'Asignar dueño' : 'Cambiar dueño'}
+                        icon="userSwap"
+                        tone="primary"
+                        onClick={() => setAssigning(row)}
+                      />
                     </>
                   )}
                 </div>

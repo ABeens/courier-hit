@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PROVINCES, getAllDistricts, getCantons, resolveDistrictRoute } from '@courier/shared';
 import type { CantonRouteDto, DistrictListItem, DistrictRouteDto } from '@courier/shared';
+import { IconButton } from '../components/IconButton';
 import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
 import { ApiError, api } from '../lib/api';
@@ -396,20 +397,20 @@ export function RoutesScreen() {
                             }
                           }}
                         />
-                        <button
-                          className="btn btn-primary btn-sm"
+                        <IconButton
+                          label="Guardar la ruta del cantón"
+                          icon="check"
+                          tone="primary"
                           disabled={!cantonDirty || cantonBusy}
                           onClick={() => saveCanton(g.cantonCode, g.cantonName)}
-                        >
-                          Guardar
-                        </button>
-                        <button
-                          className="btn btn-ghost btn-sm"
+                        />
+                        <IconButton
+                          label="Quitar la ruta del cantón"
+                          icon="trash"
+                          tone="danger"
                           disabled={cantonStored == null || cantonBusy}
                           onClick={() => removeCanton(g.cantonCode, g.cantonName)}
-                        >
-                          Quitar
-                        </button>
+                        />
                       </div>
                     </div>
                   </td>
@@ -462,20 +463,20 @@ export function RoutesScreen() {
                       </td>
                       <td>
                         <div className="actions">
-                          <button
-                            className="btn btn-primary btn-sm"
+                          <IconButton
+                            label="Guardar la ruta propia del distrito"
+                            icon="check"
+                            tone="primary"
                             disabled={!dirty || busy}
                             onClick={() => save(d.districtCode)}
-                          >
-                            Guardar
-                          </button>
-                          <button
-                            className="btn btn-ghost btn-sm"
+                          />
+                          <IconButton
+                            label="Quitar la ruta propia (vuelve a heredar la del cantón)"
+                            icon="trash"
+                            tone="danger"
                             disabled={stored == null || busy}
                             onClick={() => remove(d.districtCode, d.cantonCode)}
-                          >
-                            Quitar
-                          </button>
+                          />
                         </div>
                       </td>
                     </tr>

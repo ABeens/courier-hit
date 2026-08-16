@@ -3,14 +3,19 @@
  *
  * Es la pantalla del mensajero y se diseña para eso: se usa de pie, con una mano
  * y en la calle. Por eso lista TARJETAS y no una tabla (una tabla de 10 columnas
- * es inservible en un telefono), muestra la direccion y el telefono del cliente
- * completos, y las dos unicas acciones posibles —confirmar o devolver— son
- * botones grandes.
+ * es inservible en un telefono) y muestra la direccion y el telefono del cliente
+ * completos.
+ *
+ * Sus dos acciones (confirmar o devolver) son iconos como en el resto del
+ * portal, pero NO encogen hasta el tamaño de un listado de escritorio: el CSS
+ * les reserva un blanco mayor, y en pantalla tactil lo sube a 44px. Aqui se
+ * pulsa sin mirar y equivocarse cierra una entrega que no era.
  *
  * La foto se toma con la camara del propio telefono: `capture="environment"`
  * abre la camara trasera directamente en vez del explorador de archivos.
  */
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   DELIVERY_OUTCOME_LABELS,
   DeliveryOutcome,
@@ -20,6 +25,7 @@ import {
   findProvince,
 } from '@courier/shared';
 import type { ShipmentType } from '@courier/shared';
+import { IconButton } from '../components/IconButton';
 import { FilterBar } from '../components/FilterBar';
 import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
 import { Pagination } from '../components/Pagination';
@@ -55,6 +61,26 @@ export interface DeliveryQueueRow {
 }
 
 type ModalState = { row: DeliveryQueueRow; outcome: DeliveryOutcome } | null;
+
+/**
+ * Par etiqueta/valor de la ficha, el mismo de Paqueteria y Clientes. Antes esta
+ * pantalla usaba `.field-label` con un `<span>` suelto: eso es el atomo de un
+ * formulario, no de una ficha, y traia consigo el cuerpo grande de un campo de
+ * captura. En `dt`/`dd` hereda la densidad del listado y ademas queda como lo
+ * que es, una lista de definiciones.
+ */
+function Field({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
+  const isEmpty = value == null || value === '';
+  const classes = [mono && !isEmpty ? 'mono' : '', isEmpty ? 'empty-val' : '']
+    .filter(Boolean)
+    .join(' ');
+  return (
+    <div className="card-item-field">
+      <dt>{label}</dt>
+      <dd className={classes || undefined}>{isEmpty ? '—' : value}</dd>
+    </div>
+  );
+}
 
 export function DeliveriesScreen() {
   const [q, setQ] = useState('');
@@ -139,41 +165,38 @@ export function DeliveriesScreen() {
             </div>
 
             <div className="card-item-body">
-              <div className="card-item-field">
-                <span className="field-label">Dirección</span>
-                <span>
-                  {findProvince(row.provinceCode)?.name}, {findCanton(row.cantonCode)?.name},{' '}
-                  {findDistrict(row.districtCode)?.name}
-                </span>
-              </div>
-              <div className="card-item-field">
-                <span className="field-label">Otras señas</span>
-                <span>{row.addressLine}</span>
-              </div>
-              <div className="card-item-field">
-                <span className="field-label">Teléfono</span>
-                {/* Enlace `tel:` a proposito: el mensajero llama desde la propia tarjeta. */}
-                <span>{row.clientPhone ? <a href={`tel:${row.clientPhone}`}>{row.clientPhone}</a> : '—'}</span>
-              </div>
-              <div className="card-item-field">
-                <span className="field-label">Descripción</span>
-                <span>{row.description}</span>
-              </div>
+              <section className="card-sec">
+                <dl className="card-sec-fields">
+                  <Field
+                    label="Dirección"
+                    value={`${findProvince(row.provinceCode)?.name}, ${findCanton(row.cantonCode)?.name}, ${findDistrict(row.districtCode)?.name}`}
+                  />
+                  <Field label="Otras señas" value={row.addressLine} />
+                  {/* Enlace `tel:` a proposito: el mensajero llama desde la propia tarjeta. */}
+                  <Field
+                    label="Teléfono"
+                    value={row.clientPhone ? <a href={`tel:${row.clientPhone}`}>{row.clientPhone}</a> : null}
+                    mono
+                  />
+                  <Field label="Descripción" value={row.description} />
+                </dl>
+              </section>
             </div>
 
+            {/* Ambas abren un modal que pide confirmacion con texto: aqui el
+                icono elige el camino, no cierra la entrega. */}
             <div className="actions">
-              <button
-                className="btn btn-primary"
+              <IconButton
+                label="Confirmar entrega"
+                icon="checkCircle"
+                tone="primary"
                 onClick={() => setModal({ row, outcome: DeliveryOutcome.Entregado })}
-              >
-                Confirmar entrega
-              </button>
-              <button
-                className="btn btn-ghost"
+              />
+              <IconButton
+                label="Devolver a bodega"
+                icon="undo"
                 onClick={() => setModal({ row, outcome: DeliveryOutcome.DevueltoBodega })}
-              >
-                Devolver a bodega
-              </button>
+              />
             </div>
           </article>
         ))}

@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { ROLE_LABELS, Role, UserStatus } from '@courier/shared';
+import { IconButton } from '../components/IconButton';
 import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
 import { ApiError, api } from '../lib/api';
@@ -173,12 +174,12 @@ export function UsersScreen() {
               </td>
               <td>
                 <div className="actions">
-                  <button className="btn btn-ghost btn-sm" onClick={() => setModal({ mode: 'edit', row })}>
-                    Editar
-                  </button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => toggleStatus(row)}>
-                    {row.status === UserStatus.Activo ? 'Deshabilitar' : 'Habilitar'}
-                  </button>
+                  <IconButton label="Editar usuario" icon="edit" onClick={() => setModal({ mode: 'edit', row })} />
+                  {row.status === UserStatus.Activo ? (
+                    <IconButton label="Deshabilitar usuario" icon="ban" onClick={() => toggleStatus(row)} />
+                  ) : (
+                    <IconButton label="Habilitar usuario" icon="checkCircle" onClick={() => toggleStatus(row)} />
+                  )}
                 </div>
               </td>
             </tr>

@@ -16,6 +16,7 @@ import {
   ServiceValueType,
   formatMoney,
 } from '@courier/shared';
+import { IconButton } from '../components/IconButton';
 import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
 import { ApiError, api } from '../lib/api';
@@ -209,12 +210,12 @@ export function CostServicesScreen() {
                 </td>
                 <td>
                   <div className="actions">
-                    <button className="btn btn-ghost btn-sm" onClick={() => setModal({ mode: 'edit', row })}>
-                      Editar
-                    </button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => toggleEnabled(row)}>
-                      {row.enabled ? 'Deshabilitar' : 'Habilitar'}
-                    </button>
+                    <IconButton label="Editar servicio" icon="edit" onClick={() => setModal({ mode: 'edit', row })} />
+                    {row.enabled ? (
+                      <IconButton label="Deshabilitar servicio" icon="ban" onClick={() => toggleEnabled(row)} />
+                    ) : (
+                      <IconButton label="Habilitar servicio" icon="checkCircle" onClick={() => toggleEnabled(row)} />
+                    )}
                   </div>
                 </td>
               </tr>

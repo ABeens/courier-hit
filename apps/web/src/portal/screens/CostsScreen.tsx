@@ -22,6 +22,7 @@ import {
   formatMoney,
 } from '@courier/shared';
 import type { Role, ShipmentDto } from '@courier/shared';
+import { IconButton } from '../components/IconButton';
 import { FilterBar } from '../components/FilterBar';
 import { EmptyList, ListBody, TableSkeleton } from '../components/ListLoading';
 import { Pagination } from '../components/Pagination';
@@ -169,16 +170,16 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
                 <td>{formatDate(row.createdAt)}</td>
                 <td>
                   <div className="actions">
-                    <button className="btn btn-ghost btn-sm" onClick={() => setEditing(row)}>
-                      {view === 'pendientes' ? 'Cargar costos' : 'Ver factura'}
-                    </button>
+                    <IconButton
+                      label={view === 'pendientes' ? 'Cargar costos' : 'Ver factura'}
+                      icon={view === 'pendientes' ? 'dollar' : 'receipt'}
+                      onClick={() => setEditing(row)}
+                    />
                     {/* Proforma de UN trámite: es la descarga "de una en una" del
                         requerimiento, y va aquí porque es donde se trabaja un
                         trámite concreto. El lote vive en Reportes, sobre el filtro. */}
                     {canProforma && view === 'facturados' && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => openProforma(row.id)}>
-                        Proforma
-                      </button>
+                      <IconButton label="Descargar proforma" icon="file" onClick={() => openProforma(row.id)} />
                     )}
                   </div>
                 </td>

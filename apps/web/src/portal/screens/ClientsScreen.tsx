@@ -18,6 +18,7 @@ import {
   findProvince,
   formatMoney,
 } from '@courier/shared';
+import { IconButton } from '../components/IconButton';
 import { FilterBar } from '../components/FilterBar';
 import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
 import { Pagination } from '../components/Pagination';
@@ -186,11 +187,7 @@ export function ClientsScreen({ canWrite }: { canWrite: boolean }) {
                     <span className="dot" />
                     {CLIENT_STATUS_LABEL[row.reviewStatus]}
                   </span>
-                  {canWrite && (
-                    <button className="btn btn-ghost btn-sm" onClick={() => setEditing(row)}>
-                      Editar
-                    </button>
-                  )}
+                  {canWrite && <IconButton label="Editar cliente" icon="edit" onClick={() => setEditing(row)} />}
                 </div>
               </div>
 
