@@ -1,5 +1,10 @@
 /**
- * Pantalla «Sala de control» (permiso control_room.manage, hoy solo Admin).
+ * Pantalla «Sala de control» (permiso control_room.manage, solo Admin).
+ *
+ * Es la UNICA puerta de los cambios contra flujo: corregir un estado hacia atras
+ * o hacia adelante, cambiarle el dueño a un tramite, descartar y restaurar. El
+ * tablero de Paqueteria no ofrece ninguna de esas acciones; ahi solo se avanza
+ * por la maquina.
  *
  * Es el cuarto de atrás de la operación: el sitio donde se ENMIENDA lo que entró
  * mal, a diferencia del tablero de Paquetería, que sirve para OPERAR lo que va
@@ -26,12 +31,15 @@ import {
   Permission,
   SHIPMENT_TYPE_LABELS,
   STATE_LABELS,
+  State,
   can,
   clientFullLabel,
   formatMoney,
   knownTracking,
 } from '@courier/shared';
 import type { Role, ShipmentDto } from '@courier/shared';
+import { FilterBar } from '../components/FilterBar';
+import type { FilterChip } from '../components/FilterBar';
 import { IconButton } from '../components/IconButton';
 import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
 import { Pagination } from '../components/Pagination';
@@ -47,6 +55,15 @@ import { UnassignedFormModal } from './UnassignedFormModal';
 
 /** Qué pila se está mirando. */
 type ControlRoomView = 'sin-dueno' | 'todos' | 'descartados';
+
+/**
+ * Pila con la que abre la pantalla. Es «todos» y no la cola de sin dueño porque
+ * quien entra aquí casi siempre viene de una llamada concreta («mi paquete no
+ * aparece», «me cargaron el de otro»): lo primero que necesita es BUSCAR entre
+ * todos los trámites, no revisar el montón de cajas anónimas. La cola sigue a un
+ * clic, en el panel de filtros.
+ */
+const DEFAULT_VIEW: ControlRoomView = 'todos';
 
 /**
  * Filtros de la API por vista. El eje «dueño» y el eje «archivado» son
@@ -79,8 +96,9 @@ function Field({ label, value, mono }: { label: string; value: string | null; mo
 }
 
 export function ControlRoomScreen({ role }: { role: Role }) {
-  const [view, setView] = useState<ControlRoomView>('sin-dueno');
+  const [view, setView] = useState<ControlRoomView>(DEFAULT_VIEW);
   const [q, setQ] = useState('');
+  const [state, setState] = useState<string>('');
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -94,18 +112,33 @@ export function ControlRoomScreen({ role }: { role: Role }) {
   /**
    * Corregir el estado es un permiso propio (`shipment.correct`) y no viene con
    * la sala de control: hoy los dos son de Admin, pero se pregunta por separado
-   * para que abrirle la sala a Operativo no le regale de paso la puerta de saltar
-   * la máquina de estados.
+   * para que abrirle la sala a Operativo o a Servicio al Cliente no le regale de
+   * paso la puerta de saltar la máquina de estados.
    */
   const canCorrectState = can(role, Permission.ShipmentCorrect);
 
-  /** La pila que se está mirando, paginada. Los dos ejes se filtran en la API. */
+  /**
+   * La pila que se está mirando, paginada. TODOS los filtros viajan a la API
+   * (los dos ejes de la pila, el buscador y el estado): con el listado paginado,
+   * recortar en el navegador solo afectaría a la página visible y el contador de
+   * la cabecera diría una cifra que no es.
+   */
   const list = usePagedList<ShipmentDto>(
     '/shipments',
-    { ...VIEW_PARAMS[view], q: q.trim() || undefined },
+    { ...VIEW_PARAMS[view], q: q.trim() || undefined, state: state || undefined },
     { errorMessage: 'No se pudo cargar la sala de control.' },
   );
   const { error, setError, reload: load } = list;
+
+  /**
+   * Lo aplicado además del buscador. La PILA no pinta ficha: no es un filtro que
+   * se quite (siempre tiene valor) y el contador de la cabecera ya dice cuál está
+   * puesta. El estado sí, que es el que puede dejar el listado corto sin que se
+   * vea por qué.
+   */
+  const chips: FilterChip[] = state
+    ? [{ label: `Estado: ${STATE_LABELS[state as State]}`, onClear: () => setState('') }]
+    : [];
 
   /** Cierra el modal que estuviera abierto, avisa y recarga. */
   function afterChange(message: string) {
@@ -137,6 +170,8 @@ export function ControlRoomScreen({ role }: { role: Role }) {
   }
 
   const items = list.items;
+  /** Hay algo puesto además de la pila: cambia el "no hay nada" por "no coincide". */
+  const filtered = q.trim() !== '' || state !== '';
 
   return (
     <div className="fadeIn">
@@ -160,31 +195,51 @@ export function ControlRoomScreen({ role }: { role: Role }) {
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
       {notice && <div className="banner ok" style={{ marginBottom: 14 }}>{notice}</div>}
 
-      <div className="scan-row" style={{ marginBottom: 14 }}>
-        <input
-          className="input search"
-          placeholder={
-            view === 'sin-dueno'
-              ? 'Buscar por consecutivo, guía o descripción…'
-              : 'Buscar por consecutivo, guía, descripción, casillero o cliente…'
-          }
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        {/* No es un filtro que se "quite" (siempre tiene valor), así que no pinta
-            ficha: el contador de la cabecera ya dice cuál está puesta. */}
-        <select
-          className="input"
-          style={{ maxWidth: 230 }}
-          value={view}
-          aria-label="Pila"
-          onChange={(e) => setView(e.target.value as ControlRoomView)}
-        >
-          <option value="sin-dueno">Sin dueño</option>
-          <option value="todos">Todos los trámites</option>
-          <option value="descartados">Descartados</option>
-        </select>
-      </div>
+      {/* Mismo patrón de filtros que el resto del portal: a la vista solo el
+          buscador, que es lo que se usa en cada visita, y el resto colgado del
+          botón. Aquí la pila entra al panel en vez de ocupar media fila fija:
+          la pantalla abre sobre TODOS los trámites, así que acotarla es la
+          excepción, no el paso previo obligatorio. */}
+      <FilterBar
+        search={{
+          value: q,
+          onChange: setQ,
+          placeholder: 'Buscar por consecutivo, guía, descripción, casillero o cliente…',
+        }}
+        chips={chips}
+        onClearAll={() => setState('')}
+      >
+        <div>
+          <label className="field-label" htmlFor="cr-pile">Pila</label>
+          <select
+            id="cr-pile"
+            className="input"
+            value={view}
+            onChange={(e) => setView(e.target.value as ControlRoomView)}
+          >
+            <option value="todos">Todos los trámites</option>
+            <option value="sin-dueno">Sin dueño</option>
+            <option value="descartados">Descartados</option>
+          </select>
+        </div>
+
+        {/* Todos los estados de las tres máquinas: la pila «Todos» mezcla los tres
+            flujos, así que acotar el selector a uno escondería trámites. */}
+        <div>
+          <label className="field-label" htmlFor="cr-state">Estado</label>
+          <select
+            id="cr-state"
+            className="input"
+            value={state}
+            onChange={(e) => setState(e.target.value)}
+          >
+            <option value="">Todos los estados</option>
+            {Object.values(State).map((s) => (
+              <option key={s} value={s}>{STATE_LABELS[s]}</option>
+            ))}
+          </select>
+        </div>
+      </FilterBar>
 
       {list.loading && <CardsSkeleton />}
 
@@ -345,12 +400,16 @@ export function ControlRoomScreen({ role }: { role: Role }) {
 
       <EmptyList loading={list.loading} empty={items.length === 0}>
         {view === 'sin-dueno'
-          ? q
-            ? 'Ningún paquete sin dueño coincide con la búsqueda.'
+          ? filtered
+            ? 'Ningún paquete sin dueño coincide con los filtros.'
             : 'No hay paquetes sin dueño. Cuando aparezca uno en bodega que el sistema no reconozca, regístralo aquí.'
           : view === 'todos'
-            ? 'Ningún trámite coincide con la búsqueda.'
-            : 'No hay paquetes descartados.'}
+            ? filtered
+              ? 'Ningún trámite coincide con los filtros.'
+              : 'Todavía no hay trámites registrados.'
+            : filtered
+              ? 'Ningún paquete descartado coincide con los filtros.'
+              : 'No hay paquetes descartados.'}
       </EmptyList>
 
       {registering && (

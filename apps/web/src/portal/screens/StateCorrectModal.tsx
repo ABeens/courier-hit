@@ -1,6 +1,7 @@
 /**
  * Correccion administrativa del estado de un tramite (permiso shipment.correct,
- * solo admin).
+ * solo admin). Se abre UNICAMENTE desde la sala de control: el tablero de
+ * tramites opera el proceso y no ofrece la puerta de saltarselo.
  *
  * No es el hermano del avance, es su excepcion. `StateAdvanceModal` opera el
  * proceso: ofrece el paso siguiente y respeta la maquina. Este la desobedece a

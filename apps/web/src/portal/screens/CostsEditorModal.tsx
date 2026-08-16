@@ -119,7 +119,8 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
   /**
    * Reversar exige lo mismo que la API: factura congelada, tramite todavia en
    * "Facturación en proceso" y permiso de enmienda. Si el tramite ya avanzo, el
-   * camino es corregir primero el estado desde el tablero.
+   * camino es corregir primero el estado desde la sala de control, que es donde
+   * vive esa puerta.
    */
   const canReverse =
     approved &&
@@ -234,13 +235,14 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
 
   /**
    * Reversar descongela la factura para poder corregir los costos. No mueve el
-   * estado: si el tramite ya avanzo, hay que corregirlo aparte desde el tablero.
-   * Se avisa aqui para que nadie espere que un solo boton deshaga las dos cosas.
+   * estado: si el tramite ya avanzo, hay que corregirlo aparte desde la sala de
+   * control. Se avisa aqui para que nadie espere que un solo boton deshaga las
+   * dos cosas.
    */
   async function onReverse() {
     const confirmed = window.confirm(
       `Se liberará la factura de ${shipment.code} y los costos volverán a ser editables. ` +
-        `El estado del trámite NO cambia: si hace falta, corrígelo desde el tablero. ¿Continuar?`,
+        `El estado del trámite NO cambia: si hace falta, corrígelo desde la Sala de control. ¿Continuar?`,
     );
     if (!confirmed) return;
 
@@ -279,7 +281,8 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
                 <>
                   {' '}
                   Para corregirla, primero devuelve el trámite a «
-                  {STATE_LABELS[State.FacturacionEnProceso]}» con «Corregir» en el tablero.
+                  {STATE_LABELS[State.FacturacionEnProceso]}» con «Corregir estado» en la Sala
+                  de control.
                 </>
               )}
             </div>

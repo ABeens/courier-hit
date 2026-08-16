@@ -124,19 +124,43 @@ const STAFF_NAV: NavEntry[] = [
   },
 ];
 
+/** Id de la seccion a la que pertenece una pantalla (null si es item de raiz). */
+function sectionIdFor(entries: NavEntry[], resource: Resource): SectionId | null {
+  for (const entry of entries) {
+    if (isSection(entry) && entry.items.some((i) => i.resource === resource)) return entry.id;
+  }
+  return null;
+}
+
 /**
- * Que secciones dejo abiertas el usuario. Se guarda por navegador (no en el
+ * Que seccion dejo abierta el usuario. Se guarda por navegador (no en el
  * perfil) porque es una preferencia de la vista, no del negocio: quien trabaja
  * todo el dia en bodega deja "Operación" abierta y el resto plegado.
+ *
+ * Guarda un solo id (o cadena vacia = todas plegadas) porque el menu es un
+ * acordeon: nunca hay mas de una abierta.
  */
-const NAV_OPEN_KEY = 'portal.nav.sections';
+const NAV_OPEN_KEY = 'portal.nav.section';
+const SECTION_IDS: SectionId[] = ['operacion', 'finanzas', 'admin'];
 
-function readOpenSections(): Partial<Record<SectionId, boolean>> {
+/** `undefined` = sin preferencia guardada; ahi manda el criterio por defecto. */
+function readOpenSection(): SectionId | null | undefined {
   try {
     const raw = window.localStorage.getItem(NAV_OPEN_KEY);
-    return raw ? (JSON.parse(raw) as Partial<Record<SectionId, boolean>>) : {};
+    if (raw === null) return undefined;
+    if (raw === '') return null;
+    // Un id que ya no existe (seccion renombrada entre despliegues) se ignora.
+    return SECTION_IDS.includes(raw as SectionId) ? (raw as SectionId) : undefined;
   } catch {
-    return {}; // localStorage bloqueado o JSON corrupto: se cae al criterio por defecto
+    return undefined; // localStorage bloqueado
+  }
+}
+
+function writeOpenSection(id: SectionId | null) {
+  try {
+    window.localStorage.setItem(NAV_OPEN_KEY, id ?? '');
+  } catch {
+    // Sin localStorage la preferencia dura lo que la pestaña; el menu funciona igual.
   }
 }
 
@@ -187,25 +211,34 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
   const [navOpen, setNavOpen] = useState(false);
 
   /**
-   * Secciones plegadas/desplegadas por decision EXPLICITA del usuario. Lo que no
-   * esta aqui sigue el criterio por defecto (abierta la seccion de la pantalla
-   * activa), asi el menu llega util en la primera visita sin obligar a abrir
-   * nada, y despues respeta lo que el usuario dejo puesto.
+   * ACORDEON: como mucho una seccion abierta. Abrir una pliega la otra, asi la
+   * columna nunca vuelve a crecer hasta la lista larga que estas secciones
+   * vinieron a evitar, y siempre hay un solo bloque de opciones que leer.
+   *
+   * Arranca en la seccion que el usuario dejo abierta; si nunca eligio, en la de
+   * la pantalla de entrada (o plegado todo, si esa pantalla es de raiz).
    */
-  const [openSections, setOpenSections] = useState<Partial<Record<SectionId, boolean>>>(readOpenSections);
-  const activeSection = visibleNav.find(
-    (e) => isSection(e) && e.items.some((i) => i.resource === current),
-  ) as NavSection | undefined;
+  const [openSection, setOpenSection] = useState<SectionId | null>(() => {
+    const stored = readOpenSection();
+    return stored !== undefined ? stored : sectionIdFor(navEntries, current);
+  });
+  const activeSectionId = sectionIdFor(visibleNav, current);
 
-  function toggleSection(section: NavSection) {
-    const open = openSections[section.id] ?? section.id === activeSection?.id;
-    const next = { ...openSections, [section.id]: !open };
-    setOpenSections(next);
-    try {
-      window.localStorage.setItem(NAV_OPEN_KEY, JSON.stringify(next));
-    } catch {
-      // Sin localStorage la preferencia dura lo que la pestaña; el menu funciona igual.
-    }
+  function toggleSection(id: SectionId) {
+    const next = openSection === id ? null : id;
+    setOpenSection(next);
+    writeOpenSection(next);
+  }
+
+  /**
+   * Al cambiar de pantalla se abre su seccion (y se pliega la anterior). Sin
+   * esto, llegar por deep-link o desde un cuadro del Resumen a una pantalla de
+   * otra seccion dejaria el menu abierto en una seccion que ya no viene al caso.
+   * No se persiste: la preferencia guardada es la que el usuario elige a mano.
+   */
+  function syncSectionTo(resource: Resource) {
+    const id = sectionIdFor(navEntries, resource);
+    if (id) setOpenSection(id);
   }
 
   /**
@@ -226,12 +259,15 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
   useEffect(() => {
     function onPopState() {
       const fromUrl = resourceFromPath(window.location.pathname);
-      setCurrent(fromUrl && allowed.has(fromUrl) ? fromUrl : defaultResource);
+      const resource = fromUrl && allowed.has(fromUrl) ? fromUrl : defaultResource;
+      setCurrent(resource);
+      const id = sectionIdFor(navEntries, resource);
+      if (id) setOpenSection(id);
       setNav(null);
     }
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [allowed, defaultResource]);
+  }, [allowed, defaultResource, navEntries]);
 
   // Canonicaliza la URL al recurso activo (cubre /app a secas y slugs no validos).
   useEffect(() => {
@@ -245,6 +281,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
    */
   function selectResource(resource: Resource, intent?: NavIntent) {
     setCurrent(resource);
+    syncSectionTo(resource);
     setNav(intent ? { intent, key: `nav-${(navSeq.current += 1)}` } : null);
     setNavOpen(false); // en móvil, cerrar el drawer al navegar
     const path = pathForResource(resource);
@@ -288,8 +325,8 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
                 </button>
               );
             }
-            const hasActive = entry.id === activeSection?.id;
-            const open = openSections[entry.id] ?? hasActive;
+            const hasActive = entry.id === activeSectionId;
+            const open = entry.id === openSection;
             return (
               <div className="navsection" key={entry.id}>
                 {/* El punto (`has-active`) marca la seccion de la pantalla
@@ -302,7 +339,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
                   }`}
                   aria-expanded={open}
                   aria-controls={`navsection-${entry.id}`}
-                  onClick={() => toggleSection(entry)}
+                  onClick={() => toggleSection(entry.id)}
                 >
                   <SectionIcon id={entry.id} />
                   <span className="navsection-label">{entry.label}</span>
