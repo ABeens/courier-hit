@@ -7,6 +7,7 @@
  * elige el cliente, lo devuelve el almacen al guardar el archivo.
  */
 import { z } from 'zod';
+import { paginationQuerySchema } from '../http/pagination';
 import { DeliveryOutcome } from './delivery';
 import { proofRequirementFor } from './delivery';
 
@@ -38,12 +39,14 @@ export type RecordDeliveryAttemptInput = z.infer<typeof recordDeliveryAttemptSch
  * ruta y por número de tracking"). `q` cubre nombre y tracking en un solo campo;
  * la ruta va aparte porque es un numero exacto, no una busqueda por texto.
  */
-export const listDeliveryQueueQuerySchema = z.object({
-  q: z.string().trim().optional(),
-  routeNumber: z.coerce
-    .number()
-    .int('La ruta es un número entero.')
-    .positive('La ruta debe ser mayor que cero.')
-    .optional(),
-});
+export const listDeliveryQueueQuerySchema = z
+  .object({
+    q: z.string().trim().optional(),
+    routeNumber: z.coerce
+      .number()
+      .int('La ruta es un número entero.')
+      .positive('La ruta debe ser mayor que cero.')
+      .optional(),
+  })
+  .merge(paginationQuerySchema);
 export type ListDeliveryQueueQuery = z.infer<typeof listDeliveryQueueQuerySchema>;

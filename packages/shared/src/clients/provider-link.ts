@@ -9,6 +9,8 @@
  */
 import { z } from 'zod';
 import { HelgaSyncStatus } from '../auth/user';
+import { paginationQuerySchema } from '../http/pagination';
+import type { Page } from '../http/pagination';
 
 /** Que origino un evento del enlace. */
 export enum ProviderLinkSource {
@@ -90,12 +92,26 @@ export interface ProviderLinkDetailDto {
 }
 
 /** Filtro del listado. Por defecto el panel mira los casos con problema. */
-export const listProviderLinksSchema = z.object({
-  /** Ausente = solo los que NO estan enlazados (pending + failed), que es el caso de uso. */
-  status: z.nativeEnum(HelgaSyncStatus).optional(),
-  q: z.string().trim().min(1).max(80).optional(),
-});
+export const listProviderLinksSchema = z
+  .object({
+    /** Ausente = solo los que NO estan enlazados (pending + failed), que es el caso de uso. */
+    status: z.nativeEnum(HelgaSyncStatus).optional(),
+    q: z.string().trim().min(1).max(80).optional(),
+  })
+  .merge(paginationQuerySchema);
 export type ListProviderLinksQuery = z.infer<typeof listProviderLinksSchema>;
+
+/**
+ * Listado del panel. Ademas del sobre de paginacion lleva `blockedCount`: cuantos
+ * casilleros del filtro completo estan dejando al cliente FUERA del portal.
+ *
+ * Va calculado en el servidor y no contando la pagina en el navegador porque es
+ * el numero que justifica la pantalla entera; contado sobre cincuenta filas diria
+ * "3 sin poder ingresar" cuando hay treinta.
+ */
+export interface ProviderLinkListDto extends Page<ProviderLinkDto> {
+  blockedCount: number;
+}
 
 /**
  * Id del destinatario en Helga. Su API los emite como enteros; se guardan como

@@ -18,6 +18,7 @@ import {
   DeliveryOutcome,
   State,
   isSettled,
+  paged,
   pendingAmount,
   proofRequirementFor,
   settledAmount,
@@ -49,23 +50,25 @@ function toDto(row: Awaited<ReturnType<typeof deliveriesRepo.listByShipment>>[nu
 }
 
 export const deliveriesService = {
-  /** Cola del dia: lo que el mensajero tiene que repartir. */
+  /** Una pagina de la cola del dia: lo que el mensajero tiene que repartir. */
   async queue(query: ListDeliveryQueueQuery) {
-    const rows = await deliveriesRepo.queue(query);
-    return {
-      /**
-       * `settlement` no sale a la respuesta: son los abonos crudos, que el
-       * mensajero no necesita (y que incluyen datos del cobro). Se reemplazan por
-       * las dos cifras derivadas, las mismas que lleva el listado de tramites.
-       */
-      items: rows.map(({ settlement, ...row }) => ({
-        ...row,
-        settledCrc: settledAmount(settlement, Currency.CRC),
-        settled: isSettled(settlement, row.invoiceTotalCrc),
-        pendingCrc: pendingAmount(settlement, Currency.CRC),
-        updatedAt: row.updatedAt.toISOString(),
-      })),
-    };
+    const [rows, total] = await Promise.all([
+      deliveriesRepo.queue(query),
+      deliveriesRepo.countQueue(query),
+    ]);
+    /**
+     * `settlement` no sale a la respuesta: son los abonos crudos, que el
+     * mensajero no necesita (y que incluyen datos del cobro). Se reemplazan por
+     * las dos cifras derivadas, las mismas que lleva el listado de tramites.
+     */
+    const items = rows.map(({ settlement, ...row }) => ({
+      ...row,
+      settledCrc: settledAmount(settlement, Currency.CRC),
+      settled: isSettled(settlement, row.invoiceTotalCrc),
+      pendingCrc: pendingAmount(settlement, Currency.CRC),
+      updatedAt: row.updatedAt.toISOString(),
+    }));
+    return paged(items, total, query);
   },
 
   /** Historial de intentos de un tramite. */

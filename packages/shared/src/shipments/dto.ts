@@ -14,6 +14,7 @@
  * con `initialState(flow)` (siempre Prealertado).
  */
 import { z } from 'zod';
+import { paginationQuerySchema } from '../http/pagination';
 import { ShipmentType } from '../workflow/shipment-type';
 import { State } from '../workflow/states';
 import { CARRIERS, STORES } from './catalogs';
@@ -560,5 +561,12 @@ export const listShipmentsQuerySchema = z.object({
   from: instantSchema.optional(),
   /** Fin del rango por fecha de ingreso, exclusivo (la web manda el inicio del dia siguiente). */
   to: instantSchema.optional(),
-});
+})
+  /**
+   * TODOS estos filtros se aplican en SQL, nunca sobre lo ya cargado: con el
+   * listado paginado, filtrar en el navegador solo recortaria la pagina visible y
+   * el contador mentiria. La paginacion viaja en el mismo objeto para que un
+   * filtro nuevo no pueda olvidarse de ella.
+   */
+  .merge(paginationQuerySchema);
 export type ListShipmentsQuery = z.infer<typeof listShipmentsQuerySchema>;

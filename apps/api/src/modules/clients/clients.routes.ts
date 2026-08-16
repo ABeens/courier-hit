@@ -12,11 +12,11 @@
  * el patron del detalle y el cliente acabaria pidiendo un casillero ajeno.
  */
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { zValidator } from '../../core/validator';
 import {
   Permission,
   deliveryAddressSchema,
+  listClientsQuerySchema,
   listProviderLinksSchema,
   updateClientSchema,
   updateProfileSchema,
@@ -107,14 +107,12 @@ clientsRoutes.patch(
 
 // --- Panel administrador ---
 
-const listQuerySchema = z.object({ q: z.string().trim().optional() });
-
 clientsRoutes.get(
   '/',
   requirePermission(Permission.ClientsRead),
-  zValidator('query', listQuerySchema),
+  zValidator('query', listClientsQuerySchema),
   async (c) => {
-    return c.json(await clientsService.list(c.req.valid('query').q));
+    return c.json(await clientsService.list(c.req.valid('query')));
   },
 );
 

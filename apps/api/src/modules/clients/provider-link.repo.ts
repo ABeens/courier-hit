@@ -7,10 +7,10 @@
  * la correccion manual del enlace es una funcion del panel de administracion, y
  * ponerla en auth mezclaria el alta de cuentas con la operacion diaria.
  */
-import { and, desc, eq, inArray, ilike, or } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, ilike, ne, or } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
-import { HelgaSyncStatus } from '@courier/shared';
-import type { ProviderLinkSource } from '@courier/shared';
+import { HelgaSyncStatus, toSlice } from '@courier/shared';
+import type { ListProviderLinksQuery, ProviderLinkSource } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { clientProviderLinkEvents } from './provider-link.schema';
@@ -36,35 +36,78 @@ const linkColumns = {
   createdAt: clients.createdAt,
 };
 
+/**
+ * Filtros del panel, en SQL. Sin filtro de estado se acota a los NO enlazados: el
+ * panel existe para atender problemas, y arrancar mostrando los miles de
+ * casilleros sanos esconderia los pocos que importan.
+ */
+function listConditions(query: ListProviderLinksQuery): SQL[] {
+  const conds: SQL[] = [
+    query.status
+      ? eq(clients.helgaSyncStatus, query.status)
+      : inArray(clients.helgaSyncStatus, UNLINKED),
+  ];
+
+  if (query.q) {
+    const term = `%${query.q}%`;
+    const match = or(
+      ilike(clients.code, term),
+      ilike(users.name, term),
+      ilike(users.email, term),
+      ilike(clients.idNumber, term),
+    );
+    if (match) conds.push(match);
+  }
+
+  return conds;
+}
+
 export const providerLinkRepo = {
-  /**
-   * Listado del panel. Sin filtro de estado devuelve solo los NO enlazados: el
-   * panel existe para atender problemas, y arrancar mostrando los miles de
-   * casilleros sanos escondería los pocos que importan.
-   */
-  async list(filter: { status?: HelgaSyncStatus; q?: string }) {
-    const conds: SQL[] = [
-      filter.status ? eq(clients.helgaSyncStatus, filter.status) : inArray(clients.helgaSyncStatus, UNLINKED),
-    ];
-
-    if (filter.q) {
-      const term = `%${filter.q}%`;
-      const match = or(
-        ilike(clients.code, term),
-        ilike(users.name, term),
-        ilike(users.email, term),
-        ilike(clients.idNumber, term),
-      );
-      if (match) conds.push(match);
-    }
-
+  /** Una PAGINA del listado del panel. */
+  async list(query: ListProviderLinksQuery) {
+    const { limit, offset } = toSlice(query);
     return db
       .select(linkColumns)
       .from(clients)
       .innerJoin(users, eq(clients.userId, users.id))
-      .where(and(...conds))
-      // Los que mas veces fallaron primero: son los que no se van a arreglar solos.
-      .orderBy(desc(clients.helgaSyncAttempts), desc(clients.createdAt));
+      .where(and(...listConditions(query)))
+      /**
+       * Los que mas veces fallaron primero: son los que no se van a arreglar
+       * solos. `id` cierra la clave porque los intentos empatan casi siempre (la
+       * mayoria estan en 0 o 1) y un orden ambiguo repite filas al paginar.
+       */
+      .orderBy(desc(clients.helgaSyncAttempts), desc(clients.createdAt), desc(clients.id))
+      .limit(limit)
+      .offset(offset);
+  },
+
+  /** Cuantos casilleros hay con ese filtro. */
+  async countList(query: ListProviderLinksQuery) {
+    const [row] = await db
+      .select({ n: count() })
+      .from(clients)
+      .innerJoin(users, eq(clients.userId, users.id))
+      .where(and(...listConditions(query)));
+    return row?.n ?? 0;
+  },
+
+  /**
+   * Cuantos de los que trae el filtro NO estan enlazados. Es el numero que el
+   * servicio convierte en "sin poder ingresar al portal", y se cuenta sobre el
+   * filtro completo y no sobre la pagina: contando la pagina, un panel con
+   * treinta clientes encerrados diria tres.
+   */
+  async countUnsynced(query: ListProviderLinksQuery) {
+    const conds = [
+      ...listConditions(query),
+      ne(clients.helgaSyncStatus, HelgaSyncStatus.Synced),
+    ];
+    const [row] = await db
+      .select({ n: count() })
+      .from(clients)
+      .innerJoin(users, eq(clients.userId, users.id))
+      .where(and(...conds));
+    return row?.n ?? 0;
   },
 
   /** Un enlace por casillero. */

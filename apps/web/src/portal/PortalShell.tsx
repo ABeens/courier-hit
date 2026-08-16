@@ -31,11 +31,30 @@ import { LockerScreen } from './screens/LockerScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 
 interface NavItem { resource: Resource; label: string }
+/**
+ * Seccion plegable del menu. Agrupa pantallas afines detras de una etiqueta con
+ * chevron para que la columna se lea de un vistazo: con 16 entradas planas hay
+ * que recorrerlas todas para encontrar una; con secciones se elige primero el
+ * area y despues la pantalla.
+ */
+interface NavSection { id: SectionId; label: string; items: NavItem[] }
+type NavEntry = NavItem | NavSection;
+
+type SectionId = 'operacion' | 'finanzas' | 'admin';
+
+function isSection(entry: NavEntry): entry is NavSection {
+  return 'items' in entry;
+}
+/** Pantallas de una entrada, sea seccion o item suelto (para buscar/filtrar). */
+function entryItems(entry: NavEntry): NavItem[] {
+  return isSection(entry) ? entry.items : [entry];
+}
 
 /**
  * Menu del titular de casillero. Va aparte del de staff porque comparten el
  * recurso Package con etiquetas distintas: para el cliente son "sus" paquetes,
- * no la cola de operacion.
+ * no la cola de operacion. Son cuatro entradas: van planas, plegarlas seria
+ * esconder un menu que ya cabe entero a la vista.
  *
  * Prealertar NO tiene entrada propia: es una accion de "Mis paquetes" (el boton
  * abre `ClientShipmentModal`), porque el cliente avisa de un paquete para verlo
@@ -47,55 +66,83 @@ interface NavItem { resource: Resource; label: string }
  * no tiene boton de alta: esos tramites no se prealertan, los registra el staff
  * (`tramite.manage`) tras acordar la gestion con el cliente.
  */
-const CLIENT_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
-  {
-    group: 'Mi casillero',
-    items: [
-      { resource: Resource.Locker, label: 'Mi casillero' },
-      { resource: Resource.Package, label: 'Mis paquetes' },
-      { resource: Resource.Tramite, label: 'Otros trámites' },
-      { resource: Resource.Profile, label: 'Mi perfil' },
-    ],
-  },
+const CLIENT_NAV: NavEntry[] = [
+  { resource: Resource.Locker, label: 'Mi casillero' },
+  { resource: Resource.Package, label: 'Mis paquetes' },
+  { resource: Resource.Tramite, label: 'Otros trámites' },
+  { resource: Resource.Profile, label: 'Mi perfil' },
 ];
 
-const STAFF_NAV_GROUPS: { group: string; items: NavItem[] }[] = [
+/**
+ * Menu de staff. Lo que se usa a diario y no pertenece a un area (Resumen,
+ * Clientes, Reportes) queda suelto en la raiz; el resto se pliega en tres
+ * secciones por el momento en que se entra a ellas: mover carga, cobrar,
+ * administrar.
+ */
+const STAFF_NAV: NavEntry[] = [
+  { resource: Resource.Dashboard, label: 'Resumen' },
   {
-    group: 'Operación',
+    id: 'operacion',
+    label: 'Operación',
     items: [
-      { resource: Resource.Dashboard, label: 'Resumen' },
       { resource: Resource.Reception, label: 'Recepción' },
       { resource: Resource.Package, label: 'Paquetería' },
-      { resource: Resource.Costs, label: 'Costos' },
-      { resource: Resource.Delivery, label: 'Entregas' },
-      { resource: Resource.Clients, label: 'Clientes' },
       { resource: Resource.Tramite, label: 'Trámites' },
-      // Va al final de Operación y no en Gestión: se entra desde la mesa de
-      // bodega, con la caja en la mano, no cuando uno se sienta a administrar.
+      { resource: Resource.Delivery, label: 'Entregas' },
+      // Va al final de Operación y no en Administración: se entra desde la mesa
+      // de bodega, con la caja en la mano, no cuando uno se sienta a administrar.
       { resource: Resource.ControlRoom, label: 'Sala de control' },
     ],
   },
+  { resource: Resource.Clients, label: 'Clientes' },
   {
-    group: 'Gestión',
+    id: 'finanzas',
+    label: 'Costos y tarifas',
     items: [
-      { resource: Resource.Reports, label: 'Reportes' },
+      // Los tres son dinero y se consultan en cadena (que costo el envio, que se
+      // le cobra al cliente, que servicio fijo se le suma), asi que van juntos
+      // aunque Costos se opere a diario y las tarifas se toquen de vez en cuando.
+      { resource: Resource.Costs, label: 'Costos' },
       { resource: Resource.Tariffs, label: 'Tarifas' },
       { resource: Resource.CostServices, label: 'Servicios de costos' },
+    ],
+  },
+  { resource: Resource.Reports, label: 'Reportes' },
+  {
+    id: 'admin',
+    label: 'Administración',
+    items: [
+      { resource: Resource.Users, label: 'Usuarios' },
       { resource: Resource.Routes, label: 'Rutas' },
+      { resource: Resource.Announcements, label: 'Anuncios' },
       // El recurso se llama `config` por el permiso (config.manage cubre mas
       // automatizacion), pero la pantalla es solo el enlace con Miami: la
       // etiqueta nombra lo que el usuario encuentra al entrar, no el permiso.
       { resource: Resource.Config, label: 'Enlace con Miami' },
       { resource: Resource.Settings, label: 'Configuración' },
-      { resource: Resource.Users, label: 'Usuarios' },
-      { resource: Resource.Announcements, label: 'Anuncios' },
     ],
   },
 ];
 
+/**
+ * Que secciones dejo abiertas el usuario. Se guarda por navegador (no en el
+ * perfil) porque es una preferencia de la vista, no del negocio: quien trabaja
+ * todo el dia en bodega deja "Operación" abierta y el resto plegado.
+ */
+const NAV_OPEN_KEY = 'portal.nav.sections';
+
+function readOpenSections(): Partial<Record<SectionId, boolean>> {
+  try {
+    const raw = window.localStorage.getItem(NAV_OPEN_KEY);
+    return raw ? (JSON.parse(raw) as Partial<Record<SectionId, boolean>>) : {};
+  } catch {
+    return {}; // localStorage bloqueado o JSON corrupto: se cae al criterio por defecto
+  }
+}
+
 export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => void }) {
   const isClient = me.role === Role.Client;
-  const navGroups = isClient ? CLIENT_NAV_GROUPS : STAFF_NAV_GROUPS;
+  const navEntries = isClient ? CLIENT_NAV : STAFF_NAV;
   const miamiLink = me.features.miamiLink;
   /**
    * Lo que el rol puede ver, menos lo que este despliegue no ofrece. Al quitar
@@ -115,15 +162,21 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
     resources.delete(Resource.Prealert);
     return resources;
   }, [me.role, miamiLink]);
-  const visibleGroups = useMemo(
+  /**
+   * El menu del rol sin lo que no puede ver. Una seccion que se queda sin
+   * pantallas desaparece entera: no tiene sentido un desplegable vacio.
+   */
+  const visibleNav = useMemo(
     () =>
-      navGroups.map((g) => ({ ...g, items: g.items.filter((i) => allowed.has(i.resource)) })).filter(
-        (g) => g.items.length > 0,
-      ),
-    [allowed, navGroups],
+      navEntries.flatMap<NavEntry>((entry) => {
+        if (!isSection(entry)) return allowed.has(entry.resource) ? [entry] : [];
+        const items = entry.items.filter((i) => allowed.has(i.resource));
+        return items.length > 0 ? [{ ...entry, items }] : [];
+      }),
+    [allowed, navEntries],
   );
 
-  const firstResource = visibleGroups[0]?.items[0]?.resource ?? Resource.Package;
+  const firstResource = visibleNav.flatMap(entryItems)[0]?.resource ?? Resource.Package;
   const defaultResource = allowed.has(Resource.Users) ? Resource.Users : firstResource;
 
   // Pantalla inicial: la de la URL si el rol la permite; si no, la por defecto.
@@ -132,6 +185,28 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
     return fromUrl && allowed.has(fromUrl) ? fromUrl : defaultResource;
   });
   const [navOpen, setNavOpen] = useState(false);
+
+  /**
+   * Secciones plegadas/desplegadas por decision EXPLICITA del usuario. Lo que no
+   * esta aqui sigue el criterio por defecto (abierta la seccion de la pantalla
+   * activa), asi el menu llega util en la primera visita sin obligar a abrir
+   * nada, y despues respeta lo que el usuario dejo puesto.
+   */
+  const [openSections, setOpenSections] = useState<Partial<Record<SectionId, boolean>>>(readOpenSections);
+  const activeSection = visibleNav.find(
+    (e) => isSection(e) && e.items.some((i) => i.resource === current),
+  ) as NavSection | undefined;
+
+  function toggleSection(section: NavSection) {
+    const open = openSections[section.id] ?? section.id === activeSection?.id;
+    const next = { ...openSections, [section.id]: !open };
+    setOpenSections(next);
+    try {
+      window.localStorage.setItem(NAV_OPEN_KEY, JSON.stringify(next));
+    } catch {
+      // Sin localStorage la preferencia dura lo que la pestaña; el menu funciona igual.
+    }
+  }
 
   /**
    * Con que filtros se abre la pantalla destino cuando se llega a ella desde
@@ -178,7 +253,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
 
   const roleLabel = ROLE_LABELS[me.role];
   const currentLabel =
-    navGroups.flatMap((g) => g.items).find((i) => i.resource === current)?.label ?? 'Portal';
+    navEntries.flatMap(entryItems).find((i) => i.resource === current)?.label ?? 'Portal';
 
   async function logout() {
     try {
@@ -200,21 +275,66 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
           </span>
         </div>
 
-        {visibleGroups.map((g) => (
-          <div key={g.group}>
-            <div className="side-group-label">{g.group}</div>
-            {g.items.map((i) => (
-              <button
-                key={i.resource}
-                className={`navitem${current === i.resource ? ' active' : ''}`}
-                onClick={() => selectResource(i.resource)}
-              >
-                <NavIcon resource={i.resource} /> {i.label}
-              </button>
-            ))}
-          </div>
-        ))}
-
+        <nav className="side-nav">
+          {visibleNav.map((entry) => {
+            if (!isSection(entry)) {
+              return (
+                <button
+                  key={entry.resource}
+                  className={`navitem${current === entry.resource ? ' active' : ''}`}
+                  onClick={() => selectResource(entry.resource)}
+                >
+                  <NavIcon resource={entry.resource} /> {entry.label}
+                </button>
+              );
+            }
+            const hasActive = entry.id === activeSection?.id;
+            const open = openSections[entry.id] ?? hasActive;
+            return (
+              <div className="navsection" key={entry.id}>
+                {/* El punto (`has-active`) marca la seccion de la pantalla
+                    activa cuando esta plegada: sin el, colapsarla dejaria el
+                    menu sin ninguna señal de donde esta uno parado. */}
+                <button
+                  type="button"
+                  className={`navitem navsection-btn${open ? ' open' : ''}${
+                    hasActive && !open ? ' has-active' : ''
+                  }`}
+                  aria-expanded={open}
+                  aria-controls={`navsection-${entry.id}`}
+                  onClick={() => toggleSection(entry)}
+                >
+                  <SectionIcon id={entry.id} />
+                  <span className="navsection-label">{entry.label}</span>
+                  <svg
+                    className="navsection-chev"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </button>
+                {open && (
+                  <div className="navsection-items" id={`navsection-${entry.id}`}>
+                    {entry.items.map((i) => (
+                      <button
+                        key={i.resource}
+                        className={`navitem navitem-sub${current === i.resource ? ' active' : ''}`}
+                        onClick={() => selectResource(i.resource)}
+                      >
+                        <NavIcon resource={i.resource} /> {i.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </nav>
       </aside>
 
       <main className="main">
@@ -404,6 +524,27 @@ function initials(text: string): string {
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase() ?? '')
     .join('');
+}
+
+/**
+ * Icono de la seccion plegable. No reusa el de ninguna de sus pantallas a
+ * proposito: repetir, por ejemplo, la caja de Paqueteria en la cabecera de
+ * "Operación" haria leer la seccion como si fuera esa pantalla.
+ */
+function SectionIcon({ id }: { id: SectionId }) {
+  const paths: Record<SectionId, JSX.Element> = {
+    // Capas: varias pantallas del mismo flujo de bodega.
+    operacion: <path d="M12 2l9 5-9 5-9-5 9-5zM3 12l9 5 9-5M3 17l9 5 9-5" />,
+    // Billete: todo lo que es plata.
+    finanzas: <path d="M2 6h20v12H2zM12 14a2 2 0 100-4 2 2 0 000 4zM6 9v.01M18 15v.01" />,
+    // Deslizadores: ajustes del sistema.
+    admin: <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />,
+  };
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {paths[id]}
+    </svg>
+  );
 }
 
 /** Iconos minimos por recurso (stroke = currentColor). */

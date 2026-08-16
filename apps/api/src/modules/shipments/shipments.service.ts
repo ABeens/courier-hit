@@ -29,6 +29,7 @@ import {
   flowForType,
   initialState,
   isSettled,
+  paged,
   pendingAmount,
   roundMoney,
   roundWeightKg,
@@ -42,6 +43,7 @@ import type {
   DiscardShipmentInput,
   Flow,
   ListShipmentsQuery,
+  Page,
   PrealertShipmentInput,
   RegisterUnassignedShipmentInput,
   Session,
@@ -210,10 +212,20 @@ function assertNotDiscarded(row: { discardedAt: Date | null }): void {
 }
 
 export const shipmentsService = {
-  /** Listado del dashboard, acotado al casillero propio cuando el rol es client. */
-  async list(session: Session, query: ListShipmentsQuery): Promise<{ items: ShipmentDto[] }> {
-    const rows = await shipmentsRepo.list(query, ownerScopeFor(session));
-    return { items: rows.map(toDto) };
+  /**
+   * Una pagina del dashboard, acotada al casillero propio cuando el rol es client.
+   *
+   * Las dos consultas van en paralelo: son independientes (una trae la pagina, la
+   * otra cuenta el filtro completo) y encadenarlas duplicaria la latencia de la
+   * pantalla mas usada del portal.
+   */
+  async list(session: Session, query: ListShipmentsQuery): Promise<Page<ShipmentDto>> {
+    const ownerClientId = ownerScopeFor(session);
+    const [rows, total] = await Promise.all([
+      shipmentsRepo.list(query, ownerClientId),
+      shipmentsRepo.countList(query, ownerClientId),
+    ]);
+    return paged(rows.map(toDto), total, query);
   },
 
   /** Detalle. Un cliente solo puede abrir los suyos (404, no 403: no revela existencia). */
