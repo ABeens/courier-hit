@@ -11,7 +11,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx --env-file=.env src/seed.ts",
-    "db:seed:demo": "tsx --env-file=.env src/seed-demo.ts"
+    "db:seed:demo": "tsx --env-file=.env src/seed-demo.ts",
+    "db:seed:bulk": "tsx --env-file=.env src/seed-bulk.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1095.0",
