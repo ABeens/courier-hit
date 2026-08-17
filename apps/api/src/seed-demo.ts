@@ -28,13 +28,12 @@
  * Requiere haber corrido antes `db:seed` (necesita las tarifas de cliente).
  */
 import { hash } from '@node-rs/argon2';
-import { eq, inArray, like, sql } from 'drizzle-orm';
+import { eq, inArray, like } from 'drizzle-orm';
 import {
   AnnouncementType,
   BankAccount,
   CARRIERS,
   ClientReviewStatus,
-  CostCategory,
   CostLineSource,
   categoryForLine,
   Currency,
@@ -48,22 +47,17 @@ import {
   SHIPMENT_TYPE_VALUES,
   STATE_VALUES,
   STORES,
-  ServiceKind,
-  ServiceValueType,
   ShipmentType,
   State,
   UserStatus,
   applyPercentage,
   bankAccountsFor,
-  canTransition,
   computeTotals,
-  convertMoney,
   findCanton,
   findDistrict,
   flowForType,
   formatShipmentCode,
   isSettled,
-  isValidLocation,
   percentageBase,
   roundMoney,
   statesOf,
@@ -85,25 +79,20 @@ import {
   freightRateHistory,
 } from './modules/settings/settings.schema';
 import { clientRates } from './modules/tariffs/tariffs.schema';
-
-/**
- * Tasa que fija la demo si el sistema no tiene ninguna (colones por 1 USD). Es
- * la que se congela en TODO el dinero sembrado: en produccion la tasa es un
- * valor unico que fija quien tiene `exchange_rate.write`, asi que sembrar una
- * distinta por tramite mostraria un sistema que no existe. Si ya habia una tasa
- * vigente, manda esa y este valor no se usa.
- */
-const DEMO_EXCHANGE_RATE = 512.75;
+import {
+  COST_SERVICES as SERVICES,
+  DEFAULT_EXCHANGE_RATE as DEMO_EXCHANGE_RATE,
+  DEFAULT_FREIGHT_RATE as DEMO_FREIGHT_RATE,
+  type Tx,
+  assertPath,
+  locationOf,
+  nextSequence,
+  pathTo,
+  usdToCoverCrc,
+} from './seed-support';
 
 /** Marca del registro de historial que siembra este archivo (lo borra `--reset`). */
 const DEMO_RATE_NOTE = 'Tasa inicial de la demo.';
-
-/**
- * Tarifa de transporte internacional de la demo, en USD por libra. Es la del
- * mapeo de campos validado con el negocio ("× 3.66"), para que el reporte FULL
- * de Paqueteria de las mismas cifras que la hoja con la que se cuadra.
- */
-const DEMO_FREIGHT_RATE = 3.66;
 const DEMO_FREIGHT_NOTE = 'Tarifa inicial de la demo.';
 
 /** Dominio de correo que marca a un usuario como sembrado por esta demo. */
@@ -345,45 +334,6 @@ const CLIENTS: readonly ClientSpec[] = [
   },
 ];
 
-interface ServiceSpec {
-  name: string;
-  kind: ServiceKind;
-  /** De quien es el dinero: decide si el concepto es costo o margen en el reporte. */
-  category: CostCategory;
-  /** COD SIS FE del concepto; lo imprime la proforma. */
-  electronicInvoiceCode: string;
-  valueType: ServiceValueType;
-  defaultValue: number | null;
-  /** Solo cuando valueType = Fixed (es dinero). Regla M2. */
-  currency: Currency | null;
-  enabled?: boolean;
-}
-
-/**
- * Catalogo de servicios de costo. Transporte y agenciamiento solo admite valor
- * Manual (`allowedValueTypes`); Paqueteria admite los tres y solo USD (M6).
- */
-/**
- * `category` separa lo que HS Global solo TRASLADA (impuestos, almacen fiscal,
- * naviera) de lo que son honorarios propios. Sin ese corte, COSTOS ASOCIADOS del
- * reporte de Agenciamiento sumaria la factura entera y el PROFIT saldria en cero
- * en todas las filas de la demo. `electronicInvoiceCode` es el COD SIS FE que
- * imprime la proforma.
- */
-const SERVICES: readonly ServiceSpec[] = [
-  { name: 'Impuesto de aduana', kind: ServiceKind.TransporteAgenciamiento, category: CostCategory.Impuestos, electronicInvoiceCode: '44', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Almacenaje fiscal', kind: ServiceKind.TransporteAgenciamiento, category: CostCategory.Otros, electronicInvoiceCode: '61', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Transporte terrestre', kind: ServiceKind.TransporteAgenciamiento, category: CostCategory.Otros, electronicInvoiceCode: '25', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Honorarios de agenciamiento', kind: ServiceKind.TransporteAgenciamiento, category: CostCategory.Propio, electronicInvoiceCode: '10', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Inspección Dekra', kind: ServiceKind.TransporteAgenciamiento, category: CostCategory.Otros, electronicInvoiceCode: '73', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Desalmacenaje', kind: ServiceKind.TransporteAgenciamiento, category: CostCategory.Propio, electronicInvoiceCode: '11', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Permisos de Importación', kind: ServiceKind.Paqueteria, category: CostCategory.Otros, electronicInvoiceCode: '97', valueType: ServiceValueType.Percentage, defaultValue: 10, currency: null },
-  { name: 'Seguro de mercancía', kind: ServiceKind.Paqueteria, category: CostCategory.Otros, electronicInvoiceCode: '52', valueType: ServiceValueType.Percentage, defaultValue: 2.5, currency: null },
-  { name: 'Manejo en bodega Miami', kind: ServiceKind.Paqueteria, category: CostCategory.Propio, electronicInvoiceCode: '31', valueType: ServiceValueType.Fixed, defaultValue: 3.5, currency: Currency.USD },
-  { name: 'Empaque especial', kind: ServiceKind.Paqueteria, category: CostCategory.Propio, electronicInvoiceCode: '32', valueType: ServiceValueType.Fixed, defaultValue: 7, currency: Currency.USD },
-  { name: 'Asesoría de compra por Internet', kind: ServiceKind.Paqueteria, category: CostCategory.Propio, electronicInvoiceCode: '33', valueType: ServiceValueType.Manual, defaultValue: null, currency: null },
-  { name: 'Sobrecargo de combustible', kind: ServiceKind.Paqueteria, category: CostCategory.Otros, electronicInvoiceCode: '26', valueType: ServiceValueType.Fixed, defaultValue: 1.75, currency: Currency.USD, enabled: false },
-];
 
 /**
  * Rutas operativas: cada grupo es una ruta y lista los distritos que cubre. Se
@@ -507,42 +457,6 @@ const CARGO_ITEMS: readonly { description: string; warehouse: string; dua: strin
 // 2. Helpers de dominio
 // ---------------------------------------------------------------------------
 
-/** Provincia y canton salen del codigo del distrito (1 + 3 + 5 digitos). */
-function locationOf(districtCode: string): { provinceCode: string; cantonCode: string; districtCode: string } {
-  const provinceCode = districtCode.slice(0, 1);
-  const cantonCode = districtCode.slice(0, 3);
-  if (!isValidLocation(provinceCode, cantonCode, districtCode)) {
-    throw new Error(`[seed-demo] Distrito inválido en los datos de demo: ${districtCode}`);
-  }
-  return { provinceCode, cantonCode, districtCode };
-}
-
-/** Valida el historial contra la maquina de estados; aborta si es imposible. */
-function assertPath(flow: Flow, path: readonly State[]): void {
-  for (let i = 1; i < path.length; i++) {
-    const from = path[i - 1]!;
-    const to = path[i]!;
-    if (!canTransition(flow, from, to)) {
-      throw new Error(`[seed-demo] Transición inválida en ${flow}: ${from} -> ${to}`);
-    }
-  }
-}
-
-/**
- * Historial hasta un estado: la ruta principal del flow recortada. `Devuelto a
- * bodega` no esta en la linea (es una arista extra desde En ruta de entrega),
- * asi que se arma aparte.
- */
-function pathTo(flow: Flow, target: State): State[] {
-  const states = statesOf(flow);
-  const path =
-    target === State.DevueltoBodega
-      ? [...states.slice(0, states.indexOf(State.EnRutaEntrega) + 1), State.DevueltoBodega]
-      : states.slice(0, states.indexOf(target) + 1);
-  assertPath(flow, path);
-  return path;
-}
-
 /** Instantes de cada evento del historial, repartidos entre `startDays` y hoy. */
 function timeline(startDays: number, steps: number): Date[] {
   const start = NOW.getTime() - startDays * DAY;
@@ -656,13 +570,6 @@ function buildScenarios(): Scenario[] {
 // 4. Siembra
 // ---------------------------------------------------------------------------
 
-/**
- * Conexion dentro de la transaccion. TODA la siembra corre en una sola: si algo
- * falla a mitad (una tabla sin migrar, un dato invalido), la base queda como
- * estaba y no en un limbo a medio sembrar que confunda al proximo intento.
- */
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
 /** Borra SOLO lo que sembro este archivo. Nunca toca datos reales. */
 async function resetDemo(tx: Tx): Promise<void> {
   const demoUsers = await tx
@@ -699,21 +606,6 @@ async function resetDemo(tx: Tx): Promise<void> {
     .where(inArray(cantonRoutes.cantonCode, CANTON_ROUTES.map((r) => r.cantonCode)));
 
   console.log('[seed-demo] Datos de demo anteriores eliminados.');
-}
-
-/** Consecutivos de negocio: se piden a la misma secuencia que usa la API. */
-async function nextSequence(
-  tx: Tx,
-  name: 'hs_shipment_code_seq' | 'hs_client_code_seq',
-  n: number,
-): Promise<string[]> {
-  const query =
-    name === 'hs_shipment_code_seq'
-      ? sql`select nextval('hs_shipment_code_seq') as val from generate_series(1, ${n})`
-      : sql`select nextval('hs_client_code_seq') as val from generate_series(1, ${n})`;
-  const rows = (await tx.execute(query)) as Array<{ val: string }>;
-  if (rows.length !== n) throw new Error(`[seed-demo] No se pudieron generar ${n} consecutivos.`);
-  return rows.map((r) => String(r.val));
 }
 
 async function seed(tx: Tx): Promise<void> {
@@ -1182,8 +1074,7 @@ async function seed(tx: Tx): Promise<void> {
     if (approved && sc.payment !== 'none') {
       const dueCrc = totals!.crc;
       const paidAt = at(State.EnRutaEntrega) ?? new Date(Math.min(NOW.getTime(), approvedAt!.getTime() + DAY));
-      /** Dolares que cubren una deuda en colones sin quedarse corto por redondeo. */
-      const usdFor = (crc: number): number => Math.ceil((crc / exchangeRate) * 100) / 100;
+      const usdFor = (crc: number): number => usdToCoverCrc(crc, exchangeRate);
       const receipt = `${1_240_000 + i * 13}`;
 
       const deposit = (amount: number, status: PaymentStatus, note: string | null = null): PaymentRow => ({
