@@ -19,6 +19,7 @@ export interface ClientRateRow {
   isDefault: boolean;
   allowsCard: boolean;
   allowsBankDeposit: boolean;
+  requiresBillingReview: boolean;
   clientCount: number;
 }
 interface ListResponse {
@@ -104,6 +105,7 @@ export function TariffsScreen() {
               <th>Tarifa</th>
               <th>Precio por kg</th>
               <th>Medios de pago</th>
+              <th>Facturación</th>
               <th style={{ textAlign: 'right' }}>Acciones</th>
             </tr>
           </thead>
@@ -122,6 +124,13 @@ export function TariffsScreen() {
                     {row.allowsCard && <span className="role-chip">Tarjeta</span>}
                     {row.allowsBankDeposit && <span className="role-chip">Depósito</span>}
                   </div>
+                </td>
+                <td>
+                  {row.requiresBillingReview ? (
+                    <span className="tag-review">Requiere revisión</span>
+                  ) : (
+                    <span className="cell-sub">Automática</span>
+                  )}
                 </td>
                 <td>
                   <div className="actions">

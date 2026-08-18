@@ -6,6 +6,13 @@ node_modules/
 dist/
 .astro/
 
+# Plantillas y assets que sintetiza el CDK
+infra/cdk.out/
+infra/cdk.context.json
+
+# Adjuntos del driver de disco local (en AWS esto es un bucket)
+apps/api/uploads/
+
 # Lockfiles ajenos (este repo usa pnpm-lock.yaml)
 package-lock.json
 yarn.lock

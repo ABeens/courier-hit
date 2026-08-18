@@ -23,6 +23,13 @@ export const clientRates = pgTable(
     isDefault: boolean('is_default').notNull().default(false),
     allowsCard: boolean('allows_card').notNull().default(true),
     allowsBankDeposit: boolean('allows_bank_deposit').notNull().default(true),
+    /**
+     * La tarifa ocupa revision antes de facturar (OPS-003). El default `false` es
+     * la regla del requisito ("las demas tarifas permiten que el paquete pase a
+     * facturacion sin revision"), y de paso deja a las tarifas que ya existian
+     * facturando solas sin tocar ninguna fila.
+     */
+    requiresBillingReview: boolean('requires_billing_review').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

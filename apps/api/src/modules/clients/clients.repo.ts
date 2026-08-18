@@ -198,6 +198,7 @@ export const clientsRepo = {
       currency: clientRates.currency,
       allowsCard: clientRates.allowsCard,
       allowsBankDeposit: clientRates.allowsBankDeposit,
+      requiresBillingReview: clientRates.requiresBillingReview,
     };
 
     const [assigned] = await db

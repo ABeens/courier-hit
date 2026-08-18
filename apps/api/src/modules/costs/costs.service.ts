@@ -22,7 +22,6 @@
  *    lineas ya no se editan.
  */
 import {
-  CostCategory,
   CostLineSource,
   Currency,
   Flow,
@@ -50,7 +49,6 @@ import type {
   SuggestedCostLine,
 } from '@courier/shared';
 import { AuthErrors, CostErrors, ShipmentErrors } from '../../core/errors';
-import { clientsRepo } from '../clients/clients.repo';
 import { costServicesRepo } from '../cost-services/cost-services.repo';
 import { paymentsRepo } from '../payments/payments.repo';
 import { shipmentsRepo } from '../shipments/shipments.repo';
@@ -58,6 +56,7 @@ import { transitionsService } from '../shipments/transitions.service';
 import { exchangeRateReference } from '../settings/bccr-reference';
 import { settingsRepo } from '../settings/settings.repo';
 import { costsRepo } from './costs.repo';
+import { buildFreight } from './freight';
 
 /**
  * Fila del tramite tal como la devuelve el repo de tramites, con el casillero YA
@@ -105,37 +104,6 @@ function toLineDto(row: Awaited<ReturnType<typeof costsRepo.listLines>>[number])
     currency: row.currency,
     exchangeRate: row.exchangeRate,
     createdAt: row.createdAt.toISOString(),
-  };
-}
-
-/**
- * Linea de flete de Paqueteria: peso x precio por kg de la TARIFA EFECTIVA del
- * casillero (la asignada o, si quedo sin ninguna, la por defecto; lo resuelve
- * `clientsRepo.rateFor`).
- *
- * Se marca `auto: true` porque NO es una opcion del catalogo: es el cobro base
- * del servicio y entra solo en la factura. Null solo si el tramite todavia no
- * tiene peso (sin peso no hay flete que calcular) o si no hubo tarifa alguna.
- */
-async function buildFreight(
-  row: ShipmentRow,
-): Promise<(SuggestedCostLine & { amount: number }) | null> {
-  if (!row.weightKg) return null;
-
-  const rate = await clientsRepo.rateFor(row.clientId);
-  if (!rate) return null;
-
-  const detail = `${row.weightKg} kg × ${rate.pricePerKg} ${rate.currency}/kg`;
-  return {
-    costServiceId: null,
-    label: `Flete (${rate.rateName})`,
-    category: CostCategory.Flete,
-    source: CostLineSource.Freight,
-    percentage: null,
-    amount: roundMoney(row.weightKg * rate.pricePerKg, rate.currency),
-    currency: rate.currency,
-    detail: rate.isFallback ? `${detail} · tarifa por defecto` : detail,
-    auto: true,
   };
 }
 

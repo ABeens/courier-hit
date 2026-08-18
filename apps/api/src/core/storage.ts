@@ -2,25 +2,36 @@
  * Almacen de archivos adjuntos: comprobantes de deposito, fotos de entrega y
  * documentos de tramite.
  *
- * El contrato es deliberadamente pobre —guardar, leer, borrar por CLAVE— para
- * que el driver se pueda cambiar sin tocar a quien lo usa. Hoy escribe en disco
- * local; en AWS sera S3.
+ * El contrato es deliberadamente pobre (guardar, leer, borrar por CLAVE) para
+ * que el driver se pueda cambiar sin tocar a quien lo usa. Hay dos:
  *
- * TODO(12): driver de S3 (bucket privado + URLs firmadas). Solo cambia este
- * archivo: `put`/`get` mantienen su firma y los modulos que suben archivos
- * siguen guardando una clave opaca. Que tipos se aceptan NO es cosa del driver
- * (vive en `@courier/shared`, ver `AttachmentKind`), asi que la validacion de
- * formato sobrevive intacta al cambio.
+ *   - **disco local** (desarrollo): escribe en `UPLOADS_DIR`. Permite operar de
+ *     punta a punta sin cuenta de nube.
+ *   - **S3** (produccion): bucket privado, elegido con `UPLOADS_BUCKET`.
+ *
+ * Lo elige el entorno, no el codigo: con `UPLOADS_BUCKET` cargada se usa S3, sin
+ * ella el disco. El disco NO sirve en el servidor porque el filesystem del
+ * contenedor es efimero: cada despliegue borraria la prueba de un pago y de una
+ * entrega (docs/12 §6.2).
  *
  * La CLAVE es opaca a proposito (`<carpeta>/<uuid>.<ext>`): no incluye el nombre
  * original ni nada que el usuario controle, asi que no hay forma de armar una
  * ruta que se escape del directorio ni de deducir el archivo de otro cliente.
  * En S3 esa misma cadena es la object key, y su extension sigue siendo de donde
  * se deduce el content-type: nada de esto depende del disco.
+ *
+ * Que tipos se aceptan NO es cosa del driver (vive en `@courier/shared`, ver
+ * `AttachmentKind`), asi que la validacion de formato es comun a los dos.
  */
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import {
   DOCUMENT_ATTACHMENT,
   PROOF_ATTACHMENT,
@@ -56,20 +67,119 @@ export const StorageErrors = {
   notFound: () => new AppError('FILE_NOT_FOUND', 'Archivo no encontrado.', 404),
 };
 
-/** Raiz del almacen, resuelta una vez. */
-const root = resolve(config.UPLOADS_DIR);
-
 /**
- * Ruta absoluta de una clave, verificando que caiga DENTRO de la raiz. Las claves
- * las genera `put`, pero esta comprobacion cubre el dia en que una llegue desde
- * la BD alterada a mano.
+ * Lo unico que cambia entre disco y S3. Recibe la clave ya generada y validada:
+ * el driver no decide nombres ni acepta o rechaza formatos.
  */
-function pathFor(key: string): string {
-  const full = resolve(join(root, key));
-  if (full !== root && !full.startsWith(root + sep)) {
-    throw StorageErrors.notFound();
-  }
-  return full;
+type StorageDriver = {
+  write(key: string, body: Buffer, contentType: string): Promise<void>;
+  read(key: string): Promise<ArrayBuffer>;
+  delete(key: string): Promise<void>;
+};
+
+/** MIME de una clave, deducido de su extension. Comun a los dos drivers. */
+function contentTypeOf(key: string): string {
+  const ext = key.split('.').pop() ?? '';
+  return MIME_BY_EXTENSION[ext] ?? 'application/octet-stream';
+}
+
+// --- Driver de disco local (desarrollo) ---------------------------------------
+
+function localDriver(): StorageDriver {
+  /** Raiz del almacen, resuelta una vez. */
+  const root = resolve(config.UPLOADS_DIR);
+
+  /**
+   * Ruta absoluta de una clave, verificando que caiga DENTRO de la raiz. Las
+   * claves las genera `put`, pero esta comprobacion cubre el dia en que una
+   * llegue desde la BD alterada a mano.
+   */
+  const pathFor = (key: string): string => {
+    const full = resolve(join(root, key));
+    if (full !== root && !full.startsWith(root + sep)) {
+      throw StorageErrors.notFound();
+    }
+    return full;
+  };
+
+  return {
+    async write(key, body) {
+      const full = pathFor(key);
+      await mkdir(dirname(full), { recursive: true });
+      await writeFile(full, body);
+    },
+    async read(key) {
+      try {
+        const file = await readFile(pathFor(key));
+        // `slice` sobre el buffer subyacente: evita copiar el contenido otra vez
+        // solo para cambiar de tipo.
+        return file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
+      } catch {
+        throw StorageErrors.notFound();
+      }
+    },
+    async delete(key) {
+      try {
+        await unlink(pathFor(key));
+      } catch {
+        // ya no estaba; nada que hacer
+      }
+    },
+  };
+}
+
+// --- Driver de S3 (produccion) -------------------------------------------------
+
+function s3Driver(bucket: string): StorageDriver {
+  /**
+   * Sin credenciales explicitas: en EC2/ECS el SDK las resuelve del rol de la
+   * instancia, que es lo correcto (docs/12 §3.6). La region viene de
+   * `AWS_REGION`, obligatoria junto con el bucket (ver `core/config`).
+   */
+  const client = new S3Client({ region: config.AWS_REGION });
+
+  return {
+    async write(key, body, contentType) {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+        }),
+      );
+    },
+    async read(key) {
+      try {
+        const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+        if (!result.Body) throw StorageErrors.notFound();
+        const bytes = await result.Body.transformToByteArray();
+        return bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength,
+        ) as ArrayBuffer;
+      } catch {
+        // Cualquier fallo de lectura se presenta igual que un archivo ausente:
+        // quien pide un adjunto no puede hacer nada distinto con un 500.
+        throw StorageErrors.notFound();
+      }
+    },
+    async delete(key) {
+      // S3 no falla si la clave no existe; borrar sigue siendo idempotente.
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    },
+  };
+}
+
+const driver: StorageDriver = config.UPLOADS_BUCKET
+  ? s3Driver(config.UPLOADS_BUCKET)
+  : localDriver();
+
+if (!config.UPLOADS_BUCKET) {
+  console.warn(
+    `[storage] Adjuntos en DISCO LOCAL (${config.UPLOADS_DIR}). Solo para desarrollo: ` +
+      'en un contenedor este directorio se pierde en cada despliegue. En AWS define UPLOADS_BUCKET.',
+  );
 }
 
 export const storage = {
@@ -95,9 +205,7 @@ export const storage = {
     }
 
     const key = `${folder}/${randomUUID()}.${ext}`;
-    const full = pathFor(key);
-    await mkdir(dirname(full), { recursive: true });
-    await writeFile(full, Buffer.from(await file.arrayBuffer()));
+    await driver.write(key, Buffer.from(await file.arrayBuffer()), contentTypeOf(key));
     return key;
   },
 
@@ -107,27 +215,11 @@ export const storage = {
    * respuesta de Hono; el `Buffer` de Node no encaja en su tipo.
    */
   async get(key: string): Promise<{ body: ArrayBuffer; contentType: string }> {
-    const ext = key.split('.').pop() ?? '';
-    const contentType = MIME_BY_EXTENSION[ext] ?? 'application/octet-stream';
-    try {
-      const file = await readFile(pathFor(key));
-      // `subarray` sobre el buffer subyacente: evita copiar el contenido otra vez
-      // solo para cambiar de tipo.
-      return {
-        body: file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer,
-        contentType,
-      };
-    } catch {
-      throw StorageErrors.notFound();
-    }
+    return { body: await driver.read(key), contentType: contentTypeOf(key) };
   },
 
   /** Borra un archivo. Silencioso si ya no existe: borrar es idempotente. */
   async remove(key: string): Promise<void> {
-    try {
-      await unlink(pathFor(key));
-    } catch {
-      // ya no estaba; nada que hacer
-    }
+    await driver.delete(key);
   },
 };

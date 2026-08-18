@@ -1,0 +1,9 @@
+{
+  "name": "@courier/api-runtime",
+  "private": true,
+  "type": "module",
+  "description": "Dependencias que NO se pueden empaquetar y por eso viven en la imagen. Hoy solo el binario nativo de argon2 (ver apps/api/build.ts). Versiones EXACTAS: esto no lo cubre el lockfile del workspace.",
+  "dependencies": {
+    "@node-rs/argon2": "2.0.2"
+  }
+}

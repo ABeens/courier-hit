@@ -1,0 +1,23 @@
+{
+  "name": "@courier/infra",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Infraestructura de AWS como codigo (CDK). Ver docs/12-despliegue-aws.md.",
+  "scripts": {
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy --all",
+    "bootstrap": "cdk bootstrap",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "aws-cdk": "^2.1000.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.170.0",
+    "constructs": "^10.4.2"
+  }
+}

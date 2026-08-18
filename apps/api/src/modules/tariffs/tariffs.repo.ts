@@ -17,6 +17,7 @@ const columns = {
   isDefault: clientRates.isDefault,
   allowsCard: clientRates.allowsCard,
   allowsBankDeposit: clientRates.allowsBankDeposit,
+  requiresBillingReview: clientRates.requiresBillingReview,
 };
 
 export const tariffsRepo = {

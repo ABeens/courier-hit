@@ -781,6 +781,11 @@ select.input { cursor: pointer; padding-right: 30px; }
   color: var(--brand); background: var(--brand-softer); padding: 2px 8px; border-radius: 999px;
   vertical-align: middle;
 }
+.tag-review {
+  font-size: 11px; font-weight: 700; letter-spacing: .02em;
+  color: var(--warn); background: var(--warn-soft); padding: 2px 8px; border-radius: 999px;
+  white-space: nowrap;
+}
 .pay-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .pay-chips .role-chip { background: var(--paper-2); padding: 3px 9px; border-radius: 999px; }
 .check-row {

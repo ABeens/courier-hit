@@ -34,11 +34,18 @@ const EnvSchema = z.object({
   INVITE_TTL_HOURS: z.coerce.number().int().positive().default(72),
 
   // --- Almacen de archivos adjuntos (comprobantes de pago, fotos de entrega) ---
-  // Directorio local donde se guardan los archivos subidos. Es el driver de
-  // desarrollo: sirve para operar de punta a punta sin depender de la nube.
-  // TODO(12): en AWS esto pasa a S3 (bucket privado + URLs firmadas). El contrato
-  // de `core/storage.ts` ya esta pensado para ese cambio: se sustituye el driver,
-  // no los modulos que lo usan.
+  /**
+   * Bucket privado de S3 donde viven los adjuntos en AWS. ES EL INTERRUPTOR DEL
+   * DRIVER: con un valor aqui, `core/storage.ts` habla con S3; sin el, escribe
+   * en `UPLOADS_DIR`. No hay bandera aparte porque no existe un estado valido de
+   * "S3 encendido sin bucket".
+   */
+  UPLOADS_BUCKET: optionalEnv(),
+  /**
+   * Directorio local donde se guardan los archivos subidos. Es el driver de
+   * DESARROLLO: sirve para operar de punta a punta sin depender de la nube. En
+   * un contenedor no vale, el filesystem es efimero (docs/12 §6.2).
+   */
   UPLOADS_DIR: z.string().default('./uploads'),
   /** Techo del tamaño de un adjunto. Una foto de celular ronda los 3-5 MB. */
   UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024),
@@ -52,7 +59,12 @@ const EnvSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
   MAIL_FROM: z.string().default('HS Global Services <no-reply@hsglobalcr.com>'),
-  /** Region de SES. Obligatoria con MAIL_ENABLED=true (ver superRefine). */
+  /**
+   * Region de los servicios de AWS (SES y el bucket de adjuntos). Obligatoria en
+   * cuanto se enciende cualquiera de los dos (ver superRefine). El SDK sabria
+   * deducirla del metadata de la instancia, pero preferimos que este escrita:
+   * un bucket en otra region falla en la primera subida, no al arrancar.
+   */
   AWS_REGION: optionalEnv(),
   /**
    * Credenciales de SES. OPCIONALES a proposito: en EC2/ECS lo correcto es el rol
@@ -277,6 +289,29 @@ const EnvSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['AWS_REGION'],
       message: 'AWS_REGION es obligatoria con MAIL_ENABLED=true (region de SES).',
+    });
+  }
+
+  // Adjuntos en S3: sin region el SDK no sabe a que endpoint hablar.
+  if (env.UPLOADS_BUCKET && !env.AWS_REGION) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['AWS_REGION'],
+      message: 'AWS_REGION es obligatoria con UPLOADS_BUCKET (region del bucket de adjuntos).',
+    });
+  }
+
+  // En produccion el disco local NO es un almacen: el filesystem del contenedor
+  // se borra en cada despliegue, y ahi viven los comprobantes de deposito y las
+  // fotos de entrega, que son la prueba de un pago y de una entrega. Igual que
+  // con las pasarelas simuladas, esto no se degrada en silencio: no arranca.
+  if (env.NODE_ENV === 'production' && !env.UPLOADS_BUCKET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['UPLOADS_BUCKET'],
+      message:
+        'UPLOADS_BUCKET es obligatoria con NODE_ENV=production: en disco local los adjuntos ' +
+        'se pierden en cada despliegue.',
     });
   }
 

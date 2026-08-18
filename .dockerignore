@@ -1,0 +1,24 @@
+# El contexto de build es la raiz del repo (ver apps/api/Dockerfile). Todo lo
+# que no entre en la imagen se excluye aqui: cada MB del contexto es tiempo de
+# subida al daemon en cada build.
+**/node_modules
+**/dist
+**/.astro
+**/.turbo
+
+# Secretos y estado local: NUNCA dentro de una imagen.
+**/.env
+**/.env.*
+!**/.env.example
+apps/api/uploads
+apps/api/.helga-mock.json
+
+# Nada de esto lo necesita la API.
+backup
+docs
+source_docs
+infra/cdk.out
+.git
+.github
+.claude
+**/*.log
