@@ -17,10 +17,15 @@
  *
  * Las tres primeras salen de @courier/shared. Aqui no se decide ninguna regla: se
  * traduce cada guarda a la consulta que la responde.
+ *
+ * Sobre las cuatro va un paso 5, que no es una barrera sino un ENCADENAMIENTO: al
+ * entrar a "Facturación en proceso" con una tarifa que no ocupa revisión, el
+ * tramite se factura solo y sigue hasta cobro (OPS-003, ver `autoBillingService`).
  */
 import {
   Condition,
   STATE_LABELS,
+  State,
   can,
   canTransition,
   conditionsFor,
@@ -29,13 +34,9 @@ import {
   permissionFor,
   statesOf,
 } from '@courier/shared';
-import type {
-  CorrectStateInput,
-  Session,
-  State,
-  TransitionShipmentInput,
-} from '@courier/shared';
+import type { CorrectStateInput, Session, TransitionShipmentInput } from '@courier/shared';
 import { AuthErrors, ShipmentErrors, TransitionErrors } from '../../core/errors';
+import { autoBillingService } from '../costs/auto-billing.service';
 import { notificationsService } from '../notifications/notifications.service';
 import { paymentsRepo } from '../payments/payments.repo';
 import { shipmentsRepo } from './shipments.repo';
@@ -107,7 +108,7 @@ export const transitionsService = {
     id: string,
     input: TransitionShipmentInput,
     options: { skipPermission?: boolean } = {},
-  ) {
+  ): Promise<ShipmentRow> {
     const row = await shipmentsRepo.findById(id);
     if (!row) throw ShipmentErrors.notFound();
     assertOperable(row);
@@ -132,6 +133,30 @@ export const transitionsService = {
     // 4. Efectos: el evento y las automatizaciones del estado.
     await shipmentsRepo.transition(id, to, session.userId, input.note);
     await notificationsService.onStateChange(row, to);
+
+    /**
+     * 5. FACTURACION AUTOMATICA (OPS-003). Entrar a "Facturacion en proceso" con
+     * una tarifa que NO ocupa revision no deja el paquete esperando a nadie: el
+     * sistema le cotiza el flete, congela la factura y lo sigue hasta cobro.
+     *
+     * Cuelga de aqui y no de la recepcion porque este es el punto UNICO de cambio
+     * de estado: da igual si el paquete entro a facturacion por el escaner de
+     * bodega o por el avance manual del panel, la tarifa manda igual.
+     *
+     * El segundo tramo se hace con `transition` (no tocando el repo) para que la
+     * guarda Condition.RequiresInvoiceAmount se compruebe de verdad contra el
+     * total recien congelado y salga el correo de "Pendiente pago".
+     * `skipPermission`: avanzar es consecuencia de una factura que armo el
+     * sistema, no un acto que se le pueda exigir a quien escaneo el bulto.
+     */
+    if (to === State.FacturacionEnProceso && (await autoBillingService.tryAutoInvoice(session, row))) {
+      return this.transition(
+        session,
+        id,
+        { state: State.EnBodegaPendientePago, note: 'Costos aplicados automáticamente (tarifa sin revisión).' },
+        { skipPermission: true },
+      );
+    }
 
     const updated = await shipmentsRepo.findById(id);
     if (!updated) throw ShipmentErrors.notFound();

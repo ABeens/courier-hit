@@ -1,7 +1,8 @@
 /**
  * Modal crear / editar tarifa preferencial de cliente. Campos: nombre, precio por
- * kg, medios de pago (tarjeta / deposito) y si es la tarifa por defecto. En editar
- * solo envia lo que cambio. La API revalida (nombre unico, invariante de default).
+ * kg, medios de pago (tarjeta / deposito), si ocupa revision antes de facturar y
+ * si es la tarifa por defecto. En editar solo envia lo que cambio. La API revalida
+ * (nombre unico, invariante de default).
  */
 import { useState } from 'react';
 import { ModalOverlay } from '../components/ModalOverlay';
@@ -29,6 +30,8 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
   const lockCurrency = CLIENT_RATE_CURRENCIES.length === 1;
   const [allowsCard, setAllowsCard] = useState(row?.allowsCard ?? true);
   const [allowsBankDeposit, setAllowsBankDeposit] = useState(row?.allowsBankDeposit ?? true);
+  // Sin marcar, el paquete se factura solo al recibirlo en bodega (OPS-003).
+  const [requiresBillingReview, setRequiresBillingReview] = useState(row?.requiresBillingReview ?? false);
   // Una tarifa por defecto no se puede "desmarcar" desde aqui: solo se promueve otra.
   const [isDefault, setIsDefault] = useState(row?.isDefault ?? false);
   const lockDefault = mode === 'edit' && (row?.isDefault ?? false);
@@ -48,6 +51,7 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
           currency,
           allowsCard,
           allowsBankDeposit,
+          requiresBillingReview,
           isDefault,
         });
         if (!parsed.success) {
@@ -65,6 +69,9 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
         if (currency !== row.currency) patch.currency = currency;
         if (allowsCard !== row.allowsCard) patch.allowsCard = allowsCard;
         if (allowsBankDeposit !== row.allowsBankDeposit) patch.allowsBankDeposit = allowsBankDeposit;
+        if (requiresBillingReview !== row.requiresBillingReview) {
+          patch.requiresBillingReview = requiresBillingReview;
+        }
         if (!row.isDefault && isDefault) patch.isDefault = true;
         if (Object.keys(patch).length === 0) {
           onSaved();
@@ -153,6 +160,22 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
               />
               Depósito bancario
             </label>
+          </div>
+
+          <div>
+            <span className="field-label">Facturación</span>
+            <label className="check-row">
+              <input
+                type="checkbox" checked={requiresBillingReview}
+                onChange={(e) => setRequiresBillingReview(e.target.checked)}
+              />
+              Ocupa revisión antes de facturar
+            </label>
+            <div className="field-hint">
+              {requiresBillingReview
+                ? 'Al recibir el paquete queda en «Facturación en proceso» esperando que un operativo o un administrador le cargue los costos y apruebe.'
+                : 'Al recibir el paquete el sistema le aplica el flete y lo pasa directo a «En bodega - Pendiente pago», sin revisión.'}
+            </div>
           </div>
 
           <div>

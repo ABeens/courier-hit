@@ -1,0 +1,1 @@
+ALTER TABLE "client_rates" ADD COLUMN "requires_billing_review" boolean DEFAULT false NOT NULL;

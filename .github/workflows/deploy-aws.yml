@@ -1,0 +1,180 @@
+# Despliegue a AWS (docs/12 §6.3).
+#
+# Dos trabajos independientes porque son dos artefactos distintos y ninguno
+# necesita al otro: el sitio va a S3 + CloudFront, la API va a ECR y de ahi a la
+# instancia. Si uno falla, el otro no se queda a medias.
+#
+# Sin llaves de acceso: GitHub se identifica con OIDC y asume el rol que crea el
+# CDK (`courier-github-deploy`). El unico secreto del repositorio es su ARN.
+name: Despliegue a AWS
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/deploy-aws.yml'
+  workflow_dispatch:
+
+# Un despliegue a la vez: dos corridas simultaneas podrian aplicar migraciones
+# cruzadas. Sin `cancel-in-progress`: cancelar a media migracion es peor.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  BASE_STACK: courier-prod-base
+  APP_STACK: courier-prod-app
+
+permissions:
+  id-token: write # necesario para OIDC
+  contents: read
+
+jobs:
+  web:
+    name: Sitio (S3 + CloudFront)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Solo el subarbol de la web: sin el filtro tambien se descargaria el CDK,
+      # que aqui no pinta nada y son cientos de MB.
+      - run: pnpm install --frozen-lockfile --filter @courier/web...
+
+      # Sin PUBLIC_API_BASE: en produccion la base es relativa (mismo host que
+      # la API). Ver apps/web/src/portal/lib/api.ts.
+      - run: pnpm --filter @courier/web build
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Leer nombres del stack
+        run: |
+          # Una consulta por salida: pedir las dos a la vez devolveria los valores
+          # en el orden de la plantilla, no en el del filtro, y se cruzarian.
+          output() {
+            aws cloudformation describe-stacks --stack-name "$APP_STACK" \
+              --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+          }
+          echo "BUCKET=$(output WebBucketName)" >> "$GITHUB_ENV"
+          echo "DISTRIBUTION=$(output DistributionId)" >> "$GITHUB_ENV"
+
+      - name: Subir a S3
+        working-directory: apps/web/dist
+        run: |
+          # Primero los assets con hash en el nombre: son inmutables, se cachean
+          # un año. Despues el HTML, que apunta a ellos y no se cachea nunca.
+          # En ese orden nadie recibe un HTML nuevo que pida un asset que aun no
+          # existe.
+          aws s3 sync . "s3://$BUCKET" --delete \
+            --exclude "*.html" \
+            --cache-control "public, max-age=31536000, immutable"
+          aws s3 sync . "s3://$BUCKET" --delete \
+            --exclude "*" --include "*.html" \
+            --cache-control "no-cache"
+
+      - name: Invalidar CloudFront
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION" --paths "/*" >/dev/null
+
+  api:
+    name: API (ECR + EC2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      # La instancia es Graviton (arm64) y el runner es x86. QEMU emula la etapa
+      # final; la pesada (el bundle) corre nativa, ver apps/api/Dockerfile.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Leer el repositorio de imagenes
+        run: |
+          REPOSITORY=$(aws cloudformation describe-stacks --stack-name "$BASE_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='EcrRepositoryUri'].OutputValue" \
+            --output text)
+          echo "REPOSITORY=$REPOSITORY" >> "$GITHUB_ENV"
+
+      - name: Construir y publicar la imagen
+        uses: docker/build-push-action@v6
+        with:
+          # La raiz del repo: la API depende de @courier/shared.
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.REPOSITORY }}:${{ github.sha }}
+            ${{ env.REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Localizar la instancia
+        run: |
+          # Por etiqueta y no por id: la instancia se reemplaza cuando cambia su
+          # script de arranque y el id deja de ser el mismo.
+          INSTANCE=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=courier-api" \
+                      "Name=instance-state-name,Values=running" \
+            --query "Reservations[].Instances[].InstanceId" --output text)
+          if [ -z "$INSTANCE" ]; then
+            echo "::error::No hay ninguna instancia 'courier-api' en marcha."
+            exit 1
+          fi
+          echo "INSTANCE=$INSTANCE" >> "$GITHUB_ENV"
+
+      - name: Desplegar en la instancia
+        run: |
+          # El pipeline no entra a la maquina: le pide que corra su propio script
+          # de despliegue, que aplica migraciones y reinicia el servicio.
+          COMMAND=$(aws ssm send-command \
+            --instance-ids "$INSTANCE" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy ${GITHUB_SHA::7}" \
+            --parameters commands="/opt/courier/deploy.sh $GITHUB_SHA" \
+            --timeout-seconds 900 \
+            --query "Command.CommandId" --output text)
+
+          echo "Comando $COMMAND en $INSTANCE"
+
+          # Espera propia en vez del waiter de la CLI: el suyo se rinde a los 100
+          # segundos y aqui hay una descarga de imagen y unas migraciones.
+          for _ in $(seq 1 120); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND" --instance-id "$INSTANCE" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 10
+          done
+
+          aws ssm get-command-invocation --command-id "$COMMAND" --instance-id "$INSTANCE" \
+            --query StandardOutputContent --output text
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "::error::El despliegue termino en estado $STATUS"
+            aws ssm get-command-invocation --command-id "$COMMAND" --instance-id "$INSTANCE" \
+              --query StandardErrorContent --output text
+            exit 1
+          fi

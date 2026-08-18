@@ -9,7 +9,9 @@
  *
  * Dos desenlaces, los dos del manual:
  *   - EL TRAMITE EXISTE -> se mueve a "Facturación en proceso", que es el punto
- *     donde arranca la carga de costos.
+ *     donde arranca la carga de costos. Si la tarifa del casillero no ocupa
+ *     revisión (OPS-003), ahí mismo se le aplica el flete y el paquete sigue
+ *     solo hasta "En bodega - Pendiente pago": el escaneo lo deja ya cobrable.
  *   - NO EXISTE -> se responde con un codigo estable para que la web abra el alta
  *     manual. No es un error de la operacion: es una rama prevista del flujo.
  *
@@ -37,9 +39,17 @@ export const receptionService = {
     const row = await shipmentsRepo.findById(match.id);
     if (!row) throw ReceptionErrors.unknownHawb(input.hawb);
 
-    // Escanear dos veces el mismo bulto es normal en una mesa de bodega: se
-    // responde con un mensaje claro en vez de con un error de transicion críptico.
-    if (row.state === State.FacturacionEnProceso) {
+    /**
+     * Escanear dos veces el mismo bulto es normal en una mesa de bodega: se
+     * responde con un mensaje claro en vez de con un error de transicion críptico.
+     *
+     * Los DOS estados son desenlaces de un escaneo anterior: "Facturación en
+     * proceso" si la tarifa ocupa revisión y "En bodega - Pendiente pago" si se
+     * facturó sola (OPS-003). Sin el segundo, repasar la pistola sobre un paquete
+     * de tarifa normal devolveria un "no se puede pasar de X a Y" que no le dice
+     * nada al operativo.
+     */
+    if (row.state === State.FacturacionEnProceso || row.state === State.EnBodegaPendientePago) {
       throw ReceptionErrors.alreadyReceived(STATE_LABELS[row.state]);
     }
 

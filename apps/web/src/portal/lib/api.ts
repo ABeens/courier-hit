@@ -3,7 +3,17 @@
  * sesion (credentials: include). La seguridad real esta en la API (docs/04):
  * aqui solo consumimos y mostramos errores en el contrato unico {error:{code,message}}.
  */
-const BASE = import.meta.env.PUBLIC_API_BASE ?? 'http://localhost:3001';
+/**
+ * Origen de la API. En produccion la API se sirve bajo el MISMO host que la web
+ * (`/api/*` en CloudFront, docs/12 §2.2), asi que la base vacia es la correcta:
+ * las peticiones salen relativas y la cookie de sesion es same-origin sin
+ * depender de CORS. En desarrollo son dos servidores distintos.
+ *
+ * `PUBLIC_API_BASE` sigue mandando por encima de los dos, para el dia en que la
+ * API viva en un subdominio propio.
+ */
+const BASE =
+  import.meta.env.PUBLIC_API_BASE ?? (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
 /**
  * Origen de la API. Se exporta para las descargas y las imagenes, que no pasan

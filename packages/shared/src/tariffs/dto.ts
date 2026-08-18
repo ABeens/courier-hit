@@ -9,6 +9,9 @@
  *     tarifa por defecto (con aviso previo en la UI).
  *   - Cada tarifa indica si admite cobro por tarjeta de credito y/o por deposito
  *     bancario (al menos uno).
+ *   - Cada tarifa indica si OCUPA REVISION antes de facturar (OPS-003): con la
+ *     marca activa el paquete espera a que un operativo cargue los costos; sin
+ *     ella el sistema le factura el flete solo y lo pasa a cobro.
  *
  * Nota: las "tarifas fijas" del manual (Permisos de Importacion, Asesoria,
  * Impuesto de aduana) NO viven aqui: son el catalogo de servicios de costo
@@ -30,6 +33,14 @@ export interface ClientRate {
   isDefault: boolean;
   allowsCard: boolean;
   allowsBankDeposit: boolean;
+  /**
+   * La tarifa ocupa REVISION antes de facturarse (OPS-003). Con la marca activa
+   * el paquete se queda en "Facturacion en proceso" esperando que un operativo o
+   * un administrador le cargue los costos adicionales y apruebe. Sin ella (el
+   * caso de todas las demas tarifas) el sistema factura solo el flete al recibir
+   * el paquete en bodega y lo avanza a "En bodega - Pendiente pago".
+   */
+  requiresBillingReview: boolean;
   /** Cuantos casilleros usan esta tarifa (para el aviso al eliminar). */
   clientCount: number;
 }
@@ -61,6 +72,8 @@ export const createClientRateSchema = z
     currency: currencySchema,
     allowsCard: z.boolean(),
     allowsBankDeposit: z.boolean(),
+    /** Ausente = false: una tarifa normal factura sola, que es el caso corriente. */
+    requiresBillingReview: z.boolean().optional(),
     isDefault: z.boolean().optional(),
   })
   .refine((o) => o.allowsCard || o.allowsBankDeposit, {
@@ -81,6 +94,7 @@ export const updateClientRateSchema = z
     currency: currencySchema.optional(),
     allowsCard: z.boolean().optional(),
     allowsBankDeposit: z.boolean().optional(),
+    requiresBillingReview: z.boolean().optional(),
     isDefault: z.boolean().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No hay cambios que aplicar.' });
