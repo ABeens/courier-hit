@@ -121,18 +121,35 @@ No puede autoregistrarse (eso es solo para clientes) ni recibir invitación
 (todavía no hay correo saliente), así que se siembra una vez:
 
 ```bash
-INSTANCE=$(aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=courier-api" "Name=instance-state-name,Values=running" \
-  --query "Reservations[].Instances[].InstanceId" --output text)
-
-aws ssm start-session --target "$INSTANCE"
-# ya dentro de la máquina:
-sudo docker run --rm --env-file /opt/courier/api.env \
-  $(grep -oP '(?<=IMAGE=).*' /opt/courier/image.env) node dist/seed.js
+bash infra/scripts/deploy-local.sh seed
 ```
 
 Imprime la contraseña generada **una sola vez**. También crea las tarifas de
-cliente por defecto si la tabla está vacía.
+cliente por defecto si la tabla está vacía. Es idempotente: repetirlo no rompe
+nada.
+
+## Desplegar sin GitHub
+
+`infra/scripts/deploy-local.sh` hace lo mismo que el workflow, desde una máquina.
+Son dos caminos al mismo sitio y hay que mantenerlos en paralelo: si cambia uno,
+cambia el otro.
+
+```bash
+bash infra/scripts/deploy-local.sh all   # API y sitio
+bash infra/scripts/deploy-local.sh api   # solo la API
+bash infra/scripts/deploy-local.sh web   # solo el sitio
+```
+
+Sirve para dos cosas:
+
+- **El primer despliegue**, cuando el secreto de GitHub todavía no está puesto.
+  Con esto, los pasos 5 y 7 de arriba dejan de bloquear: se despliega ya y se
+  conecta GitHub después, para que los siguientes sean automáticos.
+- **La salida de emergencia** el día que el pipeline no esté disponible.
+
+Necesita `aws` autenticada, `docker` con buildx y `pnpm`. Los nombres de bucket,
+repositorio y distribución los lee de las salidas de los stacks, así que no hay
+nada que copiar a mano.
 
 ## Operación
 

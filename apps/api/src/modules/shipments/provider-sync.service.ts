@@ -37,6 +37,7 @@ import type { Session } from '@courier/shared';
 import type { HelgaPackageStatus } from '../../integrations/helga/helga.types';
 import { isHelgaEnabled, fetchHelgaPackageState } from '../../integrations/helga/helga.client';
 import { notificationsService } from '../notifications/notifications.service';
+import type { NotifiableShipment } from '../notifications/notifications.service';
 import { providerSyncRepo } from './provider-sync.repo';
 import { shipmentsRepo } from './shipments.repo';
 
@@ -48,6 +49,70 @@ const PROVIDER_LAST_STATE = State.EnAduanas;
 
 /** Techo de envios a consultar por corrida (una llamada a Helga por cada uno). */
 const SYNC_BATCH = 200;
+
+/**
+ * Cuantos avisos de cambio de estado se envian a la vez al vaciar la cola (ver
+ * `flushNotices`). Bajo a proposito: el objetivo es no serializar 200 llamadas a
+ * SES, no inundarlo. SES limita los envios por segundo y pasarse solo consigue
+ * que empiece a rechazar.
+ */
+const NOTIFY_CONCURRENCY = 5;
+
+/** Un aviso de cambio de estado pendiente de enviar, encolado durante la pasada. */
+interface PendingNotice {
+  shipment: NotifiableShipment;
+  state: State;
+}
+
+/**
+ * Envia los avisos encolados durante la pasada, de a `NOTIFY_CONCURRENCY`.
+ *
+ * POR QUE NO SE ENVIAN EN EL BUCLE. Cada aviso es una consulta a la base (el
+ * dueño del paquete) mas una llamada a SES. Hacerlo dentro del bucle principal
+ * los pone en serie con las consultas a Helga: en una pasada donde avanza una
+ * planilla entera, eso son cientos de idas y vueltas a SES sumadas al reloj de la
+ * corrida, con el advisory lock tomado todo ese rato. Encolados y vaciados aqui,
+ * la parte lenta corre en paralelo y no le pisa el turno a la sincronizacion.
+ *
+ * Los avisos de un MISMO tramite se mandan en orden (un paquete que avanza dos
+ * estados no puede recibir los correos al reves); los de tramites distintos van
+ * en paralelo.
+ *
+ * Un aviso que falla no arrastra a los demas. `mailer.send` ya se traga sus
+ * errores, pero la consulta del destinatario no: sin este try/catch, una caida de
+ * la base al buscar el dueño abortaria la corrida entera.
+ */
+async function flushNotices(notices: PendingNotice[]): Promise<void> {
+  if (notices.length === 0) return;
+
+  const byShipment = new Map<string, PendingNotice[]>();
+  for (const notice of notices) {
+    const queued = byShipment.get(notice.shipment.id);
+    if (queued) queued.push(notice);
+    else byShipment.set(notice.shipment.id, [notice]);
+  }
+
+  const groups = [...byShipment.values()];
+  let next = 0;
+
+  async function worker(): Promise<void> {
+    while (next < groups.length) {
+      const group = groups[next++];
+      if (!group) break;
+      for (const { shipment, state } of group) {
+        try {
+          await notificationsService.onStateChange(shipment, state);
+        } catch (err) {
+          console.error(`[helga] no se pudo avisar el paso a ${state} de ${shipment.tracking}:`, err);
+        }
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(NOTIFY_CONCURRENCY, groups.length) }, () => worker()),
+  );
+}
 
 /**
  * Helga a veces reporta el peso como cadena ("1.38"); lo normaliza a numero.
@@ -108,6 +173,9 @@ export const providerSyncService = {
     }
 
     const pending = await providerSyncRepo.shipmentsInProviderTramo(SYNC_BATCH);
+    // Los avisos al cliente se acumulan aqui y salen todos al final, fuera del
+    // bucle: ver `flushNotices`.
+    const notices: PendingNotice[] = [];
 
     for (const shipment of pending) {
       let pkg;
@@ -159,9 +227,11 @@ export const providerSyncService = {
       if (mapping.state === shipment.state) continue;
 
       const flow = flowForType(shipment.shipmentType);
-      const advanced = await this.advanceTowards(session, shipment, flow, mapping.state);
+      const advanced = await this.advanceTowards(session, shipment, flow, mapping.state, notices);
       report.advanced += advanced;
     }
+
+    await flushNotices(notices);
 
     return report;
   },
@@ -239,12 +309,17 @@ export const providerSyncService = {
    * PLANILLA DE ENTREGA"), pero nuestra maquina exige secuencia estricta. Avanzar
    * de uno en uno respeta esa regla y deja en el historial los estados
    * intermedios, que es lo que el cliente ve como seguimiento.
+   *
+   * No manda los correos: los ENCOLA en `notices`. El avance del tramite ya quedo
+   * guardado en la base y no depende de que el aviso salga, asi que esperar aqui
+   * a SES solo alargaria la corrida (ver `flushNotices`).
    */
   async advanceTowards(
     session: Session,
     shipment: { id: string; state: State; shipmentType: ShipmentType; tracking: string; description: string },
     flow: Flow,
     target: State,
+    notices: PendingNotice[],
   ): Promise<number> {
     if (flow !== Flow.Paqueteria) return 0;
 
@@ -272,7 +347,7 @@ export const providerSyncService = {
         session.userId,
         'Actualizado desde el operador en Miami.',
       );
-      await notificationsService.onStateChange(shipment, next);
+      notices.push({ shipment, state: next });
       current = next;
       moved += 1;
     }
