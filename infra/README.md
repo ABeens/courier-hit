@@ -80,10 +80,8 @@ put ONVO_PUBLIC_KEY     '...'
 put ONVO_SECRET_KEY     '...'
 put ONVO_WEBHOOK_SECRET '...'
 
-# BCCR (tasa de referencia). Opcional: encenderlo sin credenciales no rompe nada.
-put BCCR_NAME  '...'
-put BCCR_EMAIL '...'
-put BCCR_TOKEN '...'
+# La tasa de cambio de referencia (HACIENDA_*) NO aparece aquí: la API de
+# Hacienda es pública y anónima, así que no tiene ninguna credencial que cargar.
 ```
 
 La contraseña de PostgreSQL **no está en esta lista a propósito**: la genera AWS,

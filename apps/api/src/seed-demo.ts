@@ -135,6 +135,7 @@ const STAFF: readonly StaffSpec[] = [
   { handle: 'jose.alfaro', name: 'José Alfaro', role: Role.Admin, phone: '88110022' },
   { handle: 'ana.soto', name: 'Ana Soto', role: Role.ServicioCliente, phone: '87450199' },
   { handle: 'carlos.mena', name: 'Carlos Mena', role: Role.Operativo, phone: '83920477' },
+  { handle: 'hillary.jimenez', name: 'Hillary Jiménez', role: Role.Bodega, phone: '87330544' },
   { handle: 'diana.rojas', name: 'Diana Rojas', role: Role.Financiero, phone: '86031588' },
   { handle: 'luis.vargas', name: 'Luis Vargas', role: Role.Mensajeria, phone: '89660234' },
   { handle: 'maria.chaves', name: 'María Chaves', role: Role.Mensajeria, phone: '84770911' },

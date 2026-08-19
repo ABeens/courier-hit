@@ -10,7 +10,8 @@
  *    esta asociado a una tarifa que no permite pago por tarjeta de credito no
  *    debe mostrar esa opcion". Ocultarla en la UI no basta: se revalida aqui.
  * 3. EL DEPOSITO NACE PENDIENTE, LA TARJETA NACE CONFIRMADA. Subir un comprobante
- *    no es cobrar; un cargo aprobado por la pasarela si lo es.
+ *    no es cobrar; un cargo aprobado por la pasarela si lo es. La unica excepcion
+ *    es el deposito que registra quien ademas puede aprobarlo (ver `record`).
  * 4. "PAGADO" SE DERIVA, NO SE GUARDA. `isSettled` de @courier/shared responde
  *    contra los pagos confirmados. No hay un flag `pagado` que pueda mentir.
  * 5. EL PAGO NO MUEVE EL TRAMITE. Confirmar un pago cumple la guarda
@@ -32,6 +33,7 @@ import {
   isSettled,
   outstandingCrc,
   pendingAmount,
+  recordedPaymentStatus,
   roundMoney,
   settledAmount,
 } from '@courier/shared';
@@ -100,7 +102,7 @@ function toDto(row: NonNullable<PaymentRowView>): PaymentDto {
  *
  * El respaldo para el caso raro de una factura sin componente en dolares
  * (cociente indefinido) es la tasa GLOBAL del sistema, la que fijo quien tiene
- * `exchange_rate.write`. No el BCCR: ese dato es referencia para decidir la
+ * `exchange_rate.write`. No la referencia publicada: ese dato sirve para decidir la
  * global, no un valor con el que se guarde un monto. Si tampoco hay global, no
  * se inventa: se falla, porque guardar un monto sin tasa es justo lo que la
  * regla prohibe.
@@ -358,11 +360,30 @@ export const paymentsService = {
     return { payment: toDto(row), intent };
   },
 
-  /** Adjunta el comprobante del deposito a un pago propio aun pendiente. */
+  /**
+   * Adjunta el comprobante del deposito. Es el RESPALDO del abono, no parte de
+   * resolverlo, y por eso la ventana no es la misma para todos:
+   *
+   *   - el CLIENTE solo alcanza su pago mientras esta PENDIENTE. Su comprobante
+   *     es la peticion de que le validen el deposito; una vez resuelta, cambiar
+   *     el archivo seria mover la prueba debajo de una decision ya tomada;
+   *   - el STAFF tambien lo adjunta a uno ya CONFIRMADO, porque el administrador
+   *     registra el abono confirmado de un solo golpe (`record`) y el archivo va
+   *     en una segunda peticion: sin esta ventana, el unico deposito que no
+   *     podria llevar respaldo seria justo el que asienta quien lo valido.
+   *
+   * A un abono RECHAZADO no se le adjunta nada: no hay cobro que respaldar, y el
+   * cliente que quiera reintentar registra otro.
+   */
   async attachReceipt(session: Session, paymentId: string, file: File): Promise<PaymentDto> {
     const payment = await paymentsRepo.findById(paymentId);
     if (!payment) throw PaymentErrors.notFound();
-    if (payment.status !== PaymentStatus.Pendiente) throw PaymentErrors.alreadyResolved();
+
+    const staff = session.role !== Role.Client;
+    const open =
+      payment.status === PaymentStatus.Pendiente ||
+      (staff && payment.status === PaymentStatus.Confirmado);
+    if (!open) throw PaymentErrors.alreadyResolved();
 
     const shipment = await shipmentsRepo.findById(payment.shipmentId);
     if (!shipment) throw ShipmentErrors.notFound();
@@ -380,8 +401,23 @@ export const paymentsService = {
   },
 
   /**
-   * El staff registra un deposito ya recibido ("Informacion de Pago" del manual).
-   * Nace CONFIRMADO: quien lo digita es quien lo vio en el estado de cuenta.
+   * El staff registra un deposito que el cliente ya hizo ("Informacion de Pago"
+   * del manual), tipicamente porque le mando el comprobante por fuera del portal.
+   *
+   * CON QUE SITUACION NACE LO DECIDE EL PERMISO, NO EL CUERPO
+   * (`recordedPaymentStatus`):
+   *
+   *   - el Operativo (`payments.record`) lo deja PENDIENTE. El tramite pasa a
+   *     "Pagado - en validacion": queda constancia de quien lo asento y con que
+   *     respaldo, pero el dinero no se da por recibido y
+   *     Condition.RequiresConfirmedPayment sigue sin cumplirse, asi que el
+   *     paquete no sale a ruta por haberlo digitado;
+   *   - el Administrador (`payments.validate`) lo deja CONFIRMADO, porque es el
+   *     mismo que lo coteja contra el estado de cuenta y no tiene sentido que se
+   *     resuelva a si mismo un abono en un segundo paso.
+   *
+   * QUIEN lo hizo queda en la fila (`createdBy`, y `confirmedBy` solo si ademas
+   * lo aprobo): son dos sellos distintos justamente porque son dos actos.
    */
   async record(session: Session, input: RecordPaymentInput): Promise<PaymentDto> {
     const shipment = await loadBillableShipment(input.shipmentId);
@@ -390,16 +426,23 @@ export const paymentsService = {
      * La tasa es un valor general del sistema (ver `canSetExchangeRate`): quien
      * no puede fijarla registra el deposito con la de la factura, que es ademas
      * la que cuadra el abono con lo cobrado. Sin esta guarda, el permiso seria
-     * cosmetico: `payments.validate` alcanza este endpoint y el cuerpo trae tasa.
+     * cosmetico: el cuerpo admite tasa y el endpoint lo alcanza el Operativo.
+     *
+     * El `??` cubre al administrador que no la digita: puede fijarla, pero si no
+     * la manda se cae a la misma fuente que el resto. En ningun camino se guarda
+     * un monto sin tasa (regla M5).
      */
-    const exchangeRate = canSetExchangeRate(session.role)
-      ? input.exchangeRate
-      : invoiceExchangeRate(shipment, await settingsRepo.currentExchangeRate());
+    const exchangeRate =
+      (canSetExchangeRate(session.role) ? input.exchangeRate : undefined) ??
+      invoiceExchangeRate(shipment, await settingsRepo.currentExchangeRate());
+
+    const status = recordedPaymentStatus(session.role);
+    const confirmed = status === PaymentStatus.Confirmado;
 
     const id = await paymentsRepo.insert({
       shipmentId: input.shipmentId,
       method: PaymentMethod.DepositoBancario,
-      status: PaymentStatus.Confirmado,
+      status,
       amount: roundMoney(input.amount, input.currency),
       currency: input.currency,
       exchangeRate,
@@ -408,8 +451,10 @@ export const paymentsService = {
       depositedAt: new Date(input.depositedAt),
       note: input.note ?? null,
       createdBy: session.userId,
-      confirmedBy: session.userId,
-      confirmedAt: new Date(),
+      // Sin aprobacion no hay sello de aprobacion: un `confirmedBy` puesto al
+      // registrar diria que alguien valido un abono que sigue en la bandeja.
+      confirmedBy: confirmed ? session.userId : null,
+      confirmedAt: confirmed ? new Date() : null,
     });
 
     const row = await paymentsRepo.findById(id);

@@ -4,7 +4,13 @@
  *
  *   - el CLIENTE consulta lo que debe, inicia el pago y sube su comprobante
  *     (package.pay, scope Own: el servicio acota al casillero de la sesion);
- *   - el STAFF registra depositos y valida los pendientes (payments.validate).
+ *   - el STAFF registra depositos con su comprobante (payments.record);
+ *   - el ADMINISTRADOR ademas los aprueba o los rechaza (payments.validate).
+ *
+ * Los dos ultimos son permisos distintos a proposito: el Operativo asienta lo
+ * que el cliente le manda y el abono queda en validacion; darlo por cobrado es
+ * del administrador. Por eso ni `/` (la bandeja) ni `/:id/resolve` aflojan a
+ * `payments.record`.
  *
  * El webhook de la pasarela queda FUERA de la sesion: lo llama Onvo, no un
  * navegador. Su autenticacion es la firma del cuerpo, no una cookie.
@@ -66,8 +72,20 @@ paymentsRoutes.post('/webhook/onvo', async (c) => {
 
 paymentsRoutes.use('*', requireSession());
 
-/** Puede consultar pagos: el staff (todos) o el cliente (los suyos). */
-const canRead = requireAnyPermission(Permission.PackagePay, Permission.PaymentsValidate);
+/**
+ * Puede consultar pagos y mover su comprobante: el staff que los registra o los
+ * aprueba (todos los tramites) y el cliente (los suyos, que el servicio acota).
+ *
+ * `payments.record` entra aqui y no solo en `/record` porque registrar un
+ * deposito no termina con el JSON: el comprobante viaja en una segunda peticion
+ * multipart, y quien acaba de asentar el abono tiene que poder adjuntarlo y
+ * volver a verlo.
+ */
+const canRead = requireAnyPermission(
+  Permission.PackagePay,
+  Permission.PaymentsRecord,
+  Permission.PaymentsValidate,
+);
 
 /** Lo que el cliente debe por un tramite y con que lo puede pagar. */
 paymentsRoutes.get('/quote/:shipmentId', canRead, async (c) => {
@@ -141,10 +159,17 @@ paymentsRoutes.get('/:id/receipt', canRead, async (c) => {
   return c.body(body, 200, { 'content-type': contentType });
 });
 
-/** El staff registra un deposito ya recibido ("Informacion de Pago"). */
+/**
+ * El staff registra un deposito que el cliente ya hizo ("Informacion de Pago").
+ *
+ * Basta `payments.record`: es asentar el comprobante que llego, no darlo por
+ * cobrado. Con que situacion nace el abono lo decide el servicio segun quien
+ * firma la sesion (`recordedPaymentStatus`), asi que este endpoint abierto al
+ * Operativo NO es una via para confirmar pagos sin permiso.
+ */
 paymentsRoutes.post(
   '/record',
-  requirePermission(Permission.PaymentsValidate),
+  requirePermission(Permission.PaymentsRecord),
   zValidator('json', recordPaymentSchema),
   async (c) => {
     const created = await paymentsService.record(c.get('session'), c.req.valid('json'));
@@ -156,10 +181,15 @@ paymentsRoutes.post(
  * El staff corrige a que cuenta entro un deposito. Va aparte de `/resolve`
  * porque tambien aplica a pagos YA confirmados: el estado de cuenta que revela
  * el error suele llegar despues de haber validado el abono.
+ *
+ * Lo alcanzan los dos permisos del staff, tal como pide el requerimiento ("un
+ * operario o administrador luego puede indicar que se deposito a otro tipo de
+ * cuenta"): corregir la cuenta es enmendar un dato de conciliacion, no aprobar
+ * el abono. El monto, la moneda y la tasa siguen siendo un snapshot.
  */
 paymentsRoutes.patch(
   '/:id/bank-account',
-  requirePermission(Permission.PaymentsValidate),
+  requireAnyPermission(Permission.PaymentsRecord, Permission.PaymentsValidate),
   zValidator('json', updateBankAccountSchema),
   async (c) => {
     const updated = await paymentsService.updateBankAccount(
@@ -171,7 +201,11 @@ paymentsRoutes.patch(
   },
 );
 
-/** El staff confirma o rechaza un deposito pendiente. */
+/**
+ * El ADMINISTRADOR confirma o rechaza un deposito pendiente. Es la puerta que
+ * convierte un comprobante en dinero recibido, y por eso sigue pidiendo
+ * `payments.validate` y no el permiso de registrar.
+ */
 paymentsRoutes.post(
   '/:id/resolve',
   requirePermission(Permission.PaymentsValidate),

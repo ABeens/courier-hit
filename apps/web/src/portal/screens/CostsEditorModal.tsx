@@ -101,7 +101,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
       setLines([...autoLines, ...savedLines]);
       // La tasa guardada manda sobre la vigente del sistema: si el tramite ya se
       // cargo con una tasa, cambiarla en silencio movería una factura ya cotizada.
-      // Solo en la primera carga se toma la global (nunca la del BCCR, que es
+      // Solo en la primera carga se toma la global (nunca la publicada, que es
       // referencia). Es el mismo orden que aplica la API en `resolveExchangeRate`.
       const savedRate = dto.lines[0]?.exchangeRate;
       setRate(String(savedRate ?? dto.globalExchangeRate ?? ''));
@@ -297,7 +297,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
               value={rate} disabled={approved || !canEditRate} placeholder="512.75"
               onChange={(e) => setRate(e.target.value)}
             />
-            {/* La vigente es la que manda; la del BCCR se nombra como lo que es,
+            {/* La vigente es la que manda; la publicada se nombra como lo que es,
                 una referencia, para que nadie la lea como "la tasa del sistema". */}
             <div className="field-hint">
               {!canEditRate
@@ -306,7 +306,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
                     data?.globalExchangeRate != null ? ` (${data.globalExchangeRate})` : ''
                   }; puedes ajustarla solo para este trámite.${
                     data?.referenceExchangeRate != null
-                      ? ` Referencia del BCCR hoy: ${data.referenceExchangeRate}.`
+                      ? ` Referencia publicada hoy: ${data.referenceExchangeRate}.`
                       : ''
                   }`}
             </div>

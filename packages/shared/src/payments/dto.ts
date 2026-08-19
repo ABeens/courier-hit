@@ -5,12 +5,17 @@
  *   - EL CLIENTE paga lo suyo (permiso package.pay): elige tarjeta o deposito.
  *     No manda el monto: lo pone el servidor desde el monto de factura congelado,
  *     porque dejar que el pagador declare cuanto debe seria confiar en el cliente.
- *   - EL STAFF registra un abono a mano (permiso payments.validate): es la
+ *   - EL STAFF registra un abono a mano (permiso payments.record): es la
  *     "Informacion de Pago" del manual (docs/manuales/flujo.md L84-88), donde SI
- *     digita cuenta, comprobante, fecha y monto de un deposito ya recibido.
+ *     digita cuenta, comprobante, fecha y monto de un deposito ya recibido. Con
+ *     que situacion nace ese abono no lo decide el cuerpo sino quien lo manda
+ *     (`recordedPaymentStatus`): el Operativo lo deja en validacion y el
+ *     Administrador, que ademas puede aprobarlo, confirmado.
  *
- * La moneda y la tasa de cambio son obligatorias en el borde de entrada (reglas
- * M2 y M5): ningun monto entra al sistema sin ellas.
+ * La moneda es obligatoria en el borde de entrada (regla M2) y la tasa de cambio
+ * lo es AL GUARDAR (regla M5): ningun abono se persiste sin las dos. Que el
+ * cuerpo la traiga o la ponga el servidor depende de quien registra (ver
+ * `recordPaymentSchema`), pero la fila siempre acaba con una tasa validada.
  */
 import { z } from 'zod';
 import { Currency } from '../money/currency';
@@ -114,14 +119,18 @@ export const updateBankAccountSchema = z.object({
 export type UpdateBankAccountInput = z.infer<typeof updateBankAccountSchema>;
 
 // ---------------------------------------------------------------------------
-// Registro manual por el staff (permiso payments.validate)
+// Registro manual por el staff (permiso payments.record)
 // ---------------------------------------------------------------------------
 
 /**
- * "Informacion de Pago" del manual: el staff registra un deposito que ya entro a
- * la cuenta. Nace CONFIRMADO —quien lo digita es justamente quien lo valido
- * contra el estado de cuenta— asi que aqui el monto si viaja en el cuerpo, con su
- * moneda y su tasa.
+ * "Informacion de Pago" del manual: el staff registra un deposito que el cliente
+ * ya hizo. Aqui el monto SI viaja en el cuerpo, con su moneda: no se deduce del
+ * saldo porque un deposito puede ser parcial, venir por otra moneda o traer un
+ * centimo de diferencia, y lo que se asienta es lo que dice el comprobante.
+ *
+ * Lo que NO decide este cuerpo es si el abono queda confirmado: eso sale del
+ * permiso de quien lo manda (`recordedPaymentStatus`). Registrar y aprobar son
+ * dos actos distintos y el segundo es solo del administrador.
  */
 export const recordPaymentSchema = z.object({
   shipmentId: z.string().uuid('Trámite inválido.'),
@@ -129,7 +138,16 @@ export const recordPaymentSchema = z.object({
   currency: z.nativeEnum(Currency, {
     errorMap: () => ({ message: 'Elige la moneda del monto.' }),
   }),
-  exchangeRate: exchangeRateSchema,
+  /**
+   * Tasa con la que se congela el abono (regla M5). OPCIONAL EN EL BORDE, nunca
+   * en la fila: quien no puede fijar la tasa (`canSetExchangeRate`) no tiene por
+   * que digitarla, y el servidor la resuelve con la de la factura (la que ademas
+   * cuadra el abono con lo cobrado) o con la global. Exigirla aqui obligaria a
+   * la pantalla del Operativo a inventar un numero que el servidor iba a
+   * descartar de todos modos. Venga o se resuelva, pasa por este mismo esquema
+   * antes de guardarse: presente y mayor que cero.
+   */
+  exchangeRate: exchangeRateSchema.optional(),
   bankAccount: z.nativeEnum(BankAccount, {
     errorMap: () => ({ message: 'Elige la cuenta donde entró el depósito.' }),
   }),

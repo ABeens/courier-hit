@@ -11,23 +11,43 @@
  * aparece en ninguna factura, solo en el margen del reporte. Por eso van en
  * bloques separados y con permisos distintos.
  *
- * La tasa vigente y la del BCCR NO son lo mismo y se muestran separadas a
+ * La tasa vigente y la de referencia NO son lo mismo y se muestran separadas a
  * propósito: la primera es la que el sistema usa para convertir, la segunda es
  * información para decidirla. La API revalida cada acción.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Currency, formatMoney } from '@courier/shared';
+import { CURRENCY_SYMBOLS, Currency, formatMoney } from '@courier/shared';
 import type {
   ExchangeRateHistoryEntryDto,
   ExchangeRateSettingDto,
   FreightRateSettingDto,
 } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
-import { formatDate, formatDateTime } from '../lib/datetime';
+import { formatDateTime, formatDayInput } from '../lib/datetime';
 
-/** La tasa son colones por 1 USD: se muestra como dinero en colones. */
+/**
+ * La tasa son colones por 1 USD.
+ *
+ * NO pasa por `formatMoney`: ese redondea los colones a cero decimales, que es
+ * correcto para un IMPORTE (una factura en colones no lleva céntimos) pero no
+ * para una TASA, donde los decimales son parte del número (450,40 se veía como
+ * ₡450 y ya no era la tasa que publica la fuente ni la que se guarda).
+ */
+function formatRateAmount(rate: number): string {
+  const amount = rate.toLocaleString('es-CR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${CURRENCY_SYMBOLS[Currency.CRC]}${amount}`;
+}
+
+/**
+ * La misma tasa con su unidad. Se separa de `formatRateAmount` porque en prosa
+ * hace falta ("₡450,40 por 1 USD") y en la columna de una tabla estorba: ahi la
+ * unidad ya la dice el encabezado y repetirla en cada fila es ruido.
+ */
 function formatRate(rate: number): string {
-  return `${formatMoney(rate, Currency.CRC)} por 1 USD`;
+  return `${formatRateAmount(rate)} por 1 USD`;
 }
 
 /** La tarifa de flete son dólares por libra: dinero en dólares, por unidad de peso. */
@@ -174,10 +194,10 @@ export function SettingsScreen({
         <div className="banner info">
           {reference?.rate != null ? (
             <>
-              Referencia del BCCR
-              {reference.date ? ` (${formatDate(reference.date)})` : ''}:{' '}
-              <strong>{formatRate(reference.rate)}</strong>. Es solo referencia: el sistema convierte
-              con la tasa vigente de arriba.
+              Hacienda publica hoy
+              {reference.day ? `, ${formatDayInput(reference.day)},` : ''} un tipo de cambio de venta
+              de <strong>{formatRate(reference.rate)}</strong>. El sistema sigue convirtiendo con la
+              tasa vigente de arriba.
               {canEdit && (
                 <>
                   {' '}
@@ -192,7 +212,7 @@ export function SettingsScreen({
               )}
             </>
           ) : (
-            'No hay referencia del BCCR disponible ahora mismo.'
+            'No hay tipo de cambio de referencia disponible ahora mismo.'
           )}
         </div>
 
@@ -326,10 +346,8 @@ export function SettingsScreen({
                 {history.map((row) => (
                   <tr key={row.id}>
                     <td>{formatDateTime(row.setAt)}</td>
-                    <td>{formatMoney(row.rate, Currency.CRC)}</td>
-                    <td>
-                      {row.previousRate != null ? formatMoney(row.previousRate, Currency.CRC) : '—'}
-                    </td>
+                    <td>{formatRateAmount(row.rate)}</td>
+                    <td>{row.previousRate != null ? formatRateAmount(row.previousRate) : '—'}</td>
                     <td>{row.setByName ?? '—'}</td>
                     <td>{row.note ?? '—'}</td>
                   </tr>

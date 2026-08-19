@@ -12,7 +12,7 @@
  *    cambia el valor, la factura ya emitida no se mueve.
  * 2. LA TASA VIAJA CON EL MONTO (regla M5). Convencion unica del sistema:
  *    `exchangeRate` = colones por 1 USD. Se captura al cargar el costo; el
- *    sistema la SUGIERE (BCCR) pero el operador es quien la digita.
+ *    sistema la SUGIERE (referencia publicada) pero el operador es quien la digita.
  * 3. LOS TOTALES SE DERIVAN, NO SE DIGITAN. `computeTotals` es el unico lugar
  *    donde se suma una factura, y devuelve el total en ambas monedas.
  */

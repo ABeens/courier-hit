@@ -174,6 +174,27 @@ export enum Permission {
    */
   FreightRateWrite = 'freight_rate.write',
   CostServicesManage = 'cost_services.manage',
+  /**
+   * Registrar un deposito ya recibido contra un tramite ("Informacion de Pago"
+   * del manual) y adjuntarle el comprobante.
+   *
+   * VA APARTE DE `payments.validate` PORQUE SON DOS ACTOS DISTINTOS. Registrar
+   * es asentar lo que alguien dice que pago: el cliente le manda el comprobante
+   * al operario y este lo mete al sistema con el archivo de respaldo. Aprobarlo
+   * es dar el dinero por recibido contra el estado de cuenta, y de eso responde
+   * el administrador. Con un solo permiso, abrirle el registro al operario le
+   * regalaba de paso la aprobacion, que es justo lo que no puede tener.
+   *
+   * Lo llevan `admin` y `operativo`. Quien solo registra deja el abono
+   * PENDIENTE (ver `recordedPaymentStatus`): el tramite queda "Pagado - en
+   * validacion" y sigue sin cubrir Condition.RequiresConfirmedPayment, asi que
+   * el paquete no sale a ruta por haberlo digitado.
+   */
+  PaymentsRecord = 'payments.record',
+  /**
+   * APROBAR o rechazar un deposito, y con eso decidir que el dinero entro. Solo
+   * `admin`: es la puerta que convierte un comprobante en cobro.
+   */
   PaymentsValidate = 'payments.validate',
   DeliveryManage = 'delivery.manage',
   ReportsOperationalBasic = 'reports.operational.basic',
@@ -247,6 +268,8 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   [Permission.ExchangeRateWrite]: { resource: Resource.Settings, action: Action.Write, scope: Scope.All },
   [Permission.FreightRateWrite]: { resource: Resource.Settings, action: Action.Write, scope: Scope.All },
   [Permission.CostServicesManage]: { resource: Resource.CostServices, action: Action.Manage, scope: Scope.All },
+  // Action.Create y no Validate: registrar es dar de alta el abono, no resolverlo.
+  [Permission.PaymentsRecord]: { resource: Resource.Payments, action: Action.Create, scope: Scope.All },
   [Permission.PaymentsValidate]: { resource: Resource.Payments, action: Action.Validate, scope: Scope.All },
   [Permission.DeliveryManage]: { resource: Resource.Delivery, action: Action.Manage, scope: Scope.All },
   [Permission.ReportsOperationalBasic]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
@@ -280,6 +303,8 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   Permission.ExchangeRateWrite,
   Permission.FreightRateWrite,
   Permission.CostServicesManage,
+  Permission.PaymentsRecord,
+  // Solo admin: aprobar el deposito es dar el dinero por recibido.
   Permission.PaymentsValidate,
   Permission.DeliveryManage,
   Permission.ReportsOperationalBasic,
@@ -320,12 +345,27 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ClientsRead,
   ],
 
+  // Opera el proceso de punta a punta: recibe en bodega, mueve los estados de
+  // Paqueteria y de Transporte (`package.write`) y los de Agenciamiento
+  // (`tramite.manage`), carga los costos de Paqueteria y Transporte, y asienta
+  // los depositos que el cliente le manda (`payments.record`).
+  //
+  // Lo que NO lleva, y por eso no aparece aqui: los costos de Agenciamiento
+  // (`costs.tramite.manage`, los servicios manuales que negocia el admin), la
+  // entrega (`delivery.manage`, que es Mensajeria) y la APROBACION de esos
+  // depositos (`payments.validate`). Un tramite de Agenciamiento avanza con este
+  // rol hasta "Proceso de Aduanas"; facturarlo es la puerta donde pasa a manos
+  // del administrador, igual que Paqueteria le pasa el paquete al mensajero en
+  // "En bodega - Pendiente pago" y el deposito le pasa al administrador en
+  // "Pagado - en validacion".
   [Role.Operativo]: [
     Permission.DashboardRead,
     Permission.PackageReceive,
     Permission.PackageRead,
     Permission.PackageWrite,
+    Permission.TramiteManage,
     Permission.CostsManage,
+    Permission.PaymentsRecord,
     Permission.ReportsOperationalBasic,
     Permission.ReportsOperational,
     Permission.ClientsRead,
@@ -340,6 +380,24 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   ],
 
   [Role.Mensajeria]: [Permission.DeliveryManage],
+
+  /**
+   * Bodega: UN solo permiso, y por eso un solo modulo en el menu (Recepcion).
+   * `resourcesFor` deriva el menu de los permisos, asi que la lista de abajo ES
+   * la regla "solo ve Registrar paquetes": no hay que tocar el menu.
+   *
+   * Lo que NO lleva, y no por olvido: `package.read` (el listado de Paqueteria),
+   * `package.write` (mover estados), `costs.manage` y `dashboard.read`. Todo eso
+   * es lo que separa a Bodega de Operativo, que hace el proceso entero; aqui el
+   * trabajo empieza y termina en la mesa: llega el bulto, se escanea, listo.
+   *
+   * Tampoco lleva `control_room.manage`, que es lo que en Recepcion abre el
+   * atajo de dar de alta un LES desconocido (ver `canRegisterUnassigned`): un
+   * paquete que nadie anuncio se enmienda en la sala de control, y de eso
+   * responde el administrador. Con este rol la bitacora dice «Ingresar manual» y
+   * ahi se acaba.
+   */
+  [Role.Bodega]: [Permission.PackageReceive],
 };
 
 export function can(role: Role, permission: Permission): boolean {

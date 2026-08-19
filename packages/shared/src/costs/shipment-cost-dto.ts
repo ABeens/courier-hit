@@ -145,7 +145,7 @@ export interface ShipmentCostsDto {
    */
   globalExchangeRate: number | null;
   /**
-   * Lo que publica el BCCR hoy. Solo REFERENCIA para el administrador: nunca se
+   * El tipo de cambio publicado hoy. Solo REFERENCIA para el administrador: nunca se
    * guarda un monto con este valor. Null si la integracion esta apagada o falló.
    */
   referenceExchangeRate: number | null;

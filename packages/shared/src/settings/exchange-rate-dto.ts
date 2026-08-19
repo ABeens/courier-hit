@@ -3,9 +3,9 @@
  * exchange_rate.write).
  *
  * Es el valor que el sistema usa para convertir: la fija quien tiene el permiso
- * y de ahi sale la tasa por defecto de toda pantalla que cargue montos. Lo que
- * publica el BCCR viaja al lado, como REFERENCIA para decidirla; nunca se usa
- * sola para guardar un monto.
+ * y de ahi sale la tasa por defecto de toda pantalla que cargue montos. El tipo
+ * de cambio publicado del dia viaja al lado, como REFERENCIA para decidirla;
+ * nunca se usa solo para guardar un monto.
  *
  * Convencion unica del sistema: colones por 1 USD.
  */
@@ -31,12 +31,17 @@ export const setExchangeRateSchema = z.object({
 });
 export type SetExchangeRateInput = z.infer<typeof setExchangeRateSchema>;
 
-/** Lo que publica el BCCR hoy. Solo referencia: no se guarda ningun monto con esto. */
+/** El tipo de cambio publicado hoy. Solo referencia: no se guarda ningun monto con esto. */
 export interface ExchangeRateReferenceDto {
   /** Colones por 1 USD, o null si la integracion esta apagada o falló. */
   rate: number | null;
-  /** Fecha del indicador consultado (ISO, UTC); null si no hubo dato. */
-  date: string | null;
+  /**
+   * DIA del indicador (AAAA-MM-DD), no un instante: la fuente publica un valor
+   * por dia calendario de Costa Rica, sin hora. Por eso NO pasa por la
+   * conversion a hora local (`formatDayInput`, no `formatDate`): leerlo como
+   * instante lo correria un dia hacia atras. Null si no hubo dato.
+   */
+  day: string | null;
 }
 
 /** Respuesta de `GET /api/settings/exchange-rate`. */
@@ -47,7 +52,7 @@ export interface ExchangeRateSettingDto {
   updatedAt: string | null;
   /** Quien la fijo; null si no hay tasa o el usuario ya no existe. */
   updatedByName: string | null;
-  /** Referencia del BCCR del dia. */
+  /** Tipo de cambio de referencia del dia. */
   reference: ExchangeRateReferenceDto;
 }
 
