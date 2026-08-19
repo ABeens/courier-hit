@@ -306,7 +306,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
                     data?.globalExchangeRate != null ? ` (${data.globalExchangeRate})` : ''
                   }; puedes ajustarla solo para este trámite.${
                     data?.referenceExchangeRate != null
-                      ? ` Referencia publicada hoy: ${data.referenceExchangeRate}.`
+                      ? ` Referencia del BCCR hoy: ${data.referenceExchangeRate}.`
                       : ''
                   }`}
             </div>

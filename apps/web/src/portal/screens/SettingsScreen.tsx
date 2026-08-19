@@ -190,11 +190,17 @@ export function SettingsScreen({
         </div>
 
         {/* Referencia: informa, no manda. Va separada del valor vigente para que
-            no se lea como "la tasa del sistema". */}
+            no se lea como "la tasa del sistema".
+
+            DICE "BCCR" aunque la API que se consulta sea la de Hacienda, y no es
+            un descuido: Hacienda no calcula un tipo de cambio propio, republica
+            el oficial del BCCR. Al administrador le importa de quién es el
+            número, no por qué tubería llegó. El detalle técnico está en
+            `exchange-rate-reference.ts`. */}
         <div className="banner info">
           {reference?.rate != null ? (
             <>
-              Hacienda publica hoy
+              El BCCR publica hoy
               {reference.day ? `, ${formatDayInput(reference.day)},` : ''} un tipo de cambio de venta
               de <strong>{formatRate(reference.rate)}</strong>. El sistema sigue convirtiendo con la
               tasa vigente de arriba.
@@ -212,7 +218,7 @@ export function SettingsScreen({
               )}
             </>
           ) : (
-            'No hay tipo de cambio de referencia disponible ahora mismo.'
+            'No hay tipo de cambio del BCCR disponible ahora mismo.'
           )}
         </div>
 
