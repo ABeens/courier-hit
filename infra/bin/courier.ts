@@ -2,21 +2,19 @@
 /**
  * Entrada del CDK. Dos stacks, un entorno (docs/12).
  *
- * La region y la cuenta salen del perfil de AWS con el que se ejecuta, con
- * `us-east-1` por defecto: es donde tiene que vivir el certificado de CloudFront
- * y donde esta apuntado SES en la configuracion.
+ * La cuenta y la region estan FIJADAS en `lib/config.ts`, no salen del perfil de
+ * AWS que tenga la sesion activa. Ahi esta el razonamiento.
  */
 import { App } from 'aws-cdk-lib';
 import { AppStack } from '../lib/app-stack';
 import { BaseStack } from '../lib/base-stack';
-import { APP, ENVIRONMENT } from '../lib/config';
+import { APP, AWS_ACCOUNT, AWS_REGION, ENVIRONMENT } from '../lib/config';
 
 const app = new App();
 
-const env = {
-  account: process.env.CDK_DEFAULT_ACCOUNT,
-  region: process.env.CDK_DEFAULT_REGION ?? 'us-east-1',
-};
+// Entorno explicito, no deducido de la sesion activa. El porque esta en
+// `lib/config.ts`, junto a los valores.
+const env = { account: AWS_ACCOUNT, region: AWS_REGION };
 
 const base = new BaseStack(app, `${APP}-${ENVIRONMENT}-base`, {
   env,

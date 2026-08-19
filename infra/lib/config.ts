@@ -40,3 +40,23 @@ export const GITHUB_BRANCH = 'master';
 
 /** Nombre de la base dentro de la instancia RDS. */
 export const DATABASE_NAME = 'courier';
+
+/**
+ * Cuenta y region donde vive el sistema. Van FIJAS, no deducidas de las
+ * credenciales que haya cargadas en ese momento.
+ *
+ * Son dos cosas distintas y las dos importan:
+ *
+ *  1. Un stack sin entorno explicito se despliega contra la cuenta que tenga la
+ *     sesion activa. Con una sola cuenta parece dar igual, pero significa que un
+ *     perfil equivocado despliega en el sitio equivocado sin avisar.
+ *  2. Sin credenciales, el CDK no puede resolver la cuenta y falla con "Unable to
+ *     resolve AWS account to use", que no dice lo que de verdad pasa (la sesion
+ *     expiro). Fijandolas, el error que sale es el de credenciales, que es el
+ *     problema real.
+ *
+ * La region es `us-east-1` porque es donde tiene que emitirse el certificado de
+ * CloudFront y donde apunta SES.
+ */
+export const AWS_ACCOUNT = '632914961265';
+export const AWS_REGION = 'us-east-1';

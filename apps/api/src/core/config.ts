@@ -25,6 +25,26 @@ const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL es obligatoria.'),
+  /**
+   * Conexiones del pool que atiende las peticiones HTTP. Se fija aqui a
+   * proposito: el default de postgres.js son 10, y con 10 basta un par de
+   * consultas lentas para que las demas peticiones se queden esperando turno.
+   *
+   * Techo real: RDS calcula `max_connections` desde la memoria de la instancia
+   * (~112 en una db.t4g.micro). Este numero mas `DB_LOCK_POOL_MAX`, multiplicado
+   * por la cantidad de instancias de la API, tiene que caber ahi con holgura.
+   */
+  DB_POOL_MAX: z.coerce.number().int().positive().default(20),
+  /**
+   * Conexiones del pool APARTE que sostiene los advisory locks del robot (ver
+   * `core/scheduler/with-lock.ts`). Existe separado porque cada tarea en curso
+   * reserva una conexion entera durante toda su corrida solo para sostener el
+   * candado: sacadas del pool principal, el robot le comeria a las peticiones de
+   * los usuarios justo mientras corre.
+   *
+   * Basta con una por tarea registrada; hoy son 4 (ver `JobLock` en `jobs.ts`).
+   */
+  DB_LOCK_POOL_MAX: z.coerce.number().int().positive().default(4),
   WEB_ORIGIN: z.string().url().default('http://localhost:4321'),
   SESSION_COOKIE_NAME: z.string().default('hs_session'),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),

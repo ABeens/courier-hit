@@ -15,6 +15,11 @@
  *    El trabajo de la tarea usa el pool normal (`db`): la conexion reservada solo
  *    sostiene el candado.
  *
+ *    Esa conexion sale de `locksSql`, un pool APARTE (ver `core/db.ts`), no del
+ *    que atiende las peticiones HTTP. Esta apartada minutos enteros sin ejecutar
+ *    nada, y con cuatro tareas solapadas serian cuatro conexiones que el robot le
+ *    quitaria a los usuarios justo mientras corre.
+ *
  *    Se descarto `pg_advisory_xact_lock` (atado a transaccion) a proposito: las
  *    tareas de sincronizacion hacen muchas transacciones cortas y llamadas HTTP
  *    al proveedor; sostener UNA transaccion abierta durante todo eso seria una
@@ -27,7 +32,7 @@
  *    instancias de la MISMA tarea no se solapan, pero tareas DISTINTAS si pueden
  *    correr a la vez.
  */
-import { sql } from '../db';
+import { locksSql } from '../db';
 
 /**
  * Envuelve el handler de una tarea para que solo lo ejecute la instancia que
@@ -40,7 +45,7 @@ export function withLock(
   handler: () => Promise<void>,
 ): () => Promise<void> {
   return async () => {
-    const conn = await sql.reserve();
+    const conn = await locksSql.reserve();
     try {
       const [row] = await conn<{ locked: boolean }[]>`select pg_try_advisory_lock(${key}) as locked`;
       if (!row?.locked) {
