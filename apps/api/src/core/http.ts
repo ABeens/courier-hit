@@ -29,7 +29,21 @@ export function createApp() {
   );
 
   app.onError(onError);
-  app.get('/health', (c) => c.json({ ok: true }));
+
+  /**
+   * Sonda de salud, en las DOS rutas a proposito.
+   *
+   *   - `/health`     — desde dentro del contenedor. Es la que usa el
+   *                     HEALTHCHECK de la imagen, que habla con 127.0.0.1 y no
+   *                     pasa por ningun proxy.
+   *   - `/api/health` — desde fuera. CloudFront solo enruta hacia la API lo que
+   *                     empieza por `/api/`, asi que sin esta la sonda es
+   *                     inalcanzable desde internet y no sirve para comprobar un
+   *                     despliegue (docs/12).
+   */
+  const health = (c: { json: (body: unknown) => Response }) => c.json({ ok: true });
+  app.get('/health', health);
+  app.get('/api/health', health);
 
   return app;
 }

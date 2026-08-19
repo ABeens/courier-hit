@@ -60,7 +60,14 @@ run_on_instance() {
   local instance="$1" command="$2" label="$3"
   local id status="Pending"
 
-  id=$(aws ssm send-command --region "$REGION" \
+  # MSYS_NO_PATHCONV: en Git Bash (Windows), todo argumento que empieza por "/"
+  # se traduce a ruta de Windows ANTES de salir. El comando que va aqui dentro es
+  # para LINUX, en la instancia, asi que `/opt/courier/deploy.sh` llegaba
+  # convertido en `C:/Program Files/Git/opt/...` y el servidor respondia
+  # "C:/Program: No such file or directory". Las dos variables lo desactivan solo
+  # para esta llamada y no existen fuera de Windows, asi que no molestan.
+  id=$(MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
+    aws ssm send-command --region "$REGION" \
     --instance-ids "$instance" \
     --document-name AWS-RunShellScript \
     --comment "$label" \
@@ -152,8 +159,13 @@ seed_admin() {
   instance=$(find_instance)
   say "Sembrando el primer administrador"
   echo "OJO: la contrasena se imprime UNA sola vez. Guardala."
+  # SIN COMILLAS NI COMAS, y no es por gusto: `--parameters commands=...` usa la
+  # sintaxis abreviada de la CLI, que parte el valor por comas y se atraganta con
+  # las comillas ("Expected: ',', received: '\"'"). De ahi que la imagen se lea
+  # cargando el fichero de entorno en vez de con un sed entrecomillado, y que
+  # $IMAGE vaya desnudo (una URI de ECR no lleva espacios).
   run_on_instance "$instance" \
-    'docker run --rm --env-file /opt/courier/api.env "$(sed -n "s/^IMAGE=//p" /opt/courier/image.env)" node dist/seed.js' \
+    '. /opt/courier/image.env && docker run --rm --env-file /opt/courier/api.env $IMAGE node dist/seed.js' \
     "seed admin"
 }
 
