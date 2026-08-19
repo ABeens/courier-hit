@@ -3,7 +3,7 @@
  * Fuente: docs/roles.md §1.3, docs/05-modulo-usuarios.md §3.
  *
  * Reglas del cliente: nombre no vacio, email valido y unico, telefono opcional,
- * rol obligatorio (uno de los 5 roles de staff, nunca `client`). El admin NUNCA
+ * rol obligatorio (cualquiera de `STAFF_ROLES`, nunca `client`). El admin NUNCA
  * fija contrasenas: al crear se envia invitacion (docs/roles.md §1.3.4).
  */
 import { z } from 'zod';

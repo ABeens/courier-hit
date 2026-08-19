@@ -13,15 +13,19 @@
  * 1. EL PAGO ES UN MONTO TRANSACCIONAL. Lleva moneda explicita (regla M2) y tasa
  *    de cambio capturada al guardar (regla M5), igual que una linea de costo: es
  *    el punto donde una cifra concreta se aplica a un tramite concreto.
- * 2. EL DEPOSITO NACE PENDIENTE. Subir un comprobante no es cobrar: el staff lo
- *    valida (permiso payments.validate) y solo entonces pasa a Confirmado. La
- *    tarjeta, en cambio, la confirma la pasarela.
+ * 2. EL DEPOSITO NACE PENDIENTE. Subir un comprobante no es cobrar: alguien con
+ *    `payments.validate` lo aprueba y solo entonces pasa a Confirmado. La
+ *    tarjeta, en cambio, la confirma la pasarela. Da igual quien suba el
+ *    comprobante (el cliente desde el portal, o el operario que lo recibio por
+ *    WhatsApp con `payments.record`): registrar y aprobar son dos actos, y quien
+ *    solo registra deja el abono en validacion (ver `recordedPaymentStatus`).
  * 3. "PAGADO" NO ES UN ESTADO DEL TRAMITE. El manual lo deja abierto ("valorar si
  *    ocupamos un estado para el paquete pagado"): se resuelve derivandolo de los
  *    pagos confirmados (`isSettled`) en vez de agregar un estado a las tres
  *    maquinas. Asi Condition.RequiresConfirmedPayment tiene una respuesta unica.
  */
 import { Currency, convertMoney, roundMoney, smallestUnit } from '../money/currency';
+import { Permission, can } from '../auth/permissions';
 import { Role } from '../auth/roles';
 import { Flow, ShipmentType, flowForType } from '../workflow/shipment-type';
 
@@ -49,6 +53,34 @@ export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   [PaymentStatus.Confirmado]: 'Confirmado',
   [PaymentStatus.Rechazado]: 'Rechazado',
 };
+
+/**
+ * Situacion con la que NACE un deposito que registra el staff a mano, segun
+ * quien lo registre.
+ *
+ * Es la regla que separa registrar de aprobar (decision 2 de este archivo):
+ *
+ *   - quien SOLO puede registrar (Operativo, `payments.record`) asienta lo que
+ *     el cliente le mando y el abono queda PENDIENTE, en validacion. Es el
+ *     unico desenlace posible: si el operario pudiera dejarlo confirmado, el
+ *     permiso de aprobar seria decorativo;
+ *   - quien ADEMAS puede aprobar (Administrador, `payments.validate`) lo deja
+ *     CONFIRMADO de una vez, porque es el mismo que lo esta cotejando contra el
+ *     estado de cuenta y obligarlo a resolver despues su propio registro seria
+ *     un tramite sin nadie al otro lado.
+ *
+ * Pregunta por el PERMISO, nunca por el rol: sumarle `payments.validate` a otro
+ * rol le cambia el desenlace aqui sin tocar una linea.
+ *
+ * Punto UNICO de esa decision. Lo consulta el servicio que inserta el abono y la
+ * pantalla que le anuncia al operario como va a quedar; responder distinto en
+ * una de las dos es prometerle un cobro que el sistema no dio por recibido.
+ */
+export function recordedPaymentStatus(role: Role): PaymentStatus {
+  return can(role, Permission.PaymentsValidate)
+    ? PaymentStatus.Confirmado
+    : PaymentStatus.Pendiente;
+}
 
 /**
  * Cuentas bancarias donde HS Global recibe depositos (docs/manuales/flujo.md L85:

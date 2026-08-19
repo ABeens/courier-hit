@@ -103,7 +103,7 @@ export class AppStack extends Stack {
       }),
     );
 
-    // Los parametros SecureString (credenciales de Helga, Onvo, BCCR) se cifran
+    // Los parametros SecureString (credenciales de Helga, Onvo) se cifran
     // con la llave gestionada `aws/ssm`. Descifrarlos necesita permiso propio,
     // acotado a que la peticion venga de SSM y no de cualquier otro servicio.
     instanceRole.addToPolicy(
@@ -361,7 +361,7 @@ function handler(event) {
     // --- Configuracion de la app (Parameter Store) ---------------------------
     /**
      * Solo los valores NO secretos. CloudFormation no sabe crear parametros
-     * SecureString, asi que las credenciales (Helga, Onvo, BCCR) se cargan una
+     * SecureString, asi que las credenciales (Helga, Onvo) se cargan una
      * vez con la CLI; ver `infra/README.md`. El script de arranque lee la ruta
      * entera y no distingue entre unos y otros.
      *
@@ -382,7 +382,9 @@ function handler(event) {
       MAIL_FROM: 'HS Global Services <no-reply@hsglobalcr.com>',
       HELGA_MODE: 'off',
       ONVO_MODE: 'off',
-      BCCR_ENABLED: 'false',
+      // La tasa de referencia sí va encendida desde el primer despliegue: no
+      // depende de ningun tramite externo (API publica, sin credenciales).
+      HACIENDA_ENABLED: 'true',
       MIAMI_LINK_ENABLED: 'false',
       // El robot solo tiene tareas de Helga: encenderlo antes no agenda nada.
       ROBOT_ENABLED: 'false',

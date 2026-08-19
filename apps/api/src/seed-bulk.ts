@@ -234,6 +234,9 @@ const STAFF_ROLES: readonly Role[] = [
   Role.Operativo,
   Role.ServicioCliente,
   Role.Mensajeria,
+  // Bodega no figura como actor de ningun tramite (solo recibe); va en la mezcla
+  // para que el dataset tenga con que probar el login y el menu de ese rol.
+  Role.Bodega,
 ];
 
 /**

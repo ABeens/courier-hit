@@ -195,23 +195,29 @@ const EnvSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
 
-  // --- Tasa de cambio de referencia: web service de indicadores del BCCR ---
+  // --- Tasa de cambio de referencia: API de indicadores de Hacienda ---
   // Solo INFORMA el tipo de cambio del dia; la tasa que usa el sistema es la que
   // el administrador fija en Configuración, y ningun monto se guarda con este
   // valor. Por eso la integracion es opcional y apagarla no degrada ninguna
   // funcion: simplemente deja de verse la referencia.
-  BCCR_ENABLED: z
+  //
+  // ES UN BOOLEANO, no un modo de tres posiciones como Helga y Onvo, y no tiene
+  // credenciales que validar: la API es publica y anonima. Aqui la degradacion
+  // silenciosa ES la funcionalidad (sin referencia, la tasa se decide igual);
+  // alla no puede serlo, porque un casillero sin enlazar o un cobro sin
+  // confirmar no se pueden dejar pasar con un aviso en consola.
+  HACIENDA_ENABLED: z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
-  BCCR_BASE_URL: optionalEnv(),
-  /** 318 = tipo de cambio de VENTA del dolar (el que se le cobra al cliente). */
-  BCCR_INDICATOR: z.coerce.number().int().positive().default(318),
-  /** Nombre y correo registrados en la suscripcion al web service del BCCR. */
-  BCCR_NAME: optionalEnv(),
-  BCCR_EMAIL: optionalEnv(),
-  BCCR_TOKEN: optionalEnv(),
-  BCCR_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
+  /**
+   * Endpoint del tipo de cambio del dolar. Lleva default porque es una URL
+   * publica y fija: sin credenciales de por medio, `HACIENDA_ENABLED=true` basta
+   * para que la integracion funcione. Queda en el .env solo para poder apuntarla
+   * a otro lado sin tocar codigo.
+   */
+  HACIENDA_BASE_URL: z.string().url().default('https://api.hacienda.go.cr/indicadores/tc/dolar'),
+  HACIENDA_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
 
   // --- Robot de tareas programadas (scheduler) ---
   // Todo lo del robot lleva el prefijo ROBOT_ y los intervalos terminan en
@@ -278,9 +284,9 @@ const EnvSchema = z.object({
       message: 'ROBOT_PACKAGE_DISCOVERY_EVERY debe ser una duracion valida (p. ej. "15m", "1h").',
     }),
 }).superRefine((env, ctx) => {
-  // OJO: el BCCR NO se valida aqui a proposito. A diferencia de Helga, encenderlo
-  // sin credenciales NO tumba el arranque: es un interruptor que se puede prender
-  // y apagar mientras se consiguen las credenciales. Ver `bccrReady` mas abajo.
+  // OJO: la tasa de referencia (HACIENDA_*) NO se valida aqui a proposito. No
+  // tiene credenciales que exigir (la API es publica) y su URL trae default, asi
+  // que encenderla nunca puede tumbar el arranque.
 
   // Correo: con el interruptor encendido la region deja de ser opcional. Va ANTES
   // del early return de Helga, que solo mira su propia integracion.
@@ -470,29 +476,9 @@ if (helgaMode === 'simulated') {
  */
 export const miamiLinkEnabled = config.MIAMI_LINK_ENABLED;
 
-/**
- * True solo si el BCCR esta ENCENDIDO **y** tiene con que llamar.
- *
- * Es el interruptor efectivo de la referencia. Se separa de `BCCR_ENABLED`
- * porque son dos preguntas distintas: "¿lo queremos usar?" (bandera, la mueve
- * quien opera) y "¿ya podemos?" (credenciales, dependen de un tramite externo).
- * Mientras llegan, la bandera se puede prender sin romper nada: la API arranca
- * igual y quien fija la tasa simplemente la decide sin ese dato al lado.
- *
- * Por eso el BCCR sigue siendo un booleano y no un modo de tres posiciones como
- * Helga y Onvo: aqui la degradacion silenciosa es la funcionalidad, no un bug.
- * Alli no puede serlo, porque un casillero sin enlazar o un cobro sin confirmar
- * no son estados que se puedan dejar pasar con un aviso en consola.
- */
-export const bccrReady =
-  config.BCCR_ENABLED &&
-  Boolean(config.BCCR_BASE_URL && config.BCCR_NAME && config.BCCR_EMAIL && config.BCCR_TOKEN);
-
-// Aviso al arrancar: encendido pero sin credenciales es un estado legitimo y
-// temporal, pero silencioso seria confuso ("¿por que no veo la referencia?").
-if (config.BCCR_ENABLED && !bccrReady) {
-  console.warn(
-    '[config] BCCR_ENABLED=true pero faltan credenciales (BCCR_BASE_URL, BCCR_NAME, ' +
-      'BCCR_EMAIL, BCCR_TOKEN). No se mostrará la tasa de referencia del BCCR.',
-  );
-}
+// La tasa de referencia NO tiene un booleano derivado aqui a proposito. Antes
+// existia `bccrReady` (= bandera encendida Y credenciales cargadas) porque el
+// BCCR exigia una suscripcion con nombre, correo y token, y "encendido pero sin
+// credenciales" era un estado real. La API de Hacienda es publica y anonima:
+// `HACIENDA_ENABLED` es por si solo el interruptor efectivo, y el modulo que la
+// consulta lo lee directo.

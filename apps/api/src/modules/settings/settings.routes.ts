@@ -19,7 +19,7 @@ export const settingsRoutes = new Hono<AppEnv>();
 
 settingsRoutes.use('*', requireSession());
 
-/** Tasa vigente + referencia del BCCR. La lee quien opera con montos. */
+/** Tasa vigente + referencia del dia. La lee quien opera con montos. */
 settingsRoutes.get(
   '/exchange-rate',
   requireAnyPermission(

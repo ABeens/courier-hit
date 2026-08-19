@@ -21,6 +21,15 @@ export enum Role {
   Operativo = 'operativo',
   Financiero = 'financiero',
   Mensajeria = 'mensajeria',
+  /**
+   * Bodega. Solo recibe: escanea el LES contra la mesa y con eso el tramite pasa
+   * a facturacion. No opera estados, ni costos, ni pagos; su unico modulo es
+   * Recepcion. Va aparte de `operativo`, que hace eso Y todo el proceso.
+   *
+   * ULTIMO valor del enum a proposito: `ROLE_VALUES` alimenta el enum de Postgres
+   * y añadir al final permite un `ALTER TYPE ... ADD VALUE` limpio.
+   */
+  Bodega = 'bodega',
 }
 
 /** Etiqueta de presentacion (docs/roles.md §1.2). Clave canonica = valor enum. */
@@ -31,6 +40,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   [Role.Operativo]: 'Operativo',
   [Role.Financiero]: 'Financiero',
   [Role.Mensajeria]: 'Mensajería',
+  [Role.Bodega]: 'Bodega',
 };
 
 /** Roles de la poblacion Staff (todos menos Client). */
@@ -38,6 +48,9 @@ export const STAFF_ROLES: readonly Role[] = [
   Role.Admin,
   Role.ServicioCliente,
   Role.Operativo,
+  // Junto a Operativo: los dos trabajan la carga, uno de punta a punta y el otro
+  // solo la mesa de recepcion.
+  Role.Bodega,
   Role.Financiero,
   Role.Mensajeria,
 ];

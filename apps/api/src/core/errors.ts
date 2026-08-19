@@ -142,7 +142,7 @@ export const CostErrors = {
   /**
    * La tasa es un valor general que solo fija el administrador (en Configuración),
    * y no hay ninguna vigente: ni guardada en el trámite ni fijada en el sistema.
-   * Lo que publica el BCCR no cuenta, es solo referencia. Guardar sin tasa dejaría
+   * La referencia publicada no cuenta, es solo informativa. Guardar sin tasa dejaría
    * líneas sin el testigo de conversión (regla M5), así que se para aquí.
    */
   noExchangeRate: () =>

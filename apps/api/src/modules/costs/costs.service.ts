@@ -12,10 +12,10 @@
  *    porcentaje. Un porcentaje que llegue con importe se ignora.
  * 3. LA TASA LA FIJA EL ADMINISTRADOR EN CONFIGURACIÓN. Es un valor general del
  *    sistema, no un dato del tramite: solo `exchange_rate.write` decide su valor
- *    y al resto se le impone la vigente (`resolveExchangeRate`). Lo que publica
- *    el BCCR viaja al lado como referencia y nunca se guarda solo. Lo que queda
- *    en la BD sigue siendo un snapshot por linea (regla M5); lo que cambia es
- *    quien elige ese numero y donde.
+ *    y al resto se le impone la vigente (`resolveExchangeRate`). El tipo de
+ *    cambio publicado del dia viaja al lado como referencia y nunca se guarda
+ *    solo. Lo que queda en la BD sigue siendo un snapshot por linea (regla M5);
+ *    lo que cambia es quien elige ese numero y donde.
  * 4. APROBAR CONGELA Y AVANZA. Al aprobar se totaliza en ambas monedas, se fija
  *    el monto de factura en el tramite y este pasa a "En bodega - Pendiente pago"
  *    (que es justo lo que exige Condition.RequiresInvoiceAmount). Desde ahi las
@@ -53,7 +53,7 @@ import { costServicesRepo } from '../cost-services/cost-services.repo';
 import { paymentsRepo } from '../payments/payments.repo';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { transitionsService } from '../shipments/transitions.service';
-import { exchangeRateReference } from '../settings/bccr-reference';
+import { exchangeRateReference } from '../settings/exchange-rate-reference';
 import { settingsRepo } from '../settings/settings.repo';
 import { costsRepo } from './costs.repo';
 import { buildFreight } from './freight';
@@ -184,7 +184,7 @@ async function withFreight(row: ShipmentRow, input: CostLineInput[]): Promise<Co
  *      recotiza sola porque el administrador haya movido la tasa entre dos
  *      guardados), y
  *   2. si es la primera carga, la tasa global del sistema.
- * El BCCR NO entra en esta cadena: es referencia para decidir la global, no un
+ * La referencia publicada NO entra en esta cadena: sirve para decidir la global, no es un
  * valor con el que se guarde un monto. Sin ninguna de las dos no se guarda: una
  * linea sin tasa valida rompe la regla M5 y dejaria la factura sin testigo de
  * conversion.
@@ -283,7 +283,7 @@ export const costsService = {
       costsRepo.listLines(shipmentId),
       costsRepo.approval(shipmentId),
       settingsRepo.currentExchangeRate(),
-      // La referencia del BCCR solo le sirve a quien puede cambiar la tasa; al
+      // La referencia publicada solo le sirve a quien puede cambiar la tasa; al
       // resto le sale el campo bloqueado. Pedirsela igual metería la latencia de
       // un servicio externo en cada apertura de la pantalla, a cambio de un dato
       // que esa persona no puede usar.

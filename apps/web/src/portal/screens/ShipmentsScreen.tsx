@@ -53,6 +53,7 @@ import { ShipmentFormModal, allowedTypesFor } from './ShipmentFormModal';
 import { ShipmentHistoryModal } from './ShipmentHistoryModal';
 import { StateAdvanceModal, reachableStates } from './StateAdvanceModal';
 import { PaymentModal } from './PaymentModal';
+import { ShipmentPaymentsModal } from './ShipmentPaymentsModal';
 
 /** Que tablero se esta mirando. */
 export type ShipmentView = 'paqueteria' | 'transporte' | 'todos' | 'propios' | 'propios-tramites';
@@ -243,6 +244,8 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
   const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; row: ShipmentDto } | null>(null);
   const [advancing, setAdvancing] = useState<ShipmentDto | null>(null);
   const [paying, setPaying] = useState<ShipmentDto | null>(null);
+  /** Trámite cuyos abonos está mirando el staff (registrar depósito / aprobar). */
+  const [collecting, setCollecting] = useState<ShipmentDto | null>(null);
   /** Trámite cuyo historial de estados se está mirando (clic sobre la ficha). */
   const [tracing, setTracing] = useState<ShipmentDto | null>(null);
   /** Alta del cliente: vive aqui dentro, no en una pantalla aparte. */
@@ -254,6 +257,14 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
   const isOwnPackages = view === 'propios';
   const canWrite = can(role, Permission.PackageWrite) || can(role, Permission.TramiteManage);
   const canPay = can(role, Permission.PackagePay);
+  /**
+   * El staff abre los pagos del trámite: el Operativo para registrar el depósito
+   * que el cliente le envió, el Administrador además para aprobarlo. Los dos
+   * permisos abren la MISMA pantalla; lo que cambia dentro son los botones, y la
+   * API aplica la misma separación.
+   */
+  const canCollect =
+    can(role, Permission.PaymentsRecord) || can(role, Permission.PaymentsValidate);
 
   /**
    * Tipos que se pueden dar de alta DESDE ESTE TABLERO: el alta hereda el filtro
@@ -572,6 +583,24 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
                   que busca por consecutivo, guia, casillero o cliente.
                 */}
                 {/*
+                  Pagos del trámite (staff). Aparece con la FACTURA APROBADA y no
+                  con un estado concreto: el cobro nace al congelarse el monto y
+                  sigue vivo despues (el pago no mueve el trámite, así que uno ya
+                  despachado puede seguir con saldo). Atarlo a "En bodega -
+                  Pendiente pago" dejaba sin registrar el depósito que llega
+                  tarde, que es justo el caso que se cobra a mano.
+
+                  Con el trámite ya cobrado el botón sigue: es la única vía para
+                  consultar los abonos, su comprobante y quien los registró.
+                */}
+                {canCollect && !isOwn && row.invoiceTotalCrc != null && (
+                  <IconButton
+                    label={row.settled ? 'Ver los pagos del trámite' : 'Registrar pago del trámite'}
+                    icon="receipt"
+                    onClick={() => setCollecting(row)}
+                  />
+                )}
+                {/*
                   El cobro solo tiene sentido con la factura ya aprobada, que es
                   justo lo que significa "En bodega - Pendiente pago".
 
@@ -661,6 +690,28 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
           */
           onPaid={(message) => {
             setPaying(null);
+            setNotice(message);
+            setError(null);
+            void load();
+          }}
+        />
+      )}
+
+      {collecting && (
+        <ShipmentPaymentsModal
+          shipment={collecting}
+          role={role}
+          /*
+            Recargar tambien al cerrar: dentro se puede haber aprobado o
+            rechazado un abono sin llegar a `onSaved`, y la bandera de cobro de
+            la ficha de atras quedaria mostrando cifras viejas.
+          */
+          onClose={() => {
+            setCollecting(null);
+            void load();
+          }}
+          onSaved={(message) => {
+            setCollecting(null);
             setNotice(message);
             setError(null);
             void load();

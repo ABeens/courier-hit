@@ -8,8 +8,8 @@
  *   - `rate`: la tasa VIGENTE del sistema, la que se usa para convertir. La fija
  *     quien tiene `exchange_rate.write` y es lo que ve por defecto cualquier
  *     pantalla que cargue montos.
- *   - `reference`: lo que publica el BCCR hoy. Es informacion para decidir la
- *     anterior, nunca se guarda un monto con ella.
+ *   - `reference`: el tipo de cambio que publica Hacienda hoy. Es informacion
+ *     para decidir la anterior, nunca se guarda un monto con ella.
  *
  * Quien puede fijarla lo decide el PERMISO, no el rol: la barrera esta en las
  * rutas (`requirePermission`), asi que sumar el permiso a otro rol basta.
@@ -22,14 +22,14 @@ import type {
   SetExchangeRateInput,
   SetFreightRateInput,
 } from '@courier/shared';
-import { exchangeRateReference } from './bccr-reference';
+import { exchangeRateReference } from './exchange-rate-reference';
 import { settingsRepo } from './settings.repo';
 
 /** Tope del historial que devuelve la API de una sola vez. */
 const HISTORY_LIMIT = 50;
 
 export const settingsService = {
-  /** Tasa vigente + referencia del BCCR. */
+  /** Tasa vigente + referencia del dia. */
   async exchangeRate(): Promise<ExchangeRateSettingDto> {
     // En paralelo: la referencia sale de un servicio externo y no debe sumar su
     // latencia a la lectura de la tasa vigente, que es lo unico imprescindible.
@@ -42,7 +42,7 @@ export const settingsService = {
       rate: setting.rate,
       updatedAt: setting.setAt?.toISOString() ?? null,
       updatedByName: setting.setByName,
-      reference: { rate: reference.rate, date: reference.date },
+      reference: { rate: reference.rate, day: reference.day },
     };
   },
 
@@ -80,9 +80,9 @@ export const settingsService = {
   /**
    * Tarifa de transporte internacional vigente (USD por libra).
    *
-   * A diferencia de la tasa de cambio no lleva referencia externa: no hay un BCCR
-   * del flete. El valor sale de lo que la naviera le cobre a HS Global, asi que la
-   * unica fuente posible es lo que el administrador digite.
+   * A diferencia de la tasa de cambio no lleva referencia externa: nadie publica
+   * un indicador del flete. El valor sale de lo que la naviera le cobre a HS
+   * Global, asi que la unica fuente posible es lo que el administrador digite.
    */
   async freightRate(): Promise<FreightRateSettingDto> {
     const setting = await settingsRepo.freightRateSetting();
