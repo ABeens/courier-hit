@@ -16,10 +16,12 @@
  *   - PASARELA SIMULADA (`intent.simulated`): no hay SDK que montar. Se muestran
  *     dos botones para aprobar o rechazar el cobro, que es lo que permite recorrer
  *     el flujo completo sin credenciales de Onvo.
- *   - PASARELA REAL: TODO(09/onvo) montar el SDK web de Onvo con `publicKey` y
- *     `paymentIntentId`. Quien confirma el pago NO es el navegador sino el webhook,
- *     así que al terminar hay que volver a consultar el pago en vez de darlo por
- *     bueno con el callback del SDK.
+ *   - PASARELA REAL: se monta el SDK de Onvo (`OnvoCardForm`) con `publicKey` y
+ *     `paymentIntentId`. Quien confirma el pago NO es el navegador sino el
+ *     webhook, así que cuando el SDK termina no se da nada por cobrado: se vuelve
+ *     a preguntar por el pago a nuestra API hasta que el webhook lo resuelva
+ *     (`waitForResolution`). Creerle al callback del SDK anunciaría como pagado un
+ *     cargo que la pasarela todavía puede rechazar.
  */
 import { useEffect, useState } from 'react';
 import {
@@ -40,7 +42,23 @@ import {
 import type { PaymentDto, PaymentIntentDto, Role, ShipmentDto } from '@courier/shared';
 import { API_BASE, ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { OnvoCardForm } from '../components/OnvoCardForm';
 import { formatDate } from '../lib/datetime';
+
+/**
+ * Espera del desenlace del cobro con tarjeta. El SDK termina antes que el
+ * webhook: entre que el navegador acaba y Onvo nos avisa pasan segundos, así que
+ * la pantalla pregunta en bucle en vez de leer una sola vez y dar por pendiente
+ * lo que ya está cobrado.
+ *
+ * Si se agota, el pago NO se da por perdido ni por hecho: sigue pendiente en el
+ * servidor y el webhook lo resolverá cuando llegue. Lo único que se acaba aquí es
+ * la espera en pantalla.
+ */
+const CONFIRM_POLL_MS = 2_000;
+const CONFIRM_ATTEMPTS = 15;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface Quote {
   shipmentId: string;
@@ -120,6 +138,23 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
    * modal acabaria ofreciendo un boton que la API contesta con un 409.
    */
   const pendingCrc = quote?.pendingCrc ?? 0;
+
+  /**
+   * DE QUÉ son los abonos pendientes. Un cobro con tarjeta a la espera del
+   * webhook y un depósito a la espera de que alguien mire el comprobante son dos
+   * cosas distintas, y las dos se anunciaban con el texto del depósito: al que
+   * pagó con tarjeta se le decía "recibimos ₡X y estamos validando el
+   * comprobante", o sea que su dinero ya entró (no entró) y que hay un
+   * comprobante (no lo hay). Anunciar como recibido un cobro que la pasarela
+   * todavía puede rechazar es la versión cara de ese error.
+   *
+   * Solo cambia CÓMO se dice. El importe sigue saliendo de `quote.pendingCrc`,
+   * que es la cifra del servidor, y esto no se usa para decidir si se puede pagar
+   * —eso es `inValidation`, y lo decide la API—.
+   */
+  const pendingPayments = payments.filter((p) => p.status === PaymentStatus.Pendiente);
+  const pendingIsOnlyCard =
+    pendingPayments.length > 0 && pendingPayments.every((p) => p.method === PaymentMethod.Tarjeta);
 
   /**
    * Las cifras del cobro en la moneda que le toca leer a quien abrio el modal: en
@@ -258,9 +293,95 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
     }
   }
 
+  /**
+   * Pregunta por el desenlace del cobro a NUESTRA API, que es donde el webhook lo
+   * deja. Devuelve null si se agotó la espera con el pago todavía sin resolver.
+   */
+  async function waitForResolution(paymentId: string): Promise<PaymentDto | null> {
+    for (let attempt = 0; attempt < CONFIRM_ATTEMPTS; attempt++) {
+      const { items } = await api.get<{ items: PaymentDto[] }>(
+        `/payments/shipment/${shipment.id}`,
+      );
+      const row = items.find((p) => p.id === paymentId);
+      if (row && row.status !== PaymentStatus.Pendiente) {
+        setPayments(items);
+        return row;
+      }
+      await sleep(CONFIRM_POLL_MS);
+    }
+    return null;
+  }
+
+  /**
+   * El SDK de Onvo terminó su parte. Aquí TODAVÍA no se sabe si se cobró: quien
+   * lo decide es el webhook contra el servidor, y por eso lo primero que se hace
+   * es preguntar en vez de anunciar.
+   */
+  async function confirmCard() {
+    if (!cardIntent) return;
+    setError(null);
+    setNotice('Estamos confirmando el cobro con la pasarela…');
+    setSaving(true);
+
+    try {
+      const resolved = await waitForResolution(cardIntent.paymentId);
+
+      if (resolved?.status === PaymentStatus.Confirmado) {
+        setCardIntent(null);
+        onPaid('Pago aprobado. El trámite queda cubierto.');
+        return;
+      }
+
+      if (resolved?.status === PaymentStatus.Rechazado) {
+        // Igual que en la simulación: el modal no se cierra, para reintentar aquí
+        // mismo. El saldo lo manda el servidor y este intento no lo movió.
+        setCardIntent(null);
+        setNotice('La pasarela rechazó el cobro. Puedes intentarlo de nuevo.');
+        setQuote(await api.get<Quote>(`/payments/quote/${shipment.id}`));
+        return;
+      }
+
+      /**
+       * Se agotó la espera sin webhook. Es lo único honesto que se le puede decir
+       * al cliente: el cargo salió, pero de aquí NO sale un "pagado". El pago
+       * sigue pendiente en el servidor y el webhook lo resolverá cuando llegue;
+       * lo que se acabó es la espera en pantalla, no el cobro.
+       */
+      setCardIntent(null);
+      onPaid(
+        'Enviamos tu pago a la pasarela y lo estamos confirmando. Te avisaremos apenas quede registrado.',
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo confirmar el cobro.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /**
+   * La pasarela rechazó la tarjeta sin llegar a cobrar. El formulario sigue
+   * montado y el mismo intento admite otro intento con otra tarjeta, así que solo
+   * se muestra el motivo: no se toca el pago ni se cierra nada.
+   */
+  function cardFailed(message: string) {
+    setNotice(null);
+    setError(message);
+  }
+
   return (
     <ModalOverlay onClose={onClose}>
-      <form className="modal fadeUp" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
+      {/*
+        `modal-lg` y no el ancho base: aquí dentro se monta el formulario de
+        tarjeta de Onvo, que trae sus propios campos a ancho completo. Con los
+        560px de base quedaba estrecho y el SDK acababa scrolleando por dentro,
+        dos barras anidadas para una sola pantalla. Al depósito el ancho extra
+        tampoco le estorba: sus campos ya se reparten en dos columnas.
+      */}
+      <form
+        className="modal modal-lg fadeUp"
+        onMouseDown={(e) => e.stopPropagation()}
+        onSubmit={submit}
+      >
         <div className="modal-head">
           <h3>Pagar trámite</h3>
           <p>
@@ -324,8 +445,17 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
           */}
           {quote && amounts && !quote.settled && pendingCrc > 0 && (
             <div className="banner">
-              Recibimos {formatMoney(amounts.pending, amounts.currency)} y estamos validando el
-              comprobante. Te avisaremos apenas quede confirmado.
+              {pendingIsOnlyCard ? (
+                <>
+                  Tu pago con tarjeta de {formatMoney(amounts.pending, amounts.currency)} está a la
+                  espera de que la pasarela lo confirme. Te avisaremos apenas quede registrado.
+                </>
+              ) : (
+                <>
+                  Recibimos {formatMoney(amounts.pending, amounts.currency)} y estamos validando el
+                  comprobante. Te avisaremos apenas quede confirmado.
+                </>
+              )}
               {quote.inValidation && <> No hace falta que pagues de nuevo.</>}
             </div>
           )}
@@ -482,12 +612,19 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
             </div>
           )}
 
+          {/*
+            Pasarela real: el formulario lo pinta Onvo dentro de su propio
+            contenedor. La tarjeta no pasa por aquí, y el desenlace tampoco lo
+            decide este componente: `confirmCard` va a preguntarlo al servidor.
+          */}
           {cardIntent && !cardIntent.intent.simulated && (
-            <div className="banner">
-              Abriendo el formulario seguro de pago con tarjeta. El cobro queda
-              confirmado cuando la pasarela nos lo notifique.
-              {/* TODO(09/onvo): montar aquí el SDK web con publicKey y paymentIntentId. */}
-            </div>
+            <OnvoCardForm
+              publicKey={cardIntent.intent.publicKey}
+              paymentIntentId={cardIntent.intent.paymentIntentId}
+              customerId={cardIntent.intent.customerId}
+              onCompleted={confirmCard}
+              onFailed={cardFailed}
+            />
           )}
 
           {payments.length > 0 && (
@@ -523,7 +660,16 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
                           payment.status === PaymentStatus.Confirmado ? 'spill ok' : 'spill'
                         }
                       >
-                        {PAYMENT_STATUS_LABELS[payment.status]}
+                        {/*
+                          "Pendiente de validación" describe el depósito: alguien
+                          tiene que mirar un comprobante. Un cobro con tarjeta
+                          pendiente espera al webhook de la pasarela, no a una
+                          persona, y el cliente no tiene nada que aportar.
+                        */}
+                        {payment.status === PaymentStatus.Pendiente &&
+                        payment.method === PaymentMethod.Tarjeta
+                          ? 'Pendiente de confirmación'
+                          : PAYMENT_STATUS_LABELS[payment.status]}
                       </span>
                     </span>
                   </div>

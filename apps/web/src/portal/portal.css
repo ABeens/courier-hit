@@ -599,6 +599,23 @@ select.input { cursor: pointer; padding-right: 30px; }
   .modal-form { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 18px; }
 }
 
+/* ---- Formulario de tarjeta (SDK de Onvo) ----
+   El SDK pinta su propio formulario dentro de este contenedor, en un iframe.
+   Nosotros solo ponemos el sitio: ancho completo y altura suficiente.
+
+   El suelo de altura existe porque el alto que trae el SDK se queda corto dentro
+   del modal y el formulario acaba con su PROPIA barra de scroll dentro de la del
+   cuerpo: dos scrolls anidados para una sola pantalla, con el boton de pagar
+   escondido en el de dentro. Es un MINIMO, no un alto fijo, y por eso funciona
+   aunque el SDK fije su `height` inline: el alto usado es el mayor de los dos.
+   Si el formulario necesita crecer (el reto 3DS abre un paso mas), crece. */
+.pay-card-form { display: grid; gap: 10px; }
+.pay-card-form iframe { display: block; width: 100%; border: 0; min-height: 560px; }
+/* Mas estrecho, mas alto: los campos que compartian fila se apilan. */
+@media (max-width: 560px) {
+  .pay-card-form iframe { min-height: 640px; }
+}
+
 /* En movil el modal ocupa casi toda la pantalla: el aire de 24px sobra. */
 @media (max-width: 560px) {
   .overlay { padding: 12px; }
@@ -763,6 +780,20 @@ select.input { cursor: pointer; padding-right: 30px; }
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 12.5px;
 }
 .card-item-field dd.empty-val { color: var(--faint); font-weight: 400; }
+
+/* Acciones sobre un abono (aprobar, rechazar) dentro de su ficha.
+   NO reutiliza `.modal-foot`: esa es la barra inferior del MODAL —borde
+   superior y pegada al pie—, y metida aqui entraba como UNA celda mas de
+   `.card-sec-fields`, de ~100px, con lo que el motivo del rechazo y los dos
+   botones se pintaban encima de los campos vecinos. Ocupa la fila entera. */
+.card-item-actions {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
+  gap: 8px; margin-top: 6px;
+}
+/* El motivo se lleva el espacio sobrante y salta de linea antes que los botones:
+   compartiendo fila con ellos quedaba en una rendija donde no se lee lo escrito. */
+.card-item-actions .input { flex: 1 1 200px; min-width: 0; }
 
 @media (max-width: 560px) {
   .card-item { padding: 11px 13px; }

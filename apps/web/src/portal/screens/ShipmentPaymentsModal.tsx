@@ -299,7 +299,9 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
   /** Confirma o rechaza un abono pendiente. Solo con `payments.validate`. */
   async function resolve(paymentId: string, confirm: boolean) {
     if (!confirm && !rejectNote.trim()) {
-      setError('Indica por qué se rechaza el depósito.');
+      // "Abono" y no "depósito": `resolve` vale para los dos medios, y por aquí
+      // pasa tambien un cobro con tarjeta, que no tiene ningun deposito detras.
+      setError('Indica por qué se rechaza el abono.');
       return;
     }
     setError(null);
@@ -315,9 +317,9 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
       setNotice(
         confirm
           ? isSettled(items, shipment.invoiceTotalCrc)
-            ? 'Depósito confirmado. El trámite queda pagado.'
-            : 'Depósito confirmado. El trámite conserva saldo.'
-          : 'Depósito rechazado.',
+            ? 'Abono confirmado. El trámite queda pagado.'
+            : 'Abono confirmado. El trámite conserva saldo.'
+          : 'Abono rechazado.',
       );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo resolver el depósito.');
@@ -506,7 +508,7 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
                     esconderlos es comodidad, no la barrera.
                   */}
                   {canValidate && payment.status === PaymentStatus.Pendiente && (
-                    <div className="modal-foot">
+                    <div className="card-item-actions">
                       {rejecting === payment.id ? (
                         <>
                           <input

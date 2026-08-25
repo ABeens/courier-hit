@@ -381,7 +381,7 @@ function handler(event) {
       MAIL_ENABLED: 'false',
       MAIL_FROM: 'HS Global Services <no-reply@hsglobalcr.com>',
       HELGA_MODE: 'off',
-      ONVO_MODE: 'off',
+      ONVO_MODE: 'on',
       // La tasa de referencia sí va encendida desde el primer despliegue: no
       // depende de ningun tramite externo (API publica, sin credenciales).
       HACIENDA_ENABLED: 'true',
