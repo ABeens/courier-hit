@@ -103,6 +103,13 @@ const ONVO_EVENTS = {
   deferred: 'payment-intent.deferred',
 } as const;
 
+/**
+ * Situacion de un intento ya cancelado. Es la UNICA respuesta de Onvo que
+ * garantiza que por ese intento no va a salir ningun cobro; el resto
+ * (`processing`, `requires_action`, `succeeded`…) significan que todavia puede.
+ */
+const ONVO_INTENT_CANCELED = 'canceled';
+
 type OnvoEventBody = {
   type?: unknown;
   data?: { id?: unknown; status?: unknown; lastPaymentError?: unknown; [k: string]: unknown };
@@ -193,6 +200,34 @@ export const onvoClient = {
       customerId: typeof payload.customerId === 'string' ? payload.customerId : null,
       simulated: false,
     };
+  },
+
+  /**
+   * Pide a Onvo que cancele el intento. Devuelve true SOLO si la pasarela
+   * confirma que quedo cancelado, es decir: que por ese intento ya no se puede
+   * cobrar nada nunca.
+   *
+   * Ese "solo" es lo que hace seguro deshacer el pago de nuestro lado. Mientras
+   * Onvo no diga `canceled`, el cobro todavia puede ocurrir y el webhook tiene
+   * que encontrar la fila donde aplicarlo; un false aqui significa "no lo
+   * toques". Se traga cualquier fallo a proposito: que Onvo se niegue (el cobro
+   * ya iba en camino) y que la red falle piden la MISMA respuesta prudente.
+   */
+  async cancelPaymentIntent(reference: string): Promise<boolean> {
+    // La pasarela simulada no tiene nada que cancelar en ningun sitio: su
+    // intento solo existe como cadena. Deshacerlo es siempre seguro.
+    if (this.isSimulatedReference(reference)) return true;
+    if (!isOnvoEnabled()) return false;
+
+    try {
+      const payload = await onvoFetch(
+        `/payment-intents/${encodeURIComponent(reference)}/cancel`,
+        {},
+      );
+      return payload.status === ONVO_INTENT_CANCELED;
+    } catch {
+      return false;
+    }
   },
 
   /**

@@ -118,6 +118,18 @@ paymentsRoutes.post(
 );
 
 /**
+ * El cliente cerro el formulario de tarjeta sin pagar: se cancela el intento en
+ * la pasarela y se suelta el cobro reservado.
+ *
+ * Mismo permiso que iniciarlo, porque es la otra mitad del mismo acto. Sin
+ * cuerpo: lo unico que hace falta es cual pago, y quien puede soltarlo lo decide
+ * el servicio comprobando que el tramite sea suyo.
+ */
+paymentsRoutes.post('/:id/abandon', requirePermission(Permission.PackagePay), async (c) => {
+  return c.json(await paymentsService.abandonCard(c.get('session'), c.req.param('id')));
+});
+
+/**
  * Flujo de PRUEBA: resuelve un cobro simulado sin pasar por Onvo, para poder
  * recorrer el pago con tarjeta sin credenciales.
  *

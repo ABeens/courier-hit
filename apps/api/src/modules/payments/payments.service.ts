@@ -361,6 +361,52 @@ export const paymentsService = {
   },
 
   /**
+   * El cliente cerro el formulario de tarjeta sin llegar a pagar. Es la otra
+   * mitad de `start`: ahi se reserva el cobro, aqui se suelta.
+   *
+   * Sin esto el pago se queda PENDIENTE para siempre, y un pendiente no es
+   * inofensivo: cuenta como abono en validacion, bloquea el siguiente intento
+   * (`start` lanza `inValidation`) y le anuncia al cliente un dinero que nadie
+   * cobro. Abrir el modal y cerrarlo dejaba el tramite trabado hasta que un
+   * administrador rechazaba a mano un cobro que nunca existio.
+   *
+   * EL ORDEN NO ES NEGOCIABLE: primero se le pide a Onvo que cancele el intento
+   * y SOLO si Onvo confirma que quedo cancelado se deshace el pago aqui. Al
+   * reves habria una ventana en la que borramos la fila y el cobro sale igual:
+   * el webhook llegaria sin ninguna referencia que tocar y el cliente habria
+   * pagado sin que quede rastro en el sistema. Si Onvo se niega —porque el cobro
+   * ya iba en camino— el pago se queda intacto y lo resuelve el webhook, que es
+   * justo lo que tiene que pasar.
+   */
+  async abandonCard(session: Session, paymentId: string): Promise<{ cancelled: boolean }> {
+    const payment = await paymentsRepo.findById(paymentId);
+    if (!payment) throw PaymentErrors.notFound();
+
+    const shipment = await shipmentsRepo.findById(payment.shipmentId);
+    if (!shipment) throw ShipmentErrors.notFound();
+    assertOwnership(session, shipment);
+
+    // Un deposito pendiente espera a una persona y no se suelta solo; uno ya
+    // resuelto no se toca. Esto vale unicamente para el cobro a medias.
+    if (payment.method !== PaymentMethod.Tarjeta) throw PaymentErrors.methodNotAllowed();
+    if (payment.status !== PaymentStatus.Pendiente) throw PaymentErrors.alreadyResolved();
+    if (!payment.gatewayReference) throw PaymentErrors.notFound();
+
+    if (!(await onvoClient.cancelPaymentIntent(payment.gatewayReference))) {
+      return { cancelled: false };
+    }
+
+    /**
+     * Se BORRA en vez de dejarlo rechazado, por la misma razon por la que `start`
+     * borra el pago cuando la pasarela falla: no hubo cobro, asi que no hay nada
+     * que registrar. Un abono rechazado seria una linea en el historial del
+     * cliente por un cargo que nunca ocurrio, y en la bandeja del staff, ruido.
+     */
+    await paymentsRepo.remove(paymentId);
+    return { cancelled: true };
+  },
+
+  /**
    * Adjunta el comprobante del deposito. Es el RESPALDO del abono, no parte de
    * resolverlo, y por eso la ventana no es la misma para todos:
    *

@@ -368,8 +368,27 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
     setError(message);
   }
 
+  /**
+   * Cierre del modal. Con un cobro con tarjeta a medias hay que avisarle al
+   * servidor: ese pago quedó reservado y, si no se suelta, cuenta como abono en
+   * validación, bloquea el siguiente intento y le anuncia al cliente un dinero
+   * que nadie cobró. Abrir y cerrar dejaba el trámite trabado.
+   *
+   * Es BEST-EFFORT y por eso se traga el error: quien decide si el cobro se puede
+   * soltar es la pasarela, no esta pantalla, y dejar al cliente encerrado en un
+   * modal porque no pudimos limpiar sería peor que el rastro que queda. Si Onvo
+   * responde que el cobro ya iba en camino, el pago se queda donde está y lo
+   * resuelve el webhook.
+   */
+  async function closeModal() {
+    if (cardIntent) {
+      await api.post(`/payments/${cardIntent.paymentId}/abandon`, {}).catch(() => undefined);
+    }
+    onClose();
+  }
+
   return (
-    <ModalOverlay onClose={onClose}>
+    <ModalOverlay onClose={() => void closeModal()}>
       {/*
         `modal-lg` y no el ancho base: aquí dentro se monta el formulario de
         tarjeta de Onvo, que trae sus propios campos a ancho completo. Con los
@@ -680,7 +699,7 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
         </div>
 
         <div className="modal-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
+          <button type="button" className="btn btn-ghost" onClick={() => void closeModal()}>
             Cerrar
           </button>
           {/*
