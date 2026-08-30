@@ -35,6 +35,18 @@
    El ancho sale de `aspect-ratio` y no de una medida fija: asi sigue siendo
    cuadrado con cualquier altura (.btn, .btn-sm, o la mas baja de una ficha). */
 .btn-icon { padding: 0; aspect-ratio: 1; flex: none; }
+/* Accion que vive DENTRO de una ficha, en el sitio de un valor ("ver
+   comprobante", "adjuntar"). Con caja de boton rompe la fila que la contiene:
+   los 34px de alto la bajan respecto de los valores vecinos, que son texto de
+   13px, y los 13px de sangria desplazan su texto de la etiqueta que lo encabeza.
+   Peso de enlace: se alinea con el resto de los valores y se sigue leyendo como
+   algo que se pulsa. */
+.btn-link {
+  height: auto; padding: 0; border: 0; border-radius: 0;
+  background: none; box-shadow: none;
+  font-size: 13px; font-weight: 700; line-height: 1.3; color: var(--brand);
+}
+.btn-link:hover { background: none; color: var(--brand-700); text-decoration: underline; }
 .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 
 /* ---- Chip ---- */

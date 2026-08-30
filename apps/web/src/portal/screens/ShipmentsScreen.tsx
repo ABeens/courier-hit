@@ -53,6 +53,8 @@ import { ShipmentFormModal, allowedTypesFor } from './ShipmentFormModal';
 import { ShipmentHistoryModal } from './ShipmentHistoryModal';
 import { StateAdvanceModal, reachableStates } from './StateAdvanceModal';
 import { PaymentModal } from './PaymentModal';
+import { PaymentResultModal } from './PaymentResultModal';
+import type { PaymentResult } from './PaymentResultModal';
 import { ShipmentPaymentsModal } from './ShipmentPaymentsModal';
 
 /** Que tablero se esta mirando. */
@@ -244,6 +246,12 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
   const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; row: ShipmentDto } | null>(null);
   const [advancing, setAdvancing] = useState<ShipmentDto | null>(null);
   const [paying, setPaying] = useState<ShipmentDto | null>(null);
+  /**
+   * Desenlace del ultimo pago, pendiente de que el cliente lo cierre. Se anuncia
+   * en su propia pantalla y no en el aviso de arriba: entregar dinero es el unico
+   * acto del portal que merece una respuesta que haya que cerrar a proposito.
+   */
+  const [paid, setPaid] = useState<PaymentResult | null>(null);
   /** Trámite cuyos abonos está mirando el staff (registrar depósito / aprobar). */
   const [collecting, setCollecting] = useState<ShipmentDto | null>(null);
   /** Trámite cuyo historial de estados se está mirando (clic sobre la ficha). */
@@ -683,19 +691,26 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
             void load();
           }}
           /*
-            El mensaje lo pone el modal, no esta pantalla: solo el modal sabe si
+            El desenlace lo pone el modal, no esta pantalla: solo el modal sabe si
             fue un deposito (queda por validar) o una tarjeta aprobada (ya esta
             cobrado). Anunciar "pendiente de validación" para los dos casos era
             justo lo que hacia dudar al cliente de un pago que ya paso.
           */
-          onPaid={(message) => {
+          onPaid={(result) => {
             setPaying(null);
-            setNotice(message);
+            setPaid(result);
             setError(null);
             void load();
           }}
         />
       )}
+
+      {/*
+        La confirmacion sustituye al modal del pago, no se apila encima: para
+        cuando aparece, el cobro ya termino y lo que habia detras (el formulario,
+        el medio de pago) ya no se puede tocar.
+      */}
+      {paid && <PaymentResultModal result={paid} onClose={() => setPaid(null)} />}
 
       {collecting && (
         <ShipmentPaymentsModal

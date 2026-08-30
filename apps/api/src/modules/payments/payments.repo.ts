@@ -2,9 +2,9 @@
  * Acceso a datos de los pagos. Dueño de la tabla `payments`; lee `users` solo
  * para poner nombre a quien registro y quien confirmo cada abono.
  */
-import { aliasedTable, and, desc, eq } from 'drizzle-orm';
+import { aliasedTable, and, desc, eq, inArray, ne } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
-import { PaymentStatus } from '@courier/shared';
+import { PaymentMethod, PaymentStatus, UNRESOLVED_PAYMENT_STATUSES } from '@courier/shared';
 import { db } from '../../core/db';
 import { users } from '../auth/auth.schema';
 import { payments } from './payments.schema';
@@ -42,19 +42,44 @@ function baseQuery() {
 }
 
 export const paymentsRepo = {
-  /** Pagos de un tramite, del mas reciente al mas antiguo. */
+  /**
+   * Pagos de un tramite, del mas reciente al mas antiguo.
+   *
+   * Los cobros INICIADOS quedan fuera: son formularios de tarjeta abiertos, no
+   * abonos. En la lista del cliente se leerian como un cargo que nunca ocurrio, y
+   * en la del staff, como algo que revisar.
+   */
   async listByShipment(shipmentId: string) {
-    return baseQuery().where(eq(payments.shipmentId, shipmentId)).orderBy(desc(payments.createdAt));
+    return baseQuery()
+      .where(and(eq(payments.shipmentId, shipmentId), ne(payments.status, PaymentStatus.Iniciado)))
+      .orderBy(desc(payments.createdAt));
   },
 
   /** Bandeja del staff: todos los pagos, opcionalmente filtrados por situacion. */
   async list(filters: { shipmentId?: string; status?: PaymentStatus }) {
-    const conds: SQL[] = [];
+    const conds: SQL[] = [ne(payments.status, PaymentStatus.Iniciado)];
     if (filters.shipmentId) conds.push(eq(payments.shipmentId, filters.shipmentId));
     if (filters.status) conds.push(eq(payments.status, filters.status));
 
-    const query = baseQuery().orderBy(desc(payments.createdAt));
-    return conds.length > 0 ? query.where(and(...conds)) : query;
+    return baseQuery().where(and(...conds)).orderBy(desc(payments.createdAt));
+  },
+
+  /**
+   * Cobros con tarjeta abiertos y sin intentar de un tramite. Los busca `start`
+   * para tirarlos antes de abrir otro: si no, cada formulario que el cliente
+   * abandona (cerrar la pestaña, quedarse sin bateria) deja una fila muerta.
+   */
+  async openCardAttempts(shipmentId: string) {
+    return db
+      .select({ id: payments.id, gatewayReference: payments.gatewayReference })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.shipmentId, shipmentId),
+          eq(payments.method, PaymentMethod.Tarjeta),
+          eq(payments.status, PaymentStatus.Iniciado),
+        ),
+      );
   },
 
   async findById(id: string) {
@@ -73,13 +98,18 @@ export const paymentsRepo = {
   },
 
   /**
-   * Confirma o rechaza un pago SOLO si sigue pendiente, en una sola sentencia.
+   * Confirma o rechaza un pago SOLO si su desenlace sigue sin escribirse, en una
+   * sola sentencia.
    *
    * Es la idempotencia del webhook. Onvo reintenta las entregas fallidas y su
    * evento no trae id propio, asi que el mismo cobro puede llegar dos veces; leer y
-   * despues escribir dejaria una ventana para aplicarlo dos veces. El `WHERE
-   * status = pendiente` hace que la segunda pasada no toque ninguna fila y devuelva
-   * null, que el servicio lee como "ya estaba resuelto".
+   * despues escribir dejaria una ventana para aplicarlo dos veces. El `WHERE` por
+   * situacion hace que la segunda pasada no toque ninguna fila y devuelva null,
+   * que el servicio lee como "ya estaba resuelto".
+   *
+   * Entran las DOS situaciones sin resolver, no solo `Pendiente`: el webhook
+   * puede adelantarse al aviso del navegador y encontrarse el cobro todavia como
+   * `Iniciado`. Exigir `Pendiente` ahi habria dejado sin aplicar un cobro real.
    */
   async resolveIfPending(
     id: string,
@@ -88,7 +118,21 @@ export const paymentsRepo = {
     const [row] = await db
       .update(payments)
       .set(patch)
-      .where(and(eq(payments.id, id), eq(payments.status, PaymentStatus.Pendiente)))
+      .where(and(eq(payments.id, id), inArray(payments.status, [...UNRESOLVED_PAYMENT_STATUSES])))
+      .returning({ id: payments.id });
+    return row ?? null;
+  },
+
+  /**
+   * El cargo salio hacia la pasarela: el cobro deja de ser un formulario abierto
+   * y pasa a contar como abono a la espera del webhook. Condicionado a `Iniciado`
+   * para no pisar un desenlace que ya llego (el webhook puede ganar la carrera).
+   */
+  async markSubmitted(id: string) {
+    const [row] = await db
+      .update(payments)
+      .set({ status: PaymentStatus.Pendiente })
+      .where(and(eq(payments.id, id), eq(payments.status, PaymentStatus.Iniciado)))
       .returning({ id: payments.id });
     return row ?? null;
   },

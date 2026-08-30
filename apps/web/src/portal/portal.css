@@ -557,6 +557,10 @@ select.input { cursor: pointer; padding-right: 30px; }
 .spill.ok .dot { background: var(--ok); }
 .spill.off { background: var(--paper-2); color: var(--muted); }
 .spill.off .dot { background: var(--faint); }
+.spill.warn { background: var(--warn-soft); color: var(--warn); }
+.spill.warn .dot { background: var(--warn); }
+.spill.danger { background: var(--danger-soft); color: var(--danger); }
+.spill.danger .dot { background: var(--danger); }
 
 /* ---- Modal ----
    Escala de capas del portal: ann-stack 4 · topbar 5 · backdrop del drawer 40 ·
@@ -599,22 +603,257 @@ select.input { cursor: pointer; padding-right: 30px; }
   .modal-form { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 18px; }
 }
 
+/* ---- Modal de pago: secciones ----
+   `.card-sec` es un bloque de la fila de una ficha de listado: no lleva caja
+   porque se apoya en el divisor de su vecino y en el marco de la ficha. Suelto
+   dentro del cuerpo de un modal se queda sin ese contexto y pasan dos cosas:
+   los campos se reparten a lo ancho de los 780px del modal (tres cifras a 250px
+   unas de otras) y los bloques que no son el primero pintan un divisor vertical
+   suelto que no separa nada. El resultado es una pantalla sin agrupaciones donde
+   todo pesa igual. Aqui cada bloque es un panel con su propio marco. */
+.pay-sec {
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: 13px 15px; display: grid; gap: 9px; align-content: start;
+}
+/* El cobro es el dato que trae al cliente a esta pantalla: panel destacado. */
+.pay-sec.is-money { background: var(--brand-softer); border-color: var(--brand-soft); }
+.pay-sec.is-money .card-sec-title { color: var(--brand); }
+.pay-sec.is-money .card-item-field dd { font-weight: 700; color: var(--brand-700); }
+
+/* Campos de un panel: se colocan uno tras otro y saltan de linea cuando no
+   caben, NO en columnas de igual ancho. La rejilla de `.card-sec-fields` reparte
+   el ancho sobrante entre las celdas, que dentro de un modal ancho es justo lo
+   que aleja "Factura" de "Saldo" hasta los extremos. */
+.pay-fields { display: flex; flex-wrap: wrap; gap: 9px 28px; }
+.pay-fields > .card-item-field { flex: 0 1 auto; }
+/* El saldo es la cifra que se va a cobrar: manda sobre factura y abonado. */
+.pay-fields .card-item-field dd.pay-due {
+  font-size: 19px; font-weight: 800; color: var(--brand-700); line-height: 1.15;
+}
+/* Historial de abonos: uno por linea, y cada linea separada de la siguiente por
+   un filete. Enfilados sin divisor se leen como campos de un mismo pago cuando
+   en realidad cada uno es un movimiento distinto.
+
+   Dentro de la linea, el sello a la izquierda y el importe con su estado a la
+   derecha: es el orden en que se busca ("de cuando es" y luego "cuanto y como
+   quedo"), y deja las cifras alineadas en una columna. */
+.pay-list { display: grid; gap: 10px; }
+.pay-list > .card-item-field {
+  display: flex; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: 4px 16px;
+}
+.pay-list > .card-item-field + .card-item-field {
+  border-top: 1px solid var(--line); padding-top: 10px;
+}
+/* La fecha y el medio son el sello del movimiento, no la etiqueta de un campo:
+   en versalitas de 10px una fecha no se lee. */
+.pay-list dt {
+  font-size: 12.5px; font-weight: 600; text-transform: none; letter-spacing: 0;
+  color: var(--muted); margin-bottom: 0;
+}
+
+/* Botones de la pasarela simulada dentro de su panel. No reutiliza
+   `.modal-foot`: ese es el pie del modal, con borde superior y pegado al fondo. */
+.pay-sec-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+/* ---- Historial de abonos (vista de staff) ----
+   Cada abono es un movimiento con su propia historia: quien lo registro, quien
+   lo resolvio, con que comprobante y por que. Encadenados en una sola rejilla
+   no se ve donde acaba uno y empieza el siguiente, porque los campos del
+   segundo continuan las columnas del primero y se leen como si fueran del mismo
+   pago. Cada uno va en su propia fila enmarcada. */
+.pay-rows { display: grid; gap: 12px; }
+.pay-row {
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 13px 15px; display: grid; gap: 11px; background: var(--surface);
+}
+/* Cabecera del movimiento: el importe y su estado son lo que identifica al
+   abono, la fecha y el medio son el subtitulo. Al reves (que es como estaba)
+   hay que leer los cuatro datos para saber cuanto entro. */
+.pay-row-head {
+  display: flex; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: 6px 14px;
+}
+.pay-row-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.pay-row-amount {
+  font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--ink);
+  letter-spacing: -0.01em;
+}
+/* El equivalente en la otra moneda acompana al importe, no compite con el. */
+.pay-row-alt { font-size: 13px; color: var(--muted); font-weight: 600; }
+.pay-row-meta { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+/* El rastro del abono, separado del importe por un filete: son dos cosas
+   distintas (cuanto entro y quien responde por ello). Columnas anchas porque lo
+   que va dentro son nombres con fecha y hora, no cifras. */
+.pay-row-fields {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px 24px; border-top: 1px solid var(--line-2); padding-top: 11px;
+}
+/* El comprobante ocupa su propio renglon, debajo del rastro y arrancando en la
+   primera columna (bajo "Registro"). Como una columna mas quedaba a la altura de
+   los valores vecinos pero con una accion dentro, que no se lee como un dato:
+   "Adjuntar" es algo que se pulsa y necesita su propio sitio. */
+.pay-row-fields > .pay-row-proof { grid-column: 1 / -1; }
+
+/* Un abono rechazado no es dinero del tramite: se atenua y se tacha el importe
+   para que la lista se lea de un vistazo (lo cobrado, lo que espera, lo
+   descartado) sin ir etiqueta por etiqueta. */
+.pay-row.is-off { background: var(--paper); border-color: var(--line-2); }
+.pay-row.is-off .pay-row-amount { color: var(--muted); text-decoration: line-through; }
+/* Aprobar o rechazar el abono, dentro de su fila. El motivo se lleva el espacio
+   sobrante y salta de linea antes que los botones: compartiendo fila con ellos
+   quedaba en una rendija donde no se lee lo escrito. */
+.pay-row-actions {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px;
+  border-top: 1px solid var(--line-2); padding-top: 11px;
+}
+.pay-row-actions .input { flex: 1 1 220px; min-width: 0; }
+
+/* ---- Medio de pago ----
+   Una opcion por tarjeta seleccionable en vez de un radio en una linea: el area
+   de clic es la opcion entera y la elegida se ve por el marco, no por el punto. */
+.pay-methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.pay-method {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 12px 14px; font-size: 14px; font-weight: 600; color: var(--ink-2);
+  background: var(--surface); transition: border-color .15s, background .15s, color .15s;
+}
+.pay-method:hover { border-color: var(--brand-soft); background: var(--brand-softer); }
+.pay-method.is-on { border-color: var(--brand); background: var(--brand-softer); color: var(--brand-700); }
+.pay-method input { width: 16px; height: 16px; accent-color: var(--brand); cursor: pointer; }
+.pay-method svg { color: var(--muted); flex: none; }
+.pay-method.is-on svg { color: var(--brand); }
+
+/* ---- Modal del cobro con tarjeta ----
+   El cobro tiene su propio modal, encima del tramite. Dentro no hay mas que el
+   importe y la pasarela: el alto se lo lleva entero el formulario del SDK, que
+   trae un suelo de 560px y no cabe debajo del resumen, el selector y el
+   historial sin acabar detras de un scroll.
+
+   El ancho es el del formulario mas su aire, no mas: un modal de 1000px con un
+   campo de tarjeta centrado se lee como una pantalla a medio llenar.
+
+   El aire del overlay tambien se recorta a la mitad, y su capa oscura se aclara:
+   son dos overlays superpuestos (el del tramite sigue detras) y a plena opacidad
+   el segundo oscurece lo que ya estaba oscurecido. */
+.overlay:has(.modal-pay) { padding: 12px; background: rgba(20,24,40,.30); }
+.modal-pay { max-width: 640px; max-height: calc(100dvh - 24px); }
+
+/* Cabecera del cobro: a la izquierda de que tramite es, a la derecha cuanto se
+   cobra. El importe va aqui y no en el cuerpo porque abajo cada pixel es del
+   formulario, y en la cabecera no cuesta ninguno: la linea ya existe. */
+.pay-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.pay-head > div:first-child { min-width: 0; }
+.pay-head-amount { flex: none; text-align: right; }
+.pay-head-amount span {
+  display: block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--faint); line-height: 1.3;
+}
+.pay-head-amount strong {
+  font-family: var(--font-display); font-size: 21px; font-weight: 800;
+  color: var(--brand-700); line-height: 1.2; letter-spacing: -0.01em;
+}
+/* Aqui el formulario ES el cuerpo del modal: ni marco de panel ni titulo. El
+   modal ya se titula "Pago con tarjeta" y no hay nada de lo que separarlo, asi
+   que las dos cosas solo gastan el alto que le falta al SDK.
+
+   Y el cuerpo REPARTE su alto en vez de apilar contenidos: los avisos ocupan lo
+   suyo y el formulario se queda con todo lo que sobra. Es lo que permite que el
+   hueco vacio de la carga mida exactamente lo que se ve. */
+.pay-checkout { display: flex; flex-direction: column; }
+.pay-checkout .pay-card-form {
+  border: 0; padding: 0;
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+}
+.pay-checkout .pay-card-form > .card-sec-title { display: none; }
+
+/* ALTO DEFINIDO mientras esta montada la pasarela, no derivado del contenido.
+   Sin el, el cuerpo mide lo que midan sus hijos y el hueco del formulario no
+   tiene contra que estirarse: durante la carga se quedaria en cero y el spinner
+   caeria sobre el borde. Con el, el modal no cambia de tamaño entre la carga y
+   el formulario, que es lo que hacia que la pantalla saltara.
+
+   760px = cabecera + pie + el hueco que necesita el formulario de Onvo montado
+   (unos 560px). No es un alto que se le imponga a nadie: el iframe ocupa lo que
+   haya, asi que este numero solo decide CUANTO hay. Por debajo, el formulario
+   sigue cabiendo pero se recorre por dentro.
+
+   Va de SUELO y no de alto fijo por si la cabecera parte el nombre del tramite en
+   dos lineas, y el suelo se limita a la ventana (`min()`) porque un minimo mayor
+   que el maximo gana al maximo, y el modal se saldria de la pantalla.
+
+   Solo aplica con el formulario real dentro (`:has`): la pasarela simulada son
+   dos botones y en una caja de 760px se verian perdidos. */
+.modal-pay:has(.pay-card-form) { min-height: min(760px, calc(100dvh - 24px)); }
+
+/* Nota de seguridad del pago: es una garantia, no un paso, asi que va en el pie
+   junto a la salida y no encima del formulario, que es donde le quitaba alto.
+   Peso de texto secundario, no de banner. */
+.pay-secure {
+  display: flex; gap: 8px; align-items: flex-start; margin-right: auto;
+  font-size: 12px; line-height: 1.45; color: var(--muted); max-width: 62%;
+}
+.pay-secure svg { flex: none; margin-top: 1px; color: var(--ok); }
+.modal-pay .modal-foot { flex-wrap: wrap; align-items: center; }
+/* Sin ancho para las dos cosas en fila, la nota se pone encima del boton. */
+@container (max-width: 520px) {
+  .pay-secure { max-width: none; flex: 1 1 100%; margin-right: 0; }
+}
+
 /* ---- Formulario de tarjeta (SDK de Onvo) ----
    El SDK pinta su propio formulario dentro de este contenedor, en un iframe.
-   Nosotros solo ponemos el sitio: ancho completo y altura suficiente.
+   Nosotros solo ponemos el sitio.
 
-   El suelo de altura existe porque el alto que trae el SDK se queda corto dentro
-   del modal y el formulario acaba con su PROPIA barra de scroll dentro de la del
-   cuerpo: dos scrolls anidados para una sola pantalla, con el boton de pagar
-   escondido en el de dentro. Es un MINIMO, no un alto fijo, y por eso funciona
-   aunque el SDK fije su `height` inline: el alto usado es el mayor de los dos.
-   Si el formulario necesita crecer (el reto 3DS abre un paso mas), crece. */
-.pay-card-form { display: grid; gap: 10px; }
-.pay-card-form iframe { display: block; width: 100%; border: 0; min-height: 560px; }
-/* Mas estrecho, mas alto: los campos que compartian fila se apilan. */
-@media (max-width: 560px) {
-  .pay-card-form iframe { min-height: 640px; }
+   El ancho va limitado y centrado: el SDK pinta sus campos a ancho completo y un
+   "CVV" tan largo como el modal no se lee como un formulario de pago, se lee como
+   una pantalla estirada. 580px es donde los campos guardan proporcion con su
+   contenido, y es lo que fija de hecho el ancho de `modal-pay`.
+
+   EL ALTO: el iframe ocupa EL HUECO QUE HAY, ni mas ni menos, y si el formulario
+   no cabe dentro scrollea el iframe. Es la decision de este bloque y va contra lo
+   que se intento antes (darle un alto propio, 560px o 780 en el telefono), que
+   era el origen de todos los scrolls raros de esta pantalla:
+
+   - Un alto mayor que el hueco hace scrollear al CUERPO del modal, y lo hace
+     desde que el iframe se monta: la cabecera y el pie se van de la pantalla y la
+     barra aparece incluso cuando dentro no hay mas que el spinner de carga.
+   - Un alto menor que el formulario hace scrollear al iframe DENTRO de un cuerpo
+     que tambien scrollea: dos barras para una sola pantalla.
+
+   Ocupando el hueco no hay ninguna de las dos. Mientras carga no sobra alto que
+   scrollear, y con el formulario montado el unico que puede scrollear es el
+   iframe, con la cabecera (el importe) y el pie (cancelar) siempre a la vista.
+   El precio es que en un telefono el formulario de Onvo se recorre por dentro:
+   es un scroll, en un solo sitio, y no dos. */
+.pay-card-form { max-width: 580px; width: 100%; margin-inline: auto; }
+/* El hueco: se estira y se encoge con el cuerpo del modal, y reparte su alto al
+   iframe. `min-height` es el suelo por si un aviso de error se come el cuerpo:
+   el formulario puede quedar apretado, pero no desaparecer. */
+.pay-card-slot {
+  position: relative; flex: 1 1 auto; min-height: 220px;
+  display: flex; flex-direction: column;
 }
+.pay-card-cover {
+  position: absolute; inset: 0; display: grid; place-content: center; justify-items: center;
+  gap: 12px; text-align: center; color: var(--muted); font-size: 13.5px; font-weight: 600;
+}
+.pay-card-spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 2.5px solid var(--line); border-top-color: var(--brand);
+  animation: paySpin .7s linear infinite;
+}
+@keyframes paySpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .pay-card-spinner { animation-duration: 2.4s; }
+}
+/* El alto del iframe NO se pone aqui: lo iguala al del hueco `OnvoCardForm` desde
+   JS, porque el iframe lo monta el SDK donde quiere dentro del contenedor y un
+   reparto CSS no lo alcanza si mete envoltorios por medio. Aqui solo su forma. */
+.pay-card-slot iframe { display: block; width: 100%; border: 0; }
+/* El contenedor del SDK ocupa el hueco entero, para que el iframe tenga contra
+   que medirse desde el primer momento. */
+.pay-card-slot > div { flex: 1 1 auto; min-height: 0; }
 
 /* En movil el modal ocupa casi toda la pantalla: el aire de 24px sobra. */
 @media (max-width: 560px) {
@@ -625,6 +864,80 @@ select.input { cursor: pointer; padding-right: 30px; }
   .modal-foot { padding: 14px 18px; }
   /* Los dos botones del pie a ancho completo: dedos, no punteros. */
   .modal-foot .btn { flex: 1; }
+}
+
+/* En movil el modal de pago va a pantalla completa: el aire de los bordes son
+   24px que se le quitan al unico sitio donde hacen falta, el alto del formulario
+   de la tarjeta. */
+@media (max-width: 560px) {
+  .overlay:has(.modal-pay) { padding: 0; }
+  .modal-pay { max-height: 100dvh; border-radius: 0; }
+  .modal-pay:has(.pay-card-form) { min-height: 100dvh; }
+}
+
+/* ---- Historial de abonos en pantalla estrecha ----
+   Fijo en el cuerpo, el historial se lleva media pantalla antes de que se llegue
+   al medio de pago: es una consulta ocasional, no un paso del pago. Ahi pasa a un
+   boton que lo abre en una hoja. Con ancho de sobra se queda a la vista. */
+/* El selector va por el hijo de la columna y no por la clase suelta: `.btn` ya
+   trae su propio `display` y, con la misma especificidad, gana el que se cargue
+   despues (portal.css y atoms.css salen en dos hojas distintas). */
+.modal-body > .pay-history-toggle { display: none; }
+@container (max-width: 620px) {
+  .modal-body > .pay-history { display: none; }
+  .modal-body > .pay-history-toggle {
+    display: inline-flex; justify-content: flex-start; gap: 8px;
+  }
+}
+
+/* ---- Confirmacion del pago ----
+   Pantalla de desenlace: una sola cosa que leer (que paso), la cifra grande
+   debajo y una sola salida. Todo centrado porque no hay nada que comparar ni
+   ninguna otra accion que ofrecer.
+
+   El color lo decide el resultado y no el diseño: verde solo cuando el dinero YA
+   entro. Un deposito registrado o un cobro a la espera del webhook van en ambar,
+   que es lo que dice "esto todavia no termina" sin tener que leer el parrafo. */
+.pay-result .modal-body { text-align: center; justify-items: center; gap: 6px; padding: 26px 24px 22px; }
+.pay-result h3 { font-family: var(--font-display); font-size: 19px; color: var(--ink); }
+.pay-result-mark {
+  width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--warn-soft); color: var(--warn); margin-bottom: 6px;
+}
+.pay-result.is-paid .pay-result-mark { background: var(--ok-soft); color: var(--ok); }
+.pay-result-amount {
+  font-family: var(--font-display); font-size: 30px; font-weight: 800; letter-spacing: -0.02em;
+  color: var(--ink); line-height: 1.15;
+}
+.pay-result.is-paid .pay-result-amount { color: var(--ok); }
+.pay-result-code {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px; color: var(--faint);
+}
+.pay-result-text { font-size: 13.5px; line-height: 1.5; color: var(--muted); margin-top: 6px; }
+/* Una sola salida, y a lo ancho: no hay nada que elegir. */
+.pay-result .modal-foot { border-top: 0; padding-top: 4px; }
+.pay-result .modal-foot .btn { flex: 1; }
+
+/* Hoja emergente. Sube desde abajo (el pulgar esta ahi) y se monta fuera del
+   modal, por encima de su capa: escala del portal, modal 80 · hoja 90. */
+.sheet-scrim {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(20,24,40,.42); backdrop-filter: blur(2px);
+  display: grid; align-items: end; justify-items: center;
+}
+.sheet {
+  width: 100%; max-width: 560px; max-height: 82dvh; overflow-y: auto;
+  background: var(--surface); box-shadow: var(--sh-3);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  padding: 16px 18px calc(20px + env(safe-area-inset-bottom));
+  display: grid; gap: 12px; align-content: start;
+}
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sheet-head h4 { font-family: var(--font-display); font-size: 16px; color: var(--ink); }
+/* Con ancho de sobra la hoja no es una hoja: se centra como un dialogo. */
+@media (min-width: 620px) {
+  .sheet-scrim { align-items: center; padding: 24px; }
+  .sheet { border-radius: var(--r-lg); }
 }
 
 /* ---- Mensajes ---- */

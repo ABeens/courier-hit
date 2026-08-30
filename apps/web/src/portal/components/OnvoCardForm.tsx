@@ -121,6 +121,67 @@ export function OnvoCardForm({
   onCompletedRef.current = onCompleted;
   onFailedRef.current = onFailed;
 
+  /**
+   * El alto del iframe, igualado al del hueco que le dejamos.
+   *
+   * Se hace desde JS y no desde CSS porque el iframe NO es hijo nuestro: lo monta
+   * el SDK dentro del contenedor, y no sabemos si lo cuelga directo o dentro de
+   * sus propios envoltorios. Un reparto flex o un `height: 100%` dependen de que
+   * cada ancestro tenga alto definido, y un solo div intermedio que no controlamos
+   * los deja sin efecto (el iframe se quedaria en su alto por defecto: 150px).
+   * Medir y aplicar funciona este donde este.
+   *
+   * Y es lo que evita las dos barras de scroll de esta pantalla: con el alto que
+   * trae el SDK, el iframe es mas alto que el hueco y quien scrollea es el cuerpo
+   * del modal (la cabecera con el importe y el pie con cancelar se van de la
+   * vista, y la barra sale incluso mientras dentro no hay mas que el spinner).
+   * Igualado al hueco, el unico que puede scrollear es el iframe, con su propio
+   * formulario dentro y el modal quieto alrededor.
+   *
+   * El `ResizeObserver` cubre el cambio de tamaño de la ventana y el giro del
+   * telefono; el `MutationObserver`, el momento en que el SDK inserta el iframe y
+   * las veces que le reescribe el `style` (al mostrar errores de validacion, su
+   * formulario crece). La guarda de "ya vale eso" corta el bucle entre su
+   * escritura y la nuestra.
+   */
+  const slotRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const slot = slotRef.current;
+    if (!slot) return;
+
+    const fitFrame = () => {
+      const frame = slot.querySelector('iframe');
+      if (!frame) return;
+
+      const target = `${slot.clientHeight}px`;
+      const current = frame.style.getPropertyValue('height');
+      if (current === target && frame.style.getPropertyPriority('height') === 'important') return;
+
+      // `important` porque el SDK escribe el alto en el atributo `style`, que le
+      // gana a cualquier regla de la hoja y tambien a una declaracion normal.
+      frame.style.setProperty('height', target, 'important');
+    };
+
+    const resize = new ResizeObserver(fitFrame);
+    resize.observe(slot);
+
+    const mutations = new MutationObserver(fitFrame);
+    mutations.observe(slot, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['style'],
+    });
+
+    fitFrame();
+
+    return () => {
+      resize.disconnect();
+      mutations.disconnect();
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -164,20 +225,39 @@ export function OnvoCardForm({
     /*
       No usa `.card-sec`: esa ficha vive en una fila de bloques separados por un
       divisor a la izquierda, y aquí ese sangrado le robaba ancho al formulario y
-      le pintaba una línea vertical que no separa nada.
+      le pintaba una línea vertical que no separa nada. `.pay-sec` es el panel
+      con marco propio del modal de pago; `.pay-card-form` le pone el ancho de
+      checkout, porque el SDK pinta sus campos a lo que le den.
     */
-    <div className="pay-card-form">
+    <div className="pay-sec pay-card-form">
       <div className="card-sec-title">Pago con tarjeta</div>
 
-      {status === 'loading' && <div className="banner">Cargando el formulario seguro…</div>}
-      {status === 'error' && <div className="banner err">{loadError}</div>}
-
       {/*
-        El contenedor se pinta SIEMPRE, también mientras carga: el SDK busca el
-        selector en cuanto termina de cargar, y si el div apareciera solo con
-        `status === 'ready'` no existiría todavía en ese momento.
+        El hueco del formulario está reservado desde el primer instante y el aviso
+        de carga va DENTRO, superpuesto. Antes iba encima, empujando el formulario
+        hacia abajo: mientras cargaba, el cuerpo del modal sacaba una barra de
+        scroll que desaparecía sola en cuanto el aviso se iba. La altura de esta
+        pantalla no puede depender de en qué momento se la mire.
       */}
-      <div id={containerId} />
+      <div className="pay-card-slot" ref={slotRef}>
+        {status !== 'ready' && (
+          <div className="pay-card-cover">
+            {status === 'loading' ? (
+              <span className="pay-card-spinner" aria-hidden="true" />
+            ) : null}
+            <p className={status === 'error' ? 'banner err' : undefined}>
+              {status === 'error' ? loadError : 'Cargando el formulario seguro…'}
+            </p>
+          </div>
+        )}
+
+        {/*
+          El contenedor se pinta SIEMPRE, también mientras carga: el SDK busca el
+          selector en cuanto termina de cargar, y si el div apareciera solo con
+          `status === 'ready'` no existiría todavía en ese momento.
+        */}
+        <div id={containerId} />
+      </div>
     </div>
   );
 }

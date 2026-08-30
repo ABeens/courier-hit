@@ -42,6 +42,24 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
 
 /** Situacion del abono. Solo `Confirmado` cuenta como dinero recibido. */
 export enum PaymentStatus {
+  /**
+   * Cobro con tarjeta ABIERTO en la pasarela y todavia sin intentar: existe el
+   * formulario, no existe el cargo.
+   *
+   * Es un estado previo al abono, no un abono. La pasarela exige que el intento
+   * de cobro se cree en el servidor ANTES de pintar el formulario, asi que en
+   * cuanto el cliente abre la pantalla ya hay una fila; llamarla `Pendiente`
+   * decia que habia dinero en camino por el solo hecho de mirar el formulario, y
+   * de ahi salia todo lo demas: el saldo se anunciaba "en validacion", el
+   * siguiente intento quedaba bloqueado y el staff veia en su bandeja un abono
+   * que nadie podia resolver porque nunca se cobro nada.
+   *
+   * No suma en ningun sitio (`settledAmount` y `pendingAmount` filtran por
+   * situacion exacta) y no se le enseña al cliente. Pasa a `Pendiente` cuando el
+   * cargo sale de verdad hacia la pasarela, y se borra si el cliente cierra el
+   * formulario sin pagar.
+   */
+  Iniciado = 'iniciado',
   /** Comprobante subido, a la espera de que el staff lo valide. */
   Pendiente = 'pendiente',
   Confirmado = 'confirmado',
@@ -49,10 +67,21 @@ export enum PaymentStatus {
 }
 
 export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
+  [PaymentStatus.Iniciado]: 'Cobro iniciado',
   [PaymentStatus.Pendiente]: 'Pendiente de validación',
   [PaymentStatus.Confirmado]: 'Confirmado',
   [PaymentStatus.Rechazado]: 'Rechazado',
 };
+
+/**
+ * Situaciones en las que el desenlace del cobro todavia no se ha escrito. Es lo
+ * que puede resolver la pasarela: el cargo iniciado (el webhook puede llegar
+ * antes de que el navegador avise) y el ya enviado.
+ */
+export const UNRESOLVED_PAYMENT_STATUSES: readonly PaymentStatus[] = [
+  PaymentStatus.Iniciado,
+  PaymentStatus.Pendiente,
+];
 
 /**
  * Situacion con la que NACE un deposito que registra el staff a mano, segun

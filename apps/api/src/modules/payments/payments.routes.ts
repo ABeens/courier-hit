@@ -118,6 +118,17 @@ paymentsRoutes.post(
 );
 
 /**
+ * El navegador acabo de mandarle la tarjeta a la pasarela: el cobro pasa de
+ * formulario abierto a cargo en camino.
+ *
+ * Mismo permiso que iniciarlo, y sin cuerpo, por lo mismo que `abandon`: es otro
+ * paso del mismo acto y lo unico que hace falta saber es cual pago.
+ */
+paymentsRoutes.post('/:id/submitted', requirePermission(Permission.PackagePay), async (c) => {
+  return c.json(await paymentsService.markCardSubmitted(c.get('session'), c.req.param('id')));
+});
+
+/**
  * El cliente cerro el formulario de tarjeta sin pagar: se cancela el intento en
  * la pasarela y se suelta el cobro reservado.
  *

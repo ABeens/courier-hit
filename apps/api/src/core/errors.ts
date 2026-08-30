@@ -404,6 +404,18 @@ export const PaymentErrors = {
     ),
   alreadyResolved: () =>
     new AppError('PAYMENT_ALREADY_RESOLVED', 'Este pago ya fue confirmado o rechazado.', 409),
+  /**
+   * Hay un cobro con tarjeta anterior que la pasarela NO deja cancelar, o sea que
+   * ese cargo va en camino. Abrir otro formulario cobraria dos veces el mismo
+   * saldo, asi que se pide esperar el desenlace del primero. 409 por lo mismo que
+   * `inValidation`: no es un error de quien pide, es el estado del tramite.
+   */
+  cardAttemptInFlight: () =>
+    new AppError(
+      'PAYMENT_CARD_ATTEMPT_IN_FLIGHT',
+      'Tu cobro anterior con tarjeta todavía se está procesando. Espera unos segundos y vuelve a intentarlo.',
+      409,
+    ),
   methodNotAllowed: () =>
     new AppError(
       'PAYMENT_METHOD_NOT_ALLOWED',

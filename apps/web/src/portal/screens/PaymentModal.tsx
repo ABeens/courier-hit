@@ -24,6 +24,7 @@
  *     cargo que la pasarela todavía puede rechazar.
  */
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BANK_ACCOUNTS,
   BankAccount,
@@ -41,9 +42,22 @@ import {
 } from '@courier/shared';
 import type { PaymentDto, PaymentIntentDto, Role, ShipmentDto } from '@courier/shared';
 import { API_BASE, ApiError, api } from '../lib/api';
+import { Icon } from '../components/Icon';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { OnvoCardForm } from '../components/OnvoCardForm';
+import type { PaymentResult } from './PaymentResultModal';
 import { formatDate } from '../lib/datetime';
+
+/**
+ * Pildora del estado de un abono. Un `.spill` a secas se pinta sin fondo, o sea
+ * como texto suelto: pendiente y rechazado se leian igual y ninguno se leia como
+ * un estado.
+ */
+function statusPill(status: PaymentStatus): string {
+  if (status === PaymentStatus.Confirmado) return 'spill ok';
+  if (status === PaymentStatus.Rechazado) return 'spill danger';
+  return 'spill warn';
+}
 
 /**
  * Espera del desenlace del cobro con tarjeta. El SDK termina antes que el
@@ -95,15 +109,18 @@ interface Props {
   role: Role;
   onClose: () => void;
   /**
-   * Cierra el modal anunciando lo que PASO. El mensaje viaja desde aqui porque
+   * Cierra el modal anunciando lo que PASO. El desenlace viaja desde aqui porque
    * solo este componente distingue un deposito registrado (queda por validar) de
    * un cobro con tarjeta ya aprobado (el tramite queda cubierto), y decirle al
    * cliente que su pago "queda pendiente" cuando ya se cobro es lo que le hace
    * pensar que no paso nada.
    *
+   * No es un texto sino un resultado con `kind`: quien lo recibe pinta la
+   * confirmacion, y el tono (cobrado / en camino) no puede deducirse de una frase.
+   *
    * Un cobro RECHAZADO no llama aqui: el modal se queda abierto para reintentar.
    */
-  onPaid: (message: string) => void;
+  onPaid: (result: PaymentResult) => void;
 }
 
 export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
@@ -130,6 +147,12 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
   const [cardIntent, setCardIntent] = useState<{ paymentId: string; intent: PaymentIntentDto } | null>(
     null,
   );
+  /**
+   * Historial de abonos desplegado. Solo existe en pantallas estrechas: ahi el
+   * listado es una consulta ocasional y, fijo en la columna, empujaba el
+   * formulario de la tarjeta media pantalla hacia abajo.
+   */
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   /**
    * Lo ya abonado y sin validar, tal como lo calcula el servidor. No se recalcula
@@ -167,6 +190,23 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
    */
   const currency = billingCurrencyFor(shipment.shipmentType, role);
   const amounts = quote ? billingAmounts(quote, currency, quote.settled) : null;
+
+  /**
+   * El desenlace que se le entrega a la pantalla de atras para que lo anuncie.
+   *
+   * El importe es el saldo que se acaba de cubrir, ya formateado en la moneda en
+   * que esta pantalla le hablo al cliente (`amounts`): la confirmacion tiene que
+   * repetir la MISMA cifra que el cliente vio antes de pagar, no reexpresarla.
+   */
+  function outcome(kind: PaymentResult['kind'], title: string, message: string): PaymentResult {
+    return {
+      kind,
+      title,
+      message,
+      code: shipment.code,
+      amount: amounts ? formatMoney(amounts.due, amounts.currency) : '',
+    };
+  }
 
   /**
    * ¿Se puede pagar ahora mismo? No basta con que quede saldo: un comprobante ya
@@ -250,7 +290,13 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
         }
       }
 
-      onPaid('Registramos tu depósito. Queda pendiente de validación por nuestro equipo.');
+      onPaid(
+        outcome(
+          'pending',
+          'Depósito registrado',
+          'Validaremos el comprobante y te avisaremos apenas quede confirmado. Mientras tanto el saldo del trámite sigue abierto.',
+        ),
+      );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo registrar el pago.');
     } finally {
@@ -274,7 +320,7 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
       setCardIntent(null);
 
       if (approve) {
-        onPaid('Pago aprobado. El trámite queda cubierto.');
+        onPaid(outcome('paid', '¡Pago aprobado!', 'Recibimos tu pago y el trámite queda cubierto.'));
         return;
       }
 
@@ -324,11 +370,23 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
     setSaving(true);
 
     try {
+      /**
+       * Primero se le avisa al servidor de que el cargo SALIO. Hasta aqui el pago
+       * era solo un formulario abierto (no contaba como abono, no bloqueaba nada);
+       * a partir de ahora hay dinero en camino y tiene que contar, aunque el
+       * webhook todavia no haya llegado.
+       *
+       * No confirma nada ni se deja fallar: si esta llamada se pierde, el cobro lo
+       * resuelve igual el webhook. Cortar aqui el flujo le enseñaria un error al
+       * cliente por un pago que salio bien.
+       */
+      await api.post(`/payments/${cardIntent.paymentId}/submitted`, {}).catch(() => undefined);
+
       const resolved = await waitForResolution(cardIntent.paymentId);
 
       if (resolved?.status === PaymentStatus.Confirmado) {
         setCardIntent(null);
-        onPaid('Pago aprobado. El trámite queda cubierto.');
+        onPaid(outcome('paid', '¡Pago aprobado!', 'Recibimos tu pago y el trámite queda cubierto.'));
         return;
       }
 
@@ -349,7 +407,11 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
        */
       setCardIntent(null);
       onPaid(
-        'Enviamos tu pago a la pasarela y lo estamos confirmando. Te avisaremos apenas quede registrado.',
+        outcome(
+          'pending',
+          'Pago enviado',
+          'La pasarela todavía está confirmando el cobro. Te avisaremos apenas quede registrado; no hace falta que pagues de nuevo.',
+        ),
       );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo confirmar el cobro.');
@@ -387,15 +449,186 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
     onClose();
   }
 
+  /**
+   * Cancelar el cobro con tarjeta: cierra SU modal y devuelve al trámite, que
+   * sigue abierto detrás con el medio de pago ya elegido.
+   *
+   * El intento hay que soltarlo en el servidor por lo mismo que al cerrar del
+   * todo: reservado cuenta como abono en validación y bloquea el siguiente
+   * intento. Y como ese abandono mueve el saldo, se vuelve a pedir la cotización
+   * en vez de dejar en pantalla la de antes.
+   *
+   * Mientras se confirma no se cancela nada: ahí el cargo ya salió y quien lo
+   * resuelve es el webhook, así que anularlo dejaría al cliente creyendo que no
+   * pagó un cobro que la pasarela puede estar aprobando.
+   */
+  async function cancelCard() {
+    const current = cardIntent;
+    if (!current || saving) return;
+    setCardIntent(null);
+    setError(null);
+    setNotice(null);
+    await api.post(`/payments/${current.paymentId}/abandon`, {}).catch(() => undefined);
+    await Promise.all([
+      api.get<Quote>(`/payments/quote/${shipment.id}`),
+      api.get<{ items: PaymentDto[] }>(`/payments/shipment/${shipment.id}`),
+    ])
+      .then(([q, list]) => {
+        setQuote(q);
+        setPayments(list.items);
+      })
+      .catch(() => undefined);
+  }
+
+  /**
+   * Hay un cobro con tarjeta en curso. Ya no cambia de forma este modal: el
+   * formulario de la pasarela vive en SU PROPIO modal, encima. Aquí se elige el
+   * medio y se llenan los datos del trámite; allí solo se paga, sin el historial
+   * ni el selector alrededor.
+   */
+  const cardOpen = cardIntent != null;
+
+  /**
+   * Avisos del cobro. Se pintan en el modal que está delante, no en los dos: con
+   * la pasarela abierta, un error del SDK anunciado en la pantalla de atrás queda
+   * detrás de su propia capa oscura, que es como no anunciarlo.
+   */
+  const alerts = (
+    <>
+      {error && <div className="banner err">{error}</div>}
+      {notice && <div className="banner ok">{notice}</div>}
+    </>
+  );
+
+  const summary = quote && amounts && (
+    <div className="pay-sec is-money">
+      <div className="card-sec-title">Monto a pagar</div>
+      <dl className="pay-fields">
+        <div className="card-item-field">
+          <dt>Factura</dt>
+          <dd>
+            {amounts.invoiceTotal != null
+              ? formatMoney(amounts.invoiceTotal, amounts.currency)
+              : '—'}
+            {/*
+              El equivalente en la otra moneda solo acompaña al cobro en colones.
+              En Paquetería el cobro ES en dólares y ponerle al lado el importe en
+              colones sería exactamente la conversión que no se le enseña al
+              cliente.
+            */}
+            {amounts.currency === Currency.CRC && quote.invoiceTotalUsd != null && (
+              <> · {formatMoney(quote.invoiceTotalUsd, Currency.USD)}</>
+            )}
+          </dd>
+        </div>
+        <div className="card-item-field">
+          <dt>Abonado</dt>
+          <dd>{formatMoney(amounts.paid, amounts.currency)}</dd>
+        </div>
+        <div className="card-item-field">
+          <dt>Saldo</dt>
+          <dd className="pay-due">{formatMoney(amounts.due, amounts.currency)}</dd>
+        </div>
+      </dl>
+    </div>
+  );
+
+  /**
+   * Un abono ya subido y sin resolver. Se dice explícitamente porque el saldo de
+   * arriba sigue completo (un comprobante sin validar no es dinero recibido) y
+   * sin este aviso el cliente lee ese saldo como que su depósito nunca llegó.
+   *
+   * Si ese abono cubre el saldo, además desaparece todo el formulario: el aviso
+   * queda como única respuesta, y por eso dice explícitamente que no hay que
+   * volver a pagar. Verlo junto a un botón de pagar activo es lo que hacía que el
+   * cliente pagara dos veces.
+   */
+  const pendingNotice = quote && amounts && !quote.settled && pendingCrc > 0 && (
+    <div className="banner">
+      {pendingIsOnlyCard ? (
+        <>
+          Tu pago con tarjeta de {formatMoney(amounts.pending, amounts.currency)} está a la espera
+          de que la pasarela lo confirme. Te avisaremos apenas quede registrado.
+        </>
+      ) : (
+        <>
+          Recibimos {formatMoney(amounts.pending, amounts.currency)} y estamos validando el
+          comprobante. Te avisaremos apenas quede confirmado.
+        </>
+      )}
+      {quote.inValidation && <> No hace falta que pagues de nuevo.</>}
+    </div>
+  );
+
+  /**
+   * El listado de abonos, sin envoltorio. Se pinta en dos sitios que no comparten
+   * marco: suelto en el cuerpo del modal cuando hay ancho, y dentro de la hoja
+   * emergente cuando no lo hay.
+   */
+  const historyItems = payments.length > 0 && (
+    <dl className="pay-list">
+      {payments.map((payment) => (
+        <div className="card-item-field" key={payment.id}>
+          <dt>
+            {formatDate(payment.createdAt)} · {PAYMENT_METHOD_LABELS[payment.method]}
+          </dt>
+          <dd>
+            {/*
+              El abono se reexpresa a la moneda en que esta pantalla habla del
+              cobro, y con SU PROPIA tasa congelada (regla M5), que es la misma
+              aritmética de `settledAmount`. Sin esto, el cliente de Paquetería
+              leería "Abonado $48.76" arriba y "₡25.000" aquí abajo: dos cifras
+              para el mismo depósito.
+            */}
+            <strong>
+              {formatMoney(
+                convertMoney(payment.amount, payment.currency, currency, payment.exchangeRate),
+                currency,
+              )}
+            </strong>
+            <span className={statusPill(payment.status)}>
+              {/*
+                "Pendiente de validación" describe el depósito: alguien tiene que
+                mirar un comprobante. Un cobro con tarjeta pendiente espera al
+                webhook de la pasarela, no a una persona, y el cliente no tiene
+                nada que aportar.
+              */}
+              {payment.status === PaymentStatus.Pendiente &&
+              payment.method === PaymentMethod.Tarjeta
+                ? 'Pendiente de confirmación'
+                : PAYMENT_STATUS_LABELS[payment.status]}
+            </span>
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+
+  const paymentsList = historyItems && (
+    <div className="pay-sec pay-history">
+      <div className="card-sec-title">Pagos registrados</div>
+      {historyItems}
+    </div>
+  );
+
   return (
-    <ModalOverlay onClose={() => void closeModal()}>
-      {/*
-        `modal-lg` y no el ancho base: aquí dentro se monta el formulario de
-        tarjeta de Onvo, que trae sus propios campos a ancho completo. Con los
-        560px de base quedaba estrecho y el SDK acababa scrolleando por dentro,
-        dos barras anidadas para una sola pantalla. Al depósito el ancho extra
-        tampoco le estorba: sus campos ya se reparten en dos columnas.
-      */}
+    /*
+      Cerrar (Esc o clic fuera) siempre lo resuelve la capa que está delante. Con
+      la pasarela abierta manda su modal, y con la hoja del historial desplegada,
+      la hoja. La guarda va aquí y no en escuchas propias porque `ModalOverlay`
+      escucha Esc en `window`: dos escuchas para la misma tecla acabarían
+      abandonando el cobro por cerrar lo que hay encima.
+    */
+    <ModalOverlay
+      onClose={() => {
+        if (cardOpen) return;
+        if (historyOpen) {
+          setHistoryOpen(false);
+          return;
+        }
+        void closeModal();
+      }}
+    >
       <form
         className="modal modal-lg fadeUp"
         onMouseDown={(e) => e.stopPropagation()}
@@ -409,75 +642,13 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
-          {notice && <div className="banner ok">{notice}</div>}
+          {!cardOpen && alerts}
 
-          {quote && amounts && (
-            <div className="card-sec is-money">
-              <div className="card-sec-title">Monto a pagar</div>
-              <dl className="card-sec-fields">
-                <div className="card-item-field">
-                  <span className="field-label">Factura</span>
-                  <span>
-                    {amounts.invoiceTotal != null
-                      ? formatMoney(amounts.invoiceTotal, amounts.currency)
-                      : '—'}
-                    {/*
-                      El equivalente en la otra moneda solo acompaña al cobro en
-                      colones. En Paquetería el cobro ES en dólares y ponerle al
-                      lado el importe en colones sería exactamente la conversión
-                      que no se le enseña al cliente.
-                    */}
-                    {amounts.currency === Currency.CRC && quote.invoiceTotalUsd != null && (
-                      <> · {formatMoney(quote.invoiceTotalUsd, Currency.USD)}</>
-                    )}
-                  </span>
-                </div>
-                <div className="card-item-field">
-                  <span className="field-label">Abonado</span>
-                  <span>{formatMoney(amounts.paid, amounts.currency)}</span>
-                </div>
-                <div className="card-item-field">
-                  <span className="field-label">Saldo</span>
-                  <span>
-                    <strong>{formatMoney(amounts.due, amounts.currency)}</strong>
-                  </span>
-                </div>
-              </dl>
-            </div>
-          )}
+          {summary}
 
-          {quote?.settled && (
-            <div className="banner ok">Este trámite ya está pagado.</div>
-          )}
+          {quote?.settled && <div className="banner ok">Este trámite ya está pagado.</div>}
 
-          {/*
-            Un abono ya subido y sin resolver. Se dice explícitamente porque el
-            saldo de arriba sigue completo —un comprobante sin validar no es
-            dinero recibido— y sin este aviso el cliente lee ese saldo como que
-            su depósito nunca llegó.
-
-            Si ese abono cubre el saldo, además desaparece todo el formulario: el
-            aviso queda como única respuesta, y por eso dice explícitamente que no
-            hay que volver a pagar. Verlo junto a un botón de pagar activo es lo
-            que hacía que el cliente pagara dos veces.
-          */}
-          {quote && amounts && !quote.settled && pendingCrc > 0 && (
-            <div className="banner">
-              {pendingIsOnlyCard ? (
-                <>
-                  Tu pago con tarjeta de {formatMoney(amounts.pending, amounts.currency)} está a la
-                  espera de que la pasarela lo confirme. Te avisaremos apenas quede registrado.
-                </>
-              ) : (
-                <>
-                  Recibimos {formatMoney(amounts.pending, amounts.currency)} y estamos validando el
-                  comprobante. Te avisaremos apenas quede confirmado.
-                </>
-              )}
-              {quote.inValidation && <> No hace falta que pagues de nuevo.</>}
-            </div>
-          )}
+          {pendingNotice}
 
           {canPay && quote.availableMethods.length === 0 && (
             <div className="banner warn">
@@ -485,28 +656,36 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
             </div>
           )}
 
-          {canPay && quote.availableMethods.length > 0 && !cardIntent && (
+          {canPay && quote.availableMethods.length > 0 && (
             <div>
               <span className="field-label">Medio de pago</span>
-              {quote.availableMethods.map((m) => (
-                <label className="check-row" key={m}>
-                  <input
-                    type="radio"
-                    name="method"
-                    checked={method === m}
-                    onChange={() => setMethod(m)}
-                  />
-                  {PAYMENT_METHOD_LABELS[m]}
-                </label>
-              ))}
+              {/*
+                Cada medio es una opción con marco propio, no un radio suelto en
+                una línea: el área de clic es la opción entera y cuál está elegida
+                se ve sin ir a buscar el punto azul.
+              */}
+              <div className="pay-methods">
+                {quote.availableMethods.map((m) => (
+                  <label className={`pay-method${method === m ? ' is-on' : ''}`} key={m}>
+                    <input
+                      type="radio"
+                      name="method"
+                      checked={method === m}
+                      onChange={() => setMethod(m)}
+                    />
+                    <Icon name={m === PaymentMethod.Tarjeta ? 'card' : 'file'} size={17} />
+                    <span>{PAYMENT_METHOD_LABELS[m]}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
 
           {method === PaymentMethod.DepositoBancario && canPay && (
             <>
               <div className="banner">
-                Deposita a nombre de <strong>HS Global Services</strong> y adjunta el
-                comprobante. Validaremos el depósito y te avisaremos.
+                Deposita a nombre de <strong>HS Global Services</strong> y adjunta el comprobante.
+                Validaremos el depósito y te avisaremos.
               </div>
 
               <div className="field-pair">
@@ -544,157 +723,85 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
                 pedirlo por WhatsApp, que es exactamente el problema del ticket.
               */}
               {bankAccount && (
-                <div className="card-sec">
+                <div className="pay-sec">
                   <div className="card-sec-title">Datos de la cuenta</div>
-                  <dl className="card-sec-fields">
+                  <dl className="pay-fields">
                     <div className="card-item-field">
-                      <span className="field-label">Titular</span>
-                      <span>HS Global Services</span>
+                      <dt>Titular</dt>
+                      <dd>HS Global Services</dd>
                     </div>
                     <div className="card-item-field">
-                      <span className="field-label">Banco</span>
-                      <span>{BANK_ACCOUNTS[bankAccount].bank}</span>
+                      <dt>Banco</dt>
+                      <dd>{BANK_ACCOUNTS[bankAccount].bank}</dd>
                     </div>
                     <div className="card-item-field">
-                      <span className="field-label">Moneda</span>
-                      <span>{CURRENCY_LABELS[BANK_ACCOUNTS[bankAccount].currency]}</span>
+                      <dt>Moneda</dt>
+                      <dd>{CURRENCY_LABELS[BANK_ACCOUNTS[bankAccount].currency]}</dd>
                     </div>
                     {BANK_ACCOUNTS[bankAccount].number && (
                       <div className="card-item-field">
-                        <span className="field-label">Cuenta</span>
-                        <span className="mono">{BANK_ACCOUNTS[bankAccount].number}</span>
+                        <dt>Cuenta</dt>
+                        <dd className="mono">{BANK_ACCOUNTS[bankAccount].number}</dd>
                       </div>
                     )}
                     <div className="card-item-field">
-                      <span className="field-label">IBAN</span>
-                      <span className="mono">{BANK_ACCOUNTS[bankAccount].iban}</span>
+                      <dt>IBAN</dt>
+                      <dd className="mono">{BANK_ACCOUNTS[bankAccount].iban}</dd>
                     </div>
                   </dl>
                 </div>
               )}
 
-              <div>
-                <label className="field-label" htmlFor="p-receipt-no">Número de comprobante</label>
-                <input
-                  id="p-receipt-no"
-                  className="input mono"
-                  value={receiptNumber}
-                  onChange={(e) => setReceiptNumber(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label className="field-label" htmlFor="p-receipt">Comprobante (imagen o PDF)</label>
-                <input
-                  id="p-receipt"
-                  className="input"
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={(e) => setReceipt(e.target.files?.[0] ?? null)}
-                />
+              <div className="field-pair">
+                <div>
+                  <label className="field-label" htmlFor="p-receipt-no">
+                    Número de comprobante
+                  </label>
+                  <input
+                    id="p-receipt-no"
+                    className="input mono"
+                    value={receiptNumber}
+                    onChange={(e) => setReceiptNumber(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="field-label" htmlFor="p-receipt">
+                    Comprobante (imagen o PDF)
+                  </label>
+                  <input
+                    id="p-receipt"
+                    className="input"
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={(e) => setReceipt(e.target.files?.[0] ?? null)}
+                  />
+                </div>
               </div>
             </>
           )}
 
-          {method === PaymentMethod.Tarjeta && !cardIntent && canPay && (
+          {method === PaymentMethod.Tarjeta && canPay && (
             <div className="banner">
               Al continuar abriremos el formulario seguro de pago con tarjeta.
             </div>
           )}
 
-          {/* Cobro ya iniciado: manda la pasarela, el formulario de arriba ya no. */}
-          {cardIntent?.intent.simulated && (
-            <div className="card-sec">
-              <div className="card-sec-title">Pasarela simulada</div>
-              <div className="banner warn">
-                Modo de pruebas: no se cobra nada real. Elige cómo debe responder la
-                pasarela para seguir el flujo.
-              </div>
-              <div className="modal-foot">
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={saving}
-                  onClick={() => simulate(false)}
-                >
-                  Rechazar cobro
-                </button>
-                <button
-                  type="button"
-                  className="btn primary"
-                  disabled={saving}
-                  onClick={() => simulate(true)}
-                >
-                  Aprobar cobro
-                </button>
-              </div>
-            </div>
-          )}
+          {paymentsList}
 
           {/*
-            Pasarela real: el formulario lo pinta Onvo dentro de su propio
-            contenedor. La tarjeta no pasa por aquí, y el desenlace tampoco lo
-            decide este componente: `confirmCard` va a preguntarlo al servidor.
+            El mismo historial para pantallas estrechas. Cuál de los dos se ve lo
+            decide el CSS por el ancho del modal: aquí se pintan los dos porque el
+            listado de la hoja no existe hasta que se abre.
           */}
-          {cardIntent && !cardIntent.intent.simulated && (
-            <OnvoCardForm
-              publicKey={cardIntent.intent.publicKey}
-              paymentIntentId={cardIntent.intent.paymentIntentId}
-              customerId={cardIntent.intent.customerId}
-              onCompleted={confirmCard}
-              onFailed={cardFailed}
-            />
-          )}
-
-          {payments.length > 0 && (
-            <div className="card-sec">
-              <div className="card-sec-title">Pagos registrados</div>
-              <dl className="card-sec-fields">
-                {payments.map((payment) => (
-                  <div className="card-item-field" key={payment.id}>
-                    <span className="field-label">
-                      {formatDate(payment.createdAt)} · {PAYMENT_METHOD_LABELS[payment.method]}
-                    </span>
-                    <span>
-                      {/*
-                        El abono se reexpresa a la moneda en que esta pantalla
-                        habla del cobro, y con SU PROPIA tasa congelada (regla
-                        M5), que es la misma aritmética de `settledAmount`. Sin
-                        esto, el cliente de Paquetería leería "Abonado $48.76"
-                        arriba y "₡25.000" aquí abajo: dos cifras para el mismo
-                        depósito.
-                      */}
-                      {formatMoney(
-                        convertMoney(
-                          payment.amount,
-                          payment.currency,
-                          currency,
-                          payment.exchangeRate,
-                        ),
-                        currency,
-                      )}{' '}
-                      —{' '}
-                      <span
-                        className={
-                          payment.status === PaymentStatus.Confirmado ? 'spill ok' : 'spill'
-                        }
-                      >
-                        {/*
-                          "Pendiente de validación" describe el depósito: alguien
-                          tiene que mirar un comprobante. Un cobro con tarjeta
-                          pendiente espera al webhook de la pasarela, no a una
-                          persona, y el cliente no tiene nada que aportar.
-                        */}
-                        {payment.status === PaymentStatus.Pendiente &&
-                        payment.method === PaymentMethod.Tarjeta
-                          ? 'Pendiente de confirmación'
-                          : PAYMENT_STATUS_LABELS[payment.status]}
-                      </span>
-                    </span>
-                  </div>
-                ))}
-              </dl>
-            </div>
+          {historyItems && (
+            <button
+              type="button"
+              className="btn btn-ghost pay-history-toggle"
+              onClick={() => setHistoryOpen(true)}
+            >
+              <Icon name="clock" size={16} />
+              Pagos registrados ({payments.length})
+            </button>
           )}
         </div>
 
@@ -707,13 +814,138 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
             servidor y volver a enviarlo abriría un segundo cobro por el mismo saldo.
             Con un abono en validación desaparece por la misma razón.
           */}
-          {canPay && method && !cardIntent && (
+          {canPay && method && !cardOpen && (
             <button type="submit" className="btn btn-primary" disabled={saving}>
               {saving ? 'Registrando…' : 'Registrar pago'}
             </button>
           )}
         </div>
       </form>
+
+      {/*
+        La hoja va por `createPortal` a <body> y no dentro del formulario: el
+        cuerpo del modal es el que scrollea, y un panel absoluto ahí dentro se
+        corta en su borde. Su fondo tampoco cierra el modal (está fuera del
+        overlay, así que el clic no llega a `ModalOverlay`).
+      */}
+      {historyOpen &&
+        historyItems &&
+        createPortal(
+          <div
+            className="sheet-scrim"
+            onMouseDown={() => setHistoryOpen(false)}
+            role="presentation"
+          >
+            <div className="sheet fadeUp" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="sheet-head">
+                <h4>Pagos registrados</h4>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setHistoryOpen(false)}
+                >
+                  Cerrar
+                </button>
+              </div>
+              {historyItems}
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {/*
+        El cobro, en su propio modal. Encima del trámite y no en su lugar: el
+        cliente vuelve aquí si cancela, con el medio de pago que ya había elegido.
+        Dentro no hay nada más que el importe y la pasarela; el historial y el
+        selector no ayudan a teclear una tarjeta y le quitaban el alto que el
+        formulario necesita para no acabar detrás de un scroll.
+      */}
+      {cardIntent && (
+        <ModalOverlay onClose={() => void cancelCard()}>
+          <div className="modal modal-pay fadeUp" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head pay-head">
+              <div>
+                <h3>Pago con tarjeta</h3>
+                <p>
+                  {shipment.code} · {shipment.description}
+                </p>
+              </div>
+              {amounts && (
+                <div className="pay-head-amount">
+                  <span>A pagar</span>
+                  <strong>{formatMoney(amounts.due, amounts.currency)}</strong>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-body pay-checkout">
+              {alerts}
+
+              {cardIntent.intent.simulated ? (
+                /* Pasarela de pruebas: no hay SDK que montar, se elige el desenlace. */
+                <>
+                  <div className="banner warn">
+                    Modo de pruebas: no se cobra nada real. Elige cómo debe responder la pasarela
+                    para seguir el flujo.
+                  </div>
+                  <div className="pay-sec-actions">
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={saving}
+                      onClick={() => simulate(false)}
+                    >
+                      Rechazar cobro
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={saving}
+                      onClick={() => simulate(true)}
+                    >
+                      Aprobar cobro
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /*
+                  Pasarela real: el formulario lo pinta Onvo dentro de su propio
+                  contenedor. La tarjeta no pasa por aquí, y el desenlace tampoco lo
+                  decide este componente: `confirmCard` va a preguntarlo al servidor.
+                */
+                <OnvoCardForm
+                  publicKey={cardIntent.intent.publicKey}
+                  paymentIntentId={cardIntent.intent.paymentIntentId}
+                  customerId={cardIntent.intent.customerId}
+                  onCompleted={confirmCard}
+                  onFailed={cardFailed}
+                />
+              )}
+            </div>
+
+            <div className="modal-foot">
+              {/* En el pie y no sobre el formulario: es una garantía, no un paso. */}
+              <p className="pay-secure">
+                <Icon name="lock" size={15} />
+                <span>Pago cifrado de extremo a extremo. No guardamos tu tarjeta.</span>
+              </p>
+              {/*
+                Cancelar suelta el cobro en el servidor y vuelve al trámite. Se
+                bloquea mientras se confirma: ahí el cargo ya salió y anularlo
+                dejaría al cliente creyendo que no pagó.
+              */}
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={saving}
+                onClick={() => void cancelCard()}
+              >
+                Cancelar pago
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
     </ModalOverlay>
   );
 }

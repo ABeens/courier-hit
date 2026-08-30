@@ -26,6 +26,7 @@ import {
   PaymentStatus,
   Role,
   State,
+  UNRESOLVED_PAYMENT_STATUSES,
   awaitsValidation,
   bankAccountsFor,
   canSetExchangeRate,
@@ -153,6 +154,32 @@ function assertOwnership(session: Session, row: { clientId: string | null }): vo
   if (session.role !== Role.Client) return;
   if (!session.clientId) throw ShipmentErrors.missingClientProfile();
   if (row.clientId !== session.clientId) throw ShipmentErrors.notFound();
+}
+
+/**
+ * Suelta los cobros con tarjeta que quedaron ABIERTOS y sin usar en un tramite.
+ *
+ * `abandonCard` cubre al cliente que cierra el formulario; esto cubre al que no
+ * lo cierra (se le acaba la bateria, cambia de pestaña y la olvida, se le cae la
+ * red). Sin barrerlos, cada intento deja su intento vivo en Onvo.
+ *
+ * MISMO ORDEN QUE EN `abandonCard`, y por lo mismo: primero se le pide a la
+ * pasarela que cancele y solo si acepta se borra la fila. Si Onvo se niega, ese
+ * cargo va en camino y NO se abre otro formulario: cobrar dos veces el mismo
+ * saldo es peor que hacer esperar unos segundos.
+ */
+async function discardOpenCardAttempts(shipmentId: string): Promise<void> {
+  const open = await paymentsRepo.openCardAttempts(shipmentId);
+
+  for (const attempt of open) {
+    if (
+      attempt.gatewayReference &&
+      !(await onvoClient.cancelPaymentIntent(attempt.gatewayReference))
+    ) {
+      throw PaymentErrors.cardAttemptInFlight();
+    }
+    await paymentsRepo.remove(attempt.id);
+  }
 }
 
 export const paymentsService = {
@@ -317,12 +344,30 @@ export const paymentsService = {
     const amount = outstandingCrc(settledAmount(paid, Currency.CRC), shipment.invoiceTotalCrc);
 
     const isCard = input.method === PaymentMethod.Tarjeta;
+
+    /**
+     * Antes de abrir otro formulario de tarjeta se tiran los que quedaron
+     * abiertos. Un cobro INICIADO no estorba a nadie, pero acumularlos si: cada
+     * pestaña que el cliente cierra sin pagar deja su intento vivo en Onvo.
+     */
+    if (isCard) await discardOpenCardAttempts(input.shipmentId);
+
     const id = await paymentsRepo.insert({
       shipmentId: input.shipmentId,
       method: input.method,
-      // El deposito nace pendiente de validacion; la tarjeta la resuelve la
-      // pasarela y hasta entonces tambien esta pendiente (decision 3).
-      status: PaymentStatus.Pendiente,
+      /**
+       * El deposito nace PENDIENTE de validacion: el comprobante ya esta subido y
+       * hay algo que revisar.
+       *
+       * La tarjeta nace INICIADA, que es un paso antes. Aqui todavia no se ha
+       * intentado cobrar nada: la pasarela obliga a crear el intento para poder
+       * pintar el formulario, asi que esta fila existe desde que el cliente abre
+       * la pantalla. Nacida como `Pendiente` anunciaba un dinero en camino por el
+       * solo hecho de mirar el formulario, bloqueaba el siguiente intento y le
+       * ponia al staff un abono por validar que nadie podia resolver. Pasa a
+       * `Pendiente` cuando el cargo sale de verdad (`markCardSubmitted`).
+       */
+      status: isCard ? PaymentStatus.Iniciado : PaymentStatus.Pendiente,
       amount,
       currency: Currency.CRC,
       exchangeRate: invoiceExchangeRate(shipment, globalRate),
@@ -361,6 +406,38 @@ export const paymentsService = {
   },
 
   /**
+   * El navegador termino de mandarle la tarjeta a la pasarela. A partir de aqui
+   * SI hay un cargo en camino, asi que el cobro deja de ser un formulario abierto
+   * y pasa a contar como abono a la espera del webhook: suma en el pendiente que
+   * ve el cliente y bloquea un segundo cobro por el mismo saldo.
+   *
+   * NO confirma nada. Quien dice si se cobro es el webhook (`confirmByGateway`);
+   * esto solo mueve el pago de "abierto" a "en camino". Creerle al navegador para
+   * dar por cobrado seria anunciar como pagado un cargo que la pasarela todavia
+   * puede rechazar.
+   *
+   * Es idempotente y no falla si llega tarde: el webhook puede haber resuelto ya
+   * el cobro, y entonces esto no toca nada y devuelve lo que hay. Un error aqui
+   * solo le enseñaria al cliente un fallo por un pago que salio bien.
+   */
+  async markCardSubmitted(session: Session, paymentId: string): Promise<PaymentDto> {
+    const payment = await paymentsRepo.findById(paymentId);
+    if (!payment) throw PaymentErrors.notFound();
+
+    const shipment = await shipmentsRepo.findById(payment.shipmentId);
+    if (!shipment) throw ShipmentErrors.notFound();
+    assertOwnership(session, shipment);
+
+    if (payment.method !== PaymentMethod.Tarjeta) throw PaymentErrors.methodNotAllowed();
+
+    await paymentsRepo.markSubmitted(paymentId);
+
+    const updated = await paymentsRepo.findById(paymentId);
+    if (!updated) throw PaymentErrors.notFound();
+    return toDto(updated);
+  },
+
+  /**
    * El cliente cerro el formulario de tarjeta sin llegar a pagar. Es la otra
    * mitad de `start`: ahi se reserva el cobro, aqui se suelta.
    *
@@ -387,9 +464,14 @@ export const paymentsService = {
     assertOwnership(session, shipment);
 
     // Un deposito pendiente espera a una persona y no se suelta solo; uno ya
-    // resuelto no se toca. Esto vale unicamente para el cobro a medias.
+    // resuelto no se toca. Esto vale unicamente para el cobro a medias, que es
+    // tanto el formulario abierto y sin usar (`Iniciado`) como el cargo que salio
+    // y todavia espera al webhook (`Pendiente`): de ese segundo se encarga Onvo,
+    // que se negara a cancelarlo.
     if (payment.method !== PaymentMethod.Tarjeta) throw PaymentErrors.methodNotAllowed();
-    if (payment.status !== PaymentStatus.Pendiente) throw PaymentErrors.alreadyResolved();
+    if (!UNRESOLVED_PAYMENT_STATUSES.includes(payment.status)) {
+      throw PaymentErrors.alreadyResolved();
+    }
     if (!payment.gatewayReference) throw PaymentErrors.notFound();
 
     if (!(await onvoClient.cancelPaymentIntent(payment.gatewayReference))) {
