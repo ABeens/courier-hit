@@ -18,9 +18,12 @@ import { useState, type ReactNode } from 'react';
 import type { ApiOperation } from '@courier/shared';
 import {
   API_KEY_HEADER,
+  API_KEY_PLACEHOLDER,
+  API_KEY_SAMPLE,
   PUBLIC_API_COMMON_ERRORS,
   PUBLIC_API_OPERATIONS,
   PUBLIC_API_PREFIX,
+  buildPublicApiAuthSnippets,
   buildPublicApiCurl,
 } from '@courier/shared';
 import { API_BASE } from '../lib/api';
@@ -66,6 +69,38 @@ function CodeBlock({ code }: { code: string }) {
       <button type="button" className="api-doc__copy" onClick={copy}>
         {copied ? 'Copiado' : 'Copiar'}
       </button>
+    </div>
+  );
+}
+
+/**
+ * Los tres ejemplos de autenticación, uno visible a la vez. Apilados ocupaban
+ * media pantalla y obligaban a saltarse dos que no se van a usar; en pestañas,
+ * la pregunta "¿dónde pongo la llave?" se responde con un vistazo al lenguaje
+ * propio. El primero es curl porque es el que se prueba antes de escribir código.
+ */
+function SnippetTabs() {
+  const snippets = buildPublicApiAuthSnippets(baseUrl);
+  const [active, setActive] = useState(snippets[0]!.id);
+  const current = snippets.find((s) => s.id === active) ?? snippets[0]!;
+
+  return (
+    <div className="api-doc__snippets">
+      <div className="tabs tabs-sm" role="tablist" aria-label="Ejemplos de autenticación">
+        {snippets.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            role="tab"
+            aria-selected={s.id === active}
+            className={`tab ${s.id === active ? 'is-active' : ''}`}
+            onClick={() => setActive(s.id)}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      <CodeBlock code={current.code} />
     </div>
   );
 }
@@ -181,16 +216,53 @@ export function ApiDocsPanel() {
       </section>
 
       <section className="api-doc__sec">
-        <div className="api-doc__h2">2. Autenticación</div>
+        <div className="api-doc__h2">2. Dónde va la llave</div>
         <p className="api-doc__p">
-          Cada petición lleva tu llave en la cabecera <code>Authorization</code>. Si tu herramienta
-          no te deja fijarla, usa <code>{API_KEY_HEADER}</code> con el mismo valor.
+          Tu llave es la línea larga que copiaste al crearla. Empieza por <code>hsk_live_</code>
+          {' '}(o <code>hsk_test_</code> si es de un entorno de pruebas) y tiene esta forma (esta es
+          de ejemplo, no sirve):
         </p>
-        <CodeBlock code="Authorization: Bearer hsk_live_kq7m3xb9tzr4dph2_a8fj2mnqv5wc7xtz3rkd9hp6bs4gy2fm" />
+        <CodeBlock code={API_KEY_SAMPLE} />
+        <p className="api-doc__p">
+          Va en una <strong>cabecera</strong> de cada petición, con la palabra <code>Bearer</code> y
+          un espacio delante de la llave. No hay usuario ni contraseña, y la llave no va ni en la
+          dirección ni en el cuerpo:
+        </p>
+        <CodeBlock code={`Authorization: Bearer ${API_KEY_PLACEHOLDER}`} />
+        <p className="api-doc__p">
+          Si tu herramienta no te deja fijar <code>Authorization</code>, manda la llave sola en la
+          cabecera <code>{API_KEY_HEADER}</code>. Aquí <strong>no</strong> va la palabra
+          {' '}<code>Bearer</code>, solo la llave (con ella delante, la llave se rechaza):
+        </p>
+        <CodeBlock code={`${API_KEY_HEADER}: ${API_KEY_PLACEHOLDER}`} />
+
+        <div className="api-doc__h3">La misma petición, en tres formas</div>
+        <p className="api-doc__p">
+          Copia la que uses y sustituye <code>{API_KEY_PLACEHOLDER}</code> por tu llave completa.
+        </p>
+        <SnippetTabs />
+
+        <div className="api-doc__h3">Si te responde 401</div>
+        <ul className="api-doc__ul">
+          <li>
+            <code>API_KEY_MISSING</code>: no llegó ninguna de las dos cabeceras, o
+            {' '}<code>Authorization</code> llegó sin la palabra <code>Bearer</code> delante.
+          </li>
+          <li>
+            <code>API_KEY_INVALID</code>: la llave llegó cortada, con las comillas pegadas o es de
+            otro entorno (una <code>test</code> contra producción). Pégala entera y sin comillas;
+            los espacios de sobra alrededor sí se ignoran.
+          </li>
+          <li>
+            <code>API_KEY_REVOKED</code>: esa llave se rotó o se revocó. Usa la vigente, o crea una
+            en la pestaña «Llaves».
+          </li>
+        </ul>
         <p className="api-doc__note">
           La llave va en tu servidor, nunca en una página web ni en una app móvil: cualquiera que
-          vea el código la puede leer. Tampoco la mandes en la URL, ahí acaba en registros de
-          acceso. Si sospechas que se filtró, rótala en la pestaña «Llaves».
+          vea el código la puede leer. En la dirección tampoco funciona (la API no la lee de ahí a
+          propósito: acabaría en registros de acceso y en el historial). Si sospechas que se filtró,
+          rótala en la pestaña «Llaves».
         </p>
       </section>
 

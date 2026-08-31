@@ -1745,6 +1745,15 @@ button.dash-row:focus-visible { outline: 2px solid var(--brand); outline-offset:
 }
 .api-doc code { font-family: var(--font-mono); font-size: .92em; }
 
+/* Variante menuda: pestañas DENTRO de un bloque (los ejemplos de la llave), no
+   de la pantalla. Pesan menos para que no compitan con las de arriba. */
+.tabs-sm { margin-bottom: 8px; }
+.tabs-sm .tab { padding: 6px 11px; font-size: 12.5px; }
+
+.api-doc__ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.api-doc__ul li { font-size: 13px; line-height: 1.55; color: var(--ink-2); }
+.api-doc__ul code { color: var(--ink); }
+
 /* Bloque de codigo. El boton de copiar flota dentro y solo se destaca al pasar
    por encima: en una guia con diez bloques, diez botones opacos son ruido. */
 .api-doc__code { position: relative; margin: 0; }

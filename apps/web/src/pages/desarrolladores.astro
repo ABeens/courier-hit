@@ -19,9 +19,12 @@ import Footer from '../components/landing/Footer.astro';
 import Icon from '../components/ui/Icon.astro';
 import {
   API_KEY_HEADER,
+  API_KEY_PLACEHOLDER,
+  API_KEY_SAMPLE,
   PUBLIC_API_COMMON_ERRORS,
   PUBLIC_API_OPERATIONS,
   PUBLIC_API_PREFIX,
+  buildPublicApiAuthSnippets,
   buildPublicApiCurl,
 } from '@courier/shared';
 
@@ -31,6 +34,9 @@ import {
   `curl` de esta página tiene que funcionar tal cual.
 */
 const baseUrl = `${new URL(PUBLIC_API_PREFIX, Astro.site).origin}${PUBLIC_API_PREFIX}`;
+
+/* Los tres ejemplos de "donde va la llave", del mismo catalogo que el resto. */
+const authSnippets = buildPublicApiAuthSnippets(baseUrl);
 
 const sections = [
   { id: 'empezar', title: 'Cómo empezar' },
@@ -98,10 +104,64 @@ const sections = [
           <section id="autenticacion" class="api__sec">
             <h2 class="api__sec-title">Autenticación</h2>
             <p class="api__p">
-              Cada petición lleva tu llave en la cabecera <code>Authorization</code>. Si tu
-              herramienta no te deja fijarla, usa <code>{API_KEY_HEADER}</code> con el mismo valor.
+              Tu llave es la línea larga que copiaste al crearla en el portal. Empieza por
+              <code>hsk_live_</code> (o <code>hsk_test_</code> si es de un entorno de pruebas) y
+              tiene esta forma (esta es de ejemplo, no sirve):
             </p>
-            <pre class="api__code"><code>Authorization: Bearer hsk_live_kq7m3xb9tzr4dph2_a8fj2mnqv5wc7xtz3rkd9hp6bs4gy2fm</code></pre>
+            <pre class="api__code"><code>{API_KEY_SAMPLE}</code></pre>
+            <p class="api__p">
+              Va en una <strong>cabecera</strong> de cada petición, con la palabra
+              <code>Bearer</code> y un espacio delante de la llave. No hay usuario ni contraseña, y
+              la llave no viaja ni en la dirección ni en el cuerpo:
+            </p>
+            <pre class="api__code"><code>Authorization: Bearer {API_KEY_PLACEHOLDER}</code></pre>
+            <p class="api__p">
+              Si tu herramienta no te deja fijar <code>Authorization</code>, manda la llave sola en
+              la cabecera <code>{API_KEY_HEADER}</code>. Aquí <strong>no</strong> va la palabra
+              <code>Bearer</code>, solo la llave (con ella delante, la llave se rechaza):
+            </p>
+            <pre class="api__code"><code>{API_KEY_HEADER}: {API_KEY_PLACEHOLDER}</code></pre>
+
+            <h3 class="api__h3">La misma petición, en tres formas</h3>
+            <p class="api__p">
+              Copia la que uses y sustituye <code>{API_KEY_PLACEHOLDER}</code> por tu llave
+              completa.
+            </p>
+            {authSnippets.map((s) => (
+              <div class="api__snippet">
+                <div class="api__snippet-label">{s.label}</div>
+                <pre class="api__code"><code>{s.code}</code></pre>
+              </div>
+            ))}
+
+            <h3 class="api__h3">Si te responde 401</h3>
+            <table class="api__table">
+              <thead>
+                <tr><th>Código</th><th>Qué revisar</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>API_KEY_MISSING</code></td>
+                  <td>
+                    No llegó ninguna de las dos cabeceras, o <code>Authorization</code> llegó sin la
+                    palabra <code>Bearer</code> delante.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>API_KEY_INVALID</code></td>
+                  <td>
+                    La llave llegó cortada, con las comillas pegadas, o es de otro entorno (una
+                    <code>test</code> contra producción). Pégala entera y sin comillas; los
+                    espacios de sobra alrededor sí se ignoran.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>API_KEY_REVOKED</code></td>
+                  <td>Esa llave se rotó o se revocó. Usa la vigente, o crea una en el portal.</td>
+                </tr>
+              </tbody>
+            </table>
+
             <ul class="api__list">
               <li>
                 <Icon name="shield" size={15} color="var(--brand)" />
@@ -110,8 +170,8 @@ const sections = [
               </li>
               <li>
                 <Icon name="shield" size={15} color="var(--brand)" />
-                No la mandes en la URL. Ahí acaba en registros de acceso, en el historial del
-                navegador y en la cabecera <code>Referer</code>.
+                En la URL no funciona, a propósito: ahí acabaría en registros de acceso, en el
+                historial del navegador y en la cabecera <code>Referer</code>.
               </li>
               <li>
                 <Icon name="shield" size={15} color="var(--brand)" />
@@ -306,6 +366,11 @@ X-RateLimit-Reset: 1788172860`}</code></pre>
     margin: 0 0 4px;
   }
   .api__code code { font-family: var(--font-mono, ui-monospace, monospace); white-space: pre; }
+
+  .api__snippet + .api__snippet { margin-top: 12px; }
+  .api__snippet-label {
+    font-size: 12px; font-weight: 700; color: var(--ink-2); margin-bottom: 6px;
+  }
 
   .api__table { width: 100%; border-collapse: collapse; margin: 0 0 6px; font-size: 13.5px; }
   .api__table th {

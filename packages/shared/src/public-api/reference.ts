@@ -417,13 +417,82 @@ export function buildPublicApiCurl(op: ApiOperation, baseUrl: string): string {
   }
 
   const url = `${baseUrl}${path}${query ? `?${query}` : ''}`;
-  const lines = [`curl "${url}"`, `  -H "Authorization: Bearer $HS_API_KEY"`];
+  const lines = [`curl "${url}"`, `  -H "Authorization: Bearer ${API_KEY_PLACEHOLDER}"`];
   if (op.requestExample) {
     lines.splice(1, 0, `  -X POST`);
     lines.push(`  -H "Content-Type: application/json"`);
     lines.push(`  -d '${op.requestExample.replace(/\n\s*/g, ' ')}'`);
   }
   return lines.join(' \\n');
+}
+
+/**
+ * Una llave de ejemplo, con la forma exacta que emite el sistema: prefijo de
+ * entorno, identificador publico y secreto. Se ensena entera una vez para que
+ * quien la esta copiando reconozca lo que tiene que pegar (y note si se dejo la
+ * mitad por el camino), pero NO se usa en los ejemplos: ahi va el hueco.
+ */
+export const API_KEY_SAMPLE = 'hsk_live_kq7m3xb9tzr4dph2_a8fj2mnqv5wc7xtz3rkd9hp6bs4gy2fm';
+
+/**
+ * Lo que ocupa el lugar de la llave en TODOS los ejemplos.
+ *
+ * Antes ahi iba una variable de entorno: buena practica y mal ejemplo, porque
+ * quien copiaba el comando la mandaba vacia y recibia un 401 sin entender por
+ * que. Un hueco que se lee "tu llave" no se copia por error, y conserva el
+ * prefijo para que se vea donde empieza la llave y donde acaba.
+ */
+export const API_KEY_PLACEHOLDER = 'hsk_live_TU_LLAVE';
+
+/** Un ejemplo de "asi se manda la llave", en el lenguaje de quien lo lee. */
+export interface ApiAuthSnippet {
+  id: string;
+  /** Como se llama en la pestaña o el encabezado que lo presenta. */
+  label: string;
+  code: string;
+}
+
+/**
+ * Los ejemplos de autenticacion: la MISMA peticion (`GET /client`, la mas barata
+ * y la que sirve de prueba de vida) en las tres formas con las que se integra
+ * casi todo el mundo aqui: la terminal, un backend en JavaScript y PowerShell,
+ * que es lo que tienen a mano los ERP en Windows.
+ *
+ * Van juntos y en el mismo sitio que el resto del catalogo porque la pregunta
+ * que responden ("¿donde exactamente pongo la llave?") es la unica que hay que
+ * contestar dos veces: en el portal, al crearla, y en la pagina publica, al
+ * evaluar la integracion.
+ */
+export function buildPublicApiAuthSnippets(baseUrl: string): readonly ApiAuthSnippet[] {
+  const url = `${baseUrl}/client`;
+  return [
+    {
+      id: 'curl',
+      label: 'curl',
+      code: [`curl "${url}" \\`, `  -H "Authorization: Bearer ${API_KEY_PLACEHOLDER}"`].join('\n'),
+    },
+    {
+      id: 'javascript',
+      label: 'JavaScript',
+      code: [
+        `const res = await fetch('${url}', {`,
+        `  headers: { Authorization: 'Bearer ${API_KEY_PLACEHOLDER}' },`,
+        '});',
+        'const data = await res.json();',
+        '// Un error trae { error: { code, message } }; el code es la parte estable.',
+        'if (!res.ok) throw new Error(data.error.code);',
+        'console.log(data.code); // tu casillero, p. ej. SJO008835',
+      ].join('\n'),
+    },
+    {
+      id: 'powershell',
+      label: 'PowerShell',
+      code: [
+        `$headers = @{ Authorization = 'Bearer ${API_KEY_PLACEHOLDER}' }`,
+        `Invoke-RestMethod -Uri '${url}' -Headers $headers`,
+      ].join('\n'),
+    },
+  ];
 }
 
 // ---------------------------------------------------------------------------

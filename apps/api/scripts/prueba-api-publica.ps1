@@ -6,7 +6,9 @@
 #   1. Emite una llave desde el portal (con sesion, como haria el cliente).
 #   2. Ejerce las cinco operaciones de /api/v1 con esa llave.
 #   3. Comprueba los "no": sin llave, llave inventada, casillero ajeno,
-#      tracking que no existe, tracking repetido, cuerpo invalido.
+#      tracking que no existe, tracking repetido, cuerpo invalido; y las formas
+#      de mandar la llave que documenta la pagina (Bearer, x-api-key, y las que
+#      no valen: sin Bearer, en la URL, con comillas).
 #   4. Comprueba que las dos puertas son excluyentes: la cookie no abre
 #      /api/v1 y la llave no abre el portal.
 #   5. Rota la llave y verifica que la vieja deja de servir en el acto.
@@ -300,6 +302,25 @@ Paso 'peticion sin llave' 401 $sinLlave (CodigoDe $sinLlave)
 
 $inventada = Invoke-Api -Path '/api/v1/client' -Headers @{ Authorization = 'Bearer hsk_live_noesunallave' }
 Paso 'llave inventada o mal formada' 401 $inventada (CodigoDe $inventada)
+
+# Las formas de mandar la llave que ensena la documentacion (docs/16 §7). Van
+# aqui porque son afirmaciones que la pagina hace en imperativo ("ponla asi",
+# "asi no funciona"): si una cambia sin que nadie lo note, la documentacion pasa
+# a mandar a integrar mal, que es peor que no documentar.
+$porAlterna = Invoke-Api -Path '/api/v1/client' -Headers @{ 'x-api-key' = $token }
+Paso 'la llave en x-api-key, sin la palabra Bearer' 200 $porAlterna
+
+$sinBearer = Invoke-Api -Path '/api/v1/client' -Headers @{ Authorization = $token }
+Paso 'Authorization con la llave pero sin Bearer' 401 $sinBearer (CodigoDe $sinBearer)
+
+$enLaUrl = Invoke-Api -Path "/api/v1/client?api_key=$token"
+Paso 'la llave en la direccion, sin cabecera' 401 $enLaUrl (CodigoDe $enLaUrl)
+
+$conComillas = Invoke-Api -Path '/api/v1/client' -Headers @{ Authorization = "Bearer ""$token""" }
+Paso 'la llave pegada con comillas alrededor' 401 $conComillas (CodigoDe $conComillas)
+
+$bearerEnAlterna = Invoke-Api -Path '/api/v1/client' -Headers @{ 'x-api-key' = "Bearer $token" }
+Paso 'x-api-key con la palabra Bearer delante' 401 $bearerEnAlterna (CodigoDe $bearerEnAlterna)
 
 # ---------------------------------------------------------------------------
 # 4. Las dos puertas son excluyentes (docs/16 5.2)
