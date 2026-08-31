@@ -1698,3 +1698,121 @@ button.dash-row:focus-visible { outline: 2px solid var(--brand); outline-offset:
   .pager-pages { justify-content: center; }
   .pager-range { text-align: center; }
 }
+
+/* ---- Pestañas de una pantalla (hoy: API = llaves + documentacion) ----
+   Subdivision DENTRO de un modulo, no navegacion: el menu lateral sigue siendo
+   el mapa del portal y la pestaña activa solo cambia lo que se lee debajo. Por
+   eso es una linea sobria bajo el titulo y no otro bloque con peso propio. */
+.tabs {
+  display: flex; gap: 2px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--line); margin-bottom: 18px;
+}
+.tab {
+  appearance: none; background: none; border: 0; cursor: pointer;
+  padding: 9px 14px; margin-bottom: -1px;
+  border-bottom: 2px solid transparent; border-radius: var(--r-sm) var(--r-sm) 0 0;
+  font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--muted);
+  transition: color .14s ease, border-color .14s ease, background .14s ease;
+}
+.tab:hover { color: var(--ink-2); background: var(--paper-2); }
+.tab.is-active { color: var(--brand); border-bottom-color: var(--brand); background: none; }
+.tab:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+
+/* ---- Pestaña "Documentacion" de la pantalla API (ApiDocsPanel) ----
+   Es lo unico del portal que se LEE de arriba abajo en vez de operarse, asi que
+   va en bloques numerados con ritmo de documento. El codigo sobre fondo oscuro,
+   igual que en /desarrolladores: distingue de un vistazo lo que se copia tal
+   cual de lo que se lee. */
+.api-doc { max-width: 860px; }
+.api-doc__lead { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 16px; }
+.api-doc__sec {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+  box-shadow: var(--sh-1); padding: 16px 18px; margin-bottom: 12px;
+}
+.api-doc__h2 {
+  font-family: var(--font-display); font-size: 15.5px; color: var(--ink);
+  margin-bottom: 10px;
+}
+.api-doc__h3 {
+  font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--faint); margin: 16px 0 7px;
+}
+.api-doc__p { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 10px; }
+.api-doc__note {
+  font-size: 12.5px; line-height: 1.55; color: var(--ink-2);
+  background: var(--brand-softer); border-left: 3px solid var(--brand);
+  padding: 10px 12px; border-radius: 0 8px 8px 0; margin: 12px 0 0;
+}
+.api-doc code { font-family: var(--font-mono); font-size: .92em; }
+
+/* Bloque de codigo. El boton de copiar flota dentro y solo se destaca al pasar
+   por encima: en una guia con diez bloques, diez botones opacos son ruido. */
+.api-doc__code { position: relative; margin: 0; }
+.api-doc__code pre {
+  background: #10151c; color: #d7e2ee; border-radius: 10px;
+  padding: 13px 74px 13px 15px; overflow-x: auto; margin: 0;
+}
+.api-doc__code code {
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.6; white-space: pre;
+}
+.api-doc__copy {
+  position: absolute; top: 8px; right: 8px;
+  padding: 4px 9px; border: 1px solid rgba(255,255,255,.18); border-radius: 6px;
+  background: rgba(255,255,255,.06); color: #d7e2ee;
+  font-size: 11.5px; font-weight: 600; cursor: pointer; opacity: .65;
+  transition: opacity .14s ease, background .14s ease;
+}
+.api-doc__code:hover .api-doc__copy, .api-doc__copy:focus-visible { opacity: 1; }
+.api-doc__copy:hover { background: rgba(255,255,255,.14); }
+
+/* Operacion plegada: la cabecera es verbo + ruta + para que sirve, que es lo
+   que se recorre buscando la que hace falta. */
+.api-doc__ops { display: flex; flex-direction: column; gap: 8px; }
+.api-doc__op { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.api-doc__op > summary {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 13px; cursor: pointer; list-style: none;
+  background: var(--paper-2);
+}
+.api-doc__op > summary::-webkit-details-marker { display: none; }
+.api-doc__op[open] > summary { border-bottom: 1px solid var(--line); }
+.api-doc__verb {
+  font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
+  padding: 3px 7px; border-radius: 5px; color: #fff;
+}
+.api-doc__verb--get { background: #1f7a4d; }
+.api-doc__verb--post { background: #1f5fa8; }
+.api-doc__path { font-size: 12.5px; color: var(--ink); }
+.api-doc__op-name { font-size: 12.5px; color: var(--muted); }
+.api-doc__op-body { padding: 14px 13px 16px; }
+
+.api-doc__table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 0; }
+.api-doc__table th {
+  text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--faint);
+  padding: 0 10px 7px 0; border-bottom: 1px solid var(--line);
+}
+.api-doc__table td {
+  padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line-2);
+  color: var(--ink-2); line-height: 1.5; vertical-align: top;
+}
+.api-doc__muted { color: var(--faint); white-space: nowrap; }
+.api-doc__req {
+  display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--brand);
+}
+
+/* Salida al sitio publico: va al final y sin peso de accion principal, porque
+   la referencia larga se consulta despues, no antes de la primera llamada. */
+.api-doc__foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  flex-wrap: wrap; padding: 4px 2px 0;
+}
+.api-doc__muted-text { font-size: 13px; color: var(--muted); }
+
+@media (max-width: 560px) {
+  .api-doc__sec { padding: 14px; }
+  .api-doc__op > summary { gap: 7px; }
+  .api-doc__op-name { flex-basis: 100%; }
+  .api-doc__foot { flex-direction: column; align-items: stretch; }
+}

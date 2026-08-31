@@ -93,8 +93,20 @@ function baseQuery() {
  * el servicio cuando la sesion es de un cliente: es la barrera de "lo propio" y
  * NO puede llegar desde la query del usuario.
  */
-function buildConditions(query: ListShipmentsQuery, ownerClientId?: string): SQL[] {
+function buildConditions(
+  query: ListShipmentsQuery,
+  ownerClientId?: string,
+  exactTracking?: string,
+): SQL[] {
   const conds: SQL[] = [];
+
+  /**
+   * Tracking EXACTO. No es el mismo eje que `query.q`, que busca parecidos por
+   * varias columnas para el buscador del portal: aqui se pregunta por UN
+   * identificador concreto, que es lo que hace la API publica. Con un `ilike`,
+   * un tracking que sea prefijo de otro devolveria los dos.
+   */
+  if (exactTracking) conds.push(eq(shipments.tracking, exactTracking));
 
   /**
    * Eje "archivado": o los vivos o los descartados, nunca los dos juntos. El
@@ -149,8 +161,8 @@ export const shipmentsRepo = {
    * dos peticiones y la misma fila sale en la pagina 1 y en la 2 mientras otra no
    * sale en ninguna.
    */
-  async list(query: ListShipmentsQuery, ownerClientId?: string) {
-    const conds = buildConditions(query, ownerClientId);
+  async list(query: ListShipmentsQuery, ownerClientId?: string, exactTracking?: string) {
+    const conds = buildConditions(query, ownerClientId, exactTracking);
     const { limit, offset } = toSlice(query);
     return baseQuery()
       .where(and(...conds))
@@ -173,8 +185,8 @@ export const shipmentsRepo = {
    * Los dos joins que quedan son LEFT sobre claves unicas, asi que no multiplican
    * filas y el conteo coincide exactamente con el del listado.
    */
-  async countList(query: ListShipmentsQuery, ownerClientId?: string) {
-    const conds = buildConditions(query, ownerClientId);
+  async countList(query: ListShipmentsQuery, ownerClientId?: string, exactTracking?: string) {
+    const conds = buildConditions(query, ownerClientId, exactTracking);
     const [row] = await db
       .select({ n: count() })
       .from(shipments)

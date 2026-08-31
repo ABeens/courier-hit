@@ -25,7 +25,7 @@
  *    la ruta de reparto y la operacion lee la direccion en vivo. Ver
  *    `updateAddress`.
  */
-import { ClientReviewStatus, lockerAddressFor, paged } from '@courier/shared';
+import { ClientReviewStatus, UserStatus, lockerAddressFor, paged } from '@courier/shared';
 import type {
   DeliveryAddressInput,
   ListClientsQuery,
@@ -55,6 +55,8 @@ export interface ClientListItem {
   districtCode: string;
   addressLine: string;
   reviewStatus: ClientReviewStatus;
+  /** Estado de la cuenta: `inactivo` es un casillero sin acceso al sistema. */
+  status: UserStatus;
   /** Nombre de la tarifa asignada; null si quedo sin tarifa. */
   clientRateName: string | null;
   clientRateId: string | null;
@@ -111,6 +113,42 @@ export const clientsService = {
         : {}),
       reviewStatus: ClientReviewStatus.Revisado,
     });
+
+    return this.get(id);
+  },
+
+  /**
+   * Bloquea o reactiva el ACCESO de un casillero (permiso `clients.suspend`).
+   *
+   * Es el mismo acto que "deshabilitar" un usuario de sistema y por eso se
+   * resuelve igual: se conmuta `users.status` y NO se borra nada. Un casillero
+   * inactivo conserva su codigo, su historial y sus tramites en curso; lo unico
+   * que pierde es la puerta. Borrarlo dejaria trámites huérfanos y facturas sin
+   * titular (docs/roles.md §1.3: "deshabilitar, no eliminar").
+   *
+   * Bloquear cierra las TRES entradas del cliente, y solo la segunda hay que
+   * tocarla a mano:
+   *
+   *   1. El login: `authService.login` rechaza a quien no esta activo.
+   *   2. La sesion YA abierta: se borra aqui mismo. Sin esto el cliente seguiria
+   *      dentro hasta que la cookie expirara; con esto, en el siguiente request
+   *      no hay sesion que resolver (y `resolveSession` tampoco la revalidaria
+   *      contra un usuario inactivo).
+   *   3. Las llaves de API: `apiKeysRepo.findForAuth` lee el estado de la cuenta
+   *      EN VIVO en cada peticion (docs/16 §5.4), asi que dejan de servir solas.
+   *      No se revocan: revocarlas es irreversible y reactivar al cliente tendria
+   *      que devolverle su integracion funcionando, no obligarlo a reemitir.
+   *
+   * Reactivar solo abre la puerta de nuevo: no toca el flag de revision ni la
+   * sesion (no hay ninguna que restaurar).
+   */
+  async setStatus(id: string, status: UserStatus): Promise<ClientListItem> {
+    const current = await clientsRepo.findById(id);
+    if (!current) throw ShipmentErrors.clientNotFound();
+    if (current.status === status) return this.get(id);
+
+    await authRepo.updateUser(current.userId, { status });
+    if (status === UserStatus.Inactivo) await authRepo.deleteSessionsByUser(current.userId);
 
     return this.get(id);
   },

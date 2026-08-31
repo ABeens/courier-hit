@@ -5,6 +5,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { config } from './config';
+import * as apiKeysSchema from '../modules/api-keys/api-keys.schema';
 import * as authSchema from '../modules/auth/auth.schema';
 import * as costServicesSchema from '../modules/cost-services/cost-service.schema';
 import * as tariffsSchema from '../modules/tariffs/tariffs.schema';
@@ -40,6 +41,7 @@ export const locksSql = postgres(config.DATABASE_URL, { max: config.DB_LOCK_POOL
 
 export const schema = {
   ...authSchema,
+  ...apiKeysSchema,
   ...costServicesSchema,
   ...tariffsSchema,
   ...districtRoutesSchema,

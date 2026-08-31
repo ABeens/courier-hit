@@ -533,6 +533,91 @@ export const AnnouncementErrors = {
     ),
 };
 
+/**
+ * Errores de la AUTOGESTION de llaves de API desde el portal (docs/16 §3).
+ * Los de la API publica —los que ve un integrador— viven aparte, en
+ * `PublicApiErrors`: son otra audiencia y otro contrato.
+ */
+export const ApiKeyErrors = {
+  /**
+   * 404 tambien cuando la llave existe pero es de otro casillero. No se distingue
+   * a proposito: confirmar la existencia de una credencial ajena ya es filtrar.
+   */
+  notFound: () => new AppError('API_KEY_NOT_FOUND', 'Llave no encontrada.', 404),
+  alreadyRevoked: () =>
+    new AppError('API_KEY_ALREADY_REVOKED', 'Esa llave ya estaba revocada.', 409),
+  /**
+   * El tope existe por la rotacion (hacen falta dos vivas para cambiar la
+   * credencial sin cortar el servicio); pasarlo significa que sobran llaves, no
+   * que falte cupo. Por eso el mensaje empuja a revocar, no a pedir mas.
+   */
+  tooMany: (max: number) =>
+    new AppError(
+      'API_KEY_LIMIT_REACHED',
+      `Ya tienes ${max} llaves activas, el maximo. Revoca una que no uses antes de crear otra.`,
+      409,
+    ),
+};
+
+/**
+ * Errores de la API PUBLICA (`/api/v1`). Van aparte del resto porque su lector
+ * no es el portal sino el sistema de un tercero: los mensajes explican que hacer
+ * (rotar la llave, esperar, revisar el casillero) y no describen el estado
+ * interno del sistema.
+ */
+export const PublicApiErrors = {
+  disabled: () =>
+    new AppError(
+      'PUBLIC_API_DISABLED',
+      'La API publica esta deshabilitada en este momento.',
+      503,
+    ),
+  keyMissing: () =>
+    new AppError(
+      'API_KEY_MISSING',
+      'Falta la llave de API. Envíala en la cabecera "Authorization: Bearer <llave>" o en "X-API-Key".',
+      401,
+    ),
+  keyInvalid: () =>
+    new AppError('API_KEY_INVALID', 'La llave de API no es válida.', 401),
+  keyRevoked: () =>
+    new AppError(
+      'API_KEY_REVOKED',
+      'Esa llave fue revocada. Genera una nueva desde tu portal, en "API".',
+      401,
+    ),
+  accountInactive: () =>
+    new AppError(
+      'ACCOUNT_INACTIVE',
+      'La cuenta asociada a esta llave está deshabilitada. Contacta a soporte.',
+      403,
+    ),
+  /**
+   * Se pregunto por un casillero que no es el de la llave. 403 y no una lista
+   * vacia: devolver cero resultados haria pensar en un problema de datos cuando
+   * el problema es que se esta usando la llave equivocada.
+   */
+  clientMismatch: () =>
+    new AppError(
+      'CLIENT_MISMATCH',
+      'Esa llave no pertenece al casillero por el que preguntas.',
+      403,
+    ),
+  packageNotFound: () =>
+    new AppError('PACKAGE_NOT_FOUND', 'No hay ningún paquete tuyo con ese tracking.', 404),
+  /**
+   * Se paso el limite de peticiones. La respuesta lleva ademas `Retry-After`, que
+   * lo pone el propio middleware: el mensaje dice cuanto, la cabecera lo dice en
+   * un formato que un cliente puede obedecer solo.
+   */
+  rateLimited: (retryAfterSeconds: number) =>
+    new AppError(
+      'RATE_LIMITED',
+      `Demasiadas peticiones. Vuelve a intentarlo en ${retryAfterSeconds} segundos.`,
+      429,
+    ),
+};
+
 /** Errores de la definicion de rutas (panel admin, permiso routes.manage). */
 export const RouteErrors = {
   notFound: () => new AppError('DISTRICT_ROUTE_NOT_FOUND', 'El distrito no tiene una ruta asignada.', 404),

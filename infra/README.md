@@ -11,7 +11,7 @@ Dos stacks, un entorno (producción):
 | Stack | Contiene | Se puede recrear |
 |-------|----------|:----------------:|
 | `courier-prod-base` | VPC, RDS PostgreSQL, bucket de adjuntos, ECR, **Elastic IP** | ❌ tiene estado |
-| `courier-prod-app` | Instancia EC2 de la API, CloudFront, bucket del sitio, Parameter Store, rol de despliegue | ✅ |
+| `courier-prod-app` | Instancia EC2 de la API, CloudFront, **WAF**, bucket del sitio, Parameter Store, rol de despliegue | ✅ |
 
 El modelo de cómputo es la **opción C** de docs/12 §4: una instancia EC2
 `t4g.small` con Elastic IP propia. Esa IP es la que da la IP de salida fija que
@@ -29,6 +29,36 @@ navegador ──HTTPS──> CloudFront ──┬── /*      ──> S3 (siti
                                                     │
                                                     └── S3 adjuntos · SES · Helga (IP fija)
 ```
+
+### El cortafuegos del borde (WAF)
+
+Delante de CloudFront hay un **Web ACL** (`WAF_ENABLED` en `lib/config.ts`). Se
+inspecciona ahí y no en la instancia porque es el único sitio donde parar tráfico
+es barato: lo que se bloquea en el borde no llega a consumir CPU, ni conexión a
+la base de datos, ni ancho de banda del servidor.
+
+Cinco reglas, las de volumen primero: un tope por IP contra `/api/v1/*` (1000 por
+cada 5 minutos), otro más alto para el resto del sitio (3000), y los tres grupos
+gestionados de AWS (reputación de IP, entradas maliciosas conocidas y el conjunto
+común). Del grupo común hay **tres reglas puestas a contar** en vez de bloquear
+porque dan falsos positivos en esta aplicación: `SizeRestrictions_BODY` (cortaría
+los adjuntos de más de 8 KB, o sea todos los comprobantes y fotos de entrega),
+`NoUserAgent_HEADER` (muchas librerías HTTP de servidor no mandan `User-Agent`) y
+`GenericRFI_BODY` (se dispara con un `://` en el cuerpo, y la descripción de un
+paquete puede llevar el enlace de la compra). El detalle y el porqué de cada una
+está en [docs/16-api-publica.md](../docs/16-api-publica.md) §6.3.
+
+**Cuesta:** ~5 USD/mes el Web ACL, ~1 USD por regla y otro tanto por grupo
+gestionado, más ~0,60 USD por millón de peticiones inspeccionadas; en el volumen
+de hoy, del orden de 12-15 USD/mes. Es la única capa que para una inundación
+antes de que le cueste CPU al servidor, así que se despliega encendido. Para
+apagarlo: `WAF_ENABLED = false` en `lib/config.ts` y `cdk deploy`; el sistema
+sigue funcionando igual, solo que con el limitador de la aplicación como única
+defensa, y ese ya no está cuando el problema es el volumen.
+
+La distribución lleva además una `ResponseHeadersPolicy` con HSTS (un año, con
+subdominios), `X-Frame-Options: DENY` y la política de referente. Va en el borde
+y no en la API porque son política del sitio entero, páginas estáticas incluidas.
 
 ## El entorno desplegado
 

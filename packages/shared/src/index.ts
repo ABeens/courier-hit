@@ -26,6 +26,8 @@ export * from './payments/payment';
 export * from './payments/dto';
 export * from './deliveries/delivery';
 export * from './deliveries/dto';
+export * from './api-keys/api-key';
+export * from './api-keys/dto';
 export * from './clients/locker';
 export * from './clients/dto';
 export * from './clients/provider-link';
@@ -41,3 +43,7 @@ export * from './workflow/shipment-type';
 export * from './workflow/states';
 export * from './workflow/automation';
 export * from './workflow/machine';
+// Al final: el contrato de la API publica (`/api/v1`) se apoya en los esquemas
+// de tramites y en el sobre de paginacion, asi que se exporta despues de ellos.
+export * from './public-api/dto';
+export * from './public-api/reference';

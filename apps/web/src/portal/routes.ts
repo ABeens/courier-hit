@@ -26,6 +26,7 @@ export const RESOURCE_SLUGS: Record<Resource, string> = {
   [Resource.ControlRoom]: 'sala-de-control',
   [Resource.Settings]: 'configuracion',
   [Resource.Tariffs]: 'tarifas',
+  [Resource.ApiKeys]: 'llaves-api',
   [Resource.Routes]: 'rutas',
   [Resource.Users]: 'usuarios',
   [Resource.Announcements]: 'anuncios',

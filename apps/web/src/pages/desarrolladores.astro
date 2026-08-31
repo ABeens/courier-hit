@@ -1,0 +1,335 @@
+---
+/*
+  /desarrolladores — documentación de la API pública para clientes (docs/16 §7).
+
+  El contenido NO está escrito aquí: se genera a partir de `PUBLIC_API_OPERATIONS`
+  y `PUBLIC_API_COMMON_ERRORS` de `@courier/shared`, que es la misma fuente de la
+  que sale el documento OpenAPI que sirve la API en `/api/v1/openapi.json`. Ese es
+  el punto: una API con dos descripciones acaba teniendo dos, y la equivocada
+  manda a integrar contra algo que no existe.
+
+  Página estática y sin JavaScript, como el resto del sitio público. Es
+  deliberadamente accesible sin cuenta: quien está evaluando si integrarse
+  todavía no tiene una.
+*/
+import Base from '../layouts/Base.astro';
+import Nav from '../components/landing/Nav.astro';
+import PageHead from '../components/landing/PageHead.astro';
+import Footer from '../components/landing/Footer.astro';
+import Icon from '../components/ui/Icon.astro';
+import {
+  API_KEY_HEADER,
+  PUBLIC_API_COMMON_ERRORS,
+  PUBLIC_API_OPERATIONS,
+  PUBLIC_API_PREFIX,
+  buildPublicApiCurl,
+} from '@courier/shared';
+
+/*
+  La URL base que se muestra en los ejemplos. Sale de `Astro.site`, que es el
+  host por el que de verdad se sirve el sitio (ver astro.config.mjs): pegar un
+  `curl` de esta página tiene que funcionar tal cual.
+*/
+const baseUrl = `${new URL(PUBLIC_API_PREFIX, Astro.site).origin}${PUBLIC_API_PREFIX}`;
+
+const sections = [
+  { id: 'empezar', title: 'Cómo empezar' },
+  { id: 'autenticacion', title: 'Autenticación' },
+  { id: 'limites', title: 'Límites de uso' },
+  { id: 'errores', title: 'Errores' },
+  ...PUBLIC_API_OPERATIONS.map((op) => ({ id: op.id, title: op.summary })),
+];
+---
+<Base
+  title="API para desarrolladores · HS Global Services"
+  description="Documentación de la API de HS Global Services: consulta de casillero, consulta de paquetes por estado o tracking y prealerta, con autenticación por llave de API."
+>
+  <Nav />
+  <main>
+    <PageHead
+      eyebrow="Desarrolladores"
+      icon="zap"
+      title="API de HS Global Services"
+      sub="Conecta tu sistema con tu casillero: consulta tus paquetes, búscalos por tracking y registra prealertas sin entrar al portal."
+    />
+
+    <section class="api wrap">
+      <div class="api__grid">
+        <nav class="api__toc" aria-label="Contenido de la documentación">
+          <div class="api__toc-inner">
+            <div class="api__toc-title">Contenido</div>
+            <ol class="api__toc-list">
+              {sections.map((s) => (
+                <li><a href={`#${s.id}`} class="api__toc-link">{s.title}</a></li>
+              ))}
+            </ol>
+            <a href={`${baseUrl}/openapi.json`} class="api__spec">
+              <Icon name="download" size={15} />OpenAPI (JSON)
+            </a>
+          </div>
+        </nav>
+
+        <article class="api__doc">
+          <section id="empezar" class="api__sec">
+            <h2 class="api__sec-title">Cómo empezar</h2>
+            <p class="api__p">
+              La API es HTTP y JSON, y su raíz es <code>{baseUrl}</code>. Todo lo que devuelve está
+              acotado a <strong>tu casillero</strong>: la llave dice quién eres, así que no hace
+              falta (ni se puede) indicar el cliente en cada petición.
+            </p>
+            <ol class="api__steps">
+              <li>
+                Entra a tu portal, abre <strong>API</strong> y crea una llave. Cópiala en ese
+                momento: es la única vez que se muestra.
+              </li>
+              <li>Guárdala en tu servidor como cualquier otra contraseña de sistema.</li>
+              <li>
+                Prueba que funciona pidiendo <code>GET /client</code>: si responde con tu código de
+                casillero, ya estás integrado.
+              </li>
+            </ol>
+            <p class="api__note">
+              Todas las fechas viajan en UTC, en formato ISO 8601. Los montos llevan la moneda en
+              el nombre del campo (<code>invoiceTotalCrc</code>, <code>declaredValueUsd</code>), así
+              que nunca hay que adivinarla.
+            </p>
+          </section>
+
+          <section id="autenticacion" class="api__sec">
+            <h2 class="api__sec-title">Autenticación</h2>
+            <p class="api__p">
+              Cada petición lleva tu llave en la cabecera <code>Authorization</code>. Si tu
+              herramienta no te deja fijarla, usa <code>{API_KEY_HEADER}</code> con el mismo valor.
+            </p>
+            <pre class="api__code"><code>Authorization: Bearer hsk_live_kq7m3xb9tzr4dph2_a8fj2mnqv5wc7xtz3rkd9hp6bs4gy2fm</code></pre>
+            <ul class="api__list">
+              <li>
+                <Icon name="shield" size={15} color="var(--brand)" />
+                La llave va <strong>en tu servidor</strong>, nunca en una página web ni en una app
+                móvil: cualquiera que vea el código la puede leer.
+              </li>
+              <li>
+                <Icon name="shield" size={15} color="var(--brand)" />
+                No la mandes en la URL. Ahí acaba en registros de acceso, en el historial del
+                navegador y en la cabecera <code>Referer</code>.
+              </li>
+              <li>
+                <Icon name="shield" size={15} color="var(--brand)" />
+                Si sospechas que se filtró, <strong>rótala</strong> desde el portal. La anterior
+                deja de servir en el acto.
+              </li>
+            </ul>
+          </section>
+
+          <section id="limites" class="api__sec">
+            <h2 class="api__sec-title">Límites de uso</h2>
+            <p class="api__p">
+              Hay un tope de peticiones por llave y por minuto. Cada respuesta trae cuánto te
+              queda, así que tu sistema puede regularse solo en vez de reintentar a ciegas:
+            </p>
+            <pre class="api__code"><code>{`X-RateLimit-Limit: 120
+X-RateLimit-Remaining: 118
+X-RateLimit-Reset: 1788172860`}</code></pre>
+            <p class="api__p">
+              Al pasarte, la respuesta es <code>429</code> con la cabecera <code>Retry-After</code>
+              en segundos. Espera ese tiempo antes de volver a intentarlo.
+            </p>
+            <p class="api__note">
+              Si tu integración consulta el estado de muchos paquetes, pide una página del listado
+              (<code>GET /packages</code>) en vez de un paquete por petición: una llamada trae hasta
+              cien.
+            </p>
+          </section>
+
+          <section id="errores" class="api__sec">
+            <h2 class="api__sec-title">Errores</h2>
+            <p class="api__p">
+              Todos los errores tienen la misma forma. El <code>code</code> es estable y es sobre lo
+              que conviene ramificar; el <code>message</code> está en español y puede cambiar.
+            </p>
+            <pre class="api__code"><code>{`{ "error": { "code": "API_KEY_REVOKED", "message": "Esa llave fue revocada..." } }`}</code></pre>
+            <table class="api__table">
+              <thead>
+                <tr><th>HTTP</th><th>Código</th><th>Cuándo</th></tr>
+              </thead>
+              <tbody>
+                {PUBLIC_API_COMMON_ERRORS.map((e) => (
+                  <tr>
+                    <td><code>{e.status}</code></td>
+                    <td><code>{e.code}</code></td>
+                    <td set:html={e.when.replace(/`([^`]+)`/g, '<code>$1</code>')} />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+
+          {PUBLIC_API_OPERATIONS.map((op) => (
+            <section id={op.id} class="api__sec">
+              <h2 class="api__sec-title">{op.summary}</h2>
+              <div class="api__endpoint">
+                <span class={`api__verb api__verb--${op.method.toLowerCase()}`}>{op.method}</span>
+                <code>{op.path.replace('/v1', PUBLIC_API_PREFIX)}</code>
+              </div>
+              <p class="api__p">{op.description}</p>
+
+              {op.params.length > 0 && (
+                <>
+                  <h3 class="api__h3">Parámetros</h3>
+                  <table class="api__table">
+                    <thead>
+                      <tr><th>Nombre</th><th>En</th><th>Tipo</th><th>Descripción</th></tr>
+                    </thead>
+                    <tbody>
+                      {op.params.map((p) => (
+                        <tr>
+                          <td>
+                            <code>{p.name}</code>
+                            {p.required && <span class="api__req">obligatorio</span>}
+                          </td>
+                          <td class="api__muted">{p.in === 'body' ? 'cuerpo' : p.in === 'path' ? 'ruta' : 'query'}</td>
+                          <td class="api__muted">{p.type}</td>
+                          <td set:html={p.description.replace(/`([^`]+)`/g, '<code>$1</code>')} />
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+
+              <h3 class="api__h3">Ejemplo</h3>
+              <pre class="api__code"><code>{buildPublicApiCurl(op, baseUrl)}</code></pre>
+
+              <h3 class="api__h3">Respuesta ({op.successStatus})</h3>
+              <pre class="api__code"><code>{op.responseExample}</code></pre>
+
+              {op.errors.length > 0 && (
+                <>
+                  <h3 class="api__h3">Errores propios</h3>
+                  <table class="api__table">
+                    <thead>
+                      <tr><th>HTTP</th><th>Código</th><th>Cuándo</th></tr>
+                    </thead>
+                    <tbody>
+                      {op.errors.map((e) => (
+                        <tr>
+                          <td><code>{e.status}</code></td>
+                          <td><code>{e.code}</code></td>
+                          <td set:html={e.when.replace(/`([^`]+)`/g, '<code>$1</code>')} />
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </section>
+          ))}
+
+          <div class="api__foot">
+            <p class="muted">¿Te falta una operación o algo no encaja con tu sistema?</p>
+            <a href="/contacto" class="btn btn-ghost">Escríbenos<Icon name="arrowR" size={16} /></a>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+  <Footer />
+</Base>
+
+<style>
+  .api { padding-top: 56px; padding-bottom: 80px; }
+  .api__grid { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 56px; align-items: start; }
+
+  /* Índice */
+  .api__toc-inner { position: sticky; top: 96px; }
+  .api__toc-title {
+    font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--faint); margin-bottom: 14px;
+  }
+  .api__toc-list {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column; gap: 2px;
+    border-left: 1px solid var(--line);
+  }
+  .api__toc-link {
+    display: block; padding: 7px 0 7px 14px; margin-left: -1px;
+    border-left: 2px solid transparent;
+    color: var(--ink-2); font-size: 13.5px; text-decoration: none; line-height: 1.35;
+  }
+  .api__toc-link:hover { color: var(--brand); border-left-color: var(--brand); }
+  .api__spec {
+    display: inline-flex; align-items: center; gap: 7px; margin-top: 18px;
+    font-size: 13px; font-weight: 600; color: var(--ink-2); text-decoration: none;
+  }
+  .api__spec:hover { color: var(--brand); }
+
+  /* Documento */
+  .api__sec { scroll-margin-top: 96px; padding-bottom: 34px; }
+  .api__sec + .api__sec { border-top: 1px solid var(--line-2); padding-top: 34px; }
+  .api__sec-title { font-family: var(--font-display); font-size: 23px; margin: 0 0 14px; }
+  .api__h3 {
+    font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--faint); margin: 22px 0 10px;
+  }
+  .api__p { font-size: 15px; line-height: 1.65; color: var(--ink-2); margin: 0 0 12px; }
+  .api__note {
+    font-size: 13.5px; line-height: 1.6; color: var(--ink-2);
+    background: var(--brand-softer); border-left: 3px solid var(--brand);
+    padding: 11px 14px; border-radius: 0 8px 8px 0; margin: 14px 0 0;
+  }
+  .api__steps { margin: 0 0 12px; padding-left: 20px; }
+  .api__steps li { font-size: 15px; line-height: 1.65; color: var(--ink-2); margin-bottom: 7px; }
+  .api__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .api__list li {
+    display: grid; grid-template-columns: 15px minmax(0, 1fr); gap: 10px; align-items: start;
+    font-size: 14.5px; line-height: 1.6; color: var(--ink-2);
+  }
+  .api__list li :global(svg) { margin-top: 4px; }
+
+  /* Endpoint */
+  .api__endpoint {
+    display: inline-flex; align-items: center; gap: 10px; margin-bottom: 14px;
+    background: var(--surface-2, #f4f5f7); border: 1px solid var(--line-2);
+    border-radius: 8px; padding: 7px 12px;
+  }
+  .api__endpoint code { font-size: 13.5px; color: var(--ink); }
+  .api__verb {
+    font-size: 11px; font-weight: 800; letter-spacing: .06em;
+    padding: 3px 7px; border-radius: 5px; color: #fff;
+  }
+  .api__verb--get { background: #1f7a4d; }
+  .api__verb--post { background: #1f5fa8; }
+
+  .api__code {
+    background: #10151c; color: #d7e2ee; border-radius: 10px;
+    padding: 14px 16px; overflow-x: auto; font-size: 12.5px; line-height: 1.6;
+    margin: 0 0 4px;
+  }
+  .api__code code { font-family: var(--font-mono, ui-monospace, monospace); white-space: pre; }
+
+  .api__table { width: 100%; border-collapse: collapse; margin: 0 0 6px; font-size: 13.5px; }
+  .api__table th {
+    text-align: left; font-size: 11.5px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--faint);
+    padding: 0 10px 8px 0; border-bottom: 1px solid var(--line);
+  }
+  .api__table td {
+    padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line-2);
+    color: var(--ink-2); line-height: 1.5; vertical-align: top;
+  }
+  .api__muted { color: var(--faint); white-space: nowrap; }
+  .api__req {
+    display: inline-block; margin-left: 7px; font-size: 10.5px; font-weight: 700;
+    letter-spacing: .04em; text-transform: uppercase; color: var(--brand);
+  }
+
+  .api__foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    flex-wrap: wrap; border-top: 1px solid var(--line-2); padding-top: 24px; margin-top: 10px;
+  }
+
+  @media (max-width: 900px) {
+    .api__grid { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+    .api__toc-inner { position: static; }
+  }
+</style>

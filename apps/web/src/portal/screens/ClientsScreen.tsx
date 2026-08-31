@@ -13,6 +13,7 @@ import { useState } from 'react';
 import {
   ClientReviewStatus,
   Currency,
+  UserStatus,
   findCanton,
   findDistrict,
   findProvince,
@@ -22,6 +23,7 @@ import { IconButton } from '../components/IconButton';
 import { FilterBar } from '../components/FilterBar';
 import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
 import { Pagination } from '../components/Pagination';
+import { ApiError, api } from '../lib/api';
 import { usePagedList } from '../lib/usePagedList';
 import { ClientEditModal } from './ClientEditModal';
 
@@ -37,6 +39,8 @@ export interface ClientRow {
   districtCode: string;
   addressLine: string;
   reviewStatus: ClientReviewStatus;
+  /** Estado de la cuenta: `inactivo` es un casillero con el acceso bloqueado. */
+  status: UserStatus;
   clientRateName: string | null;
   clientRateId: string | null;
   creditLimit: number | null;
@@ -86,9 +90,17 @@ const CLIENT_STATUS_LABEL: Record<ClientReviewStatus, string> = {
   [ClientReviewStatus.Revisado]: 'Revisado',
 };
 
-export function ClientsScreen({ canWrite }: { canWrite: boolean }) {
+export function ClientsScreen({
+  canWrite,
+  canSuspend,
+}: {
+  canWrite: boolean;
+  /** Permiso `clients.suspend`: bloquear o reactivar el acceso del titular. */
+  canSuspend: boolean;
+}) {
   const [q, setQ] = useState('');
   const [onlyNew, setOnlyNew] = useState(false);
+  const [status, setStatus] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<ClientRow | null>(null);
 
@@ -107,10 +119,38 @@ export function ClientsScreen({ canWrite }: { canWrite: boolean }) {
     {
       q: q.trim() || undefined,
       reviewStatus: onlyNew ? ClientReviewStatus.Nuevo : undefined,
+      status: status || undefined,
     },
     { errorMessage: 'No se pudo cargar el listado.' },
   );
   const { error, setError, reload: load } = list;
+
+  /**
+   * Bloquea o reactiva el acceso del titular. Se confirma antes porque no es una
+   * edicion: al bloquear, el cliente pierde el portal y sus llaves de API dejan
+   * de responder en la siguiente peticion, y quien lo pulsa por error no tiene
+   * forma de notarlo desde esta pantalla.
+   */
+  async function toggleAccess(row: ClientRow) {
+    const blocking = row.status === UserStatus.Activo;
+    const next = blocking ? UserStatus.Inactivo : UserStatus.Activo;
+    const confirmed = window.confirm(
+      blocking
+        ? `¿Bloquear el acceso de ${row.name} (${row.code})? No podrá entrar al portal, se cerrará su sesión y sus llaves de API dejarán de funcionar. Sus trámites y su historial se conservan.`
+        : `¿Reactivar el acceso de ${row.name} (${row.code})? Volverá a entrar al portal con sus llaves de API de siempre.`,
+    );
+    if (!confirmed) return;
+
+    setError(null);
+    setNotice(null);
+    try {
+      await api.patch(`/clients/${row.id}/status`, { status: next });
+      setNotice(`${row.name}: acceso ${blocking ? 'bloqueado' : 'reactivado'}.`);
+      void load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo cambiar el acceso.');
+    }
+  }
 
   return (
     <div className="fadeIn">
@@ -135,12 +175,21 @@ export function ClientsScreen({ canWrite }: { canWrite: boolean }) {
           onChange: setQ,
           placeholder: 'Buscar por nombre, casillero, cédula o correo…',
         }}
-        chips={
-          onlyNew
+        chips={[
+          ...(onlyNew
             ? [{ label: 'Casilleros: Solo nuevos', onClear: () => setOnlyNew(false) }]
-            : []
-        }
-        onClearAll={() => setOnlyNew(false)}
+            : []),
+          ...(status
+            ? [{
+                label: `Acceso: ${status === UserStatus.Activo ? 'Activo' : 'Bloqueado'}`,
+                onClear: () => setStatus(''),
+              }]
+            : []),
+        ]}
+        onClearAll={() => {
+          setOnlyNew(false);
+          setStatus('');
+        }}
       >
         <div>
           <label className="field-label" htmlFor="f-review">Revisión</label>
@@ -152,6 +201,22 @@ export function ClientsScreen({ canWrite }: { canWrite: boolean }) {
           >
             <option value="">Todos los casilleros</option>
             <option value="nuevos">Solo nuevos (por revisar)</option>
+          </select>
+        </div>
+
+        {/* Eje distinto del de revisión: uno es trabajo pendiente, este es quién
+            puede entrar. Un casillero bloqueado sigue pudiendo estar sin revisar. */}
+        <div>
+          <label className="field-label" htmlFor="f-access">Acceso</label>
+          <select
+            id="f-access"
+            className="input"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+          >
+            <option value="">Todos los accesos</option>
+            <option value={UserStatus.Activo}>Activo</option>
+            <option value={UserStatus.Inactivo}>Bloqueado</option>
           </select>
         </div>
       </FilterBar>
@@ -171,8 +236,13 @@ export function ClientsScreen({ canWrite }: { canWrite: boolean }) {
               ? formatMoney(row.creditLimit, row.creditLimitCurrency)
               : null;
           const shipments = `${row.shipmentCount} ${row.shipmentCount === 1 ? 'trámite' : 'trámites'}`;
+          // El acceso manda sobre la revisión al teñir la ficha: un casillero
+          // bloqueado no está esperando que alguien lo mire, está fuera. Su
+          // estado de revisión sigue accesible por el filtro.
+          const blocked = row.status === UserStatus.Inactivo;
+          const tone = blocked ? 'danger' : CLIENT_TONE[row.reviewStatus];
           return (
-            <article className={`card-item tone-${CLIENT_TONE[row.reviewStatus]}`} key={row.id}>
+            <article className={`card-item tone-${tone}`} key={row.id}>
               <div className="card-item-head">
                 <div className="card-item-ident">
                   <span className="card-item-code">{row.code}</span>
@@ -185,9 +255,25 @@ export function ClientsScreen({ canWrite }: { canWrite: boolean }) {
                 <div className="card-item-aside">
                   <span className="spill">
                     <span className="dot" />
-                    {CLIENT_STATUS_LABEL[row.reviewStatus]}
+                    {blocked ? 'Acceso bloqueado' : CLIENT_STATUS_LABEL[row.reviewStatus]}
                   </span>
                   {canWrite && <IconButton label="Editar cliente" icon="edit" onClick={() => setEditing(row)} />}
+                  {canSuspend &&
+                    (blocked ? (
+                      <IconButton
+                        label="Reactivar acceso"
+                        icon="checkCircle"
+                        onClick={() => void toggleAccess(row)}
+                      />
+                    ) : (
+                      <IconButton
+                        label="Bloquear acceso"
+                        icon="ban"
+                        tone="danger"
+                        hint="Bloquear acceso (cierra el portal y sus llaves de API)"
+                        onClick={() => void toggleAccess(row)}
+                      />
+                    ))}
                 </div>
               </div>
 

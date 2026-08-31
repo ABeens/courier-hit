@@ -6,6 +6,7 @@ import { config, helgaMode } from './core/config';
 import { createApp } from './core/http';
 import { createScheduler } from './core/scheduler/jobs';
 import { helgaMockRoutes } from './integrations/helga/helga.mock.routes';
+import { apiKeysRoutes } from './modules/api-keys/api-keys.routes';
 import { authRoutes } from './modules/auth/auth.routes';
 import { usersRoutes } from './modules/users/users.routes';
 import { costServicesRoutes } from './modules/cost-services/cost-services.routes';
@@ -19,6 +20,7 @@ import { paymentsRoutes } from './modules/payments/payments.routes';
 import { deliveriesRoutes } from './modules/deliveries/deliveries.routes';
 import { reportsRoutes } from './modules/reports/reports.routes';
 import { dashboardRoutes } from './modules/dashboard/dashboard.routes';
+import { publicApiRoutes } from './modules/public-api/public.routes';
 import { settingsRoutes } from './modules/settings/settings.routes';
 
 const app = createApp();
@@ -36,6 +38,15 @@ app.route('/api/deliveries', deliveriesRoutes);
 app.route('/api/reports', reportsRoutes);
 app.route('/api/dashboard', dashboardRoutes);
 app.route('/api/settings', settingsRoutes);
+app.route('/api/api-keys', apiKeysRoutes);
+
+/**
+ * API PUBLICA para clientes (docs/16). Se monta bajo su propia version y no
+ * junto al resto: lo de arriba es el portal —contrato interno, cambia con las
+ * pantallas— y esto es un compromiso con sistemas de terceros que no
+ * controlamos. Un cambio incompatible aqui se publica como `/api/v2`.
+ */
+app.route('/api/v1', publicApiRoutes);
 
 // Panel de control del proveedor simulado. Solo existe con HELGA_MODE=simulated,
 // modo que el arranque prohibe en produccion: no es parte de la API del producto.

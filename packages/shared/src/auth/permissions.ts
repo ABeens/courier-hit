@@ -53,6 +53,12 @@ export enum Resource {
    */
   Settings = 'settings',
   Tariffs = 'tariffs',
+  /**
+   * Llaves de API del propio casillero. Es un modulo del menu del CLIENTE, no
+   * del staff: la autogestion de credenciales es del titular, que es quien sabe
+   * que sistema suyo esta integrado y cuando dejo de estarlo (docs/16 §3).
+   */
+  ApiKeys = 'api_keys',
   Routes = 'routes',
   Users = 'users',
   Announcements = 'announcements',
@@ -106,6 +112,16 @@ export enum Permission {
   TramiteReadOwn = 'tramite.read.own',
   LockerRead = 'locker.read',
   ProfileWrite = 'profile.write',
+  /**
+   * Crear, rotar y revocar las llaves de API del PROPIO casillero.
+   *
+   * Es un permiso del cliente y de nadie mas, ni siquiera del administrador: una
+   * llave es una credencial a nombre del titular, y quien pueda emitirla puede
+   * actuar como el sin dejar rastro de que fue otro. El staff que necesite
+   * ayudar ve la lista de llaves del cliente en su ficha, pero el acto de emitir
+   * es suyo. Alcance Own, como el resto del portal del cliente.
+   */
+  ApiKeysManage = 'api_keys.manage',
 
   // --- Panel administrador (staff) ---
   DashboardRead = 'dashboard.read',
@@ -225,6 +241,23 @@ export enum Permission {
   ReportsProforma = 'reports.proforma',
   ClientsRead = 'clients.read',
   ClientsWrite = 'clients.write',
+  /**
+   * Bloquear (y reactivar) el ACCESO de un casillero: conmuta el `status` del
+   * usuario dueño entre activo e inactivo. Es el equivalente de `users.manage`
+   * para la otra poblacion, la de clientes.
+   *
+   * VA APARTE DE `clients.write` PORQUE NO ES LO MISMO. `clients.write` es la
+   * edicion comercial de la ficha (tarifa, limite de credito): equivocarse ahi
+   * se corrige editando otra vez. Esto es la PUERTA: cierra el portal, corta la
+   * sesion en curso y deja fuera a las llaves de API del titular. Quien negocia
+   * una tarifa no tiene por que poder dejar a un cliente sin cuenta, asi que si
+   * mañana `clients.write` se le abre a Servicio al Cliente, esto no se va de
+   * paso.
+   *
+   * Hoy solo `admin`. Abrirselo a otro rol es sumarlo en ROLE_PERMISSIONS y nada
+   * mas: la pantalla y el endpoint preguntan por el PERMISO, nunca por el rol.
+   */
+  ClientsSuspend = 'clients.suspend',
   ConfigManage = 'config.manage',
   TariffsManage = 'tariffs.manage',
   RoutesManage = 'routes.manage',
@@ -249,6 +282,7 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   [Permission.TramiteReadOwn]: { resource: Resource.Tramite, action: Action.Read, scope: Scope.Own },
   [Permission.LockerRead]: { resource: Resource.Locker, action: Action.Read, scope: Scope.Own },
   [Permission.ProfileWrite]: { resource: Resource.Profile, action: Action.Write, scope: Scope.Own },
+  [Permission.ApiKeysManage]: { resource: Resource.ApiKeys, action: Action.Manage, scope: Scope.Own },
 
   [Permission.DashboardRead]: { resource: Resource.Dashboard, action: Action.Read, scope: Scope.All },
   [Permission.PackageReceive]: { resource: Resource.Reception, action: Action.Receive, scope: Scope.All },
@@ -280,6 +314,8 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   [Permission.ReportsProforma]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
   [Permission.ClientsRead]: { resource: Resource.Clients, action: Action.Read, scope: Scope.All },
   [Permission.ClientsWrite]: { resource: Resource.Clients, action: Action.Write, scope: Scope.All },
+  // Action.Manage y no Write: no edita el casillero, decide si su dueño entra.
+  [Permission.ClientsSuspend]: { resource: Resource.Clients, action: Action.Manage, scope: Scope.All },
   [Permission.ConfigManage]: { resource: Resource.Config, action: Action.Manage, scope: Scope.All },
   [Permission.TariffsManage]: { resource: Resource.Tariffs, action: Action.Manage, scope: Scope.All },
   [Permission.RoutesManage]: { resource: Resource.Routes, action: Action.Manage, scope: Scope.All },
@@ -315,6 +351,8 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   Permission.ReportsProforma,
   Permission.ClientsRead,
   Permission.ClientsWrite,
+  // Solo admin: cerrarle la puerta a un cliente no es editar su ficha.
+  Permission.ClientsSuspend,
   Permission.ConfigManage,
   Permission.TariffsManage,
   Permission.RoutesManage,
@@ -331,6 +369,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.TramiteReadOwn,
     Permission.LockerRead,
     Permission.ProfileWrite,
+    Permission.ApiKeysManage,
   ],
 
   [Role.Admin]: ADMIN_PERMISSIONS,

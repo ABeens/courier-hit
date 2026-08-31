@@ -61,6 +61,37 @@ export const DATABASE_NAME = 'courier';
 export const AWS_ACCOUNT = '632914961265';
 export const AWS_REGION = 'us-east-1';
 
+/**
+ * Si la distribucion lleva WAF delante (docs/16 §6).
+ *
+ * Es un interruptor y no una decision fija porque CUESTA: un Web ACL son unos
+ * 5 USD al mes, cada regla suma ~1 USD y los grupos gestionados otro tanto, mas
+ * ~0,60 USD por millon de peticiones inspeccionadas. Con la API publica abierta
+ * a internet ese gasto se justifica (es la unica capa que para una inundacion
+ * antes de que le cueste CPU al servidor); apagarlo deja el sistema funcionando
+ * exactamente igual, solo que con el limitador de la aplicacion como unica
+ * defensa, y ese ya no esta cuando el problema es el volumen.
+ *
+ * OJO: un Web ACL de CloudFront SOLO se puede crear en us-east-1, que es
+ * justamente donde vive este stack (ver `AWS_REGION`).
+ */
+export const WAF_ENABLED = true;
+
+/**
+ * Techo por IP en 5 minutos para TODO el sitio. Es un tope anti-inundacion, no
+ * una cuota: una persona navegando el portal no se acerca ni de lejos, y una
+ * oficina entera detras de una misma salida a internet tampoco.
+ */
+export const WAF_RATE_LIMIT_SITE = 3000;
+
+/**
+ * Techo por IP en 5 minutos contra `/api/v1/*`. Mas bajo que el del sitio porque
+ * ahi cada peticion cuesta una consulta a la base de datos y porque un
+ * integrador legitimo tiene ademas su propio limite por llave, mas estricto que
+ * este (ver `PUBLIC_API_RATE_LIMIT` en la API).
+ */
+export const WAF_RATE_LIMIT_PUBLIC_API = 1000;
+
 /** Dominio contratado. */
 export const SITE_DOMAIN = 'hsglobal-services.com';
 

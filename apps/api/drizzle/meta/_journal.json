@@ -211,6 +211,13 @@
       "when": 1787983087149,
       "tag": "0029_slippery_marvex",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788154911174,
+      "tag": "0030_sticky_genesis",
+      "breakpoints": true
     }
   ]
 }

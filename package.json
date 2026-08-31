@@ -3,9 +3,10 @@
   "private": true,
   "packageManager": "pnpm@11.1.1",
   "scripts": {
-    "dev": "pnpm -r --parallel dev",
-    "dev:web": "pnpm --filter @courier/web dev",
-    "dev:api": "pnpm --filter @courier/api dev",
+    "dev": "node scripts/dev-clean.mjs && pnpm -r --parallel dev",
+    "dev:web": "node scripts/dev-clean.mjs && pnpm --filter @courier/web dev",
+    "dev:api": "node scripts/dev-clean.mjs && pnpm --filter @courier/api dev",
+    "dev:clean": "node scripts/dev-clean.mjs",
     "build": "pnpm --filter @courier/web build"
   }
 }

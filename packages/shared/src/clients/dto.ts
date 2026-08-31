@@ -11,7 +11,7 @@
  */
 import { z } from 'zod';
 import { Currency } from '../money/currency';
-import { ClientReviewStatus } from '../auth/user';
+import { ClientReviewStatus, UserStatus } from '../auth/user';
 import { emailSchema, idNumberSchema, nameSchema, phoneSchema } from '../auth/dto';
 import { paginationQuerySchema } from '../http/pagination';
 
@@ -29,9 +29,33 @@ export const listClientsQuerySchema = z
   .object({
     q: z.string().trim().min(1).max(80).optional(),
     reviewStatus: z.nativeEnum(ClientReviewStatus).optional(),
+    /**
+     * Estado de la CUENTA (acceso), eje distinto de `reviewStatus`. Tambien es
+     * filtro de servidor por la misma razon: los bloqueados son pocos y estan
+     * repartidos por todas las paginas, asi que filtrar en el navegador solo
+     * encontraria los que cayeron en la pagina visible.
+     */
+    status: z.nativeEnum(UserStatus).optional(),
   })
   .merge(paginationQuerySchema);
 export type ListClientsQuery = z.infer<typeof listClientsQuerySchema>;
+
+/**
+ * Bloqueo / reactivacion del acceso de un casillero (permiso `clients.suspend`).
+ *
+ * Cuerpo propio y endpoint propio, no un campo mas de `updateClientSchema`, por
+ * dos razones:
+ *
+ *   1. El permiso es otro. Editar la ficha es `clients.write`; cerrar la puerta
+ *      es `clients.suspend`, y un mismo esquema no puede pedir dos permisos.
+ *   2. Editar ES revisar: `updateClientSchema` apaga el flag "Nuevo" al guardar.
+ *      Bloquear a un cliente no es haberlo revisado, y con el campo aqui dentro
+ *      lo daria por revisado sin que nadie mirara sus datos.
+ */
+export const setClientStatusSchema = z.object({
+  status: z.nativeEnum(UserStatus),
+});
+export type SetClientStatusInput = z.infer<typeof setClientStatusSchema>;
 
 /**
  * Limite de credito del casillero (Parte 3 L48: "ingresarles un límite de

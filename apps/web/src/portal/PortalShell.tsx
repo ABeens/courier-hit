@@ -27,6 +27,7 @@ import { ProviderLinksScreen } from './screens/ProviderLinksScreen';
 import { ReportsScreen } from './screens/ReportsScreen';
 import { ReceptionScreen } from './screens/ReceptionScreen';
 import { ControlRoomScreen } from './screens/ControlRoomScreen';
+import { ApiKeysScreen } from './screens/ApiKeysScreen';
 import { LockerScreen } from './screens/LockerScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 
@@ -71,6 +72,11 @@ const CLIENT_NAV: NavEntry[] = [
   { resource: Resource.Package, label: 'Mis paquetes' },
   { resource: Resource.Tramite, label: 'Otros trámites' },
   { resource: Resource.Profile, label: 'Mi perfil' },
+  // Ultima: es la unica entrada que no sirve para la operacion diaria del
+  // casillero sino para conectar un sistema, y a eso se entra una vez. Se llama
+  // "API" y no "Llaves de API" porque ahi dentro no solo estan las llaves:
+  // tambien la documentacion de uso, que es lo que se busca la primera vez.
+  { resource: Resource.ApiKeys, label: 'API' },
 ];
 
 /**
@@ -465,13 +471,18 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
           ) : current === Resource.Delivery ? (
             <DeliveriesScreen />
           ) : current === Resource.Clients ? (
-            <ClientsScreen canWrite={can(me.role, Permission.ClientsWrite)} />
+            <ClientsScreen
+              canWrite={can(me.role, Permission.ClientsWrite)}
+              canSuspend={can(me.role, Permission.ClientsSuspend)}
+            />
           ) : current === Resource.Reports ? (
             <ReportsScreen />
           ) : current === Resource.Locker ? (
             <LockerScreen />
           ) : current === Resource.Profile ? (
             <ProfileScreen onLoggedOut={onLoggedOut} />
+          ) : current === Resource.ApiKeys ? (
+            <ApiKeysScreen />
           ) : (
             <div className="stub">
               <div className="big">{currentLabel}</div>
@@ -594,6 +605,8 @@ function NavIcon({ resource }: { resource: Resource }) {
     [Resource.Reception]: <path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M8 9.5v4M12 11v4" />,
     [Resource.Costs]: <path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
     [Resource.CostServices]: <path d="M20 12V8H6a2 2 0 01-2-2c0-1.1.9-2 2-2h12v4M4 6v12c0 1.1.9 2 2 2h14v-4M18 12a2 2 0 000 4h4v-4z" />,
+    // Llave: la credencial con la que un sistema entra por la API.
+    [Resource.ApiKeys]: <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />,
     [Resource.Tariffs]: <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01" />,
     [Resource.Routes]: <path d="M6 3a3 3 0 013 3c0 2-3 5-3 5S3 8 3 6a3 3 0 013-3zM18 13a3 3 0 013 3c0 2-3 5-3 5s-3-3-3-5a3 3 0 013-3zM6 11v3a4 4 0 004 4h4" />,
     [Resource.Delivery]: <path d="M1 3h15v13H1zM16 8h4l3 3v5h-7M5.5 21a2 2 0 100-4 2 2 0 000 4zM18.5 21a2 2 0 100-4 2 2 0 000 4z" />,

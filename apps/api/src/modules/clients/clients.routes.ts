@@ -18,6 +18,7 @@ import {
   deliveryAddressSchema,
   listClientsQuerySchema,
   listProviderLinksSchema,
+  setClientStatusSchema,
   updateClientSchema,
   updateProfileSchema,
   updateProviderLinkSchema,
@@ -127,5 +128,20 @@ clientsRoutes.patch(
   zValidator('json', updateClientSchema),
   async (c) => {
     return c.json(await clientsService.update(c.req.param('id'), c.req.valid('json')));
+  },
+);
+
+/**
+ * Bloqueo / reactivacion del acceso del titular. Endpoint propio y permiso
+ * propio (`clients.suspend`, solo Admin): cerrarle la puerta a un cliente no es
+ * editar su ficha comercial, y por eso no cuelga de `clients.write`. Ver
+ * `clientsService.setStatus` para lo que arrastra el bloqueo.
+ */
+clientsRoutes.patch(
+  '/:id/status',
+  requirePermission(Permission.ClientsSuspend),
+  zValidator('json', setClientStatusSchema),
+  async (c) => {
+    return c.json(await clientsService.setStatus(c.req.param('id'), c.req.valid('json').status));
   },
 );

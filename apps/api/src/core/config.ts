@@ -3,6 +3,7 @@
  * invalido, la API no arranca: fallamos temprano y claro.
  */
 import { z } from 'zod';
+import { MAX_ACTIVE_API_KEYS } from '@courier/shared';
 import { isValidDuration, parseDuration } from './scheduler/duration';
 
 /**
@@ -74,6 +75,51 @@ const EnvSchema = z.object({
   EMAIL_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   // Invitacion de staff: el token de fijar contrasena dura mas que un codigo (docs/roles.md §1.3.4).
   INVITE_TTL_HOURS: z.coerce.number().int().positive().default(72),
+
+  // --- API publica para clientes (docs/16) ---
+  /**
+   * Interruptor de `/api/v1`. Apagada, los endpoints responden 503
+   * PUBLIC_API_DISABLED en vez de desaparecer: un integrador merece saber que la
+   * API existe y esta en mantenimiento, no un 404 que parece un error suyo.
+   *
+   * La autogestion de llaves del portal NO depende de esta bandera: un cliente
+   * puede revocar una llave filtrada aunque la API este apagada, que es
+   * exactamente cuando mas falta hace.
+   */
+  PUBLIC_API_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  /**
+   * Peticiones por ventana y por LLAVE en la API publica. 120/minuto son dos por
+   * segundo sostenidos: de sobra para consultar el estado de una cartera de
+   * paquetes y muy poco para servir de ariete.
+   */
+  PUBLIC_API_RATE_LIMIT: z.coerce.number().int().positive().default(120),
+  PUBLIC_API_RATE_WINDOW: z
+    .string()
+    .default('1m')
+    .refine(isValidDuration, {
+      message: 'PUBLIC_API_RATE_WINDOW debe ser una duracion valida (p. ej. "1m", "30s").',
+    }),
+  /**
+   * Peticiones por ventana y por IP contra los endpoints de credenciales (login,
+   * registro, verificacion, olvido de contrasena). Es el punto pendiente de
+   * docs/04 §7: sin esto, probar contrasenas sale gratis.
+   *
+   * Va por IP y no por correo a proposito: limitar por correo deja abierta la
+   * pulverizacion (una contrasena comun contra mil cuentas) y ademas permite que
+   * un tercero bloquee la cuenta de alguien fallando adrede.
+   */
+  AUTH_RATE_LIMIT: z.coerce.number().int().positive().default(20),
+  AUTH_RATE_WINDOW: z
+    .string()
+    .default('5m')
+    .refine(isValidDuration, {
+      message: 'AUTH_RATE_WINDOW debe ser una duracion valida (p. ej. "5m", "15m").',
+    }),
+  /** Techo de llaves ACTIVAS por casillero. Ver `MAX_ACTIVE_API_KEYS`. */
+  API_KEYS_MAX_ACTIVE: z.coerce.number().int().positive().max(20).default(MAX_ACTIVE_API_KEYS),
 
   // --- Almacen de archivos adjuntos (comprobantes de pago, fotos de entrega) ---
   /**
@@ -609,6 +655,12 @@ if (helgaMode === 'on' && helgaAccounts.length > 1) {
       `(${helgaPrincipalAccount?.name}); en reserva: ${otras}.`,
   );
 }
+
+/** Ventana del limitador de la API publica, en milisegundos. */
+export const publicApiRateWindowMs = parseDuration(config.PUBLIC_API_RATE_WINDOW);
+
+/** Ventana del limitador de los endpoints de credenciales, en milisegundos. */
+export const authRateWindowMs = parseDuration(config.AUTH_RATE_WINDOW);
 
 /** Duracion de un paso de la linea de tiempo simulada, en milisegundos. */
 export const helgaSimulatedStepMs = parseDuration(config.HELGA_SIMULATED_STEP);

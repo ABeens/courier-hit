@@ -1,0 +1,10 @@
+CREDENCIALES API - HS GLOBAL SERVICES
+
+CASILLERO      | A NOMBRE DE   | CORREO ASIGNADO                        | CONTRASENA
+---------------+---------------+----------------------------------------+-----------
+SJO008835      | HS GLOBAL     | servicioalcliente1@hsglobal-services.com | 123
+SJO009623      | ZUCA          | servicioalcliente2@hsglobal-services.com | 123
+SJO00609300    | ZUCA ZF       | zucazf@hsglobal-services.com            | 123
+SJO009805      | ACTIVE SHOP   | activeshop@hsglobal-services.com        | 123
+SJO608891      | ALFA LOGISTICS| alfa@hsglobal-services.com              | 123
+SJO609776      | ADUANERA HC   | aherrera@hsglobal-services.com          | 123

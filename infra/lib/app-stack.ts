@@ -28,6 +28,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import type { Construct } from 'constructs';
 import type { BaseStack } from './base-stack';
 import {
@@ -41,6 +42,9 @@ import {
   SITE_DOMAIN,
   SITE_DOMAINS,
   SITE_HOST,
+  WAF_ENABLED,
+  WAF_RATE_LIMIT_PUBLIC_API,
+  WAF_RATE_LIMIT_SITE,
 } from './config';
 
 export interface AppStackProps extends StackProps {
@@ -334,6 +338,170 @@ function handler(event) {
      */
     const siteUrl = DOMAIN_LIVE ? `https://${SITE_HOST}` : undefined;
 
+    // --- Cortafuegos del borde (WAF) -----------------------------------------
+    /**
+     * Se inspecciona en CloudFront y no en la instancia porque es el unico sitio
+     * donde parar trafico es barato: lo que se bloquea aqui no llega a consumir
+     * CPU, ni conexion a la base de datos, ni ancho de banda del servidor. El
+     * limitador de la aplicacion (`core/rate-limit.ts`) hace algo distinto y
+     * complementario: limita por LLAVE, cosa que el WAF no puede saber.
+     *
+     * Tres grupos gestionados por AWS y dos reglas de volumen. El orden importa:
+     * las de volumen van PRIMERO porque son las baratas de evaluar y las que
+     * cortan el caso que de verdad tumba el servicio.
+     */
+    const webAcl = WAF_ENABLED
+      ? new wafv2.CfnWebACL(this, 'WebAcl', {
+          // CLOUDFRONT obliga a que el recurso viva en us-east-1. Este stack lo hace.
+          scope: 'CLOUDFRONT',
+          defaultAction: { allow: {} },
+          description: 'Proteccion del sitio y de la API publica de HS Global.',
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: 'courier-web-acl',
+            sampledRequestsEnabled: true,
+          },
+          rules: [
+            {
+              name: 'RateLimitPublicApi',
+              priority: 0,
+              action: { block: {} },
+              statement: {
+                rateBasedStatement: {
+                  limit: WAF_RATE_LIMIT_PUBLIC_API,
+                  aggregateKeyType: 'IP',
+                  // Solo cuenta lo que va contra la API publica: el resto del
+                  // sitio tiene su propio techo, mas alto, en la regla siguiente.
+                  scopeDownStatement: {
+                    byteMatchStatement: {
+                      fieldToMatch: { uriPath: {} },
+                      positionalConstraint: 'STARTS_WITH',
+                      searchString: '/api/v1/',
+                      textTransformations: [{ priority: 0, type: 'LOWERCASE' }],
+                    },
+                  },
+                },
+              },
+              visibilityConfig: {
+                cloudWatchMetricsEnabled: true,
+                metricName: 'rate-limit-public-api',
+                sampledRequestsEnabled: true,
+              },
+            },
+            {
+              name: 'RateLimitSite',
+              priority: 1,
+              action: { block: {} },
+              statement: {
+                rateBasedStatement: { limit: WAF_RATE_LIMIT_SITE, aggregateKeyType: 'IP' },
+              },
+              visibilityConfig: {
+                cloudWatchMetricsEnabled: true,
+                metricName: 'rate-limit-site',
+                sampledRequestsEnabled: true,
+              },
+            },
+            {
+              name: 'AWSManagedRulesAmazonIpReputationList',
+              priority: 2,
+              overrideAction: { none: {} },
+              statement: {
+                managedRuleGroupStatement: {
+                  vendorName: 'AWS',
+                  name: 'AWSManagedRulesAmazonIpReputationList',
+                },
+              },
+              visibilityConfig: {
+                cloudWatchMetricsEnabled: true,
+                metricName: 'ip-reputation',
+                sampledRequestsEnabled: true,
+              },
+            },
+            {
+              name: 'AWSManagedRulesKnownBadInputsRuleSet',
+              priority: 3,
+              overrideAction: { none: {} },
+              statement: {
+                managedRuleGroupStatement: {
+                  vendorName: 'AWS',
+                  name: 'AWSManagedRulesKnownBadInputsRuleSet',
+                },
+              },
+              visibilityConfig: {
+                cloudWatchMetricsEnabled: true,
+                metricName: 'known-bad-inputs',
+                sampledRequestsEnabled: true,
+              },
+            },
+            {
+              name: 'AWSManagedRulesCommonRuleSet',
+              priority: 4,
+              overrideAction: { none: {} },
+              statement: {
+                managedRuleGroupStatement: {
+                  vendorName: 'AWS',
+                  name: 'AWSManagedRulesCommonRuleSet',
+                  /**
+                   * Tres reglas del grupo pasan a CONTAR en vez de bloquear, y
+                   * cada una por un falso positivo concreto de ESTA aplicacion:
+                   *
+                   *  - `SizeRestrictions_BODY` bloquea cuerpos de mas de 8 KB, que
+                   *    es exactamente lo que es un comprobante de deposito o una
+                   *    foto de entrega (docs/12 6.2). Dejarla bloquear cortaria
+                   *    los adjuntos del portal.
+                   *  - `NoUserAgent_HEADER` bloquea peticiones sin `User-Agent`.
+                   *    Muchas librerias HTTP de servidor no lo mandan, y la API
+                   *    publica esta hecha para que la llamen desde servidores.
+                   *  - `GenericRFI_BODY` se dispara con un `://` dentro del
+                   *    cuerpo, y la descripcion de un paquete puede llevar
+                   *    perfectamente el enlace de la compra.
+                   *
+                   * Siguen contadas, no desactivadas: si alguna empieza a marcar
+                   * trafico raro, se ve en las metricas antes de decidir nada.
+                   */
+                  ruleActionOverrides: [
+                    { name: 'SizeRestrictions_BODY', actionToUse: { count: {} } },
+                    { name: 'NoUserAgent_HEADER', actionToUse: { count: {} } },
+                    { name: 'GenericRFI_BODY', actionToUse: { count: {} } },
+                  ],
+                },
+              },
+              visibilityConfig: {
+                cloudWatchMetricsEnabled: true,
+                metricName: 'common-rule-set',
+                sampledRequestsEnabled: true,
+              },
+            },
+          ],
+        })
+      : undefined;
+
+    /**
+     * Cabeceras de seguridad que pone el BORDE, para todo lo que sale por esta
+     * distribucion. Aqui y no en la API porque son politica del SITIO entero
+     * (paginas estaticas incluidas), y porque HSTS solo tiene sentido dicho por
+     * quien de verdad habla HTTPS con el navegador.
+     *
+     * `override: false` en las que la API ya pone por su cuenta: si el origen
+     * las manda, mandan las suyas y esto solo cubre lo que salga del bucket.
+     */
+    const securityHeaders = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeaders', {
+      comment: 'Cabeceras de seguridad del sitio y la API',
+      securityHeadersBehavior: {
+        strictTransportSecurity: {
+          accessControlMaxAge: Duration.days(365),
+          includeSubdomains: true,
+          override: true,
+        },
+        contentTypeOptions: { override: false },
+        frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: false },
+        referrerPolicy: {
+          referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+          override: false,
+        },
+      },
+    });
+
     const distribution = new cloudfront.Distribution(this, 'Cdn', {
       comment: 'HS Global Services: sitio + API',
       defaultRootObject: 'index.html',
@@ -344,10 +512,14 @@ function handler(event) {
       // Miami: pagar por los bordes de Asia y Oceania no compra nada.
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
       httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
+      // El WAF se asocia por ARN (wafv2), no por id: `webAclId` conserva el
+      // nombre de la version antigua de la API pero espera el ARN.
+      ...(webAcl ? { webAclId: webAcl.attrArn } : {}),
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(webBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        responseHeadersPolicy: securityHeaders,
         compress: true,
         functionAssociations: [
           {
@@ -372,9 +544,11 @@ function handler(event) {
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           // Una API con sesion no se cachea NUNCA.
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-          // Cabeceras, cookies y query intactas: la cookie de sesion y el
-          // `X-Webhook-Secret` de Onvo tienen que llegar tal cual.
+          // Cabeceras, cookies y query intactas: la cookie de sesion, el
+          // `X-Webhook-Secret` de Onvo y el `Authorization` de las llaves de API
+          // tienen que llegar tal cual.
           originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
+          responseHeadersPolicy: securityHeaders,
         },
       },
       // OJO: sin `errorResponses` a proposito. Son de la distribucion ENTERA, no
@@ -422,6 +596,10 @@ function handler(event) {
       // depende de ningun tramite externo (API publica, sin credenciales).
       HACIENDA_ENABLED: 'true',
       MIAMI_LINK_ENABLED: 'false',
+      // API publica encendida desde el primer despliegue: no depende de ningun
+      // tramite externo, y sin llaves emitidas no la puede usar nadie todavia.
+      // Queda aqui para poder apagarla desde SSM sin desplegar (docs/16 §6).
+      PUBLIC_API_ENABLED: 'true',
       // El robot solo tiene tareas de Helga: encenderlo antes no agenda nada.
       ROBOT_ENABLED: 'false',
     };

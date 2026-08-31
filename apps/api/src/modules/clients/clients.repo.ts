@@ -16,6 +16,8 @@ import { clientRates } from '../tariffs/tariffs.schema';
 
 const columns = {
   id: clients.id,
+  /** Identidad detras del casillero. La necesita quien tenga que actuar en su nombre. */
+  userId: clients.userId,
   code: clients.code,
   name: users.name,
   email: users.email,
@@ -26,12 +28,20 @@ const columns = {
   districtCode: clients.districtCode,
   addressLine: clients.addressLine,
   reviewStatus: clients.reviewStatus,
+  /**
+   * Estado de la CUENTA (activo/inactivo). Vive en `users`, no en `clients`:
+   * es la misma columna que gobierna el login del staff, y por eso bloquear a un
+   * cliente cierra a la vez el portal, la sesion en curso y sus llaves de API.
+   */
+  status: users.status,
   clientRateName: clientRates.name,
   clientRateId: clients.clientRateId,
   creditLimit: clients.creditLimit,
   creditLimitCurrency: clients.creditLimitCurrency,
   /** Sub-casillero que asigna el proveedor; es la direccion real en Miami. */
   helgaSubLocker: clients.helgaSubLocker,
+  /** Fecha de alta del casillero; la API publica la devuelve como `memberSince`. */
+  memberSince: clients.memberSince,
   createdAt: clients.createdAt,
 };
 
@@ -72,6 +82,7 @@ function buildConditions(query: ListClientsQuery): SQL[] {
     if (match) conds.push(match);
   }
   if (query.reviewStatus) conds.push(eq(clients.reviewStatus, query.reviewStatus));
+  if (query.status) conds.push(eq(users.status, query.status));
 
   return conds;
 }
