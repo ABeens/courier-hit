@@ -16,6 +16,7 @@
  * igual que en el portal sale de la cookie (docs/04 §6).
  */
 import { createMiddleware } from 'hono/factory';
+import { API_KEY_HEADER } from '@courier/shared';
 import { config } from '../config';
 import { PublicApiErrors } from '../errors';
 import type { AppEnv } from '../http';
@@ -24,24 +25,34 @@ import { apiKeysService } from '../../modules/api-keys/api-keys.service';
 /**
  * Saca la llave de la peticion. Se aceptan las DOS formas habituales:
  *
- *   - `Authorization: Bearer <llave>`, que es la estandar y la que documentamos;
- *   - `X-API-Key: <llave>`, porque hay clientes (algunos ERP, algunas
- *     herramientas de automatizacion sin codigo) que no dejan fijar
- *     `Authorization` a mano, y negarles la entrada no compra ninguna seguridad.
+ *   - `X-API-Key: <llave>`, la nuestra;
+ *   - `Authorization: Bearer <llave>`, la estandar.
+ *
+ * Se mira PRIMERO la nuestra, y esa prioridad no es un capricho. `Authorization`
+ * la escribe media herramienta por su cuenta: Postman la manda en cuanto hay
+ * algo configurado en su pestaña de autenticacion, y los gateways y varios ERP
+ * la inyectan sin avisar. Cuando ganaba `Authorization`, la llave puesta a mano
+ * en `X-API-Key` no se miraba nunca y el cliente recibia un 401 con la llave
+ * correcta delante, sin nada en la respuesta que apuntara a la cabecera de mas.
+ * `X-API-Key` no la pone nadie por accidente: si esta, es la que se quiso mandar.
+ *
+ * Un `Authorization` que no es Bearer (y sin `X-API-Key` que valga) no se ignora
+ * en silencio: quien lo mando cree que se esta autenticando.
  *
  * La query string NO se admite: ahi la llave acabaria en los logs de acceso, en
  * el historial del navegador y en la cabecera `Referer` de cualquier salto.
  */
 function readKey(header: (name: string) => string | undefined): string | null {
+  const own = header(API_KEY_HEADER)?.trim();
+  if (own) return own;
+
   const authorization = header('authorization');
   if (authorization) {
     const [scheme, ...rest] = authorization.trim().split(/\s+/);
     if (scheme?.toLowerCase() === 'bearer' && rest.length > 0) return rest.join(' ');
-    // Un `Authorization` que no es Bearer no se ignora en silencio: quien lo
-    // mando cree que se esta autenticando.
     return null;
   }
-  return header('x-api-key')?.trim() || null;
+  return null;
 }
 
 export function requireApiKey() {

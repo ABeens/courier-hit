@@ -322,6 +322,18 @@ Paso 'la llave pegada con comillas alrededor' 401 $conComillas (CodigoDe $conCom
 $bearerEnAlterna = Invoke-Api -Path '/api/v1/client' -Headers @{ 'x-api-key' = "Bearer $token" }
 Paso 'x-api-key con la palabra Bearer delante' 401 $bearerEnAlterna (CodigoDe $bearerEnAlterna)
 
+# El caso que trajo un cliente con Postman: la herramienta manda su propia
+# cabecera Authorization y la llave va, a mano, en x-api-key. Nuestra cabecera
+# tiene que ganar; si no, el 401 llega con la llave correcta delante.
+$conAuthAjena = Invoke-Api -Path '/api/v1/client' -Headers @{ 'x-api-key' = $token; Authorization = 'Bearer token-de-otra-herramienta' }
+Paso 'x-api-key valida aunque la herramienta mande su Authorization' 200 $conAuthAjena
+
+# La ruta mal escrita tiene que responder en el mismo contrato que el resto, y
+# decir QUE ruta llego: la barra final y el espacio pegado al copiar una URL no
+# se ven en la barra de direcciones de ninguna herramienta.
+$barraFinal = Invoke-Api -Path '/api/v1/client/' -Headers $conLlave
+Paso 'ruta con barra final' 404 $barraFinal (CodigoDe $barraFinal)
+
 # ---------------------------------------------------------------------------
 # 4. Las dos puertas son excluyentes (docs/16 5.2)
 # ---------------------------------------------------------------------------

@@ -90,6 +90,28 @@ export function createApp() {
   app.onError(onError);
 
   /**
+   * Ruta que no existe. Hono responde por defecto `404 Not Found` en texto
+   * plano, y eso rompe dos cosas a la vez: el contrato de errores (todo error de
+   * esta API es `{error:{code,message}}`) y la depuracion de quien integra, que
+   * recibe el mismo cuerpo mudo si se equivoco de ruta que si le sobro una barra
+   * final. El mensaje dice que se pidio y donde mirar la lista de operaciones.
+   */
+  app.notFound((c) =>
+    c.json(
+      {
+        error: {
+          code: 'ROUTE_NOT_FOUND',
+          message: c.req.path.startsWith(PUBLIC_API_PREFIX)
+            ? `No existe ${c.req.method} ${c.req.path} en la API. Revisa la ruta (en minúsculas y sin barra final) y el método; las operaciones están listadas en ${PUBLIC_API_PREFIX}/openapi.json.`
+            : `No existe ${c.req.method} ${c.req.path}.`,
+        },
+      },
+      404,
+    ),
+  );
+
+
+  /**
    * Sonda de salud, en las DOS rutas a proposito.
    *
    *   - `/health`     — desde dentro del contenedor. Es la que usa el

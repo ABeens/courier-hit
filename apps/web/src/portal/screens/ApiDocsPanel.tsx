@@ -213,6 +213,13 @@ export function ApiDocsPanel() {
       <section className="api-doc__sec">
         <div className="api-doc__h2">1. La URL base</div>
         <CodeBlock code={baseUrl} />
+        <p className="api-doc__p">
+          Por sí sola no responde: a la base se le añade la ruta de la operación
+          (<code>/client</code>, <code>/packages</code>…), como en el punto 3. Si pides la raíz, la
+          respuesta es un <code>404</code> con el código <code>ROUTE_NOT_FOUND</code> aunque la
+          llave sea correcta. Ese error trae la ruta <strong>exacta</strong> que recibimos, que es
+          la forma de cazar una barra final o un espacio que se coló al copiar la dirección.
+        </p>
       </section>
 
       <section className="api-doc__sec">
@@ -235,6 +242,13 @@ export function ApiDocsPanel() {
           {' '}<code>Bearer</code>, solo la llave (con ella delante, la llave se rechaza):
         </p>
         <CodeBlock code={`${API_KEY_HEADER}: ${API_KEY_PLACEHOLDER}`} />
+        <p className="api-doc__note">
+          <strong>Con Postman, Insomnia o un ERP:</strong> muchas herramientas mandan su propia
+          cabecera <code>Authorization</code> en cuanto hay algo puesto en su pestaña de
+          autenticación, aunque tú hayas escrito la llave a mano en otro sitio. Si te pasa, deja esa
+          pestaña en «No Auth» y manda la llave en <code>{API_KEY_HEADER}</code>: entre las dos
+          cabeceras mandamos la nuestra, así que la llave se lee igual.
+        </p>
 
         <div className="api-doc__h3">La misma petición, en tres formas</div>
         <p className="api-doc__p">

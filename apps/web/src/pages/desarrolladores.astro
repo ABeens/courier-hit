@@ -94,6 +94,13 @@ const sections = [
                 casillero, ya estás integrado.
               </li>
             </ol>
+            <p class="api__p">
+              La base por sí sola no responde: se le añade la ruta de cada operación
+              (<code>/client</code>, <code>/packages</code>…). Pedir la raíz devuelve
+              <code>404</code> con el código <code>ROUTE_NOT_FOUND</code> aunque la llave sea
+              correcta, y ese error trae la ruta <strong>exacta</strong> que recibimos: es la forma
+              de cazar una barra final o un espacio colado al copiar la dirección.
+            </p>
             <p class="api__note">
               Todas las fechas viajan en UTC, en formato ISO 8601. Los montos llevan la moneda en
               el nombre del campo (<code>invoiceTotalCrc</code>, <code>declaredValueUsd</code>), así
@@ -121,6 +128,13 @@ const sections = [
               <code>Bearer</code>, solo la llave (con ella delante, la llave se rechaza):
             </p>
             <pre class="api__code"><code>{API_KEY_HEADER}: {API_KEY_PLACEHOLDER}</code></pre>
+            <p class="api__note">
+              <strong>Con Postman, Insomnia o un ERP:</strong> muchas herramientas mandan su propia
+              cabecera <code>Authorization</code> en cuanto hay algo puesto en su pestaña de
+              autenticación, aunque tú hayas escrito la llave a mano en otro sitio. Si te pasa, deja
+              esa pestaña en «No Auth» y manda la llave en <code>{API_KEY_HEADER}</code>: entre las
+              dos cabeceras mandamos la nuestra, así que la llave se lee igual.
+            </p>
 
             <h3 class="api__h3">La misma petición, en tres formas</h3>
             <p class="api__p">

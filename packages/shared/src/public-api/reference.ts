@@ -82,6 +82,14 @@ export const PUBLIC_API_COMMON_ERRORS: readonly ApiErrorCase[] = [
     when: 'La cuenta del casillero esta deshabilitada; sus llaves dejan de servir con ella.',
   },
   {
+    status: 404,
+    code: 'ROUTE_NOT_FOUND',
+    when:
+      'La ruta no existe tal cual se escribio: sobra una barra final, hay una mayuscula de mas o ' +
+      'el metodo no es el de esa operacion. No es lo mismo que un recurso que no aparece: eso ' +
+      'tiene su propio codigo (`PACKAGE_NOT_FOUND`).',
+  },
+  {
     status: 429,
     code: 'RATE_LIMITED',
     when: 'Se paso el limite de peticiones. La respuesta trae `Retry-After` con los segundos que esperar.',
