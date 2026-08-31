@@ -37,3 +37,6 @@ source_docs/
 # Configuración local de Claude Code
 .claude/
 CLAUDE.md
+
+# Capturas sueltas en la raiz
+/image.png
