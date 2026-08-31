@@ -262,30 +262,29 @@ credenciales de SES que cargar.
 Sin esto no hay casilleros enlazados ni prealertas, o sea que **el negocio no
 opera**. Es la integración más crítica.
 
-**Requisito que no depende de nosotros:** que la Elastic IP esté en su lista
-blanca. Desde cualquier otra dirección responden 403 a todo.
+**La lista blanca de IP ya está confirmada** (30-ago-2026): `54.88.91.248` está
+registrada con el proveedor. Queda anotado porque es el primer sospechoso el día
+que todo empiece a responder 403 y los casilleros caigan en `failed`.
 
-```
-IP a registrar: la salida ApiElasticIp del stack base
-```
-
-Después, cargar las credenciales y encender:
+Cargar las credenciales y encender:
 
 ```bash
-put HELGA_BASE_URL      'https://lmexpress.helgasys.com'
-put HELGA_CLIENT_ID     '11'
-put HELGA_CLIENT_SECRET '...'
-put HELGA_USERNAME      'servicioalcliente@hsglobal-services.com'
-put HELGA_PASSWORD      '...'
-put HELGA_ORIGIN        'https://lmexpress.helgasys.com'
-put HELGA_APP_ID        '...'
-
-aws ssm put-parameter --name /courier/prod/HELGA_MODE --value on --type String --overwrite
-# reiniciar
+powershell -ExecutionPolicy Bypass -File .\infra\scripts\helga-enable.ps1 -DryRun
+powershell -ExecutionPolicy Bypass -File .\infra\scripts\helga-enable.ps1
 ```
 
-Las siete son **obligatorias** con `HELGA_MODE=on`: si falta una, la API no
-arranca.
+El script carga todo, enciende `HELGA_MODE=on` y reinicia. Con `-DryRun` enseña
+lo que haría y se va.
+
+HS Global opera **varias cuentas de casillero**, cada una con su login. Van todas
+en `HELGA_ACCOUNTS`, un JSON cifrado, y **la primera es la principal**: es bajo
+la que hoy cuelgan todos los destinatarios. La lista vive en la tabla `$Cuentas`
+del script; si abren un casillero nuevo o cambia una contraseña, se edita ahí y
+se vuelve a lanzar.
+
+Con `HELGA_MODE=on` son obligatorias `HELGA_BASE_URL`, `HELGA_CLIENT_ID`,
+`HELGA_CLIENT_SECRET`, `HELGA_ORIGIN` y al menos una cuenta. Si falta alguna, la
+API **no arranca**.
 
 **Nunca poner `simulated` en producción.** El arranque lo impide, porque daría
 por enlazados casilleros que Helga no conoce y por prealertados paquetes que
@@ -352,17 +351,65 @@ obligatorio en modo `on`.
 Es el que arrastra más cosas y el único que además **cierra deuda técnica**
 (el tramo CloudFront → instancia sigue en HTTP mientras tanto).
 
-Sigue sin zanjarse: hay cuatro dominios circulando por el repositorio
-(ver docs/12 §7.1). Cuando se cierre, la secuencia es:
+**El dominio es `hsglobal-services.com`**, y el host canónico es
+**`www.hsglobal-services.com`**.
 
-1. **Certificado en ACM**, emitido en `us-east-1` (CloudFront no acepta otro).
-2. **Alias en la distribución** y el certificado asociado, en `lib/app-stack.ts`.
-3. **Registro A** apuntando a la Elastic IP, para el origen de la API.
-4. **Origen de `/api/*` a HTTPS** con ese nombre, en vez del HTTP actual.
-5. **`WEB_ORIGIN`** al dominio nuevo.
-6. **Verificar el dominio en SES** con DKIM y ajustar `MAIL_FROM` (§B).
-7. **`site` en `apps/web/astro.config.mjs`**, que alimenta el canonical y las
-   `og:image`.
+> El runbook completo, con el estado actual y las trampas, está en
+> [`docs/15-dominio.md`](../docs/15-dominio.md). Los comandos, en
+> [`scripts/domain.ps1`](./scripts/domain.ps1).
+
+**El DNS se queda en Squarespace.** No se mueve la zona a Route 53: tiene los MX
+y el SPF del Google Workspace de la empresa, y moverla por ganar un alias en el
+apex pone en riesgo el correo. La consecuencia es que los registros se ponen a
+mano en el panel (el CDK no puede crearlos ni esperarlos) y que **el apex no
+puede apuntar a CloudFront**, porque un apex no admite CNAME: se resuelve con el
+reenvío de Squarespace hacia `www`.
+
+El código ya está preparado: `SITE_DOMAIN` y `CERTIFICATE_ARN` en `lib/config.ts`.
+Mientras `CERTIFICATE_ARN` esté vacío, la distribución se queda con su dominio de
+CloudFront y todo sigue como antes; rellenarlo enciende el alias y `WEB_ORIGIN`
+en un solo despliegue.
+
+1. ✅ **Certificado en ACM**, emitido en `us-east-1` (CloudFront no acepta otro),
+   con validación por DNS para el apex y para `www`.
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\infra\scripts\domain.ps1 request
+   ```
+
+   Los dos CNAME que pide van en Squarespace. **ACM da 72 horas**: pasadas, el
+   certificado queda en `VALIDATION_TIMED_OUT` y no revive aunque los registros
+   se pongan después. Hay que pedir uno nuevo (ya pasó una vez, con el
+   certificado del 22-ago-2026).
+
+2. ✅ **`CERTIFICATE_ARN`** en `lib/config.ts` con el ARN ya emitido. Falta
+   desplegar `courier-prod-app`, que imprime `DistributionDomainName`, el destino
+   del paso siguiente.
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\infra\scripts\domain.ps1 deploy
+   ```
+3. **DNS del sitio** en Squarespace, sin tocar los MX ni el SPF:
+   - `www` → CNAME al dominio de la distribución.
+   - apex → **reenvío** (Forwarding) a `https://www.hsglobal-services.com`, con
+     HTTPS activado. No es un registro DNS: está en la sección de reenvío del
+     dominio, no en la de registros.
+4. **Registro A** `api.hsglobal-services.com` apuntando a la Elastic IP, para el
+   origen de la API.
+5. **Origen de `/api/*` a HTTPS** con ese nombre, en vez del HTTP actual. Ojo: el
+   certificado de ACM **no se puede instalar en la instancia** (ACM no exporta la
+   llave privada de un certificado público); el de la instancia sale de Let's
+   Encrypt o hay que meter un balanceador delante.
+6. **Verificar el dominio en SES** con DKIM y ajustar `MAIL_FROM` (§B). Son tres
+   CNAME más en Squarespace. **No hay que tocar los MX**: SES aquí solo envía, el
+   correo entrante sigue siendo de Google Workspace. Y **no configurar un MAIL
+   FROM personalizado sobre el apex**, que sí pediría un MX propio y chocaría con
+   Workspace; si hace falta, va sobre un subdominio (`mail.`).
+7. **URL del webhook de Onvo** al host canónico (§E).
+
+`WEB_ORIGIN` y el `site` de `apps/web/astro.config.mjs` ya no son pasos sueltos:
+el primero lo calcula el stack a partir del certificado, y el segundo ya apunta a
+`www.hsglobal-services.com`.
 
 Y una decisión de negocio: el correo de servicio al cliente
 (`servicioalcliente@hsglobal-services.com`) **es también la credencial contra
@@ -378,7 +425,7 @@ un dominio distinto del sitio, pero hay que decidirlo a conciencia.
 | C | Helga | la IP en su lista blanca |
 | D | Robot | que Helga esté en `on` |
 | E | Onvo | URL pública estable + webhook registrado |
-| F | Dominio | decisión del cliente |
+| F | Dominio | que el certificado de ACM valide |
 
 En la práctica **F desbloquea B**, así que el dominio es lo primero que hay que
 mover aunque aparezca el último.

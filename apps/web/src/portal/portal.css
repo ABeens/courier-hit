@@ -689,11 +689,13 @@ select.input { cursor: pointer; padding-right: 30px; }
   display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 10px 24px; border-top: 1px solid var(--line-2); padding-top: 11px;
 }
-/* El comprobante ocupa su propio renglon, debajo del rastro y arrancando en la
-   primera columna (bajo "Registro"). Como una columna mas quedaba a la altura de
-   los valores vecinos pero con una accion dentro, que no se lee como un dato:
-   "Adjuntar" es algo que se pulsa y necesita su propio sitio. */
-.pay-row-fields > .pay-row-proof { grid-column: 1 / -1; }
+/* El comprobante, en su propio renglon y pegado al borde derecho de la fila.
+   Como una columna mas de la rejilla del rastro quedaba a media fila, con un
+   hueco a su derecha y su accion descolgada de los valores vecinos. A la derecha
+   cae bajo el sello de la cabecera (fecha y medio), que es el otro dato de la
+   fila que no es del rastro. */
+.pay-row-proof { display: flex; justify-content: flex-end; }
+.pay-row-proof .card-item-field { text-align: right; }
 
 /* Un abono rechazado no es dinero del tramite: se atenua y se tacha el importe
    para que la lista se lea de un vistazo (lo cobrado, lo que espera, lo
@@ -903,6 +905,25 @@ select.input { cursor: pointer; padding-right: 30px; }
 .pay-result-mark {
   width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center;
   background: var(--warn-soft); color: var(--warn); margin-bottom: 6px;
+  animation: payMark .32s cubic-bezier(.2,.9,.3,1.4) both;
+}
+/* La marca entra creciendo. Solo dura un tercio de segundo y es lo que hace que
+   el paso de la espera al desenlace se vea, en vez de que el circulo cambie de
+   dibujo sin avisar justo cuando el cliente esta mirando. */
+@keyframes payMark { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .pay-result-mark { animation-duration: .01s; }
+}
+/* Espera: el circulo es el propio giro, sin fondo de color. Todavia no hay
+   desenlace y pintarlo de verde o de ambar seria adelantarlo. */
+.pay-result-mark:has(.pay-result-spinner) { background: transparent; }
+.pay-result-spinner {
+  width: 46px; height: 46px; border-radius: 50%;
+  border: 3px solid var(--line); border-top-color: var(--brand);
+  animation: paySpin .7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pay-result-spinner { animation-duration: 2.4s; }
 }
 .pay-result.is-paid .pay-result-mark { background: var(--ok-soft); color: var(--ok); }
 .pay-result-amount {

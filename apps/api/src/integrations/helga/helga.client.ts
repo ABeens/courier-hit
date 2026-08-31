@@ -18,7 +18,7 @@
  * corre igual en los dos modos, que es justamente lo que se quiere probar.
  */
 import { Currency, roundMoney } from '@courier/shared';
-import { config, helgaMode } from '../../core/config';
+import { config, helgaMode, helgaPrincipalAccount } from '../../core/config';
 import { ProviderErrors } from '../../core/errors';
 import { getAccessToken, invalidateToken } from './helga.auth';
 import {
@@ -174,7 +174,13 @@ export async function createHelgaRecipient(params: {
   idNumber: string;
   realEmail: string;
 }): Promise<HelgaRecipient> {
-  if (HELGA_ACCOUNT_CLIENT_ID === null || HELGA_FIXED_GEO.departamentoId === null || HELGA_FIXED_GEO.ciudadId === null) {
+  // El `cliente_id` es de la CUENTA bajo la que cuelga el destinatario, asi que
+  // sale de la cuenta principal y no de una constante suelta. La constante queda
+  // como valor de respaldo para la cuenta historica (SJO008835), que es la unica
+  // cuyo id se resolvio en vivo.
+  const clienteId = helgaPrincipalAccount?.clientId ?? HELGA_ACCOUNT_CLIENT_ID;
+
+  if (clienteId === null || HELGA_FIXED_GEO.departamentoId === null || HELGA_FIXED_GEO.ciudadId === null) {
     // Config incompleta (ver TODOs de helga.constants). Fallamos claro en vez de
     // mandar una peticion que el proveedor rechazaria con un 422 opaco.
     console.error('[helga] falta cliente_id / departamento_id / ciudad_id de la dirección fija.');
@@ -183,7 +189,7 @@ export async function createHelgaRecipient(params: {
 
   const name = splitPersonName(params.fullName);
   const body: HelgaCreateRecipientRequest = {
-    cliente_id: HELGA_ACCOUNT_CLIENT_ID,
+    cliente_id: clienteId,
     primer_nombre: name.firstName,
     segundo_nombre: name.secondName,
     primer_apellido: name.lastName,

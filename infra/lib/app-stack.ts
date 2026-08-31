@@ -20,6 +20,7 @@ import {
   type StackProps,
   Tags,
 } from 'aws-cdk-lib';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
@@ -30,11 +31,16 @@ import * as ssm from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
 import type { BaseStack } from './base-stack';
 import {
+  CERTIFICATE_ARN,
+  DOMAIN_LIVE,
   GITHUB_BRANCH,
   GITHUB_REPO,
   INSTANCE_NAME,
   LOG_GROUP,
   PARAMETER_PATH,
+  SITE_DOMAIN,
+  SITE_DOMAINS,
+  SITE_HOST,
 } from './config';
 
 export interface AppStackProps extends StackProps {
@@ -311,9 +317,29 @@ function handler(event) {
 `),
     });
 
+    /**
+     * Dominio propio, si ya hay certificado (ver `CERTIFICATE_ARN` en
+     * `config.ts`). Se resuelve por ARN y no con `DnsValidatedCertificate`
+     * porque la zona no esta en Route 53: los registros de validacion se ponen a
+     * mano en el proveedor de DNS, y el CDK no tiene forma de esperarlos.
+     */
+    const certificate = CERTIFICATE_ARN
+      ? acm.Certificate.fromCertificateArn(this, 'SiteCertificate', CERTIFICATE_ARN)
+      : undefined;
+
+    /**
+     * Origen publico del sitio. Depende de `DOMAIN_LIVE`, NO del certificado:
+     * tener certificado no significa que el nombre resuelva. Es `www` y no el
+     * apex; el porque esta en `SITE_HOST`.
+     */
+    const siteUrl = DOMAIN_LIVE ? `https://${SITE_HOST}` : undefined;
+
     const distribution = new cloudfront.Distribution(this, 'Cdn', {
       comment: 'HS Global Services: sitio + API',
       defaultRootObject: 'index.html',
+      // Alias y certificado van juntos: CloudFront rechaza un `domainNames` sin
+      // certificado que lo cubra. Sin certificado, ninguno de los dos.
+      ...(certificate ? { domainNames: SITE_DOMAINS, certificate } : {}),
       // Norteamerica y Europa. Los clientes estan en Costa Rica y la operacion en
       // Miami: pagar por los bordes de Asia y Oceania no compra nada.
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
@@ -372,14 +398,24 @@ function handler(event) {
       NODE_ENV: 'production',
       PORT: '3001',
       AWS_REGION: this.region,
-      WEB_ORIGIN: `https://${distribution.distributionDomainName}`,
+      // Sigue al dominio propio en cuanto haya certificado. Es la lista blanca de
+      // CORS y la raiz de los enlaces que salen por correo: si se queda en el
+      // dominio de CloudFront, el portal servido desde el dominio propio no puede
+      // hablar con la API.
+      WEB_ORIGIN: siteUrl ?? `https://${distribution.distributionDomainName}`,
       UPLOADS_BUCKET: base.uploadsBucket.bucketName,
 
       // Integraciones apagadas en el primer despliegue. Se encienden una a una
       // cuando su tramite externo esta listo (docs/12 §8): SES fuera del sandbox,
       // la IP en la lista blanca de Helga, las llaves de Onvo.
       MAIL_ENABLED: 'false',
-      MAIL_FROM: 'HS Global Services <no-reply@hsglobalcr.com>',
+      // El remitente tiene que estar VERIFICADO en SES. Se verifico la direccion
+      // suelta y no el dominio entero, porque verificar el dominio son tres CNAME
+      // en Squarespace y el acceso al panel no es nuestro (docs/15 §1.3). El
+      // precio: los correos los firma `amazonses.com` y no el dominio, o sea algo
+      // mas de riesgo de spam. Se arregla poniendo los tres CNAME algun dia, sin
+      // tocar esto.
+      MAIL_FROM: `HS Global Services <servicioalcliente@${SITE_DOMAIN}>`,
       HELGA_MODE: 'off',
       ONVO_MODE: 'on',
       // La tasa de referencia sí va encendida desde el primer despliegue: no
@@ -473,10 +509,14 @@ function handler(event) {
 
     // --- Salidas -------------------------------------------------------------
     new CfnOutput(this, 'SiteUrl', {
-      value: `https://${distribution.distributionDomainName}`,
+      value: siteUrl ?? `https://${distribution.distributionDomainName}`,
       description: 'URL publica del sitio y de la API (/api/*).',
     });
     new CfnOutput(this, 'DistributionId', { value: distribution.distributionId });
+    new CfnOutput(this, 'DistributionDomainName', {
+      value: distribution.distributionDomainName,
+      description: 'Destino del CNAME de www en Squarespace.',
+    });
     new CfnOutput(this, 'WebBucketName', {
       value: webBucket.bucketName,
       description: 'Bucket del sitio compilado. Destino del sync del pipeline.',

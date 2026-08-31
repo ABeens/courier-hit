@@ -17,13 +17,29 @@ interface Props {
   children: ReactNode;
 }
 
+/**
+ * Capas abiertas y el valor que habia antes de la primera.
+ *
+ * El bloqueo se cuenta porque los modales se apilan y no siempre se cierran en
+ * orden: el del cobro se cierra DEBAJO de la confirmacion, que sigue abierta. Con
+ * un bloqueo por modal, ese cierre devolvia el scroll al listado de fondo y la
+ * pagina se movia por detras de la respuesta que el cliente esta leyendo. El
+ * valor original se guarda una sola vez, al bloquear el primero, porque lo que
+ * los siguientes ven ya es el `hidden` que puso el anterior.
+ */
+let openOverlays = 0;
+let overflowBeforeFirst = '';
+
 export function ModalOverlay({ onClose, children }: Props) {
   // Con el modal abierto la pagina de fondo no debe desplazarse.
   useEffect(() => {
-    const previous = document.body.style.overflow;
+    if (openOverlays === 0) overflowBeforeFirst = document.body.style.overflow;
+    openOverlays += 1;
     document.body.style.overflow = 'hidden';
+
     return () => {
-      document.body.style.overflow = previous;
+      openOverlays -= 1;
+      if (openOverlays === 0) document.body.style.overflow = overflowBeforeFirst;
     };
   }, []);
 

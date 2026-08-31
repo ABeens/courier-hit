@@ -21,6 +21,28 @@ function optionalEnv() {
   }, z.string().optional());
 }
 
+/**
+ * Una cuenta del proveedor Helga. HS Global no opera un solo casillero en Miami
+ * sino varios, cada uno con su propio login y su propia ficha del lado del
+ * proveedor (SJO008835 "HS GLOBAL", SJO009623 "ZUCA", etc.).
+ *
+ * `clientId` es el `datos.id` que devuelve `GET /api/casillero/clientes` de esa
+ * cuenta, y es el `cliente_id` bajo el que cuelgan sus destinatarios (op. D). Se
+ * resuelve en vivo una vez por cuenta; mientras no se conozca va en `null` y esa
+ * cuenta no puede dar de alta destinatarios.
+ */
+const HelgaAccountSchema = z.object({
+  /** Codigo de casillero del proveedor, p. ej. `SJO008835`. Identifica la cuenta. */
+  code: z.string().min(1),
+  /** A nombre de quien esta el casillero, para logs y pantallas. */
+  name: z.string().min(1),
+  username: z.string().min(1),
+  password: z.string().min(1),
+  clientId: z.number().int().positive().nullable().default(null),
+});
+
+export type HelgaAccount = z.infer<typeof HelgaAccountSchema>;
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
@@ -174,6 +196,57 @@ const EnvSchema = z.object({
     z.coerce.number().int().positive().optional(),
   ),
   HELGA_CLIENT_SECRET: optionalEnv(),
+  /**
+   * TODAS las cuentas de casillero, en JSON, la principal PRIMERO. Es lo que se
+   * usa en produccion; el orden es el contrato, no un detalle (ver
+   * `helgaPrincipalAccount`).
+   *
+   * Va en una sola variable y no en un `HELGA_USERNAME_2`, `_3`... porque el
+   * numero de cuentas cambia con el negocio y una lista numerada obliga a tocar
+   * el esquema cada vez que abren un casillero nuevo.
+   *
+   *   [{"code":"SJO008835","name":"HS GLOBAL","username":"...","password":"...","clientId":7536}, ...]
+   *
+   * Cargarla con `infra/scripts/helga-enable.ps1`, que la escribe cifrada.
+   */
+  HELGA_ACCOUNTS: z
+    .string()
+    .optional()
+    .transform((raw, ctx) => {
+      const text = raw?.trim();
+      if (!text || /^<.*>$/.test(text)) return undefined;
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'HELGA_ACCOUNTS debe ser un JSON valido: un array de cuentas.',
+        });
+        return z.NEVER;
+      }
+
+      const result = z.array(HelgaAccountSchema).nonempty().safeParse(parsed);
+      if (!result.success) {
+        const detail = result.error.issues
+          .map((issue) => `[${issue.path.join('.')}] ${issue.message}`)
+          .join('; ');
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `HELGA_ACCOUNTS invalido: ${detail}`,
+        });
+        return z.NEVER;
+      }
+
+      return result.data;
+    }),
+  /**
+   * Cuenta unica, forma antigua. Sigue viva para el desarrollo local y para no
+   * romper un entorno que todavia no tenga `HELGA_ACCOUNTS`: si esa falta, estas
+   * dos se convierten en la lista de una sola cuenta. Con las dos puestas manda
+   * `HELGA_ACCOUNTS`.
+   */
   HELGA_USERNAME: optionalEnv(),
   HELGA_PASSWORD: optionalEnv(),
   HELGA_APP_ID: optionalEnv(),
@@ -365,10 +438,27 @@ const EnvSchema = z.object({
     'HELGA_BASE_URL',
     'HELGA_CLIENT_ID',
     'HELGA_CLIENT_SECRET',
-    'HELGA_USERNAME',
-    'HELGA_PASSWORD',
     'HELGA_ORIGIN',
   ]);
+
+  // El login va aparte porque acepta dos formas: la lista de cuentas o el par
+  // suelto de la forma antigua. Exigir `HELGA_USERNAME` sin mas rechazaria un
+  // entorno perfectamente configurado con `HELGA_ACCOUNTS`.
+  const hasAccounts = (env.HELGA_ACCOUNTS?.length ?? 0) > 0;
+  const hasLegacyPair = Boolean(env.HELGA_USERNAME && env.HELGA_PASSWORD);
+  // Si la lista venia puesta pero no paso la validacion, el error de arriba ya
+  // dice exactamente que le falta. Repetir aqui "no hay ninguna cuenta" sumaria
+  // un segundo mensaje que apunta a la misma causa y despista.
+  const accountsWereProvided = Boolean(process.env.HELGA_ACCOUNTS?.trim());
+  if (env.HELGA_MODE === 'on' && !hasAccounts && !hasLegacyPair && !accountsWereProvided) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['HELGA_ACCOUNTS'],
+      message:
+        'Con HELGA_MODE=on hace falta al menos una cuenta: HELGA_ACCOUNTS (la principal primero) ' +
+        'o, en su defecto, HELGA_USERNAME y HELGA_PASSWORD.',
+    });
+  }
 
   // El webhook entra aqui: sin su secreto la pasarela cobra pero no puede
   // confirmar nada (ver el comentario de ONVO_WEBHOOK_SECRET).
@@ -474,6 +564,49 @@ if (helgaMode === 'simulated' && isProd) {
     'Configuración de entorno inválida:\n  - HELGA_MODE=simulated: el proveedor simulado no ' +
       'puede usarse con NODE_ENV=production. Ponlo en "on" y configura las credenciales ' +
       'reales de Helga, o en "off" si todavía no hay integración.',
+  );
+}
+
+/**
+ * Las cuentas de casillero del proveedor, EN ORDEN: la principal primero.
+ *
+ * Sale de `HELGA_ACCOUNTS` y, si esa no esta, del par suelto de la forma antigua
+ * convertido en una lista de uno. Vacia solo cuando la integracion esta apagada.
+ */
+export const helgaAccounts: readonly HelgaAccount[] = (() => {
+  if (config.HELGA_ACCOUNTS?.length) return config.HELGA_ACCOUNTS;
+  if (config.HELGA_USERNAME && config.HELGA_PASSWORD) {
+    return [
+      {
+        code: 'principal',
+        name: 'Cuenta principal',
+        username: config.HELGA_USERNAME,
+        password: config.HELGA_PASSWORD,
+        clientId: null,
+      },
+    ];
+  }
+  return [];
+})();
+
+/**
+ * La cuenta bajo la que opera el sistema HOY. Es la PRIMERA de la lista, y esa
+ * es toda la regla: mientras no exista un criterio de negocio para repartir los
+ * clientes entre casilleros, todo cuelga de esta.
+ *
+ * `null` con la integracion apagada; con `HELGA_MODE=on` el arranque ya garantizo
+ * que hay al menos una.
+ */
+export const helgaPrincipalAccount: HelgaAccount | null = helgaAccounts[0] ?? null;
+
+if (helgaMode === 'on' && helgaAccounts.length > 1) {
+  const otras = helgaAccounts
+    .slice(1)
+    .map((cuenta) => cuenta.code)
+    .join(', ');
+  console.info(
+    `[config] Helga: ${helgaAccounts.length} cuentas cargadas. Principal ${helgaPrincipalAccount?.code} ` +
+      `(${helgaPrincipalAccount?.name}); en reserva: ${otras}.`,
   );
 }
 

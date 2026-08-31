@@ -497,15 +497,19 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
                           <dd>{payment.note}</dd>
                         </div>
                       )}
+                    </dl>
 
-                      {/*
-                        El comprobante va en su propio renglon, debajo del rastro
-                        y arrancando donde arranca "Registro": no es un dato mas
-                        de la fila sino lo que se abre o se sube, y como cuarta
-                        columna su accion quedaba descolgada de los valores
-                        vecinos.
-                      */}
-                      <div className="card-item-field pay-row-proof">
+                    {/*
+                      El comprobante NO entra en la rejilla del rastro: va en su
+                      propio renglon y pegado a la derecha. No es un dato mas del
+                      abono sino la accion de la fila (abrirlo o subirlo), y como
+                      una columna mas quedaba flotando a media fila con hueco a su
+                      derecha. Fuera de la rejilla y no con `grid-column: 1 / -1`
+                      porque las pistas de arriba son `auto-fit` y ahi el tramo
+                      hasta la ultima linea no es de fiar.
+                    */}
+                    <dl className="pay-row-proof">
+                      <div className="card-item-field">
                         <dt>Comprobante</dt>
                         <dd>
                           {/*

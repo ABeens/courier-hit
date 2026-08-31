@@ -12,7 +12,7 @@
  * API se pide un token nuevo con el grant `password`, que es idempotente. El
  * refresh rota el token anterior, asi que sin persistencia no se puede usar.
  */
-import { config } from '../../core/config';
+import { type HelgaAccount, config, helgaPrincipalAccount } from '../../core/config';
 import { ProviderErrors } from '../../core/errors';
 import type { HelgaTokenResponse } from './helga.types';
 
@@ -22,13 +22,28 @@ interface CachedToken {
   expiresAt: number;
 }
 
-let cached: CachedToken | null = null;
-let inFlight: Promise<string> | null = null;
+/**
+ * Cache POR CUENTA, no global: cada casillero tiene su propio login y su propio
+ * token, y usar el de otra cuenta no da un error de permisos evidente sino datos
+ * del casillero equivocado, que es mucho peor. La clave es el codigo de casillero.
+ */
+const cached = new Map<string, CachedToken>();
+const inFlight = new Map<string, Promise<string>>();
 
 /** Margen para no usar un token que vence mientras la peticion viaja. */
 const EXPIRY_SKEW_MS = 60_000;
 
-async function requestToken(): Promise<string> {
+/** La cuenta pedida, o la principal. Falla claro si no hay ninguna configurada. */
+function resolveAccount(account?: HelgaAccount): HelgaAccount {
+  const resolved = account ?? helgaPrincipalAccount;
+  if (!resolved) {
+    console.error('[helga] no hay ninguna cuenta configurada (HELGA_ACCOUNTS vacío).');
+    throw ProviderErrors.unauthenticated();
+  }
+  return resolved;
+}
+
+async function requestToken(account: HelgaAccount): Promise<string> {
   const response = await fetch(`${config.HELGA_BASE_URL}/oauth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -36,40 +51,50 @@ async function requestToken(): Promise<string> {
       grant_type: 'password',
       client_id: config.HELGA_CLIENT_ID,
       client_secret: config.HELGA_CLIENT_SECRET,
-      username: config.HELGA_USERNAME,
-      password: config.HELGA_PASSWORD,
+      username: account.username,
+      password: account.password,
       scope: '',
     }),
     signal: AbortSignal.timeout(config.HELGA_TIMEOUT_MS),
   });
 
   if (!response.ok) {
-    // Nunca logueamos el cuerpo: lleva credenciales.
-    console.error(`[helga] /oauth/token respondió ${response.status}`);
+    // Nunca logueamos el cuerpo: lleva credenciales. El codigo de casillero si,
+    // porque con varias cuentas hace falta saber CUAL fallo.
+    console.error(`[helga] /oauth/token de ${account.code} respondió ${response.status}`);
     throw ProviderErrors.unauthenticated();
   }
 
   const body = (await response.json()) as HelgaTokenResponse;
   if (!body.access_token) throw ProviderErrors.unauthenticated();
 
-  cached = {
+  cached.set(account.code, {
     accessToken: body.access_token,
     expiresAt: Date.now() + Math.max(0, body.expires_in * 1000 - EXPIRY_SKEW_MS),
-  };
+  });
   return body.access_token;
 }
 
-/** Token vigente, de la cache o recien pedido. */
-export async function getAccessToken(): Promise<string> {
-  if (cached && cached.expiresAt > Date.now()) return cached.accessToken;
-  // Serializa: varias llamadas concurrentes esperan la misma emision.
-  inFlight ??= requestToken().finally(() => {
-    inFlight = null;
+/** Token vigente de una cuenta (la principal por defecto), de la cache o recien pedido. */
+export async function getAccessToken(account?: HelgaAccount): Promise<string> {
+  const target = resolveAccount(account);
+
+  const hit = cached.get(target.code);
+  if (hit && hit.expiresAt > Date.now()) return hit.accessToken;
+
+  // Serializa POR CUENTA: varias llamadas concurrentes de la misma cuenta esperan
+  // la misma emision, y dos cuentas distintas no se bloquean entre si.
+  const pending = inFlight.get(target.code);
+  if (pending) return pending;
+
+  const emission = requestToken(target).finally(() => {
+    inFlight.delete(target.code);
   });
-  return inFlight;
+  inFlight.set(target.code, emission);
+  return emission;
 }
 
-/** Invalida la cache para forzar una emision nueva (tras un 401 del proveedor). */
-export function invalidateToken(): void {
-  cached = null;
+/** Invalida el token de una cuenta (la principal por defecto), tras un 401. */
+export function invalidateToken(account?: HelgaAccount): void {
+  cached.delete(resolveAccount(account).code);
 }

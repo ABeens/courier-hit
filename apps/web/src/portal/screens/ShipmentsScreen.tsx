@@ -702,6 +702,12 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
             setError(null);
             void load();
           }}
+          /*
+            La espera se pinta encima del modal del pago y NO lo cierra: el sondeo
+            que resuelve el cobro vive ahi dentro, asi que desmontarlo dejaria el
+            loader girando para siempre.
+          */
+          onProcessing={(result) => setPaid(result)}
         />
       )}
 

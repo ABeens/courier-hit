@@ -121,9 +121,20 @@ interface Props {
    * Un cobro RECHAZADO no llama aqui: el modal se queda abierto para reintentar.
    */
   onPaid: (result: PaymentResult) => void;
+  /**
+   * El cargo salio y estamos esperando el desenlace. Abre la MISMA pantalla que
+   * `onPaid`, en espera, para que luego se transforme en la respuesta en vez de
+   * cerrarse y abrirse otra.
+   *
+   * Este modal NO se cierra al llamarla: la espera vive aqui dentro (el sondeo
+   * contra nuestra API), asi que la pantalla de atras solo pinta encima. Con
+   * `null` se retira la espera sin desenlace, que es lo que pasa cuando la
+   * pasarela rechaza el cobro y el cliente se queda aqui para reintentar.
+   */
+  onProcessing: (result: PaymentResult | null) => void;
 }
 
-export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
+export function PaymentModal({ shipment, role, onClose, onPaid, onProcessing }: Props) {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [payments, setPayments] = useState<PaymentDto[]>([]);
   const [method, setMethod] = useState<PaymentMethod | null>(null);
@@ -366,8 +377,23 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
   async function confirmCard() {
     if (!cardIntent) return;
     setError(null);
-    setNotice('Estamos confirmando el cobro con la pasarela…');
+    setNotice(null);
     setSaving(true);
+
+    /**
+     * La espera se enseña ya, y en la pantalla del desenlace: es la misma ventana
+     * que luego dira si se cobro, asi que el cliente ve un loader que se convierte
+     * en la respuesta. Antes era un renglon de aviso dentro del formulario de la
+     * tarjeta, donde se lee como un detalle mas y no como "esto todavia no ha
+     * terminado".
+     */
+    onProcessing(
+      outcome(
+        'processing',
+        'Confirmando tu pago…',
+        'Estamos esperando la respuesta de la pasarela. No cierres esta ventana.',
+      ),
+    );
 
     try {
       /**
@@ -393,6 +419,7 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
       if (resolved?.status === PaymentStatus.Rechazado) {
         // Igual que en la simulación: el modal no se cierra, para reintentar aquí
         // mismo. El saldo lo manda el servidor y este intento no lo movió.
+        onProcessing(null);
         setCardIntent(null);
         setNotice('La pasarela rechazó el cobro. Puedes intentarlo de nuevo.');
         setQuote(await api.get<Quote>(`/payments/quote/${shipment.id}`));
@@ -414,6 +441,9 @@ export function PaymentModal({ shipment, role, onClose, onPaid }: Props) {
         ),
       );
     } catch (err) {
+      // Se retira la espera: si se queda puesta, el cliente ve un loader eterno
+      // encima del error que explica que hacer.
+      onProcessing(null);
       setError(err instanceof ApiError ? err.message : 'No se pudo confirmar el cobro.');
     } finally {
       setSaving(false);
