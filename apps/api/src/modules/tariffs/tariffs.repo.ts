@@ -12,6 +12,7 @@ import { clientRates } from './tariffs.schema';
 const columns = {
   id: clientRates.id,
   name: clientRates.name,
+  kind: clientRates.kind,
   pricePerKg: clientRates.pricePerKg,
   currency: clientRates.currency,
   isDefault: clientRates.isDefault,

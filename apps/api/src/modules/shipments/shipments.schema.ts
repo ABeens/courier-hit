@@ -74,8 +74,16 @@ export const shipments = pgTable(
     store: text('store'),
     carrier: text('carrier'),
     hawb: text('hawb'),
-    /** Peso en kilos, entero: se redondea hacia arriba al guardar (flujo.md L115). */
-    weightKg: integer('weight_kg'),
+    /**
+     * Peso de bascula en kilos, DECIMAL: se guarda tal cual lo dio la balanza.
+     *
+     * Era entero porque el redondeo hacia arriba del manual (flujo.md L115) se
+     * aplicaba al salvar. Se movio al calculo del flete (`billableWeightKg`)
+     * porque la tarifa Consolidada cobra el peso real y redondear al guardar lo
+     * perdia para siempre. Las tarifas estandar siguen cobrando el kilo
+     * redondeado: lo que cambio es CUANDO se redondea, no cuanto se cobra.
+     */
+    weightKg: doublePrecision('weight_kg'),
 
     /**
      * Dimensiones en centimetros, tal como las reporta el proveedor (op. B

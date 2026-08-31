@@ -37,11 +37,28 @@ interface ProformaItem {
   totalUsd: number;
 }
 
+/**
+ * Un cobro consolidado listo para documentar. Va aparte de `ProformaItem` porque
+ * es otro documento: la unidad no es el trámite sino el COBRO, y sus paquetes NO
+ * salen en el listado de proformas sueltas (lo pide el requerimiento y lo aplica
+ * la API), así que los dos botones nunca cuentan lo mismo dos veces.
+ */
+interface ConsolidatedProformaItem {
+  paymentGroupId: string;
+  number: string;
+  clientName: string;
+  clientCode: string;
+  itemCount: number;
+  totalUsd: number;
+}
+
 export function ReportsScreen() {
   const [catalog, setCatalog] = useState<CatalogItem[] | null>(null);
   /** Si el rol puede emitir proformas. Lo decide la API, no esta pantalla. */
   const [canProforma, setCanProforma] = useState(false);
   const [ready, setReady] = useState<ProformaItem[] | null>(null);
+  /** Cobros consolidados listos del mismo filtro. */
+  const [readyGroups, setReadyGroups] = useState<ConsolidatedProformaItem[] | null>(null);
   const [kind, setKind] = useState<ReportKind | ''>('');
   const [type, setType] = useState('');
   const [from, setFrom] = useState('');
@@ -133,12 +150,49 @@ export function ReportsScreen() {
   }, [canProforma, proformaParams]);
 
   /**
+   * Lo mismo para los cobros CONSOLIDADOS, con el mismo filtro de alcance. Es una
+   * consulta aparte porque son otro documento y otra cuenta: un casillero
+   * consolidado con cinco paquetes es UNA proforma, no cinco.
+   */
+  useEffect(() => {
+    if (!canProforma) return;
+    let cancelled = false;
+    api
+      .get<{ items: ConsolidatedProformaItem[] }>(
+        `/reports/proformas/consolidadas?${proformaParams().toString()}`,
+      )
+      .then((data) => {
+        if (!cancelled) setReadyGroups(data.items);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setReadyGroups([]);
+        setError(
+          err instanceof ApiError
+            ? err.message
+            : 'No se pudieron consultar las proformas consolidadas.',
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canProforma, proformaParams]);
+
+  /**
    * Las proformas se abren en una pestaña, no se piden con `fetch`: son un
    * documento HTML para leer o imprimir a PDF, y la cookie de sesión viaja igual
    * por ser el mismo origen (mismo criterio que la descarga del CSV).
    */
   function openProformas() {
     window.open(`${API_BASE}/api/reports/proformas/document?${proformaParams().toString()}`, '_blank');
+  }
+
+  /** Igual, para el documento de los cobros consolidados. */
+  function openConsolidatedProformas() {
+    window.open(
+      `${API_BASE}/api/reports/proformas/consolidadas/document?${proformaParams().toString()}`,
+      '_blank',
+    );
   }
 
   /**
@@ -196,6 +250,25 @@ export function ReportsScreen() {
                 : ready.length === 0
                   ? 'Sin proformas listas'
                   : `Proformas (${ready.length})`}
+            </button>
+          )}
+          {/*
+            Botón propio y no una opción del anterior: son dos documentos con dos
+            contenidos distintos, y quien busca el de una cuenta consolidada
+            necesita verlo sin abrir un menú para descubrir que existe.
+          */}
+          {canProforma && (
+            <button
+              className="btn btn-ghost"
+              onClick={openConsolidatedProformas}
+              disabled={!readyGroups || readyGroups.length === 0}
+              title="Cobros consolidados dentro del filtro actual"
+            >
+              {readyGroups === null
+                ? 'Proformas consolidadas'
+                : readyGroups.length === 0
+                  ? 'Sin cobros consolidados'
+                  : `Proformas consolidadas (${readyGroups.length})`}
             </button>
           )}
           <button className="btn btn-primary" onClick={downloadCsv} disabled={!report || !kind}>

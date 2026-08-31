@@ -31,7 +31,6 @@ import {
   flowForType,
   isProviderDrivenState,
   mapProviderState,
-  roundWeightKg,
 } from '@courier/shared';
 import type { Session } from '@courier/shared';
 import type { HelgaPackageStatus } from '../../integrations/helga/helga.types';
@@ -284,10 +283,11 @@ export const providerSyncService = {
     const patch: Record<string, number> = {};
 
     const kg = toNumber(pkg.Peso_kg);
-    if (kg > 0 && shipment.weightKg !== roundWeightKg(kg)) patch.weightKg = roundWeightKg(kg);
+    // Se guarda el peso REAL que reporta el proveedor. El redondeo hacia arriba
+    // es una regla de cobro y vive en el calculo del flete (`billableWeightKg`).
+    if (kg > 0 && shipment.weightKg !== kg) patch.weightKg = kg;
 
-    // Las dimensiones NO se redondean: son informativas y el redondeo hacia arriba
-    // del peso existe por una regla de facturacion que aqui no aplica.
+    // Las dimensiones tampoco se tocan: son informativas y llegan como vienen.
     const dims = [
       ['lengthCm', toNumber(pkg.Largo_cm), shipment.lengthCm],
       ['widthCm', toNumber(pkg.Ancho_cm), shipment.widthCm],

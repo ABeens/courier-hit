@@ -194,7 +194,11 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
     setDua(next);
   }
 
-  /** El peso se redondea hacia arriba al guardar; se avisa antes de enviar. */
+  /**
+   * El peso se guarda tal cual (con decimales) y el redondeo hacia arriba es una
+   * regla de COBRO de las tarifas estandar. Se avisa del kilaje que se cobraria
+   * para que quien pesa no crea que el decimal se pierde ni que se ignora.
+   */
   const weightPreview =
     isPackage && weight && Number(weight) > 0 && !Number.isInteger(Number(weight))
       ? Math.ceil(Number(weight))
@@ -420,7 +424,10 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
                 {weightLocked ? (
                   <div className="field-hint">La factura ya fue aprobada: el peso no se puede cambiar sin reversar los costos.</div>
                 ) : weightPreview !== null && (
-                  <div className="field-hint">Se guardará como {weightPreview} kg (siempre redondea hacia arriba).</div>
+                  <div className="field-hint">
+                    Se guarda el peso real. Las tarifas estándar cobran {weightPreview} kg
+                    (redondean hacia arriba); las consolidadas cobran el peso tal cual.
+                  </div>
                 )}
               </div>
 

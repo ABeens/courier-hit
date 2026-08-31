@@ -218,6 +218,13 @@
       "when": 1788154911174,
       "tag": "0030_sticky_genesis",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788218832726,
+      "tag": "0031_wealthy_preak",
+      "breakpoints": true
     }
   ]
 }

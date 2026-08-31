@@ -97,8 +97,10 @@ export function formatDua(input: string): string {
 }
 
 /**
- * Peso declarado en kilos. Se acepta con decimales (la bascula los da) y el
- * servidor lo redondea hacia arriba al guardar con `roundWeightKg`.
+ * Peso declarado en kilos. Se acepta y se GUARDA con decimales, tal como lo da la
+ * bascula: el redondeo hacia arriba del manual es una regla de cobro y se aplica
+ * al cotizar el flete (`billableWeightKg`), no al guardar. La tarifa Consolidada
+ * cobra justamente ese peso real, asi que perderlo al salvar la dejaba sin dato.
  */
 export const weightKgSchema = z
   .number({ invalid_type_error: 'El peso debe ser un número.' })

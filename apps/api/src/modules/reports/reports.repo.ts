@@ -6,9 +6,9 @@
  * arman una sola vez en `conditions`: un reporte que filtrara distinto que la
  * pantalla que lo origina seria un reporte que nadie puede cuadrar.
  */
-import { and, asc, desc, eq, gte, inArray, isNotNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
-import { State } from '@courier/shared';
+import { ClientRateKind, State } from '@courier/shared';
 import type { ProformaQuery, ReportQuery } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
@@ -16,6 +16,7 @@ import { cantonRoutes } from '../routes/canton-route.schema';
 import { districtRoutes } from '../routes/district-route.schema';
 import { cantonRouteJoin, districtRouteJoin, effectiveRouteNumber } from '../routes/effective-route';
 import { payments } from '../payments/payments.schema';
+import { clientRates } from '../tariffs/tariffs.schema';
 import { shipmentCosts } from '../costs/shipment-cost.schema';
 import { shipmentEvents, shipments } from '../shipments/shipments.schema';
 
@@ -358,12 +359,31 @@ export const reportsRepo = {
     return { ...row, lines, deliveredAt: delivered[0]?.at ?? null };
   },
 
-  /** Ids de los tramites ya facturados del filtro: los que tienen proforma lista. */
+  /**
+   * Ids de los tramites ya facturados del filtro: los que tienen proforma lista.
+   *
+   * QUEDAN FUERA LOS DE CUENTAS CONSOLIDADAS. El requisito lo pide explicito ("la
+   * proforma de paquetes consolidados solo estara disponible para tarifas de
+   * consolidacion y no se incluira en reportes anteriores"), y ademas es lo unico
+   * consistente: esos paquetes se cobran juntos y su documento es la proforma
+   * agrupada, asi que listarlos tambien aqui entregaria dos documentos por el
+   * mismo dinero.
+   *
+   * El LEFT JOIN es deliberado: un tramite sin casillero o un casillero sin tarifa
+   * no son consolidados y tienen que seguir apareciendo, y con INNER se habrian
+   * caido del listado sin que nadie lo pidiera.
+   */
   async billedShipmentIds(query: ProformaQuery) {
-    const conds = [...conditions(query), isNotNull(shipments.costsApprovedAt)];
+    const conds = [
+      ...conditions(query),
+      isNotNull(shipments.costsApprovedAt),
+      or(isNull(clientRates.kind), ne(clientRates.kind, ClientRateKind.Consolidada)),
+    ];
     const rows = await db
       .select({ id: shipments.id })
       .from(shipments)
+      .leftJoin(clients, eq(shipments.clientId, clients.id))
+      .leftJoin(clientRates, eq(clients.clientRateId, clientRates.id))
       .where(and(...conds))
       .orderBy(desc(shipments.createdAt));
     return rows.map((r) => r.id);

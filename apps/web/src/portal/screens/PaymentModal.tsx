@@ -78,6 +78,13 @@ interface Quote {
   shipmentId: string;
   shipmentCode: string;
   description: string;
+  /**
+   * La cuenta es CONSOLIDADA: este trámite no se paga suelto sino junto con el
+   * resto de los paquetes listos del casillero. Lo contesta la API, que es
+   * además la que rechaza el pago individual; aquí solo se retira el formulario
+   * para no ofrecer un botón que acaba en un 409.
+   */
+  consolidated: boolean;
   invoiceTotalUsd: number | null;
   invoiceTotalCrc: number | null;
   settledUsd: number;
@@ -225,7 +232,8 @@ export function PaymentModal({ shipment, role, onClose, onPaid, onProcessing }: 
    * vuelve a pagar —pagaria dos veces el mismo saldo, porque un abono pendiente
    * no lo baja—. Solo mira su comprobante y espera.
    */
-  const canPay = quote != null && !quote.settled && !quote.inValidation;
+  const canPay =
+    quote != null && !quote.consolidated && !quote.settled && !quote.inValidation;
 
   useEffect(() => {
     Promise.all([
@@ -675,6 +683,13 @@ export function PaymentModal({ shipment, role, onClose, onPaid, onProcessing }: 
           {!cardOpen && alerts}
 
           {summary}
+
+          {quote?.consolidated && !quote.settled && (
+            <div className="banner warn">
+              Esta cuenta es consolidada: los paquetes se pagan todos juntos, no uno a uno. Usa
+              «Pagar consolidado» desde el listado de paquetes.
+            </div>
+          )}
 
           {quote?.settled && <div className="banner ok">Este trámite ya está pagado.</div>}
 

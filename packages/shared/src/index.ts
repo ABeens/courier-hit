@@ -24,6 +24,7 @@ export * from './reports/financials';
 export * from './reports/proforma';
 export * from './payments/payment';
 export * from './payments/dto';
+export * from './payments/consolidated';
 export * from './deliveries/delivery';
 export * from './deliveries/dto';
 export * from './api-keys/api-key';

@@ -11,7 +11,11 @@
  *   - cada tarifa marca si OCUPA REVISION antes de facturar (OPS-003). Aqui solo
  *     se guarda la marca; quien la lee es `autoBillingService`, al recibir el
  *     paquete en bodega.
+ *   - cada tarifa tiene un TIPO (`ClientRateKind`): la Consolidada cobra el peso
+ *     real y se salda con un pago agrupado. La tarifa por defecto NO puede ser
+ *     consolidada: es a la que caen los casilleros nuevos.
  */
+import { ClientRateKind } from '@courier/shared';
 import type { ClientRate, CreateClientRateInput, UpdateClientRateInput } from '@courier/shared';
 import { ClientRateErrors } from '../../core/errors';
 import { tariffsRepo } from './tariffs.repo';
@@ -21,6 +25,7 @@ type RateColumns = Pick<
   ClientRateRow,
   | 'id'
   | 'name'
+  | 'kind'
   | 'pricePerKg'
   | 'currency'
   | 'isDefault'
@@ -48,6 +53,7 @@ export const tariffsService = {
     const isFirst = (await tariffsRepo.count()) === 0;
     const created = await tariffsRepo.insert({
       name: input.name,
+      kind: input.kind ?? ClientRateKind.Estandar,
       pricePerKg: input.pricePerKg,
       currency: input.currency,
       allowsCard: input.allowsCard,
@@ -69,6 +75,19 @@ export const tariffsService = {
     // No se puede quitar el "por defecto" a la tarifa default: hay que promover otra.
     if (target.isDefault && patch.isDefault === false) throw ClientRateErrors.defaultRequired();
 
+    /**
+     * La default nunca puede ser Consolidada, y hay que mirarlo sobre el ESTADO
+     * FINAL: el esquema Zod solo ve el parche, asi que no atrapa ni "vuelve
+     * consolidada la que ya es default" ni "promueve a default la que ya es
+     * consolidada". Cualquiera de las dos pondria a todo casillero nuevo en cobro
+     * agrupado sin que nadie lo haya decidido (ver `assertKindAllowsDefault`).
+     */
+    const nextKind = patch.kind ?? target.kind;
+    const nextDefault = patch.isDefault ?? target.isDefault;
+    if (nextKind === ClientRateKind.Consolidada && nextDefault) {
+      throw ClientRateErrors.consolidatedCannotBeDefault();
+    }
+
     // Coherencia de medios de pago sobre el estado final (al menos uno habilitado).
     const nextCard = patch.allowsCard ?? target.allowsCard;
     const nextDeposit = patch.allowsBankDeposit ?? target.allowsBankDeposit;
@@ -76,6 +95,7 @@ export const tariffsService = {
 
     const updated = await tariffsRepo.update(id, {
       ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
       ...(patch.pricePerKg !== undefined ? { pricePerKg: patch.pricePerKg } : {}),
       ...(patch.currency !== undefined ? { currency: patch.currency } : {}),
       ...(patch.allowsCard !== undefined ? { allowsCard: patch.allowsCard } : {}),

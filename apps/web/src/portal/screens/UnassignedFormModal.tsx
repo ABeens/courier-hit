@@ -61,7 +61,10 @@ export function UnassignedFormModal({ mode, initialHawb, row, onClose, onSaved }
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  /** El peso se redondea hacia arriba al guardar; se avisa antes de enviar. */
+  /**
+   * El peso se guarda tal cual; el redondeo hacia arriba es una regla de cobro de
+   * las tarifas estandar. Se avisa del kilaje que se cobraria con una de ellas.
+   */
   const weightPreview =
     weight && Number(weight) > 0 && !Number.isInteger(Number(weight))
       ? Math.ceil(Number(weight))
@@ -207,7 +210,10 @@ export function UnassignedFormModal({ mode, initialHawb, row, onClose, onSaved }
               onChange={(e) => setWeight(e.target.value)}
             />
             {weightPreview !== null && (
-              <div className="field-hint">Se guardará como {weightPreview} kg (siempre hacia arriba).</div>
+              <div className="field-hint">
+                Se guarda el peso real. Las tarifas estándar cobran {weightPreview} kg;
+                las consolidadas, el peso tal cual.
+              </div>
             )}
           </div>
 

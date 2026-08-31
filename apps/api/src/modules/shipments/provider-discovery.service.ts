@@ -45,7 +45,6 @@ import {
   insuredValueUsdSchema,
   mapProviderState,
   roundMoney,
-  roundWeightKg,
 } from '@courier/shared';
 import type { Session } from '@courier/shared';
 import { isHelgaEnabled, fetchHelgaAvailablePackages } from '../../integrations/helga/helga.client';
@@ -270,7 +269,9 @@ export const providerDiscoveryService = {
       description: row.contenido?.trim() || FALLBACK_DESCRIPTION,
       store: row.tienda?.trim() || null,
       hawb: row.hawb?.trim() || null,
-      weightKg: kg > 0 ? roundWeightKg(kg) : null,
+      // Peso de bascula del proveedor, tal cual: el redondeo de cobro se aplica
+      // al cotizar el flete, no al guardar (`billableWeightKg`).
+      weightKg: kg > 0 ? kg : null,
       // Medidas informativas. El proveedor manda 0 cuando no midio el paquete, y
       // un 0 guardado se leeria como "mide cero" en vez de "no se sabe".
       lengthCm: positiveOrNull(row.largo),

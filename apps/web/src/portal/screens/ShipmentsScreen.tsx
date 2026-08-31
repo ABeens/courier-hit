@@ -37,14 +37,14 @@ import {
   statesOf,
   usesPackageFields,
 } from '@courier/shared';
-import type { BillingAmounts, Role, ShipmentDto } from '@courier/shared';
+import type { BillingAmounts, ConsolidatedQuoteDto, Role, ShipmentDto } from '@courier/shared';
 import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
 import { IconButton, IconLink } from '../components/IconButton';
 import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
 import { Pagination } from '../components/Pagination';
 import { PayFlag, awaitingValidation } from '../components/PayFlag';
-import { API_BASE } from '../lib/api';
+import { API_BASE, api } from '../lib/api';
 import { usePagedList } from '../lib/usePagedList';
 import { formatDate, formatDayInput, startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
 import { STATE_TONE } from '../lib/tone';
@@ -52,6 +52,7 @@ import { ClientShipmentModal } from './ClientShipmentModal';
 import { ShipmentFormModal, allowedTypesFor } from './ShipmentFormModal';
 import { ShipmentHistoryModal } from './ShipmentHistoryModal';
 import { StateAdvanceModal, reachableStates } from './StateAdvanceModal';
+import { ConsolidatedPaymentModal } from './ConsolidatedPaymentModal';
 import { PaymentModal } from './PaymentModal';
 import { PaymentResultModal } from './PaymentResultModal';
 import type { PaymentResult } from './PaymentResultModal';
@@ -254,6 +255,16 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
   const [paid, setPaid] = useState<PaymentResult | null>(null);
   /** Trámite cuyos abonos está mirando el staff (registrar depósito / aprobar). */
   const [collecting, setCollecting] = useState<ShipmentDto | null>(null);
+  /**
+   * La cuenta del titular es CONSOLIDADA: sus paquetes no se pagan uno a uno sino
+   * todos juntos. Lo contesta la API (`consolidated`), no se deduce aquí: la
+   * misma respuesta es la que decide si el cobro agrupado se puede hacer.
+   *
+   * Null mientras no se ha preguntado o la vista no es la del titular.
+   */
+  const [consolidated, setConsolidated] = useState<ConsolidatedQuoteDto | null>(null);
+  /** Pago agrupado abierto (cuenta consolidada del titular). */
+  const [payingGroup, setPayingGroup] = useState(false);
   /** Trámite cuyo historial de estados se está mirando (clic sobre la ficha). */
   const [tracing, setTracing] = useState<ShipmentDto | null>(null);
   /** Alta del cliente: vive aqui dentro, no en una pantalla aparte. */
@@ -353,6 +364,32 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
   }
 
   /** Como se llama lo que se lista; lo usan el contador y el pie de paginacion. */
+  /**
+   * Se pregunta UNA vez por la cuenta, no por fila: la tarifa es del casillero y
+   * el cobro agrupado también, así que una consulta contesta para toda la
+   * pantalla. Solo en la vista del titular de Paquetería: es la única donde el
+   * cliente paga.
+   */
+  useEffect(() => {
+    if (!isOwnPackages || !canPay) {
+      setConsolidated(null);
+      return;
+    }
+    let alive = true;
+    api
+      .get<ConsolidatedQuoteDto>('/payments/consolidated/quote')
+      .then((q) => alive && setConsolidated(q))
+      // Que no se pueda saber si la cuenta es consolidada no rompe la pantalla:
+      // se queda con el cobro individual, que es el comportamiento de siempre.
+      .catch(() => alive && setConsolidated(null));
+    return () => {
+      alive = false;
+    };
+  }, [isOwnPackages, canPay, list.data]);
+
+  /** La cuenta se cobra agrupada: el pago por paquete deja de ofrecerse. */
+  const isConsolidatedAccount = consolidated?.consolidated === true;
+
   const noun = isOwnPackages ? 'paquetes' : 'trámites';
 
   const title = isOwnPackages
@@ -389,9 +426,22 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
              que negocia el staff y los registra quien tiene `tramite.manage`, asi
              que ahi no se ofrece boton. La API aplica la misma regla. */
           isOwnPackages && (
-            <button className="btn btn-primary" onClick={() => setRegistering(true)}>
-              + Prealertar
-            </button>
+            <div className="actions">
+              {/*
+                Cuenta consolidada: el cobro es de la CUENTA, no de un paquete, y
+                por eso el botón vive en la cabecera y no en cada ficha. Aparece
+                solo cuando hay algo que cobrar; con la cuenta al día no hay nada
+                que ofrecer.
+              */}
+              {isConsolidatedAccount && consolidated!.items.length > 0 && !consolidated!.settled && (
+                <button className="btn btn-primary" onClick={() => setPayingGroup(true)}>
+                  Pagar consolidado ({consolidated!.items.length})
+                </button>
+              )}
+              <button className="btn btn-primary" onClick={() => setRegistering(true)}>
+                + Prealertar
+              </button>
+            </div>
           )
         ) : (
           canWrite && creatableTypes.length > 0 && (
@@ -622,7 +672,21 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
                   consultar sin empujar a pagar de nuevo.
                 */}
                 {canPay && row.state === State.EnBodegaPendientePago && !row.settled && (
-                  awaitingValidation(row) ? (
+                  /*
+                    Cuenta CONSOLIDADA: no se paga paquete por paquete. El botón de
+                    pagar no se ofrece —la API lo rechazaría igual— y en su lugar
+                    queda el de consulta, para que el cliente pueda mirar los
+                    abonos del paquete sin que la ficha parezca rota. El cobro se
+                    lanza desde la cabecera, sobre la cuenta entera.
+                  */
+                  isConsolidatedAccount ? (
+                    <IconButton
+                      label="Ver los pagos del paquete"
+                      icon="receipt"
+                      hint="Tu cuenta es consolidada: los paquetes se pagan todos juntos."
+                      onClick={() => setPaying(row)}
+                    />
+                  ) : awaitingValidation(row) ? (
                     <IconButton label="Ver el pago enviado" icon="receipt" onClick={() => setPaying(row)} />
                   ) : (
                     <IconButton label="Pagar" icon="card" tone="primary" onClick={() => setPaying(row)} />
@@ -707,6 +771,27 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
             que resuelve el cobro vive ahi dentro, asi que desmontarlo dejaria el
             loader girando para siempre.
           */
+          onProcessing={(result) => setPaid(result)}
+        />
+      )}
+
+      {payingGroup && (
+        <ConsolidatedPaymentModal
+          /*
+            Sin `clientId`: el titular cobra lo suyo y el casillero lo pone el
+            servidor desde la sesión. Mandarlo desde aquí sería darle a la
+            pantalla una decisión que es del servidor.
+          */
+          onClose={() => {
+            setPayingGroup(false);
+            void load();
+          }}
+          onPaid={(result) => {
+            setPayingGroup(false);
+            setPaid(result);
+            setError(null);
+            void load();
+          }}
           onProcessing={(result) => setPaid(result)}
         />
       )}

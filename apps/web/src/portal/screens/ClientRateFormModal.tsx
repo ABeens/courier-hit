@@ -1,14 +1,18 @@
 /**
- * Modal crear / editar tarifa preferencial de cliente. Campos: nombre, precio por
- * kg, medios de pago (tarjeta / deposito), si ocupa revision antes de facturar y
- * si es la tarifa por defecto. En editar solo envia lo que cambio. La API revalida
- * (nombre unico, invariante de default).
+ * Modal crear / editar tarifa preferencial de cliente. Campos: nombre, TIPO
+ * (estandar o consolidada), precio por kg, medios de pago (tarjeta / deposito),
+ * si ocupa revision antes de facturar y si es la tarifa por defecto. En editar
+ * solo envia lo que cambio. La API revalida (nombre unico, invariante de default,
+ * y que la por defecto no sea consolidada).
  */
 import { useState } from 'react';
 import { ModalOverlay } from '../components/ModalOverlay';
 import {
   CLIENT_RATE_CURRENCIES,
+  CLIENT_RATE_KIND_HINTS,
+  CLIENT_RATE_KIND_LABELS,
   CURRENCY_LABELS,
+  ClientRateKind,
   Currency,
   createClientRateSchema,
 } from '@courier/shared';
@@ -24,6 +28,8 @@ interface Props {
 
 export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
   const [name, setName] = useState(row?.name ?? '');
+  // Estandar por defecto: es como se comportan todas las tarifas que ya existian.
+  const [kind, setKind] = useState<ClientRateKind>(row?.kind ?? ClientRateKind.Estandar);
   const [price, setPrice] = useState<string>(row?.pricePerKg !== undefined ? String(row.pricePerKg) : '');
   // Las tarifas se cotizan en dolares: la moneda se muestra, pero queda fija.
   const [currency, setCurrency] = useState<Currency>(row?.currency ?? Currency.USD);
@@ -47,12 +53,14 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
       if (mode === 'create') {
         const parsed = createClientRateSchema.safeParse({
           name,
+          kind,
           pricePerKg,
           currency,
           allowsCard,
           allowsBankDeposit,
           requiresBillingReview,
-          isDefault,
+          // Consolidada nunca es la por defecto (la API lo rechaza igual).
+          isDefault: kind === ClientRateKind.Consolidada ? false : isDefault,
         });
         if (!parsed.success) {
           setError(parsed.error.issues[0]?.message ?? 'Datos inválidos.');
@@ -65,6 +73,7 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
         // Solo enviamos lo que cambio.
         const patch: Record<string, unknown> = {};
         if (name.trim() !== row.name) patch.name = name.trim();
+        if (kind !== row.kind) patch.kind = kind;
         if (pricePerKg !== row.pricePerKg) patch.pricePerKg = pricePerKg;
         if (currency !== row.currency) patch.currency = currency;
         if (allowsCard !== row.allowsCard) patch.allowsCard = allowsCard;
@@ -72,7 +81,9 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
         if (requiresBillingReview !== row.requiresBillingReview) {
           patch.requiresBillingReview = requiresBillingReview;
         }
-        if (!row.isDefault && isDefault) patch.isDefault = true;
+        if (!row.isDefault && isDefault && kind !== ClientRateKind.Consolidada) {
+          patch.isDefault = true;
+        }
         if (Object.keys(patch).length === 0) {
           onSaved();
           return;
@@ -120,6 +131,29 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
               placeholder="Ej: Gold"
               onChange={(e) => setName(e.target.value)}
             />
+          </div>
+
+          <div>
+            <label className="field-label" htmlFor="r-kind">Tipo de tarifa</label>
+            <select
+              id="r-kind" className="input" value={kind}
+              onChange={(e) => setKind(e.target.value as ClientRateKind)}
+            >
+              {Object.values(ClientRateKind).map((k) => (
+                <option key={k} value={k}>{CLIENT_RATE_KIND_LABELS[k]}</option>
+              ))}
+            </select>
+            <div className="field-hint">{CLIENT_RATE_KIND_HINTS[kind]}</div>
+            {/*
+              La API lo rechaza igual (la por defecto es a la que caen los
+              casilleros nuevos), pero decirlo aquí evita el viaje y explica por
+              qué la casilla de abajo no va a servir.
+            */}
+            {kind === ClientRateKind.Consolidada && (
+              <div className="field-hint">
+                Una tarifa consolidada no puede ser la tarifa por defecto: se asigna casillero por casillero.
+              </div>
+            )}
           </div>
 
           <div className="field-pair">
@@ -181,7 +215,9 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
           <div>
             <label className="check-row">
               <input
-                type="checkbox" checked={isDefault} disabled={lockDefault}
+                type="checkbox"
+                checked={isDefault && kind !== ClientRateKind.Consolidada}
+                disabled={lockDefault || kind === ClientRateKind.Consolidada}
                 onChange={(e) => setIsDefault(e.target.checked)}
               />
               Tarifa por defecto (casilleros nuevos)

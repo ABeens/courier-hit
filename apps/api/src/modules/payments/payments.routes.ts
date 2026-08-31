@@ -20,9 +20,11 @@ import { zValidator } from '../../core/validator';
 import {
   Permission,
   listPaymentsQuerySchema,
+  recordConsolidatedPaymentSchema,
   recordPaymentSchema,
   resolvePaymentSchema,
   simulatePaymentSchema,
+  startConsolidatedPaymentSchema,
   startPaymentSchema,
   updateBankAccountSchema,
 } from '@courier/shared';
@@ -32,6 +34,7 @@ import { requireAnyPermission } from '../../core/middleware/requireAnyPermission
 import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
 import { onvoClient } from '../../integrations/onvo/onvo.client';
+import { consolidatedService } from './consolidated.service';
 import { paymentsService } from './payments.service';
 
 export const paymentsRoutes = new Hono<AppEnv>();
@@ -95,6 +98,114 @@ paymentsRoutes.get('/quote/:shipmentId', canRead, async (c) => {
 paymentsRoutes.get('/shipment/:shipmentId', canRead, async (c) => {
   return c.json(await paymentsService.listByShipment(c.get('session'), c.req.param('shipmentId')));
 });
+
+// ---------------------------------------------------------------------------
+// COBRO AGRUPADO (cuentas consolidadas)
+// ---------------------------------------------------------------------------
+//
+// Van ANTES de las rutas con parametro (`/:id/...`) para que ningun `consolidated`
+// se lea como un id de pago. Los permisos son los mismos que en el cobro suelto:
+// el cliente paga lo suyo (package.pay) y el staff registra depositos
+// (payments.record); lo que cambia es la unidad del cobro, no quien puede hacerlo.
+
+/**
+ * Estado de la cuenta consolidada: que paquetes entran y cuanto suman.
+ *
+ * El cliente pregunta por la suya (el servicio la acota a su casillero) y el
+ * staff indica cual con `?clientId=`. Si la cuenta NO es consolidada responde
+ * `consolidated: false` en vez de un error: la pregunta es valida y la respuesta
+ * tambien.
+ */
+paymentsRoutes.get('/consolidated/quote', canRead, async (c) => {
+  const clientId = c.req.query('clientId');
+  return c.json(await consolidatedService.quote(c.get('session'), clientId));
+});
+
+/** Un cobro agrupado ya creado. */
+paymentsRoutes.get('/consolidated/group/:groupId', canRead, async (c) => {
+  const groupId = c.req.param('groupId');
+  await consolidatedService.assertOwnGroup(c.get('session'), groupId);
+  return c.json(await consolidatedService.get(groupId));
+});
+
+/**
+ * El CLIENTE paga su cuenta consolidada. No lleva ni monto ni lista de paquetes:
+ * los dos los pone el servidor, que es lo que hace que "entran todos" sea una
+ * regla y no una casilla de la pantalla.
+ */
+paymentsRoutes.post(
+  '/consolidated',
+  requirePermission(Permission.PackagePay),
+  zValidator('json', startConsolidatedPaymentSchema),
+  async (c) => {
+    const result = await consolidatedService.start(c.get('session'), c.req.valid('json'));
+    return c.json(result, 201);
+  },
+);
+
+/** El cargo del cobro agrupado salio hacia la pasarela. */
+paymentsRoutes.post(
+  '/consolidated/:groupId/submitted',
+  requirePermission(Permission.PackagePay),
+  async (c) => {
+    return c.json(
+      await consolidatedService.markCardSubmitted(c.get('session'), c.req.param('groupId')),
+    );
+  },
+);
+
+/** El cliente cerro el formulario de tarjeta sin pagar: se suelta el cobro agrupado. */
+paymentsRoutes.post(
+  '/consolidated/:groupId/abandon',
+  requirePermission(Permission.PackagePay),
+  async (c) => {
+    return c.json(await consolidatedService.abandonCard(c.get('session'), c.req.param('groupId')));
+  },
+);
+
+/** Flujo de PRUEBA: resuelve un cobro agrupado simulado sin pasar por Onvo. */
+paymentsRoutes.post(
+  '/consolidated/:groupId/simulate',
+  requirePermission(Permission.PackagePay),
+  zValidator('json', simulatePaymentSchema),
+  async (c) => {
+    const updated = await consolidatedService.simulateGatewayOutcome(
+      c.get('session'),
+      c.req.param('groupId'),
+      c.req.valid('json').approve,
+    );
+    return c.json(updated);
+  },
+);
+
+/**
+ * Comprobante del deposito AGRUPADO. Un solo archivo para todo el cobro: se
+ * adjunta a los abonos de los N paquetes, porque el deposito fue uno.
+ */
+paymentsRoutes.post('/consolidated/:groupId/receipt', canRead, async (c) => {
+  const form = await c.req.parseBody();
+  const file = form['file'];
+  if (!(file instanceof File)) throw StorageErrors.fileRequired('el comprobante del depósito');
+
+  return c.json(
+    await consolidatedService.attachReceipt(c.get('session'), c.req.param('groupId'), file),
+  );
+});
+
+/**
+ * El STAFF registra el deposito AGRUPADO que el cliente ya hizo. Basta
+ * `payments.record`, igual que el registro suelto: con que situacion nace el
+ * cobro lo decide el servicio segun quien firma la sesion.
+ */
+paymentsRoutes.post(
+  '/consolidated/record',
+  requirePermission(Permission.PaymentsRecord),
+  zValidator('json', recordConsolidatedPaymentSchema),
+  async (c) => {
+    const created = await consolidatedService.record(c.get('session'), c.req.valid('json'));
+    return c.json(created, 201);
+  },
+);
 
 /** Bandeja de validacion del staff. */
 paymentsRoutes.get(

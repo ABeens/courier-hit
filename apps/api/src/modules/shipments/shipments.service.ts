@@ -32,7 +32,6 @@ import {
   paged,
   pendingAmount,
   roundMoney,
-  roundWeightKg,
   settledAmount,
   usesPackageFields,
 } from '@courier/shared';
@@ -495,8 +494,9 @@ export const shipmentsService = {
         store: input.store ?? null,
         carrier: input.carrier ?? null,
         hawb: input.hawb ?? null,
-        // Punto unico de redondeo del peso (regla del manual: siempre hacia arriba).
-        weightKg: input.weightKg === undefined ? null : roundWeightKg(input.weightKg),
+        // Peso de bascula tal cual, con decimales: el redondeo hacia arriba del
+        // manual es una regla de cobro y se aplica al cotizar el flete.
+        weightKg: input.weightKg ?? null,
         // Datos para la prealerta del proveedor. Los importes se redondean a 2
         // decimales (USD) en este unico punto; retener y arancel viajan tal cual.
         declaredValueUsd:
@@ -593,9 +593,7 @@ export const shipmentsService = {
       ...(patch.store !== undefined ? { store: patch.store } : {}),
       ...(patch.carrier !== undefined ? { carrier: patch.carrier } : {}),
       ...(patch.hawb !== undefined ? { hawb: patch.hawb } : {}),
-      ...(patch.weightKg !== undefined
-        ? { weightKg: patch.weightKg === null ? null : roundWeightKg(patch.weightKg) }
-        : {}),
+      ...(patch.weightKg !== undefined ? { weightKg: patch.weightKg } : {}),
       ...(patch.declaredValueUsd !== undefined
         ? { declaredValueUsd: patch.declaredValueUsd === null ? null : roundMoney(patch.declaredValueUsd, Currency.USD) }
         : {}),
@@ -678,7 +676,7 @@ export const shipmentsService = {
         store: input.store ?? null,
         carrier: input.carrier ?? null,
         hawb: input.hawb ?? null,
-        weightKg: input.weightKg === undefined ? null : roundWeightKg(input.weightKg),
+        weightKg: input.weightKg ?? null,
         declaredValueUsd:
           input.declaredValueUsd === undefined
             ? null
@@ -729,9 +727,7 @@ export const shipmentsService = {
       ...(patch.store !== undefined ? { store: patch.store } : {}),
       ...(patch.carrier !== undefined ? { carrier: patch.carrier } : {}),
       ...(patch.hawb !== undefined ? { hawb: patch.hawb } : {}),
-      ...(patch.weightKg !== undefined
-        ? { weightKg: patch.weightKg === null ? null : roundWeightKg(patch.weightKg) }
-        : {}),
+      ...(patch.weightKg !== undefined ? { weightKg: patch.weightKg } : {}),
       ...(patch.declaredValueUsd !== undefined
         ? {
             declaredValueUsd:

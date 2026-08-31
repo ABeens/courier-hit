@@ -21,6 +21,13 @@
  * usa la misma función solo para ANUNCIARLO antes de enviar; si las dos
  * respondieran distinto, al operario se le prometería un cobro que el sistema no
  * dio por recibido.
+ *
+ * CUENTAS CONSOLIDADAS. Si el casillero tiene tarifa consolidada, este trámite no
+ * se cobra suelto: el formulario de depósito se retira (la API lo rechazaría) y
+ * en su lugar queda el registro del depósito AGRUPADO, que salda de una vez todos
+ * los paquetes listos del casillero. Quién es consolidado lo contesta la API con
+ * la misma consulta que arma el grupo; deducirlo aquí habría sido ofrecer un
+ * formulario que acaba en un 409.
  */
 import { useEffect, useState } from 'react';
 import {
@@ -46,11 +53,18 @@ import {
   recordedPaymentStatus,
   settledAmount,
 } from '@courier/shared';
-import type { BankAccount, PaymentDto, Role, ShipmentDto } from '@courier/shared';
+import type {
+  BankAccount,
+  ConsolidatedQuoteDto,
+  PaymentDto,
+  Role,
+  ShipmentDto,
+} from '@courier/shared';
 import { FileField } from '../components/FileField';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { API_BASE, ApiError, api } from '../lib/api';
 import { formatDate, formatStamp, startOfLocalDayUtc } from '../lib/datetime';
+import { ConsolidatedDepositModal } from './ConsolidatedDepositModal';
 
 /**
  * Pildora del estado de un abono. Rechazado NO es un estado neutro: es dinero
@@ -151,6 +165,14 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
 
+  /**
+   * La cuenta del casillero, para saber si se cobra agrupada. Null mientras no se
+   * ha preguntado o el trámite no tiene dueño.
+   */
+  const [account, setAccount] = useState<ConsolidatedQuoteDto | null>(null);
+  /** Registro del depósito agrupado abierto. */
+  const [recordingGroup, setRecordingGroup] = useState(false);
+
   const figures = figuresOf(payments, shipment);
   const invoiceTotal =
     currency === Currency.USD ? shipment.invoiceTotalUsd : shipment.invoiceTotalCrc;
@@ -165,6 +187,28 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
       )
       .finally(() => setLoading(false));
   }, [shipment.id]);
+
+  /**
+   * ¿Este casillero se cobra agrupado? Se pregunta una vez al abrir, y solo si
+   * quien mira puede registrar depósitos: es lo único que cambia con la respuesta.
+   */
+  useEffect(() => {
+    const clientId = shipment.client?.id;
+    if (!canRecord || !clientId) return;
+    let alive = true;
+    api
+      .get<ConsolidatedQuoteDto>(`/payments/consolidated/quote?clientId=${clientId}`)
+      // No saberlo no rompe la pantalla: se queda con el registro individual, que
+      // es el comportamiento de siempre (y la API sigue siendo la barrera real).
+      .then((q) => alive && setAccount(q))
+      .catch(() => alive && setAccount(null));
+    return () => {
+      alive = false;
+    };
+  }, [shipment.client?.id, canRecord]);
+
+  /** La cuenta se cobra agrupada: el depósito por trámite deja de ofrecerse. */
+  const isConsolidatedAccount = account?.consolidated === true;
 
   /**
    * Precarga el importe con el saldo mientras nadie lo haya escrito. Casi todo
@@ -629,8 +673,50 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
             </div>
           )}
 
+          {/*
+            --- Cuenta CONSOLIDADA ---
+            El depósito no se registra contra este trámite sino contra la cuenta:
+            entran todos sus paquetes listos y el importe es el saldo del grupo.
+            La API rechaza el registro individual, así que aquí no se ofrece.
+          */}
+          {canRecord && isConsolidatedAccount && (
+            <div className="pay-sec">
+              <div className="card-sec-title">Cuenta consolidada</div>
+              <div className="banner warn">
+                {account!.clientCode} tiene tarifa <strong>{account!.rateName}</strong>: sus
+                paquetes se cobran todos juntos, no uno a uno. El depósito se registra sobre la
+                cuenta completa.
+              </div>
+              {account!.items.length > 0 ? (
+                <>
+                  <div className="pay-fields">
+                    <div className="card-item-field">
+                      <dt>Paquetes listos</dt>
+                      <dd>{account!.items.length}</dd>
+                    </div>
+                    <div className="card-item-field">
+                      <dt>Saldo de la cuenta</dt>
+                      <dd className="pay-due">{formatMoney(account!.dueCrc, Currency.CRC)}</dd>
+                    </div>
+                  </div>
+                  <div className="pay-sec-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => setRecordingGroup(true)}
+                    >
+                      Registrar depósito consolidado
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="cell-sub">No hay paquetes listos para cobrar en esta cuenta.</div>
+              )}
+            </div>
+          )}
+
           {/* --- Registro de un depósito nuevo --- */}
-          {canRecord && shipment.invoiceTotalCrc != null && (
+          {canRecord && !isConsolidatedAccount && shipment.invoiceTotalCrc != null && (
             <div className="pay-sec">
               <div className="card-sec-title">Registrar depósito recibido</div>
 
@@ -814,13 +900,25 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cerrar
           </button>
-          {canRecord && shipment.invoiceTotalCrc != null && (
+          {canRecord && !isConsolidatedAccount && shipment.invoiceTotalCrc != null && (
             <button type="submit" className="btn btn-primary" disabled={saving || loading}>
               {saving ? 'Registrando…' : 'Registrar depósito'}
             </button>
           )}
         </div>
       </form>
+
+      {recordingGroup && account && (
+        <ConsolidatedDepositModal
+          quote={account}
+          role={role}
+          onClose={() => setRecordingGroup(false)}
+          onSaved={(message) => {
+            setRecordingGroup(false);
+            onSaved(message);
+          }}
+        />
+      )}
     </ModalOverlay>
   );
 }

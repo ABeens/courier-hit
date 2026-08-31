@@ -15,7 +15,7 @@
 import { randomBytes } from 'node:crypto';
 import { hash } from '@node-rs/argon2';
 import { count, eq } from 'drizzle-orm';
-import { Currency, Principal, Role, UserStatus } from '@courier/shared';
+import { ClientRateKind, Currency, Principal, Role, UserStatus } from '@courier/shared';
 import { db } from './core/db';
 import { users } from './modules/auth/auth.schema';
 import { clientRates } from './modules/tariffs/tariffs.schema';
@@ -24,14 +24,25 @@ import { clientRates } from './modules/tariffs/tariffs.schema';
  * Tarifas preferenciales de cliente de ejemplo (requisito). Basica es la tarifa
  * por defecto a la que se incorporan los casilleros nuevos. Se siembran solo si
  * la tabla esta vacia (idempotente): no pisa ediciones posteriores del admin.
+ *
+ * "Consolidada" es de otro TIPO: cobra el peso real (sin redondear) y sus
+ * paquetes se saldan con un pago agrupado. Nunca es la por defecto —seria poner a
+ * todo casillero nuevo en cobro agrupado sin que nadie lo decida—, se asigna
+ * casillero por casillero.
  */
-const SEED_CLIENT_RATES: { name: string; pricePerKg: number; isDefault?: boolean }[] = [
+const SEED_CLIENT_RATES: {
+  name: string;
+  pricePerKg: number;
+  isDefault?: boolean;
+  kind?: ClientRateKind;
+}[] = [
   { name: 'Básica', pricePerKg: 13.45, isDefault: true },
   { name: 'Plus', pricePerKg: 9.75 },
   { name: 'Pro', pricePerKg: 8.45 },
   { name: 'Gold', pricePerKg: 8.15 },
   { name: 'Black', pricePerKg: 7.45 },
   { name: 'Platinum', pricePerKg: 7.2 },
+  { name: 'Consolidada', pricePerKg: 6.95, kind: ClientRateKind.Consolidada },
 ];
 
 async function seedClientRates(): Promise<void> {
@@ -43,6 +54,7 @@ async function seedClientRates(): Promise<void> {
   await db.insert(clientRates).values(
     SEED_CLIENT_RATES.map((r) => ({
       name: r.name,
+      kind: r.kind ?? ClientRateKind.Estandar,
       pricePerKg: r.pricePerKg,
       // Precios de importacion desde Miami: se cotizan en dolares (regla M2).
       currency: Currency.USD,

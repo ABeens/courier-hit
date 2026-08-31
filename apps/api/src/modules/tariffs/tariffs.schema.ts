@@ -9,14 +9,32 @@
  * protege la default).
  */
 import { sql } from 'drizzle-orm';
-import { boolean, doublePrecision, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  doublePrecision,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
+import { CLIENT_RATE_KIND_VALUES, ClientRateKind } from '@courier/shared';
 import { currencyEnum } from '../../core/currency.schema';
+
+export const clientRateKindEnum = pgEnum('client_rate_kind', CLIENT_RATE_KIND_VALUES);
 
 export const clientRates = pgTable(
   'client_rates',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull().unique(),
+    /**
+     * Tipo de tarifa. El default `estandar` es lo que ya hacian todas las tarifas
+     * existentes (peso redondeado hacia arriba, cobro paquete a paquete), asi que
+     * la columna entra sin tocar ninguna fila ni cambiarle el cobro a nadie.
+     */
+    kind: clientRateKindEnum('kind').notNull().default(ClientRateKind.Estandar),
     pricePerKg: doublePrecision('price_per_kg').notNull(),
     /** Moneda del precio por kg (explicita, regla M2). Sin tasa de cambio: es catalogo. */
     currency: currencyEnum('currency').notNull(),

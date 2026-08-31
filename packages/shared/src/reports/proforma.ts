@@ -7,6 +7,13 @@
  * 1. UNA PROFORMA POR TRAMITE. No se agrupan. Por eso no existe un
  *    `ProformaGroup` ni una tabla propia: la proforma ES el tramite, visto desde
  *    la facturacion, y su numero es el consecutivo del tramite.
+ *
+ *    UNICA EXCEPCION: las cuentas CONSOLIDADAS, que se cobran de una sola vez y
+ *    por eso se documentan de una sola vez (`ConsolidatedProformaDto`, mas
+ *    abajo). Ahi la unidad no es el tramite sino el GRUPO DE COBRO, y los
+ *    tramites que lo componen quedan FUERA del listado de proformas sueltas: el
+ *    requisito lo pide explicito ("no se incluira en reportes anteriores") y
+ *    ademas evita entregar dos documentos por el mismo dinero.
  * 2. SOLO SOBRE TRAMITES YA FACTURADOS. Sin costos aprobados no hay lineas ni
  *    total que imprimir; pedirla antes es un 409, no una proforma vacia.
  * 3. NO SE GUARDA. Se arma al pedirla, a partir de las lineas de costo, el
@@ -17,6 +24,10 @@
  * El documento tiene DOS bloques, como en el Excel: los conceptos que se cobran
  * (con su codigo del sistema de factura electronica) y el detalle del envio.
  */
+// Solo tipos: la proforma no ejecuta nada de esos modulos, y asi el indice puede
+// seguir exportando los reportes antes que los pagos sin crear un ciclo real.
+import type { Currency } from '../money/currency';
+import type { PaymentMethod, PaymentStatus } from '../payments/payment';
 
 /** Datos del cliente que encabezan la proforma (bloque "DATOS CLIENTE"). */
 export interface ProformaClient {
@@ -108,4 +119,104 @@ export interface ProformaListItem {
   issuedAt: string;
   totalUsd: number;
   electronicInvoiceNumber: string | null;
+}
+
+
+// ---------------------------------------------------------------------------
+// Proforma CONSOLIDADA (cuentas con tarifa Consolidada)
+// ---------------------------------------------------------------------------
+
+/**
+ * Un paquete dentro de la proforma consolidada: la fila del bloque de detalle.
+ *
+ * Es el mismo desglose que `ProformaShipmentDetail` mas lo que identifica al
+ * paquete (codigo y total), porque aqui hay varios y el cliente tiene que poder
+ * reconocer cual es cual. El peso es el REAL: la tarifa consolidada cobra sin
+ * redondear, y una proforma que imprimiera el peso redondeado estaria explicando
+ * un cobro con un numero que no lo produce.
+ */
+export interface ConsolidatedProformaItem {
+  shipmentId: string;
+  /** Consecutivo de negocio del tramite (`HSX000001000`). */
+  code: string;
+  /** HAWB en Paqueteria, AWB/BL en el resto. */
+  awb: string | null;
+  tracking: string;
+  description: string;
+  /** Peso real de bascula, el que cobra la tarifa consolidada. */
+  weightKg: number | null;
+  freightUsd: number;
+  othersUsd: number;
+  taxesUsd: number;
+  /** Total facturado de ESTE paquete. */
+  totalUsd: number;
+  /** Conceptos cobrados de este paquete, con su COD SIS FE. */
+  lines: ProformaLine[];
+}
+
+/**
+ * Proforma de un GRUPO DE COBRO consolidado: todos los paquetes que se saldaron
+ * juntos y el monto total pagado.
+ *
+ * Se emite contra el grupo (`paymentGroupId`) y no contra el cliente: es lo que
+ * la hace reproducible. Un mes despues, "los paquetes consolidados de Fulano" es
+ * un conjunto distinto; "los paquetes del cobro del 14 de marzo" es siempre el
+ * mismo, que es justo lo que un documento de facturacion tiene que ser.
+ *
+ * NO SE GUARDA, igual que la proforma suelta: se arma al pedirla, a partir del
+ * grupo, sus abonos y las lineas de costo de cada paquete.
+ */
+export interface ConsolidatedProformaDto {
+  paymentGroupId: string;
+  /**
+   * Numero del documento. Es el id corto del grupo con prefijo (`HSC-XXXXXXXX`):
+   * el grupo no tiene consecutivo de negocio propio y darle uno obligaria a una
+   * secuencia mas para un documento que ya se identifica solo.
+   */
+  number: string;
+  /** Fecha del documento: cuando se creo el grupo de cobro. UTC, ISO 8601. */
+  issuedAt: string;
+  /** Tasa congelada del cobro (el "TC" de la esquina). */
+  exchangeRate: number;
+  client: ProformaClient;
+  /** Nombre de la tarifa consolidada con la que se cobro. */
+  rateName: string;
+  items: ConsolidatedProformaItem[];
+  /** Suma de los totales de los paquetes, en dolares. */
+  totalUsd: number;
+  /** El mismo total en colones. */
+  totalCrc: number;
+  /**
+   * Lo efectivamente PAGADO por el grupo (abonos confirmados), en la moneda del
+   * cobro. Es el dato que pide el requisito y no tiene por que coincidir con el
+   * total si el cobro todavia esta en validacion: por eso van los dos.
+   */
+  paidAmount: number;
+  paidCurrency: Currency;
+  /** Situacion del cobro agrupado, para no imprimir "pagado" sobre un pendiente. */
+  paidStatus: PaymentStatus;
+  /** Cuando quedo confirmado el cobro; null si todavia no. */
+  paidAt: string | null;
+  method: PaymentMethod;
+}
+
+/** Fila del listado de proformas consolidadas disponibles. */
+export interface ConsolidatedProformaListItem {
+  paymentGroupId: string;
+  number: string;
+  clientName: string;
+  clientCode: string;
+  issuedAt: string;
+  itemCount: number;
+  totalUsd: number;
+  paidStatus: PaymentStatus;
+}
+
+/**
+ * Numero del documento consolidado a partir del id del grupo. Punto UNICO del
+ * formato: lo imprime el documento y lo lista la pantalla, y dos formas de
+ * escribir el mismo numero es como el cliente acaba sin poder buscar el suyo.
+ */
+export function formatConsolidatedProformaNumber(paymentGroupId: string): string {
+  return `HSC-${paymentGroupId.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
 }

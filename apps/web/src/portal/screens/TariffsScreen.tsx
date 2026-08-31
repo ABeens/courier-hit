@@ -5,7 +5,12 @@
  * no se puede eliminar. La API revalida cada accion.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { type Currency, formatMoney } from '@courier/shared';
+import {
+  CLIENT_RATE_KIND_LABELS,
+  ClientRateKind,
+  type Currency,
+  formatMoney,
+} from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { IconButton } from '../components/IconButton';
 import { ModalOverlay } from '../components/ModalOverlay';
@@ -14,6 +19,8 @@ import { ClientRateFormModal } from './ClientRateFormModal';
 export interface ClientRateRow {
   id: string;
   name: string;
+  /** Tipo: la Consolidada cobra el peso real y se salda con un pago agrupado. */
+  kind: ClientRateKind;
   pricePerKg: number;
   currency: Currency;
   isDefault: boolean;
@@ -103,6 +110,7 @@ export function TariffsScreen() {
           <thead>
             <tr>
               <th>Tarifa</th>
+              <th>Tipo</th>
               <th>Precio por kg</th>
               <th>Medios de pago</th>
               <th>Facturación</th>
@@ -118,7 +126,24 @@ export function TariffsScreen() {
                     {row.isDefault && <span className="tag-default">Por defecto</span>}
                   </div>
                 </td>
-                <td>{formatMoney(row.pricePerKg, row.currency)}</td>
+                <td>
+                  {row.kind === ClientRateKind.Consolidada ? (
+                    <span className="tag-review">{CLIENT_RATE_KIND_LABELS[row.kind]}</span>
+                  ) : (
+                    <span className="cell-sub">{CLIENT_RATE_KIND_LABELS[row.kind]}</span>
+                  )}
+                </td>
+                <td>
+                  {formatMoney(row.pricePerKg, row.currency)}
+                  {/*
+                    El redondeo es la diferencia visible entre los dos tipos, y es
+                    justo la que el administrador necesita tener delante al fijar
+                    un precio por kg.
+                  */}
+                  <div className="cell-sub">
+                    {row.kind === ClientRateKind.Consolidada ? 'peso real' : 'peso redondeado'}
+                  </div>
+                </td>
                 <td>
                   <div className="pay-chips">
                     {row.allowsCard && <span className="role-chip">Tarjeta</span>}

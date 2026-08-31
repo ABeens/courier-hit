@@ -21,7 +21,7 @@ import {
 import type { AppEnv } from '../../core/http';
 import { requireAnyPermission } from '../../core/middleware/requireAnyPermission';
 import { requireSession } from '../../core/middleware/requireSession';
-import { renderProformas } from './proforma.render';
+import { renderConsolidatedProformas, renderProformas } from './proforma.render';
 import { proformaService } from './proforma.service';
 import { reportsService, toCsv } from './reports.service';
 
@@ -90,6 +90,40 @@ reportsRoutes.get('/proformas/document', zValidator('query', proformaQuerySchema
 reportsRoutes.get('/proforma/:shipmentId', async (c) => {
   const proforma = await proformaService.get(c.get('session'), c.req.param('shipmentId'));
   return c.html(renderProformas([proforma]));
+});
+
+/**
+ * PROFORMAS CONSOLIDADAS. Documento por COBRO AGRUPADO, no por tramite.
+ *
+ * Van por su propia ruta y no como un parametro de las de arriba porque la unidad
+ * es otra: alli el id es un tramite y aqui un grupo de cobro. Los paquetes que
+ * salen aqui NO salen en `/proformas` (`billedShipmentIds` los excluye), tal como
+ * pide el requisito: un solo documento por el mismo dinero.
+ *
+ * Comparten los filtros de alcance y el permiso (`ReportsProforma`) con las
+ * sueltas, y por eso viven en el mismo modulo y no en uno propio.
+ */
+
+/** Los cobros consolidados listos del filtro, para contarlos antes de bajarlos. */
+reportsRoutes.get('/proformas/consolidadas', zValidator('query', proformaQuerySchema), async (c) => {
+  const items = await proformaService.readyConsolidated(c.get('session'), c.req.valid('query'));
+  return c.json({ items });
+});
+
+/** Todos los cobros consolidados del filtro en UN documento, uno por pagina. */
+reportsRoutes.get(
+  '/proformas/consolidadas/document',
+  zValidator('query', proformaQuerySchema),
+  async (c) => {
+    const proformas = await proformaService.consolidatedBatch(c.get('session'), c.req.valid('query'));
+    return c.html(renderConsolidatedProformas(proformas));
+  },
+);
+
+/** La proforma de UN cobro consolidado. */
+reportsRoutes.get('/proforma/consolidada/:groupId', async (c) => {
+  const proforma = await proformaService.getConsolidated(c.get('session'), c.req.param('groupId'));
+  return c.html(renderConsolidatedProformas([proforma]));
 });
 
 reportsRoutes.get('/', zValidator('query', reportQuerySchema), async (c) => {

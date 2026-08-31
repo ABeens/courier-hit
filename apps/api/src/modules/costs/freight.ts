@@ -1,12 +1,18 @@
 /**
  * Flete de Paqueteria: peso x precio por kg de la TARIFA EFECTIVA del casillero.
  *
+ * QUE PESO. El que decida el TIPO de la tarifa (`billableWeightKg`): las
+ * estandar cobran el kilo redondeado hacia arriba, como siempre; la Consolidada
+ * cobra el peso real de bascula, sin redondear. Este es el UNICO punto del
+ * sistema donde el peso se redondea, y por eso el detalle de la linea imprime el
+ * kilaje que de verdad se cobro y no el guardado.
+ *
  * Vive en su propio modulo porque lo necesitan DOS caminos que no se pueden
  * importar entre si: la carga manual de costos (`costs.service`) y la facturacion
  * automatica de las tarifas sin revision (`auto-billing.service`, que cuelga de
  * `transitions.service`). Dejarlo en cualquiera de los dos crearia un ciclo.
  */
-import { CostCategory, CostLineSource, roundMoney } from '@courier/shared';
+import { CostCategory, CostLineSource, billableWeightKg, roundMoney } from '@courier/shared';
 import type { SuggestedCostLine } from '@courier/shared';
 import { clientsRepo } from '../clients/clients.repo';
 
@@ -33,14 +39,22 @@ export async function buildFreight(row: FreightSubject): Promise<FreightLine | n
   const rate = await clientsRepo.rateFor(row.clientId);
   if (!rate) return null;
 
-  const detail = `${row.weightKg} kg × ${rate.pricePerKg} ${rate.currency}/kg`;
+  /**
+   * El kilaje FACTURABLE, que no siempre es el guardado: la tarifa estandar cobra
+   * el peso redondeado hacia arriba y la consolidada el real. El detalle imprime
+   * este, no `row.weightKg`, porque es el que multiplica al precio: un detalle que
+   * dijera "1.4 kg × 5" al lado de un importe de 10 seria una linea que no cuadra.
+   */
+  const billableKg = billableWeightKg(row.weightKg, rate.kind);
+
+  const detail = `${billableKg} kg × ${rate.pricePerKg} ${rate.currency}/kg`;
   return {
     costServiceId: null,
     label: `Flete (${rate.rateName})`,
     category: CostCategory.Flete,
     source: CostLineSource.Freight,
     percentage: null,
-    amount: roundMoney(row.weightKg * rate.pricePerKg, rate.currency),
+    amount: roundMoney(billableKg * rate.pricePerKg, rate.currency),
     currency: rate.currency,
     detail: rate.isFallback ? `${detail} · tarifa por defecto` : detail,
     auto: true,

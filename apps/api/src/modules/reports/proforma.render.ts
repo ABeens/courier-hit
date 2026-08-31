@@ -13,7 +13,8 @@
  * imprime de una vez y sale un PDF con todas. Un zip de archivos sueltos exigiria
  * una dependencia mas y dejaria al usuario abriendo cincuenta ventanas.
  */
-import type { ProformaDto } from '@courier/shared';
+import { PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS, PaymentStatus } from '@courier/shared';
+import type { ConsolidatedProformaDto, ProformaDto } from '@courier/shared';
 
 /** Zona del negocio: todos los clientes son de Costa Rica (CLAUDE.md). */
 const TIME_ZONE = 'America/Costa_Rica';
@@ -86,6 +87,14 @@ const STYLES = `
   tfoot tr.crc td { font-weight: 600; color: #374151; border-top: none; }
   .empty { color: #9ca3af; }
   .foot { margin-top: 26px; font-size: 11px; color: #6b7280; }
+  /* Bloque del cobro agrupado: lo pagado va destacado porque es EL dato del documento. */
+  .paid {
+    display: flex; justify-content: space-between; gap: 16px; align-items: baseline;
+    margin: 4px 0 18px; padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb;
+  }
+  .paid .label { font-size: 11px; letter-spacing: 1px; color: #6b7280; text-transform: uppercase; }
+  .paid .amount { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .paid .pending { color: #92400e; }
   @media print {
     body { background: #fff; }
     .sheet { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
@@ -203,6 +212,178 @@ export function renderProformas(proformas: readonly ProformaDto[], omitted = 0):
   const body = proformas.length > 0
     ? proformas.map(sheet).join('\n')
     : '<section class="sheet"><div class="foot">No hay proformas listas para ese filtro.</div></section>';
+
+  return `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)}</title>
+<style>${STYLES}</style>
+</head>
+<body>
+${body}
+${notice}
+</body>
+</html>`;
+}
+
+
+// ---------------------------------------------------------------------------
+// Proforma CONSOLIDADA
+// ---------------------------------------------------------------------------
+//
+// Reusa la MISMA hoja de estilos y la misma estructura de hoja que la proforma
+// suelta: es el mismo documento del mismo negocio, solo que la unidad es el cobro
+// y no el tramite. Dos maquetas distintas para lo mismo habrian empezado a
+// separarse en la primera correccion de formato.
+
+/** Bloque de paquetes: una fila por paquete del cobro, con su desglose. */
+function consolidatedItemsTable(proforma: ConsolidatedProformaDto): string {
+  const rows = proforma.items
+    .map(
+      (item) => `<tr>
+        <td>${esc(item.code)}</td>
+        <td>${esc(item.description)}</td>
+        <td class="num">${item.weightKg ?? ''}</td>
+        <td>${esc(item.tracking)}</td>
+        <td class="num">${money(item.freightUsd, 'USD')}</td>
+        <td class="num">${money(item.othersUsd, 'USD')}</td>
+        <td class="num">${money(item.taxesUsd, 'USD')}</td>
+        <td class="num">${money(item.totalUsd, 'USD')}</td>
+      </tr>`,
+    )
+    .join('');
+
+  return `<table>
+    <caption>Paquetes consolidados (${proforma.items.length})</caption>
+    <thead><tr>
+      <th>Trámite</th><th>Descripción</th><th class="num">Peso kg</th><th>Tracking</th>
+      <th class="num">Flete</th><th class="num">Otros / Permisos</th><th class="num">Impuestos</th>
+      <th class="num">Total</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot>
+      <tr><td colspan="7">TOTAL USD</td><td class="num">${money(proforma.totalUsd, 'USD')}</td></tr>
+      <tr class="crc">
+        <td colspan="7">TOTAL COLONES (TC ${money(proforma.exchangeRate, 'CRC')})</td>
+        <td class="num">${money(proforma.totalCrc, 'CRC')}</td>
+      </tr>
+    </tfoot>
+  </table>`;
+}
+
+/**
+ * Conceptos cobrados, paquete por paquete. Es el mismo bloque de la proforma
+ * suelta repetido: el cliente tiene que poder ver de que se compone cada total,
+ * y con varios paquetes en un solo cobro el desglose plano no dice de cual es
+ * cada linea.
+ */
+function consolidatedLinesTable(proforma: ConsolidatedProformaDto): string {
+  const rows = proforma.items
+    .flatMap((item) =>
+      item.lines.map(
+        (line, index) => `<tr>
+          <td>${index === 0 ? esc(item.code) : ''}</td>
+          <td class="num">${line.quantity}</td>
+          <td>${esc(line.label)}</td>
+          <td>${line.electronicInvoiceCode ? esc(line.electronicInvoiceCode) : '<span class="empty">—</span>'}</td>
+          <td class="num">${money(line.amountUsd, 'USD')}</td>
+        </tr>`,
+      ),
+    )
+    .join('');
+
+  return `<table>
+    <caption>Conceptos cobrados</caption>
+    <thead><tr>
+      <th>Trámite</th><th class="num">Cantidad</th><th>Concepto</th><th>Cod sis FE</th>
+      <th class="num">Monto (USD)</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+/**
+ * Lo PAGADO. Va destacado y con su situacion: el requisito pide que el documento
+ * diga el monto total pagado, y un cobro en validacion todavia no lo es. Anunciar
+ * "pagado" sobre un deposito sin validar es la unica forma de que este documento
+ * mienta.
+ */
+function paidBlock(proforma: ConsolidatedProformaDto): string {
+  const confirmed = proforma.paidStatus === PaymentStatus.Confirmado;
+  const label = confirmed ? 'Total pagado' : 'Total del cobro';
+  const when = proforma.paidAt ? ` · ${day(proforma.paidAt)}` : '';
+
+  return `<div class="paid">
+    <div>
+      <div class="label">${label}</div>
+      <div>${esc(PAYMENT_METHOD_LABELS[proforma.method])}${when}</div>
+    </div>
+    <div class="amount${confirmed ? '' : ' pending'}">
+      ${money(proforma.paidAmount, proforma.paidCurrency)} ${esc(proforma.paidCurrency)}
+      ${confirmed ? '' : `<div class="label">${esc(PAYMENT_STATUS_LABELS[proforma.paidStatus])}</div>`}
+    </div>
+  </div>`;
+}
+
+/** Una proforma consolidada, como una hoja del documento. */
+function consolidatedSheet(proforma: ConsolidatedProformaDto): string {
+  return `<section class="sheet">
+    <div class="head">
+      <div class="brand">HS Global Services<small>Proforma consolidada</small></div>
+      <div class="meta">
+        <div class="num">${esc(proforma.number)}</div>
+        <div>Fecha: ${day(proforma.issuedAt)}</div>
+        <div>Tarifa: ${esc(proforma.rateName)}</div>
+      </div>
+    </div>
+
+    <div class="who">
+      <h2>Datos del cliente</h2>
+      <div class="name">${esc(proforma.client.name)}</div>
+      <div>Cédula: ${esc(proforma.client.idNumber)}</div>
+      ${proforma.client.phone ? `<div>Tel: ${esc(proforma.client.phone)}</div>` : ''}
+      <div>${esc(proforma.client.address)}</div>
+      <div>${esc(proforma.client.email)}</div>
+    </div>
+
+    ${paidBlock(proforma)}
+    ${consolidatedItemsTable(proforma)}
+    ${consolidatedLinesTable(proforma)}
+
+    <div class="foot">
+      Documento proforma de cobro consolidado. Agrupa ${proforma.items.length} paquetes
+      en una sola factura. No sustituye la factura electrónica.
+    </div>
+  </section>`;
+}
+
+/**
+ * Documento de proformas consolidadas. Mismo contrato que `renderProformas`: una
+ * o cincuenta, el salto de pagina lo pone el CSS, y `omitted` avisa impreso
+ * cuando el lote se recorto.
+ */
+export function renderConsolidatedProformas(
+  proformas: readonly ConsolidatedProformaDto[],
+  omitted = 0,
+): string {
+  const title =
+    proformas.length === 1
+      ? `Proforma consolidada ${proformas[0]!.number}`
+      : `Proformas consolidadas (${proformas.length})`;
+
+  const notice =
+    omitted > 0
+      ? `<section class="sheet"><div class="foot">
+           Se omitieron ${omitted} proformas por el límite de descarga. Acota el filtro y vuelve a bajarlas.
+         </div></section>`
+      : '';
+
+  const body =
+    proformas.length > 0
+      ? proformas.map(consolidatedSheet).join('\n')
+      : '<section class="sheet"><div class="foot">No hay cobros consolidados para ese filtro.</div></section>';
 
   return `<!doctype html>
 <html lang="es">

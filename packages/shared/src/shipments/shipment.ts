@@ -11,6 +11,7 @@
  * de dominio en espanol. Ver CLAUDE.md.
  */
 import type { State } from '../workflow/states';
+import { ClientRateKind, billsActualWeight } from '../tariffs/dto';
 import { Flow, ShipmentType, flowForType } from '../workflow/shipment-type';
 
 /**
@@ -55,7 +56,10 @@ export interface ShipmentDto {
   carrier: string | null;
   /** HAWB (LES): el identificador del paquete en la bodega de Miami, solo digitos. */
   hawb: string | null;
-  /** Peso en kilos, entero (siempre redondeado hacia arriba al guardar). */
+  /**
+   * Peso REAL de bascula en kilos, con decimales. El redondeo hacia arriba del
+   * manual se aplica al cobrar el flete (`billableWeightKg`), no aqui.
+   */
   weightKg: number | null;
   /**
    * Medidas que reporta el operador de Miami: centimetros y peso volumetrico en
@@ -337,12 +341,34 @@ export const MANUAL_SHIPMENT_TYPES: readonly ShipmentType[] = [
 ];
 
 /**
- * Peso facturable en kilos. El manual es explicito: "a la hora de salvar siempre
- * redondea hacia arriba. Ej: 1.1 => 2" (docs/manuales/flujo.md L115). Punto UNICO
- * de redondeo del peso: nadie mas debe llamar a Math.ceil sobre un peso.
+ * Redondeo del peso hacia arriba, tal como lo pide el manual: "siempre redondea
+ * hacia arriba. Ej: 1.1 => 2" (docs/manuales/flujo.md L115).
+ *
+ * Punto UNICO del redondeo: nadie mas debe llamar a `Math.ceil` sobre un peso.
+ *
+ * OJO CON EL MOMENTO. El redondeo es una regla de COBRO, no de captura: el peso
+ * que se guarda es el de bascula, con sus decimales, y esto se aplica al cotizar
+ * el flete (ver `billableWeightKg`). Guardarlo ya redondeado perdia el peso real
+ * para siempre, y la tarifa Consolidada lo necesita entero.
  */
 export function roundWeightKg(weight: number): number {
   return Math.ceil(weight);
+}
+
+/**
+ * Peso con el que se COBRA el flete, segun el tipo de tarifa del casillero.
+ *
+ *   - tarifa Estandar (Basica, Premium, VIP...): el peso redondeado hacia arriba,
+ *     que es el comportamiento de siempre y no cambia;
+ *   - tarifa Consolidada: el peso REAL de bascula, sin redondear.
+ *
+ * Punto UNICO de esa eleccion. La cotizacion del flete, la linea de costo que se
+ * congela en la factura y el detalle que imprime la proforma tienen que salir del
+ * mismo kilaje; con la condicion escrita en tres sitios, tarde o temprano no lo
+ * hacen.
+ */
+export function billableWeightKg(weightKg: number, kind: ClientRateKind): number {
+  return billsActualWeight(kind) ? weightKg : roundWeightKg(weightKg);
 }
 
 /**

@@ -1,5 +1,9 @@
 /**
- * Tabla Drizzle de los pagos de un tramite (`payments`).
+ * Tablas Drizzle del cobro: los abonos de un tramite (`payments`) y el cobro
+ * agrupado de una cuenta consolidada (`payment_groups`, al final del archivo).
+ *
+ * Van juntas porque se referencian entre si (`payments.group_id`) y separarlas en
+ * dos modulos habria hecho un ciclo de imports por el enum del medio de pago.
  *
  * Una fila = un abono. Append-only en la practica: lo unico que muta es el
  * `status` (pendiente -> confirmado/rechazado) y su sello de quien y cuando. El
@@ -34,8 +38,9 @@ import {
   PaymentStatus,
 } from '@courier/shared';
 import { currencyEnum } from '../../core/currency.schema';
-import { users } from '../auth/auth.schema';
+import { clients, users } from '../auth/auth.schema';
 import { shipments } from '../shipments/shipments.schema';
+import { clientRates } from '../tariffs/tariffs.schema';
 
 export const paymentMethodEnum = pgEnum('payment_method', PAYMENT_METHOD_VALUES);
 export const paymentStatusEnum = pgEnum('payment_status', PAYMENT_STATUS_VALUES);
@@ -76,6 +81,16 @@ export const payments = pgTable(
      */
     gatewayReference: text('gateway_reference'),
 
+    /**
+     * COBRO AGRUPADO al que pertenece este abono (cuentas consolidadas). Null en
+     * el pago suelto, que es el caso corriente.
+     *
+     * El abono sigue siendo del TRAMITE, no del grupo: eso es lo que deja intacto
+     * a `isSettled` y a todo lo que pregunta si un paquete esta pagado. El grupo
+     * solo dice que este abono se cobro junto con otros y en un solo movimiento.
+     */
+    groupId: uuid('group_id').references(() => paymentGroups.id, { onDelete: 'set null' }),
+
     note: text('note'),
     /** Quien lo registro: el propio cliente o un usuario de staff. */
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
@@ -87,6 +102,8 @@ export const payments = pgTable(
     index('payments_shipment_idx').on(t.shipmentId, t.createdAt),
     /** Bandeja de validacion del staff: "los depositos pendientes". */
     index('payments_status_idx').on(t.status),
+    /** Los abonos de un cobro agrupado: los pide el webhook y la proforma consolidada. */
+    index('payments_group_idx').on(t.groupId),
     /**
      * Referencia de la pasarela: es la unica llave que trae el webhook de Onvo
      * (`findByGatewayReference`), y Onvo REINTENTA las entregas fallidas, asi que
@@ -112,3 +129,75 @@ export const payments = pgTable(
 
 export type PaymentRow = typeof payments.$inferSelect;
 export type NewPaymentRow = typeof payments.$inferInsert;
+
+/**
+ * Tabla Drizzle del COBRO AGRUPADO de una cuenta consolidada (`payment_groups`).
+ *
+ * Una fila = un pago que salda de una vez todos los paquetes listos de un
+ * casillero con tarifa Consolidada. Los abonos siguen estando en `payments`, uno
+ * por paquete, apuntando aqui con `group_id`.
+ *
+ * POR QUE UNA TABLA Y NO SOLO UN `group_id` SUELTO EN `payments`. Por dos datos
+ * que son del grupo y de ningun abono en particular:
+ *
+ *   1. LA REFERENCIA DE LA PASARELA. El cobro con tarjeta es UNO por el total, no
+ *      uno por paquete. `payments.gateway_reference` tiene un unico parcial —una
+ *      referencia identifica un abono, y de eso depende la idempotencia del
+ *      webhook—, asi que repetirla en las cinco filas del grupo era imposible y
+ *      quitarle el unico habria aflojado justo la garantia que evita aplicar dos
+ *      veces un cobro reintentado.
+ *   2. EL DOCUMENTO. La proforma consolidada se emite contra el grupo, y un grupo
+ *      sin fila propia solo existe mientras existan sus abonos: rechazar uno
+ *      borraria el documento entero.
+ *
+ * La SITUACION del grupo no se guarda: se deriva de sus abonos
+ * (`paymentGroupStatus`), por la misma razon por la que "pagado" no es una
+ * columna del tramite. Un flag aqui podria contradecir a las filas que representa.
+ */
+export const paymentGroups = pgTable(
+  'payment_groups',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Casillero al que se le cobra. El grupo es de un cliente, no de un tramite. */
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    /**
+     * Tarifa consolidada con la que se armo el cobro, congelada. El casillero
+     * puede cambiar de tarifa mañana y el documento tiene que seguir diciendo con
+     * cual se cobro. `set null` porque borrar una tarifa reasigna casilleros pero
+     * no puede borrar cobros ya hechos.
+     */
+    clientRateId: uuid('client_rate_id').references(() => clientRates.id, { onDelete: 'set null' }),
+    method: paymentMethodEnum('method').notNull(),
+
+    /** Total cobrado por el grupo. Siempre >= 0 (regla M3, con CHECK abajo). */
+    amount: doublePrecision('amount').notNull(),
+    /** Moneda del total, explicita (regla M2). */
+    currency: currencyEnum('currency').notNull(),
+    /** Colones por 1 USD congelados al crear el grupo (regla M5). Siempre > 0. */
+    exchangeRate: doublePrecision('exchange_rate').notNull(),
+
+    /** Referencia del intento en la pasarela. Solo tarjeta; el deposito la deja nula. */
+    gatewayReference: text('gateway_reference'),
+
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('payment_groups_client_idx').on(t.clientId, t.createdAt),
+    /**
+     * Mismo motivo que en `payments`: es la unica llave que trae el webhook y Onvo
+     * reintenta las entregas fallidas. Unico y parcial (los depositos la dejan
+     * nula y no compiten por el unico).
+     */
+    uniqueIndex('payment_groups_gateway_reference_idx')
+      .on(t.gatewayReference)
+      .where(sql`${t.gatewayReference} is not null`),
+    check('payment_groups_amount_nonneg', sql`${t.amount} >= 0`),
+    check('payment_groups_rate_positive', sql`${t.exchangeRate} > 0`),
+  ],
+);
+
+export type PaymentGroupRow = typeof paymentGroups.$inferSelect;
+export type NewPaymentGroupRow = typeof paymentGroups.$inferInsert;

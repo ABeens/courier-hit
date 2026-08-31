@@ -22,6 +22,7 @@
 import {
   BANK_ACCOUNT_LABELS,
   Currency,
+  billsAsGroup,
   PaymentMethod,
   PaymentStatus,
   Role,
@@ -55,6 +56,7 @@ import {
 } from '../../integrations/onvo/onvo.client';
 import type { GatewayOutcome } from '../../integrations/onvo/onvo.client';
 import { clientsRepo } from '../clients/clients.repo';
+import { consolidatedService } from './consolidated.service';
 import { settingsRepo } from '../settings/settings.repo';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { paymentsRepo } from './payments.repo';
@@ -157,6 +159,25 @@ function assertOwnership(session: Session, row: { clientId: string | null }): vo
 }
 
 /**
+ * UN PAQUETE DE CUENTA CONSOLIDADA NO SE PAGA SUELTO.
+ *
+ * Es la otra mitad de la regla del requisito ("el pago agrupado incluye
+ * obligatoriamente todos los paquetes listos; debe restringirse la opcion de
+ * excluir, quitar o agregar paquetes"). Sin este cerrojo la restriccion seria
+ * decorativa: bastaria pagar los paquetes de uno en uno por el camino de siempre
+ * para dejar fuera los que se quisiera.
+ *
+ * Vale para las DOS puertas de cobro, la del cliente y la del staff: un deposito
+ * registrado contra un solo paquete consolidado rompe la agrupacion igual que un
+ * pago con tarjeta. Quien tenga que cobrar de otra forma primero le cambia la
+ * tarifa al casillero, que es una decision comercial y deja rastro.
+ */
+async function assertNotConsolidated(clientId: string): Promise<void> {
+  const rate = await clientsRepo.rateFor(clientId);
+  if (rate && billsAsGroup(rate.kind)) throw PaymentErrors.consolidatedRequired();
+}
+
+/**
  * Suelta los cobros con tarjeta que quedaron ABIERTOS y sin usar en un tramite.
  *
  * `abandonCard` cubre al cliente que cierra el formulario; esto cubre al que no
@@ -195,10 +216,18 @@ export const paymentsService = {
     const shipment = await loadBillableShipment(shipmentId);
     assertOwnership(session, shipment);
 
-    const [rate, paid] = await Promise.all([
+    const [rate, paid, effectiveRate] = await Promise.all([
       clientsRepo.paymentOptionsFor(shipment.clientId),
       paymentsRepo.settlementView(shipmentId),
+      clientsRepo.rateFor(shipment.clientId),
     ]);
+
+    /**
+     * La cuenta se cobra AGRUPADA: este tramite no se paga suelto. Viaja en la
+     * cotizacion para que la pantalla lo diga en vez de ofrecer un formulario que
+     * `start` va a rechazar (`assertNotConsolidated`).
+     */
+    const consolidated = effectiveRate ? billsAsGroup(effectiveRate.kind) : false;
 
     const settledCrc = settledAmount(paid, Currency.CRC);
     const settledUsd = settledAmount(paid, Currency.USD);
@@ -212,6 +241,7 @@ export const paymentsService = {
       shipmentId,
       shipmentCode: shipment.code,
       description: shipment.description,
+      consolidated,
       invoiceTotalUsd: shipment.invoiceTotalUsd,
       invoiceTotalCrc: shipment.invoiceTotalCrc,
       settledUsd,
@@ -280,6 +310,9 @@ export const paymentsService = {
     assertOwnership(session, shipment);
 
     if (shipment.state !== State.EnBodegaPendientePago) throw PaymentErrors.notPayableState();
+
+    // Cuenta consolidada: se paga el grupo entero, nunca un paquete suelto.
+    await assertNotConsolidated(shipment.clientId);
 
     const paid = await paymentsRepo.settlementView(input.shipmentId);
     if (isSettled(paid, shipment.invoiceTotalCrc)) throw PaymentErrors.alreadySettled();
@@ -550,6 +583,10 @@ export const paymentsService = {
   async record(session: Session, input: RecordPaymentInput): Promise<PaymentDto> {
     const shipment = await loadBillableShipment(input.shipmentId);
 
+    // Cuenta consolidada: el deposito se registra contra el grupo, no contra un
+    // paquete (`consolidatedService.record`).
+    await assertNotConsolidated(shipment.clientId);
+
     /**
      * La tasa es un valor general del sistema (ver `canSetExchangeRate`): quien
      * no puede fijarla registra el deposito con la de la factura, que es ademas
@@ -684,6 +721,14 @@ export const paymentsService = {
   ): Promise<{ applied: boolean; reason: 'ok' | 'unknown_reference' | 'already_resolved' }> {
     const payment = await paymentsRepo.findByGatewayReference(outcome.reference);
     if (!payment) {
+      /**
+       * Puede ser un COBRO AGRUPADO: ahi el intento de la pasarela es uno solo por
+       * el total y cuelga del grupo, no de ninguno de sus abonos. Se intenta por
+       * ese lado antes de dar la referencia por ajena.
+       */
+      const grouped = await consolidatedService.confirmByGateway(outcome);
+      if (grouped.reason !== 'unknown_reference') return grouped;
+
       // Puede ser un cobro de otra cuenta o de otro entorno apuntando al mismo
       // webhook. Se registra y se ignora: no es motivo para responder un error.
       console.warn(`[payments] webhook con referencia desconocida: ${outcome.reference}`);

@@ -205,6 +205,8 @@ export const clientsRepo = {
     const rateColumns = {
       rateId: clientRates.id,
       rateName: clientRates.name,
+      /** Tipo de tarifa: decide el redondeo del peso y si el cobro es agrupado. */
+      kind: clientRates.kind,
       pricePerKg: clientRates.pricePerKg,
       currency: clientRates.currency,
       allowsCard: clientRates.allowsCard,

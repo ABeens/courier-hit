@@ -23,10 +23,80 @@
 import { z } from 'zod';
 import { Currency } from '../money/currency';
 
+/**
+ * TIPO de tarifa. No es una categoria comercial mas (eso es el `name`): decide
+ * COMO se cobra el kilo y COMO se salda la deuda, que son dos reglas del sistema
+ * y no un dato del catalogo.
+ *
+ *   - `Estandar`: todas las tarifas de siempre (Basica, Premium, VIP...). El kilo
+ *     se cobra REDONDEADO HACIA ARRIBA (`roundWeightKg`, flujo.md L115) y cada
+ *     paquete se paga por su cuenta.
+ *   - `Consolidada`: el kilo se cobra por el PESO REAL de bascula, sin redondear,
+ *     y el cliente salda de una sola vez TODOS sus paquetes listos para facturar
+ *     (pago agrupado). No se puede elegir cuales entran: entran todos.
+ *
+ * Es un enum y no un booleano `esConsolidada` porque el requisito lo nombra como
+ * un tipo ("creacion del tipo de tarifa Consolidada") y porque las dos reglas que
+ * cuelgan de el ya son dos: sumar una tercera modalidad no obliga a inventar un
+ * segundo booleano que contradiga al primero.
+ *
+ * Valores de dominio en espanol (CLAUDE.md): alimentan un enum de Postgres.
+ */
+export enum ClientRateKind {
+  Estandar = 'estandar',
+  Consolidada = 'consolidada',
+}
+
+export const CLIENT_RATE_KIND_LABELS: Record<ClientRateKind, string> = {
+  [ClientRateKind.Estandar]: 'Estándar',
+  [ClientRateKind.Consolidada]: 'Consolidada',
+};
+
+/** Que significa cada tipo, para el selector del formulario de tarifas. */
+export const CLIENT_RATE_KIND_HINTS: Record<ClientRateKind, string> = {
+  [ClientRateKind.Estandar]:
+    'Cobra el peso redondeado hacia arriba (1.1 kg se cobra como 2) y cada paquete se paga por separado.',
+  [ClientRateKind.Consolidada]:
+    'Cobra el peso real del paquete, sin redondear, y el cliente salda todos sus paquetes listos en un solo pago.',
+};
+
+/** Valores para construir el enum de la BD (Drizzle pgEnum), sin repetirlos. */
+export const CLIENT_RATE_KIND_VALUES = Object.values(ClientRateKind) as [
+  ClientRateKind,
+  ...ClientRateKind[],
+];
+
+/**
+ * La tarifa cobra el PESO REAL, sin el redondeo hacia arriba de las demas.
+ *
+ * Punto UNICO de esa pregunta: la contesta el calculo del flete y nadie mas.
+ * Escrita como funcion y no como comparacion suelta para que el dia que otra
+ * modalidad cobre por peso real no haya que buscar los `=== Consolidada`
+ * repartidos por el codigo.
+ */
+export function billsActualWeight(kind: ClientRateKind): boolean {
+  return kind === ClientRateKind.Consolidada;
+}
+
+/**
+ * La tarifa se salda con un PAGO AGRUPADO: todos los paquetes listos para
+ * facturar del casillero en un solo cobro, sin poder elegir cuales.
+ *
+ * Punto UNICO, igual que arriba: lo consultan la cotizacion del grupo, la guarda
+ * que rechaza el pago suelto de un paquete consolidado y la pantalla que decide
+ * que boton pintar. Responder distinto en cualquiera de los tres es como un
+ * paquete consolidado acaba pagado por fuera del grupo.
+ */
+export function billsAsGroup(kind: ClientRateKind): boolean {
+  return kind === ClientRateKind.Consolidada;
+}
+
 /** Tarifa preferencial de cliente (vista publica; forma equivalente a la fila de BD). */
 export interface ClientRate {
   id: string;
   name: string;
+  /** Tipo de tarifa: decide el redondeo del peso y si el cobro es agrupado. */
+  kind: ClientRateKind;
   pricePerKg: number;
   /** Moneda del precio por kg (explicita, regla M2). La tasa de cambio no vive aqui. */
   currency: Currency;
@@ -64,10 +134,42 @@ const currencySchema = z
     message: 'Las tarifas de cliente se cotizan en dólares (USD).',
   });
 
+/** Tipo de tarifa. Ausente = `Estandar`, que es como se comportan las de siempre. */
+const kindSchema = z.nativeEnum(ClientRateKind, {
+  errorMap: () => ({ message: 'Elige un tipo de tarifa válido.' }),
+});
+
+/**
+ * REGLA: la tarifa por defecto no puede ser Consolidada.
+ *
+ * La default es a la que caen los casilleros nuevos y la que se usa cuando un
+ * casillero se queda sin tarifa (`rateFor`). Consolidada de por defecto pondria a
+ * TODO cliente nuevo en cobro agrupado y peso sin redondear sin que nadie lo haya
+ * decidido; la consolidacion es un acuerdo comercial que se asigna casillero a
+ * casillero.
+ *
+ * Se comprueba en el borde (aqui) y sobre el estado final en el servicio, que es
+ * el unico que ve la fila que ya existe.
+ */
+function assertKindAllowsDefault(
+  o: { kind?: ClientRateKind; isDefault?: boolean },
+  ctx: z.RefinementCtx,
+): void {
+  if (o.kind === ClientRateKind.Consolidada && o.isDefault) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['isDefault'],
+      message: 'Una tarifa consolidada no puede ser la tarifa por defecto.',
+    });
+  }
+}
+
 /** Crear tarifa de cliente. Debe permitir al menos un medio de pago. */
 export const createClientRateSchema = z
   .object({
     name: z.string().trim().min(1, 'El nombre es obligatorio.'),
+    /** Ausente = Estandar: el tipo de todas las tarifas que ya existian. */
+    kind: kindSchema.optional(),
     pricePerKg: pricePerKgSchema,
     currency: currencySchema,
     allowsCard: z.boolean(),
@@ -79,7 +181,8 @@ export const createClientRateSchema = z
   .refine((o) => o.allowsCard || o.allowsBankDeposit, {
     message: 'La tarifa debe permitir al menos un medio de pago.',
     path: ['allowsCard'],
-  });
+  })
+  .superRefine(assertKindAllowsDefault);
 export type CreateClientRateInput = z.infer<typeof createClientRateSchema>;
 
 /**
@@ -90,6 +193,7 @@ export type CreateClientRateInput = z.infer<typeof createClientRateSchema>;
 export const updateClientRateSchema = z
   .object({
     name: z.string().trim().min(1, 'El nombre es obligatorio.').optional(),
+    kind: kindSchema.optional(),
     pricePerKg: pricePerKgSchema.optional(),
     currency: currencySchema.optional(),
     allowsCard: z.boolean().optional(),
@@ -97,5 +201,6 @@ export const updateClientRateSchema = z
     requiresBillingReview: z.boolean().optional(),
     isDefault: z.boolean().optional(),
   })
-  .refine((o) => Object.keys(o).length > 0, { message: 'No hay cambios que aplicar.' });
+  .refine((o) => Object.keys(o).length > 0, { message: 'No hay cambios que aplicar.' })
+  .superRefine(assertKindAllowsDefault);
 export type UpdateClientRateInput = z.infer<typeof updateClientRateSchema>;

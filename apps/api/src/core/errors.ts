@@ -167,6 +167,17 @@ export const ClientRateErrors = {
     ),
   paymentMethodRequired: () =>
     new AppError('CLIENT_RATE_PAYMENT_REQUIRED', 'La tarifa debe permitir al menos un medio de pago.', 400),
+  /**
+   * La default es a la que caen los casilleros nuevos y el respaldo cuando uno se
+   * queda sin tarifa: consolidada por defecto pondria a todo el mundo en cobro
+   * agrupado sin que nadie lo decidiera.
+   */
+  consolidatedCannotBeDefault: () =>
+    new AppError(
+      'CLIENT_RATE_CONSOLIDATED_DEFAULT',
+      'Una tarifa consolidada no puede ser la tarifa por defecto.',
+      409,
+    ),
 };
 
 /**
@@ -404,6 +415,38 @@ export const PaymentErrors = {
     ),
   alreadyResolved: () =>
     new AppError('PAYMENT_ALREADY_RESOLVED', 'Este pago ya fue confirmado o rechazado.', 409),
+  /**
+   * El casillero no tiene tarifa CONSOLIDADA, asi que no hay cuenta agrupada que
+   * saldar: sus paquetes se pagan uno a uno. 409 y no 403 porque no es un permiso
+   * que falte, es que la cuenta no funciona asi.
+   */
+  notConsolidated: () =>
+    new AppError(
+      'PAYMENT_NOT_CONSOLIDATED',
+      'Esta cuenta no tiene tarifa consolidada: sus paquetes se pagan por separado.',
+      409,
+    ),
+  /**
+   * Al reves que la anterior: se intento pagar SUELTO un paquete de una cuenta
+   * consolidada. El requisito es explicito en que el pago incluye obligatoriamente
+   * todos los paquetes listos y no se puede excluir ninguno, asi que el pago
+   * individual no es una alternativa que se ofrezca.
+   */
+  consolidatedRequired: () =>
+    new AppError(
+      'PAYMENT_CONSOLIDATED_REQUIRED',
+      'Esta cuenta es consolidada: los paquetes se pagan todos juntos, no por separado.',
+      409,
+    ),
+  /** No hay ningun paquete listo para facturar en la cuenta consolidada. */
+  nothingToSettle: () =>
+    new AppError(
+      'PAYMENT_NOTHING_TO_SETTLE',
+      'No hay paquetes listos para pagar en esta cuenta.',
+      409,
+    ),
+  groupNotFound: () =>
+    new AppError('PAYMENT_GROUP_NOT_FOUND', 'Cobro agrupado no encontrado.', 404),
   /**
    * Hay un cobro con tarjeta anterior que la pasarela NO deja cancelar, o sea que
    * ese cargo va en camino. Abrir otro formulario cobraria dos veces el mismo
