@@ -36,6 +36,16 @@ export enum Resource {
   Clients = 'clients',
   Config = 'config',
   /**
+   * Cuentas del operador de Miami: el mantenimiento de las cuentas EXCLUSIVAS de
+   * Helga y de su cliente consolidado.
+   *
+   * Es un modulo propio y no una pestana de `Config` porque no se parece a lo que
+   * hay alli: `Config` es la mesa de diagnostico del enlace de los casilleros
+   * (mira casilleros rotos y los corrige), y esto es un alta de credenciales del
+   * proveedor y de clientes. Comparten dominio, no pantalla.
+   */
+  ProviderAccounts = 'provider_accounts',
+  /**
    * Sala de control: los paquetes que llegaron a bodega SIN dueño conocido y la
    * reasignacion de dueño de un tramite ya registrado.
    *
@@ -259,6 +269,16 @@ export enum Permission {
    */
   ClientsSuspend = 'clients.suspend',
   ConfigManage = 'config.manage',
+  /**
+   * Dar de alta y mantener las cuentas EXCLUSIVAS del operador de Miami, y crear
+   * el cliente consolidado de cada una.
+   *
+   * Solo admin, y aparte de `config.manage` aunque hoy los tenga el mismo rol:
+   * esto guarda CREDENCIALES de un tercero (usuario, contrasena y secreto de una
+   * cuenta de Helga que no es nuestra) y crea clientes. Quien diagnostica
+   * casilleros no tiene por que poder ninguna de las dos cosas.
+   */
+  ProviderAccountsManage = 'provider_accounts.manage',
   TariffsManage = 'tariffs.manage',
   RoutesManage = 'routes.manage',
   UsersManage = 'users.manage',
@@ -317,6 +337,7 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   // Action.Manage y no Write: no edita el casillero, decide si su dueño entra.
   [Permission.ClientsSuspend]: { resource: Resource.Clients, action: Action.Manage, scope: Scope.All },
   [Permission.ConfigManage]: { resource: Resource.Config, action: Action.Manage, scope: Scope.All },
+  [Permission.ProviderAccountsManage]: { resource: Resource.ProviderAccounts, action: Action.Manage, scope: Scope.All },
   [Permission.TariffsManage]: { resource: Resource.Tariffs, action: Action.Manage, scope: Scope.All },
   [Permission.RoutesManage]: { resource: Resource.Routes, action: Action.Manage, scope: Scope.All },
   [Permission.UsersManage]: { resource: Resource.Users, action: Action.Manage, scope: Scope.All },
@@ -354,6 +375,9 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   // Solo admin: cerrarle la puerta a un cliente no es editar su ficha.
   Permission.ClientsSuspend,
   Permission.ConfigManage,
+  // Solo admin: son credenciales de una cuenta ajena del proveedor, y el alta del
+  // unico tipo de cliente que no puede nacer del landing.
+  Permission.ProviderAccountsManage,
   Permission.TariffsManage,
   Permission.RoutesManage,
   Permission.UsersManage,

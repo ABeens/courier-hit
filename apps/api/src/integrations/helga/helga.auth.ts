@@ -44,13 +44,20 @@ function resolveAccount(account?: HelgaAccount): HelgaAccount {
 }
 
 async function requestToken(account: HelgaAccount): Promise<string> {
+  // Credenciales de APLICACION: las de la cuenta si las trae, y si no las del
+  // despliegue. Lo normal es lo segundo (`client_id`/`client_secret` son de la
+  // app y se comparten); una cuenta EXCLUSIVA es de otra empresa y puede tener
+  // las suyas. Ver `HelgaAccountSchema` en core/config.
+  const clientId = account.oauthClientId ?? config.HELGA_CLIENT_ID;
+  const clientSecret = account.oauthClientSecret ?? config.HELGA_CLIENT_SECRET;
+
   const response = await fetch(`${config.HELGA_BASE_URL}/oauth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
       grant_type: 'password',
-      client_id: config.HELGA_CLIENT_ID,
-      client_secret: config.HELGA_CLIENT_SECRET,
+      client_id: clientId,
+      client_secret: clientSecret,
       username: account.username,
       password: account.password,
       scope: '',

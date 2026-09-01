@@ -224,6 +224,44 @@ export const ProviderLinkErrors = {
     ),
 };
 
+/**
+ * Errores del mantenimiento de las cuentas EXCLUSIVAS del proveedor (panel de
+ * administracion). Como `ProviderLinkErrors`, aqui el proveedor no interviene:
+ * lo que falla es el alta que esta haciendo una persona.
+ */
+export const ProviderAccountErrors = {
+  notFound: () =>
+    new AppError('PROVIDER_ACCOUNT_NOT_FOUND', 'La cuenta del operador de Miami no existe.', 404),
+  codeInUse: (code: string) =>
+    new AppError(
+      'PROVIDER_ACCOUNT_CODE_IN_USE',
+      `Ya hay una cuenta registrada con el casillero ${code}.`,
+      409,
+    ),
+  /**
+   * La relacion cuenta <-> cliente consolidado es 1 a 1 (docs/13 §6). Un segundo
+   * cliente sobre la misma cuenta le mezclaria la paqueteria de dos empresas.
+   */
+  clientAlreadySet: () =>
+    new AppError(
+      'PROVIDER_ACCOUNT_CLIENT_ALREADY_SET',
+      'Esta cuenta ya tiene un cliente consolidado asignado.',
+      409,
+    ),
+  /**
+   * Sin `PROVIDER_SECRETS_KEY` no hay donde guardar las credenciales cifradas.
+   * Es 503 y no 500: no es un fallo del sistema sino una pieza del despliegue que
+   * falta, y el mensaje dice cual.
+   */
+  secretsUnavailable: () =>
+    new AppError(
+      'PROVIDER_ACCOUNT_SECRETS_UNAVAILABLE',
+      'Este despliegue no tiene configurada la clave para guardar credenciales del operador ' +
+        '(PROVIDER_SECRETS_KEY). Configúrala antes de registrar cuentas.',
+      503,
+    ),
+};
+
 /** Errores del casillero visto por su propio titular (portal del cliente). */
 export const ClientErrors = {
   /**

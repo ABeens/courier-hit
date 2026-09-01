@@ -440,7 +440,7 @@ export function buildPublicApiCurl(op: ApiOperation, baseUrl: string): string {
  * quien la esta copiando reconozca lo que tiene que pegar (y note si se dejo la
  * mitad por el camino), pero NO se usa en los ejemplos: ahi va el hueco.
  */
-export const API_KEY_SAMPLE = 'hsk_live_kq7m3xb9tzr4dph2_a8fj2mnqv5wc7xtz3rkd9hp6bs4gy2fm';
+export const API_KEY_SAMPLE = 'hsk_live_muestramuestramu_muestramuestramuestramuestramues';
 
 /**
  * Lo que ocupa el lugar de la llave en TODOS los ejemplos.

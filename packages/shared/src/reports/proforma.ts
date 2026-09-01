@@ -56,8 +56,13 @@ export interface ProformaLine {
   label: string;
   /** COD SIS FE del concepto; null si al servicio no se le asigno ninguno. */
   electronicInvoiceCode: string | null;
-  /** Importe del concepto, en dolares. */
-  amountUsd: number;
+  /**
+   * Importe del concepto, en la MONEDA DEL DOCUMENTO (`ProformaDto.currency`),
+   * convertido con la tasa de su propia linea (regla M5). No se imprime en la
+   * moneda de cada linea: una columna con simbolos mezclados no se puede sumar,
+   * y el cliente tiene que poder llegar al total contando lo que ve.
+   */
+  amount: number;
 }
 
 /**
@@ -71,14 +76,14 @@ export interface ProformaShipmentDetail {
   description: string;
   weightKg: number | null;
   tracking: string;
-  /** Flete cobrado (linea de `CostCategory.Flete`). */
-  freightUsd: number;
+  /** Flete cobrado (linea de `CostCategory.Flete`). En la moneda del documento. */
+  freight: number;
   /** Permisos y demas conceptos trasladados (`CostCategory.Otros`). */
-  othersUsd: number;
+  others: number;
   /** Impuestos (`CostCategory.Impuestos`). */
-  taxesUsd: number;
+  taxes: number;
   /** Suma de los tres anteriores mas los honorarios propios: el total facturado. */
-  totalUsd: number;
+  total: number;
   /** Instante de entrega en UTC (ISO 8601), o null si aun no se entrego. */
   deliveredAt: string | null;
 }
@@ -100,6 +105,17 @@ export interface ProformaDto {
    * la vigente de hoy: la proforma tiene que dar el mismo colon que la factura.
    */
   exchangeRate: number;
+  /**
+   * MONEDA DEL DOCUMENTO: aquella en la que se tramito, es decir la de las lineas
+   * de costo (`invoiceCurrency`). Es el importe que manda; el de la otra moneda va
+   * de referencia con su TC.
+   *
+   * No es un detalle de presentacion: un agenciamiento se cotiza y se cobra en
+   * colones, y entregarle al cliente una proforma en dolares le obliga a rehacer
+   * la conversion para reconocer su propio cobro. Antes el documento se imprimia
+   * siempre en dolares y ese era justo el problema.
+   */
+  currency: Currency;
   client: ProformaClient;
   lines: ProformaLine[];
   /** Total en dolares: la suma de las lineas. */
@@ -111,14 +127,20 @@ export interface ProformaDto {
   electronicInvoiceNumber: string | null;
 }
 
-/** Respuesta del listado de proformas disponibles para descargar en lote. */
-export interface ProformaListItem {
-  shipmentId: string;
-  number: string;
-  clientName: string;
-  issuedAt: string;
-  totalUsd: number;
-  electronicInvoiceNumber: string | null;
+/**
+ * Cuantas proformas hay listas para el filtro actual, antes de bajarlas.
+ *
+ * Es un CONTEO y no un listado a proposito: la pantalla solo necesita decir
+ * cuantas va a abrir, y armar las proformas enteras para contarlas costaba tres
+ * consultas por tramite. Peor: ese listado venia ya recortado al tope del lote,
+ * asi que el numero se quedaba clavado en 200 con cualquier filtro y parecia que
+ * el filtro no hacia nada.
+ */
+export interface ProformaBatchSummary {
+  /** Proformas listas en el filtro. Es el total real, sin recortar por el tope. */
+  total: number;
+  /** Cuantas de esas NO caben en el lote (`total - tope`). 0 = salen todas. */
+  omitted: number;
 }
 
 
@@ -145,11 +167,12 @@ export interface ConsolidatedProformaItem {
   description: string;
   /** Peso real de bascula, el que cobra la tarifa consolidada. */
   weightKg: number | null;
-  freightUsd: number;
-  othersUsd: number;
-  taxesUsd: number;
-  /** Total facturado de ESTE paquete. */
-  totalUsd: number;
+  /** Desglose en la moneda del documento (`ConsolidatedProformaDto.currency`). */
+  freight: number;
+  others: number;
+  taxes: number;
+  /** Total facturado de ESTE paquete, en la moneda del documento. */
+  total: number;
   /** Conceptos cobrados de este paquete, con su COD SIS FE. */
   lines: ProformaLine[];
 }
@@ -178,6 +201,13 @@ export interface ConsolidatedProformaDto {
   issuedAt: string;
   /** Tasa congelada del cobro (el "TC" de la esquina). */
   exchangeRate: number;
+  /**
+   * MONEDA DEL COBRO: en ella se imprime el documento y se expresa lo pagado.
+   * Aqui no se deriva de las lineas como en la proforma suelta, sino que es la
+   * del grupo: el cobro agrupado ya se hizo en una moneda concreta, y el
+   * documento tiene que hablar en la misma que el recibo.
+   */
+  currency: Currency;
   client: ProformaClient;
   /** Nombre de la tarifa consolidada con la que se cobro. */
   rateName: string;
@@ -192,7 +222,6 @@ export interface ConsolidatedProformaDto {
    * total si el cobro todavia esta en validacion: por eso van los dos.
    */
   paidAmount: number;
-  paidCurrency: Currency;
   /** Situacion del cobro agrupado, para no imprimir "pagado" sobre un pendiente. */
   paidStatus: PaymentStatus;
   /** Cuando quedo confirmado el cobro; null si todavia no. */

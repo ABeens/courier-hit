@@ -5,7 +5,7 @@
  * nuestros estados y avanzamos el tramite. De "En Aduanas" en adelante manda la
  * operacion manual de HS Global y esta sincronizacion ya no toca nada.
  *
- * Cuatro decisiones que viven aqui:
+ * Cinco decisiones que viven aqui:
  *
  * 1. LA CONSULTA VA POR TRACKING. La op. B de Helga busca UN paquete por su
  *    HAWB/tracking, no lista los de un casillero. Asi que la sincronizacion parte
@@ -19,6 +19,11 @@
  *    Helga siga moviendo su guia.
  * 4. UN ESTADO DESCONOCIDO SE REGISTRA. No se ignora en silencio: si el proveedor
  *    agrega un estado, preferimos un aviso en el log a paquetes congelados.
+ * 5. SE PREGUNTA CON EL TOKEN DE LA CUENTA DE LA QUE VINO EL PAQUETE. Cada cuenta
+ *    de Helga ve solo lo suyo, asi que preguntar por el paquete de un cliente
+ *    consolidado con el token de la cuenta principal no da un error de permisos
+ *    sino un 404, indistinguible de "aun no llega a bodega". El origen viaja en
+ *    `shipments.provider_account_code` desde que el paquete entro.
  *
  * Se agenda en el scheduler (`core/scheduler/jobs.ts`) cada `ROBOT_PROVIDER_SYNC_EVERY`;
  * tambien se puede disparar a mano desde `POST /shipments/sync-provider`.
@@ -34,7 +39,13 @@ import {
 } from '@courier/shared';
 import type { Session } from '@courier/shared';
 import type { HelgaPackageStatus } from '../../integrations/helga/helga.types';
-import { isHelgaEnabled, fetchHelgaPackageState } from '../../integrations/helga/helga.client';
+import {
+  isHelgaEnabled,
+  isHelgaSimulated,
+  fetchHelgaPackageState,
+} from '../../integrations/helga/helga.client';
+import type { ImportableAccount } from '../provider-accounts/provider-accounts.service';
+import { providerAccountsService } from '../provider-accounts/provider-accounts.service';
 import { notificationsService } from '../notifications/notifications.service';
 import type { NotifiableShipment } from '../notifications/notifications.service';
 import { providerSyncRepo } from './provider-sync.repo';
@@ -146,6 +157,13 @@ export interface SyncReport {
   unknownStates: string[];
   /** Paquetes cuyo casillero no coincide con el del tramite (ver `checkLockerMatch`). */
   lockerMismatches: string[];
+  /**
+   * Codigos de cuenta que traen paquetes pero ya no se pueden consultar (la cuenta
+   * se apago, se borro o perdio su cliente consolidado). Sus paquetes quedan
+   * CONGELADOS hasta que alguien reactive la cuenta, asi que el robot lo grita en
+   * cada corrida en vez de dejarlos morir en silencio.
+   */
+  unknownAccounts: string[];
 }
 
 export const providerSyncService = {
@@ -164,11 +182,22 @@ export const providerSyncService = {
       incidents: [],
       unknownStates: [],
       lockerMismatches: [],
+      unknownAccounts: [],
     };
 
     if (!isHelgaEnabled()) {
       console.warn('[helga] sincronización omitida: la integración está apagada.');
       return report;
+    }
+
+    /**
+     * Las cuentas del proveedor, indexadas por su codigo de casillero. Se
+     * resuelven UNA vez por corrida (son un punado de filas y descifrar sus
+     * credenciales cuesta) y no una por paquete.
+     */
+    const accounts = new Map<string, ImportableAccount>();
+    for (const a of await providerAccountsService.accountsForImport()) {
+      accounts.set(a.account.code, a);
     }
 
     const pending = await providerSyncRepo.shipmentsInProviderTramo(SYNC_BATCH);
@@ -177,9 +206,33 @@ export const providerSyncService = {
     const notices: PendingNotice[] = [];
 
     for (const shipment of pending) {
+      /**
+       * La cuenta de la que vino el paquete (decision 5). Sin codigo es la
+       * principal, y ahi se deja pasar `undefined` para que el transporte use la
+       * de siempre: es el caso de todo lo anterior a que hubiera varias cuentas.
+       *
+       * Con el proveedor simulado el codigo se ignora: el simulador es uno solo y
+       * no pide credenciales.
+       */
+      const target = shipment.providerAccountCode
+        ? accounts.get(shipment.providerAccountCode)
+        : undefined;
+      if (shipment.providerAccountCode && !target && !isHelgaSimulated()) {
+        // Preguntar con el token de la principal devolveria 404 para siempre, que
+        // se leeria como "aun no llega": es peor que no preguntar.
+        if (!report.unknownAccounts.includes(shipment.providerAccountCode)) {
+          report.unknownAccounts.push(shipment.providerAccountCode);
+          console.warn(
+            `[helga] la cuenta ${shipment.providerAccountCode} ya no está disponible: sus ` +
+              'paquetes no se pueden sincronizar hasta que se reactive.',
+          );
+        }
+        continue;
+      }
+
       let pkg;
       try {
-        pkg = await fetchHelgaPackageState(shipment.tracking);
+        pkg = await fetchHelgaPackageState(shipment.tracking, target?.account);
       } catch (err) {
         console.error(`[helga] fallo consultando ${shipment.code} (${shipment.tracking}):`, err);
         continue;
@@ -210,7 +263,12 @@ export const providerSyncService = {
       // Control de identidad: el proveedor dice de QUE casillero es el paquete.
       // Si no coincide con el nuestro, el tracking apunta a un paquete ajeno y
       // avanzarlo movería el trámite equivocado.
-      this.checkLockerMatch(shipment, pkg, report);
+      //
+      // NO APLICA A UNA CUENTA EXCLUSIVA: alli el cliente consolidado recibe por
+      // los sub-casilleros que le haya creado el proveedor, que son varios y que
+      // nosotros no conocemos. Compararlos contra el unico que guardamos daria un
+      // aviso falso por cada paquete.
+      if (!target?.consolidatedClientId) this.checkLockerMatch(shipment, pkg, report);
 
       // El peso que reporta el proveedor (kg explicito) es mejor que el que
       // declaro el cliente al prealertar: se refresca aunque el estado no avance,

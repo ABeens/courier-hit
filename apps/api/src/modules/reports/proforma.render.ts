@@ -13,7 +13,14 @@
  * imprime de una vez y sale un PDF con todas. Un zip de archivos sueltos exigiria
  * una dependencia mas y dejaria al usuario abriendo cincuenta ventanas.
  */
-import { PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS, PaymentStatus } from '@courier/shared';
+import {
+  CURRENCY_DECIMALS,
+  CURRENCY_SYMBOLS,
+  Currency,
+  PAYMENT_METHOD_LABELS,
+  PAYMENT_STATUS_LABELS,
+  PaymentStatus,
+} from '@courier/shared';
 import type { ConsolidatedProformaDto, ProformaDto } from '@courier/shared';
 
 /** Zona del negocio: todos los clientes son de Costa Rica (CLAUDE.md). */
@@ -45,13 +52,59 @@ function day(iso: string | null): string {
   });
 }
 
-/** Importe con separadores. USD lleva dos decimales; los colones, ninguno. */
-function money(amount: number, currency: 'USD' | 'CRC'): string {
-  const digits = currency === 'USD' ? 2 : 0;
+/**
+ * Importe con separadores, con los decimales de SU moneda: los toma de
+ * `CURRENCY_DECIMALS` y no de un ternario escrito aqui (regla M4, punto unico de
+ * la politica de redondeo de presentacion).
+ */
+function money(amount: number, currency: Currency): string {
+  const digits = CURRENCY_DECIMALS[currency];
   return amount.toLocaleString('es-CR', {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });
+}
+
+/**
+ * La TASA de la esquina ("TC"). No pasa por `money`: una tasa no es un importe en
+ * colones, y redondearla a colon entero imprimia 513 donde la factura uso 512,75,
+ * con lo que el lector no podia reproducir la conversion que tiene delante.
+ */
+function rate(crcPerUsd: number): string {
+  return crcPerUsd.toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** La otra moneda del negocio: la que va de referencia debajo del total. */
+function otherCurrency(currency: Currency): Currency {
+  return currency === Currency.USD ? Currency.CRC : Currency.USD;
+}
+
+/**
+ * Las dos filas de total del pie de una tabla: arriba la MONEDA DEL DOCUMENTO (en
+ * la que se tramito y se cobra) y debajo la otra con su TC, de referencia.
+ *
+ * Una sola funcion para las dos maquetas porque el ORDEN es la correccion: si la
+ * proforma suelta y la consolidada eligieran cada una cual va primero, el mismo
+ * cliente recibiria dos documentos que destacan la cifra en monedas distintas.
+ */
+function totalRows(
+  currency: Currency,
+  totals: { totalUsd: number; totalCrc: number },
+  exchangeRate: number,
+  colspan: number,
+): string {
+  const amount = (c: Currency) => (c === Currency.USD ? totals.totalUsd : totals.totalCrc);
+  const label = (c: Currency) => (c === Currency.CRC ? 'TOTAL COLONES' : 'TOTAL USD');
+  const other = otherCurrency(currency);
+
+  return `<tr>
+      <td colspan="${colspan}">${label(currency)}</td>
+      <td class="num">${money(amount(currency), currency)}</td>
+    </tr>
+    <tr class="crc">
+      <td colspan="${colspan}">${label(other)} (TC ${rate(exchangeRate)})</td>
+      <td class="num">${money(amount(other), other)}</td>
+    </tr>`;
 }
 
 /** Hoja de estilos del documento. Una sola vez aunque el lote traiga cincuenta. */
@@ -105,13 +158,14 @@ const STYLES = `
 
 /** Bloque de conceptos: lo que se cobra, con su codigo de factura electronica. */
 function linesTable(proforma: ProformaDto): string {
+  const { currency } = proforma;
   const rows = proforma.lines
     .map(
       (line) => `<tr>
         <td class="num">${line.quantity}</td>
         <td>${esc(line.label)}</td>
         <td>${line.electronicInvoiceCode ? esc(line.electronicInvoiceCode) : '<span class="empty">—</span>'}</td>
-        <td class="num">${money(line.amountUsd, 'USD')}</td>
+        <td class="num">${money(line.amount, currency)}</td>
       </tr>`,
     )
     .join('');
@@ -119,15 +173,12 @@ function linesTable(proforma: ProformaDto): string {
   return `<table>
     <caption>Detalle de la proforma</caption>
     <thead><tr>
-      <th class="num">Cantidad</th><th>Concepto</th><th>Cod sis FE</th><th class="num">Monto (USD)</th>
+      <th class="num">Cantidad</th><th>Concepto</th><th>Cod sis FE</th>
+      <th class="num">Monto (${esc(currency)})</th>
     </tr></thead>
     <tbody>${rows}</tbody>
     <tfoot>
-      <tr><td colspan="3">TOTAL USD</td><td class="num">${money(proforma.totalUsd, 'USD')}</td></tr>
-      <tr class="crc">
-        <td colspan="3">TOTAL COLONES (TC ${money(proforma.exchangeRate, 'CRC')})</td>
-        <td class="num">${money(proforma.totalCrc, 'CRC')}</td>
-      </tr>
+      ${totalRows(currency, proforma, proforma.exchangeRate, 3)}
     </tfoot>
   </table>`;
 }
@@ -135,8 +186,12 @@ function linesTable(proforma: ProformaDto): string {
 /** Bloque "FACTURACION BOLETA ENTREGA": a que envio corresponde esta factura. */
 function detailTable(proforma: ProformaDto): string {
   const d = proforma.detail;
+  const { currency } = proforma;
   return `<table>
-    <caption>Facturación boleta entrega — referencia ${esc(proforma.number)}</caption>
+    <caption>
+      Facturación boleta entrega — referencia ${esc(proforma.number)} ·
+      montos en ${esc(currency)} (${esc(CURRENCY_SYMBOLS[currency])})
+    </caption>
     <thead><tr>
       <th>AWB</th><th>Descripción</th><th class="num">Peso</th><th>Tracking</th>
       <th class="num">Flete</th><th class="num">Otros / Permisos</th><th class="num">Impuestos</th>
@@ -147,10 +202,10 @@ function detailTable(proforma: ProformaDto): string {
       <td>${esc(d.description)}</td>
       <td class="num">${d.weightKg ?? ''}</td>
       <td>${esc(d.tracking)}</td>
-      <td class="num">${money(d.freightUsd, 'USD')}</td>
-      <td class="num">${money(d.othersUsd, 'USD')}</td>
-      <td class="num">${money(d.taxesUsd, 'USD')}</td>
-      <td class="num">${money(d.totalUsd, 'USD')}</td>
+      <td class="num">${money(d.freight, currency)}</td>
+      <td class="num">${money(d.others, currency)}</td>
+      <td class="num">${money(d.taxes, currency)}</td>
+      <td class="num">${money(d.total, currency)}</td>
       <td>${d.deliveredAt ? day(d.deliveredAt) : '<span class="empty">Pendiente</span>'}</td>
     </tr></tbody>
   </table>`;
@@ -240,6 +295,7 @@ ${notice}
 
 /** Bloque de paquetes: una fila por paquete del cobro, con su desglose. */
 function consolidatedItemsTable(proforma: ConsolidatedProformaDto): string {
+  const { currency } = proforma;
   const rows = proforma.items
     .map(
       (item) => `<tr>
@@ -247,16 +303,19 @@ function consolidatedItemsTable(proforma: ConsolidatedProformaDto): string {
         <td>${esc(item.description)}</td>
         <td class="num">${item.weightKg ?? ''}</td>
         <td>${esc(item.tracking)}</td>
-        <td class="num">${money(item.freightUsd, 'USD')}</td>
-        <td class="num">${money(item.othersUsd, 'USD')}</td>
-        <td class="num">${money(item.taxesUsd, 'USD')}</td>
-        <td class="num">${money(item.totalUsd, 'USD')}</td>
+        <td class="num">${money(item.freight, currency)}</td>
+        <td class="num">${money(item.others, currency)}</td>
+        <td class="num">${money(item.taxes, currency)}</td>
+        <td class="num">${money(item.total, currency)}</td>
       </tr>`,
     )
     .join('');
 
   return `<table>
-    <caption>Paquetes consolidados (${proforma.items.length})</caption>
+    <caption>
+      Paquetes consolidados (${proforma.items.length}) ·
+      montos en ${esc(currency)} (${esc(CURRENCY_SYMBOLS[currency])})
+    </caption>
     <thead><tr>
       <th>Trámite</th><th>Descripción</th><th class="num">Peso kg</th><th>Tracking</th>
       <th class="num">Flete</th><th class="num">Otros / Permisos</th><th class="num">Impuestos</th>
@@ -264,11 +323,7 @@ function consolidatedItemsTable(proforma: ConsolidatedProformaDto): string {
     </tr></thead>
     <tbody>${rows}</tbody>
     <tfoot>
-      <tr><td colspan="7">TOTAL USD</td><td class="num">${money(proforma.totalUsd, 'USD')}</td></tr>
-      <tr class="crc">
-        <td colspan="7">TOTAL COLONES (TC ${money(proforma.exchangeRate, 'CRC')})</td>
-        <td class="num">${money(proforma.totalCrc, 'CRC')}</td>
-      </tr>
+      ${totalRows(currency, proforma, proforma.exchangeRate, 7)}
     </tfoot>
   </table>`;
 }
@@ -288,7 +343,7 @@ function consolidatedLinesTable(proforma: ConsolidatedProformaDto): string {
           <td class="num">${line.quantity}</td>
           <td>${esc(line.label)}</td>
           <td>${line.electronicInvoiceCode ? esc(line.electronicInvoiceCode) : '<span class="empty">—</span>'}</td>
-          <td class="num">${money(line.amountUsd, 'USD')}</td>
+          <td class="num">${money(line.amount, proforma.currency)}</td>
         </tr>`,
       ),
     )
@@ -298,7 +353,7 @@ function consolidatedLinesTable(proforma: ConsolidatedProformaDto): string {
     <caption>Conceptos cobrados</caption>
     <thead><tr>
       <th>Trámite</th><th class="num">Cantidad</th><th>Concepto</th><th>Cod sis FE</th>
-      <th class="num">Monto (USD)</th>
+      <th class="num">Monto (${esc(proforma.currency)})</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
@@ -321,7 +376,7 @@ function paidBlock(proforma: ConsolidatedProformaDto): string {
       <div>${esc(PAYMENT_METHOD_LABELS[proforma.method])}${when}</div>
     </div>
     <div class="amount${confirmed ? '' : ' pending'}">
-      ${money(proforma.paidAmount, proforma.paidCurrency)} ${esc(proforma.paidCurrency)}
+      ${money(proforma.paidAmount, proforma.currency)} ${esc(proforma.currency)}
       ${confirmed ? '' : `<div class="label">${esc(PAYMENT_STATUS_LABELS[proforma.paidStatus])}</div>`}
     </div>
   </div>`;

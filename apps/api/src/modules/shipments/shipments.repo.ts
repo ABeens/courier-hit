@@ -57,6 +57,8 @@ const columns = {
   costsApprovedAt: shipments.costsApprovedAt,
   // Id de la prealerta en Helga: lo necesita el rehacer por cambio de tracking.
   helgaPrealertId: shipments.helgaPrealertId,
+  // De que cuenta del operador vino: la bandera de origen de los consolidados.
+  providerAccountCode: shipments.providerAccountCode,
   // Archivado de la sala de control: null en todo tramite vivo.
   discardedAt: shipments.discardedAt,
   discardReason: shipments.discardReason,

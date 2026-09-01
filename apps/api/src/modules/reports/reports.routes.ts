@@ -70,20 +70,25 @@ reportsRoutes.get('/catalog', async (c) => {
  * se imprime o se manda, no una tabla que se filtra. Ver `proforma.render.ts`.
  */
 
-/** Las que estan listas (tramites ya facturados), para poder contarlas antes de bajarlas. */
+/**
+ * CUANTAS estan listas (tramites ya facturados) en el filtro, para que la
+ * pantalla lo anuncie antes de abrir el documento. Es un conteo, no la lista: la
+ * pantalla solo pinta el numero, y devolver la lista obligaba a armar doscientas
+ * proformas enteras y a anunciar un total ya recortado por el tope del lote.
+ */
 reportsRoutes.get('/proformas', zValidator('query', proformaQuerySchema), async (c) => {
-  const items = await proformaService.ready(c.get('session'), c.req.valid('query'));
-  return c.json({ items });
+  return c.json(await proformaService.readyCount(c.get('session'), c.req.valid('query')));
 });
 
 /** Todas las listas en UN documento, una por pagina. */
 reportsRoutes.get('/proformas/document', zValidator('query', proformaQuerySchema), async (c) => {
   const query = c.req.valid('query');
-  const [proformas, omitted] = await Promise.all([
-    proformaService.batch(c.get('session'), query),
-    proformaService.omittedFrom(query),
+  const session = c.get('session');
+  const [proformas, summary] = await Promise.all([
+    proformaService.batch(session, query),
+    proformaService.readyCount(session, query),
   ]);
-  return c.html(renderProformas(proformas, omitted));
+  return c.html(renderProformas(proformas, summary.omitted));
 });
 
 /** La proforma de UN tramite. */
@@ -104,10 +109,11 @@ reportsRoutes.get('/proforma/:shipmentId', async (c) => {
  * sueltas, y por eso viven en el mismo modulo y no en uno propio.
  */
 
-/** Los cobros consolidados listos del filtro, para contarlos antes de bajarlos. */
+/** Cuantos cobros consolidados hay listos en el filtro, para contarlos antes de bajarlos. */
 reportsRoutes.get('/proformas/consolidadas', zValidator('query', proformaQuerySchema), async (c) => {
-  const items = await proformaService.readyConsolidated(c.get('session'), c.req.valid('query'));
-  return c.json({ items });
+  return c.json(
+    await proformaService.readyConsolidatedCount(c.get('session'), c.req.valid('query')),
+  );
 });
 
 /** Todos los cobros consolidados del filtro en UN documento, uno por pagina. */
@@ -115,8 +121,11 @@ reportsRoutes.get(
   '/proformas/consolidadas/document',
   zValidator('query', proformaQuerySchema),
   async (c) => {
-    const proformas = await proformaService.consolidatedBatch(c.get('session'), c.req.valid('query'));
-    return c.html(renderConsolidatedProformas(proformas));
+    const { proformas, omitted } = await proformaService.consolidatedBatch(
+      c.get('session'),
+      c.req.valid('query'),
+    );
+    return c.html(renderConsolidatedProformas(proformas, omitted));
   },
 );
 

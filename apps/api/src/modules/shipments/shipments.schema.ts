@@ -210,6 +210,23 @@ export const shipments = pgTable(
     helgaPrealertAttempts: integer('helga_prealert_attempts').notNull().default(0),
     /** Ultimo error del proveedor al replicar; para diagnostico de la reconciliacion. */
     helgaPrealertError: text('helga_prealert_error'),
+    /**
+     * DE QUE CUENTA del proveedor vino el paquete: el codigo de casillero
+     * (`SJO008835`, `SJO009623`...). `null` = la cuenta principal, que es tambien
+     * lo que dicen las filas anteriores a que existieran varias cuentas.
+     *
+     * No es una etiqueta decorativa. Cada cuenta de Helga emite su propio token y
+     * SOLO VE SUS PAQUETES, asi que este campo es lo que le dice a la
+     * sincronizacion con que credenciales preguntar por este tracking; con el
+     * token equivocado la respuesta no es un error sino un 404, indistinguible de
+     * "todavia no llega a bodega". Que ademas sirva de bandera visible en el
+     * portal es el efecto secundario, no el motivo.
+     *
+     * Texto y no clave foranea a `provider_accounts`: es el origen HISTORICO del
+     * paquete y tiene que sobrevivir a que la cuenta se dé de baja. Un tramite de
+     * hace un ano no puede perder de donde vino porque el enlace se cancelara.
+     */
+    providerAccountCode: text('provider_account_code'),
 
     // --- Descarte desde la sala de control (solo paquetes sin dueño) ---
     /**

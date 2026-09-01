@@ -23,6 +23,7 @@ import { ShipmentsScreen } from './screens/ShipmentsScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { DeliveriesScreen } from './screens/DeliveriesScreen';
 import { ClientsScreen } from './screens/ClientsScreen';
+import { ProviderAccountsScreen } from './screens/ProviderAccountsScreen';
 import { ProviderLinksScreen } from './screens/ProviderLinksScreen';
 import { ReportsScreen } from './screens/ReportsScreen';
 import { ReceptionScreen } from './screens/ReceptionScreen';
@@ -125,6 +126,11 @@ const STAFF_NAV: NavEntry[] = [
       // automatizacion), pero la pantalla es solo el enlace con Miami: la
       // etiqueta nombra lo que el usuario encuentra al entrar, no el permiso.
       { resource: Resource.Config, label: 'Enlace con Miami' },
+      // Va pegada a "Enlace con Miami" porque son las dos caras del mismo
+      // problema: alli se diagnostica el casillero de un cliente en la cuenta
+      // principal, y aqui se administran las cuentas dedicadas de los clientes
+      // consolidados.
+      { resource: Resource.ProviderAccounts, label: 'Cuentas de Miami' },
       { resource: Resource.Settings, label: 'Configuración' },
     ],
   },
@@ -182,7 +188,13 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
    */
   const allowed = useMemo(() => {
     const resources = new Set(resourcesFor(me.role));
-    if (!miamiLink) resources.delete(Resource.Config);
+    if (!miamiLink) {
+      resources.delete(Resource.Config);
+      // Las dos pantallas del operador de Miami cuelgan de la misma bandera: sus
+      // endpoints ya responden 403 con ella apagada (`requireMiamiLink`), asi que
+      // ofrecerlas en el menu solo llevaria a una pantalla que no carga.
+      resources.delete(Resource.ProviderAccounts);
+    }
     /**
      * Prealertar ya no es una pantalla: vive dentro de "Mis paquetes". Se quita
      * tambien de este conjunto (y no solo del menu) para que el deep-link viejo
@@ -430,6 +442,8 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
             // ajustes, esta pantalla pasa a ser una pestaña más (y ahí sí toca
             // volver a llamar "Configuración" al ítem del menú).
             <ProviderLinksScreen />
+          ) : current === Resource.ProviderAccounts ? (
+            <ProviderAccountsScreen />
           ) : current === Resource.Settings ? (
             // Hoy la pantalla es solo la tasa de cambio, pero el recurso es
             // "ajustes generales": lo que se sume despues entra aqui, no en una
@@ -615,6 +629,9 @@ function NavIcon({ resource }: { resource: Resource }) {
     [Resource.Reports]: <path d="M3 3v18h18M18 17V9M13 17V5M8 17v-3" />,
     // Eslabones: la pantalla es el enlace con el operador, no ajustes del sistema.
     [Resource.Config]: <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />,
+    // Llave inglesa: el mantenimiento de las cuentas del operador (a diferencia
+    // del eslabon de Resource.Config, que es el enlace de cada casillero).
+    [Resource.ProviderAccounts]: <path d="M14.7 6.3a4 4 0 005.4 5.4l-8.4 8.4a2.8 2.8 0 01-4-4l8.4-8.4z" />,
     // Engranaje: ajustes del sistema (a diferencia del eslabon de Resource.Config).
     [Resource.Settings]: <path d="M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />,
     [Resource.Users]: <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13A4 4 0 0116 11" />,

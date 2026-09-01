@@ -207,9 +207,9 @@ export function bankAccountOptionLabel(account: BankAccount): string {
  * Cuentas que se le OFRECEN al cliente para depositar un tramite: Paqueteria
  * solo las de dolares, Transporte y Agenciamiento las de las dos monedas.
  *
- * No es una regla suelta: es la misma con la que `billingCurrencyFor` le cobra
- * la Paqueteria al cliente en dolares. Ofrecerle una cuenta en colones para una
- * factura que lee en dolares es pedirle que convierta el monto de cabeza, y el
+ * No es una regla suelta: es la misma con la que `chargeCurrencyFor` cobra la
+ * Paqueteria en dolares. Ofrecerle una cuenta en colones para una factura que
+ * lee y paga en dolares es pedirle que convierta el monto de cabeza, y el
  * comprobante llega por una cifra que no cuadra con nada.
  *
  * Solo acota lo que se le PROPONE. La cuenta a la que realmente entro el dinero
@@ -234,6 +234,66 @@ export function bankAccountsFor(shipmentType: ShipmentType): BankAccount[] {
  */
 export function bankAccountsForStaff(): BankAccount[] {
   return Object.values(BankAccount);
+}
+
+/**
+ * Moneda en la que se COBRA un tramite: la del importe del abono, la del intento
+ * que se le manda a la pasarela y la de la cuenta a la que se deposita.
+ *
+ * REGLA DE NEGOCIO: la Paqueteria se cobra en DOLARES. Sus lineas de costo son
+ * USD-only (`allowedCurrencies`), asi que el dolar es la cifra EXACTA y el colon
+ * la derivada de una tasa. Cobrar la derivada le pide al cliente que deposite un
+ * monto que no coincide con el que leyo, y le manda a la tarjeta un importe que
+ * no es el de su factura. Transporte y Agenciamiento se cobra en colones, que es
+ * la moneda local y la de la mitad de sus cuentas.
+ *
+ * NO ES `billingCurrencyFor`, y la diferencia es la que evita confundirlas:
+ * aquella dice en que moneda se le HABLA a quien mira la pantalla (el staff lee
+ * colones en todo), esta dice en que moneda SALE el dinero. Coinciden en el
+ * cliente de Paqueteria justamente porque a el se le habla en la moneda en que
+ * se le cobra.
+ *
+ * Punto UNICO de esa eleccion: la consultan el pago suelto, el pago agrupado y
+ * la liquidacion (`isSettled`). Con la condicion escrita en tres sitios, el
+ * importe cobrado y el saldo que lo cancela acaban en monedas distintas.
+ */
+export function chargeCurrencyFor(shipmentType: ShipmentType): Currency {
+  return flowForType(shipmentType) === Flow.Paqueteria ? Currency.USD : Currency.CRC;
+}
+
+/** Los dos totales congelados de la factura, tal como los guarda el tramite. */
+export interface InvoiceTotals {
+  invoiceTotalUsd: number | null;
+  invoiceTotalCrc: number | null;
+}
+
+/**
+ * MONEDA DE COBRO + MONTO DE FACTURA EN ESA MONEDA. Van juntos y no sueltos a
+ * proposito: un total sin su moneda es una cifra que se puede comparar contra la
+ * columna equivocada, y esa comparacion es la que decide si un paquete esta
+ * pagado y sale a ruta. Emparejarlos hace que el tipo no deje escribir el error.
+ */
+export interface ChargeBasis {
+  currency: Currency;
+  /** Monto de factura congelado en `currency`. Null = costos aun sin aprobar. */
+  invoiceTotal: number | null;
+}
+
+/** La base de cobro de un tramite: su moneda segun el tipo y el total que le toca. */
+export function chargeBasisFor(shipmentType: ShipmentType, invoice: InvoiceTotals): ChargeBasis {
+  const currency = chargeCurrencyFor(shipmentType);
+  return {
+    currency,
+    invoiceTotal: currency === Currency.USD ? invoice.invoiceTotalUsd : invoice.invoiceTotalCrc,
+  };
+}
+
+/**
+ * La base de un cobro cuya moneda ya se sabe sin mirar un tipo de tramite: el
+ * grupo consolidado (siempre Paqueteria, siempre dolares) y los sembradores.
+ */
+export function chargeBasisIn(currency: Currency, invoiceTotal: number | null): ChargeBasis {
+  return { currency, invoiceTotal };
 }
 
 /** Pago tal como lo devuelve la API. */
@@ -311,16 +371,19 @@ function sumByStatus(
  * Es la respuesta UNICA a Condition.RequiresConfirmedPayment; nadie mas decide
  * si un tramite esta pagado.
  *
- * Se compara en colones porque es la moneda de cobro local y la que no tiene
- * centimos: evita que un redondeo de centavos deje una deuda de $0.01 abierta.
+ * Se compara EN LA MONEDA DE COBRO, y de ahi que la base entre entera y no como
+ * un numero suelto: los dos totales congelados de la factura se cuadran por
+ * caminos con redondeos distintos, asi que un cobro en dolares reexpresado a
+ * colones puede quedar una unidad corto y dejar abierta una deuda que el cliente
+ * ya pago. Con el paquete retenido y el estado sin avanzar, porque esta misma
+ * funcion es la guarda de salida a ruta. El tramite se salda contra la MISMA
+ * cifra con la que se le cobro.
+ *
  * Sin monto de factura no hay nada que cubrir todavia -> false.
  */
-export function isSettled(
-  payments: readonly Settleable[],
-  invoiceTotalCrc: number | null,
-): boolean {
-  if (invoiceTotalCrc == null) return false;
-  return settledAmount(payments, Currency.CRC) >= invoiceTotalCrc;
+export function isSettled(payments: readonly Settleable[], basis: ChargeBasis): boolean {
+  if (basis.invoiceTotal == null) return false;
+  return settledAmount(payments, basis.currency) >= basis.invoiceTotal;
 }
 
 /**
@@ -336,6 +399,18 @@ export function isSettled(
  */
 export function outstandingCrc(settledCrc: number, invoiceTotalCrc: number | null): number {
   return outstanding(settledCrc, invoiceTotalCrc, Currency.CRC);
+}
+
+/**
+ * El saldo EN LA MONEDA DE COBRO: lo que de verdad se le va a cobrar al cliente,
+ * sea el importe del intento de tarjeta o el que se le pide depositar.
+ *
+ * Es `outstanding` con la base ya resuelta, para que quien cobra no tenga que
+ * emparejar a mano el total con su moneda (que es como se acaba cobrando el
+ * total en colones con la etiqueta USD encima).
+ */
+export function outstandingFor(settled: number, basis: ChargeBasis): number {
+  return outstanding(settled, basis.invoiceTotal, basis.currency);
 }
 
 /**
@@ -355,6 +430,11 @@ export function outstanding(
 /**
  * Moneda en la que se le EXPRESA el cobro a quien esta mirando la pantalla.
  *
+ * NO ES `chargeCurrencyFor`, que es la moneda en la que el dinero SALE. Esta
+ * solo elige de que columna se lee una cifra que ya existe en las dos. Al
+ * CLIENTE de Paqueteria las dos coinciden y por buen motivo: se le habla en la
+ * moneda en que se le cobra.
+ *
  * REGLA DE NEGOCIO: al CLIENTE, el saldo de un tramite de Paqueteria se le dice
  * siempre en dolares y nunca convertido a colones. No es una preferencia de
  * formato: sus lineas de costo son USD-only (`allowedCurrencies`), asi que el
@@ -362,9 +442,12 @@ export function outstanding(
  * le da dos numeros para la misma deuda y le obliga a preguntar con cual se le
  * va a cobrar.
  *
- * El STAFF sigue leyendo colones en todo: es la moneda de cobro local, la que
- * cuadra contra el banco y la que decide si el tramite esta saldado
- * (`isSettled`). Cambiar eso seria cambiar la contabilidad, no la presentacion.
+ * El STAFF sigue leyendo colones en todo: es la moneda con la que cuadra contra
+ * el banco y arma sus reportes. Que un paquete de Paqueteria se COBRE en dolares
+ * no cambia eso; lo que cambia es que el "esta pagado" ya no sale de la columna
+ * que el staff esta mirando, sino de `isSettled` sobre la base de cobro. Por eso
+ * `billingAmounts` recibe ese booleano y no lo rededuce: cuando las dos columnas
+ * discrepan por un redondeo, manda la contabilidad.
  *
  * Punto UNICO de esa eleccion. La bandera del listado, el bloque de facturacion
  * de la ficha y la pantalla de pago tienen que coincidir; con la condicion
@@ -463,15 +546,19 @@ function dueFor(
  * Un abono parcial en validacion NO cuenta: el tramite conserva saldo y ese
  * saldo alguien tiene que pagarlo. Y si ya esta cubierto por dinero confirmado
  * el saldo es 0, con lo que tampoco aplica: eso es `isSettled`, no esto.
+ *
+ * `settled` y `pending` vienen EN LA MONEDA DE `basis`, la de cobro: comparar un
+ * pendiente en dolares contra un saldo en colones da que el comprobante cubre
+ * quinientas veces menos de lo que cubre, y el cliente vuelve a pagar.
  */
 export function awaitsValidation(
-  settledCrc: number,
-  pendingCrc: number,
-  invoiceTotalCrc: number | null,
+  settled: number,
+  pending: number,
+  basis: ChargeBasis,
 ): boolean {
-  if (invoiceTotalCrc == null || pendingCrc <= 0) return false;
-  const dueCrc = outstandingCrc(settledCrc, invoiceTotalCrc);
-  return dueCrc > 0 && pendingCrc >= dueCrc;
+  if (basis.invoiceTotal == null || pending <= 0) return false;
+  const due = outstandingFor(settled, basis);
+  return due > 0 && pending >= due;
 }
 
 /**
@@ -514,11 +601,11 @@ export const COLLECTION_STATUS_LABELS: Record<CollectionStatus, string> = {
  */
 export function collectionStatus(
   payments: readonly Settleable[],
-  invoiceTotalCrc: number | null,
+  basis: ChargeBasis,
 ): CollectionStatus {
-  if (invoiceTotalCrc == null) return CollectionStatus.SinFacturar;
-  if (isSettled(payments, invoiceTotalCrc)) return CollectionStatus.Pagado;
-  if (pendingAmount(payments, Currency.CRC) > 0) return CollectionStatus.EnValidacion;
+  if (basis.invoiceTotal == null) return CollectionStatus.SinFacturar;
+  if (isSettled(payments, basis)) return CollectionStatus.Pagado;
+  if (pendingAmount(payments, basis.currency) > 0) return CollectionStatus.EnValidacion;
   return CollectionStatus.Pendiente;
 }
 
@@ -534,9 +621,9 @@ export function collectionStatus(
  */
 export function settledAt(
   payments: readonly (Settleable & { confirmedAt: Date | string | null })[],
-  invoiceTotalCrc: number | null,
+  basis: ChargeBasis,
 ): Date | null {
-  if (!isSettled(payments, invoiceTotalCrc)) return null;
+  if (!isSettled(payments, basis)) return null;
 
   let latest: Date | null = null;
   for (const payment of payments) {

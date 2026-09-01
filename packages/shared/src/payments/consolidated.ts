@@ -78,8 +78,18 @@ export interface ConsolidatedQuoteDto {
   settledCrc: number;
   pendingUsd: number;
   pendingCrc: number;
-  /** Saldo del grupo en colones: es lo que se cobra. */
+  /** Saldo del grupo en colones. Es la cifra con la que el staff cuadra el banco. */
   dueCrc: number;
+  /**
+   * Moneda en la que se COBRA el grupo (`chargeCurrencyFor`: un grupo es siempre
+   * de paquetes, asi que dolares) y el saldo EN ESA MONEDA.
+   *
+   * `due` es el importe exacto que va a llevar el intento de la pasarela o que
+   * hay que depositar. Viaja para que la pantalla no lo deduzca por su cuenta y
+   * le anuncie al cliente una cifra distinta de la que se le va a cobrar.
+   */
+  chargeCurrency: Currency;
+  due: number;
   /** True si el grupo entero ya esta cubierto por abonos confirmados. */
   settled: boolean;
   /** El saldo del grupo ya esta cubierto por abonos sin validar. */

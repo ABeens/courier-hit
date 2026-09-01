@@ -59,8 +59,12 @@ export const deliveryAddressShape = {
  * La terna se valida contra el catalogo: no se confia en lo que manda el
  * cliente, ni siquiera en combinaciones cruzadas de codigos que existen por
  * separado pero no cuelgan uno del otro.
+ *
+ * Se exporta porque hay mas de un alta que captura una direccion de entrega (el
+ * autoregistro y el alta administrativa del cliente consolidado): las dos tienen
+ * que rechazar exactamente las mismas ternas.
  */
-function checkLocation(
+export function checkLocation(
   v: { provinceCode: string; cantonCode: string; districtCode: string },
   ctx: z.RefinementCtx,
 ): void {

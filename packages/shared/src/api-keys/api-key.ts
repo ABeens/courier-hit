@@ -9,7 +9,7 @@
  *
  * Forma:
  *
- *     hsk_live_kq7m3xb9tzr4dph2_a8fj2mnqv5wc7xtz3rkd9hp6bs4gy2fm
+ *     hsk_live_muestramuestramu_muestramuestramuestramuestramues
  *     ^^^ ^^^^ ^^^^^^^^^^^^^^^^ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
  *      |   |          |                        |
  *      |   |          |                        secreto (160 bits)
@@ -108,7 +108,7 @@ export function parseApiKey(raw: string): ParsedApiKey | null {
  * Como se ve una llave en pantalla despues de crearla: lo publico entero y los
  * ultimos cuatro del secreto. El resto NO existe en ningun sitio.
  *
- *     hsk_live_kq7m3xb9tzr4dph2...2fm
+ *     hsk_live_muestramuestramu...mues
  */
 export function formatApiKeyPreview(
   environment: ApiKeyEnvironment,

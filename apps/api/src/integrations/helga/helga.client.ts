@@ -18,6 +18,7 @@
  * corre igual en los dos modos, que es justamente lo que se quiere probar.
  */
 import { Currency, roundMoney } from '@courier/shared';
+import type { HelgaAccount } from '../../core/config';
 import { config, helgaMode, helgaPrincipalAccount } from '../../core/config';
 import { ProviderErrors } from '../../core/errors';
 import { getAccessToken, invalidateToken } from './helga.auth';
@@ -75,13 +76,25 @@ function providerError(status: number, message: string | undefined): Error {
  * del lado de Helga: prealerta que aun no llega). Con la bandera puesta se
  * devuelve `undefined` en vez de lanzar, y el llamador lo interpreta como "sin
  * estado por ahora".
+ *
+ * `account`: CONTRA QUE CUENTA del proveedor se hace la llamada. Ausente = la
+ * principal, que es el comportamiento de siempre. No es un detalle de transporte:
+ * cada cuenta emite su propio token y VE SOLO SUS PAQUETES, asi que preguntar por
+ * el paquete de un cliente consolidado con el token de la principal no da un error
+ * de permisos sino un 404 silencioso, que se lee como "todavia no llego".
  */
 async function request<T>(
   method: 'POST' | 'DELETE',
   path: string,
   body: unknown,
-  opts: { allowNotFound?: boolean } = {},
+  opts: { allowNotFound?: boolean; account?: HelgaAccount } = {},
 ): Promise<T | undefined> {
+  const account = opts.account;
+  // El `app_id` de la cuenta manda sobre el del despliegue. Se resuelve fuera del
+  // objeto de cabeceras a proposito: un spread condicional ahi dentro le quita a
+  // TypeScript la forma de `HeadersInit`.
+  const appId = account?.appId ?? config.HELGA_APP_ID;
+
   const send = async (token: string): Promise<Response> =>
     fetch(`${config.HELGA_BASE_URL}${path}`, {
       method,
@@ -96,7 +109,7 @@ async function request<T>(
         // Se sigue mandando si esta configurado, por si alguna ruta lo exige;
         // el nombre de la cabecera sigue siendo una suposicion (el manual no lo
         // documenta).
-        ...(config.HELGA_APP_ID ? { 'X-App-Id': config.HELGA_APP_ID } : {}),
+        ...(appId ? { 'X-App-Id': appId } : {}),
       },
       // Algunas rutas (op. B) no llevan cuerpo: el criterio va en la URL.
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -104,7 +117,9 @@ async function request<T>(
     });
 
   const startedAt = Date.now();
-  const tag = isHelgaSimulated() ? '[helga:sim]' : '[helga]';
+  // El codigo de casillero va en el log: con varias cuentas, un fallo sin decir
+  // CUAL no se puede diagnosticar.
+  const tag = `${isHelgaSimulated() ? '[helga:sim]' : '[helga]'}${account ? ` ${account.code}` : ''}`;
   let response: Response;
   try {
     if (isHelgaSimulated()) {
@@ -113,10 +128,10 @@ async function request<T>(
       // modo no hay credenciales que pedir.
       response = await mockHelgaRequest(method, path, body);
     } else {
-      response = await send(await getAccessToken());
+      response = await send(await getAccessToken(account));
       if (response.status === 401) {
-        invalidateToken();
-        response = await send(await getAccessToken());
+        invalidateToken(account);
+        response = await send(await getAccessToken(account));
       }
     }
   } catch (err) {
@@ -138,7 +153,7 @@ async function request<T>(
 function post<T>(
   path: string,
   body: unknown,
-  opts: { allowNotFound?: boolean } = {},
+  opts: { allowNotFound?: boolean; account?: HelgaAccount } = {},
 ): Promise<T | undefined> {
   return request<T>('POST', path, body, opts);
 }
@@ -308,24 +323,34 @@ export async function deleteHelgaPrealert(prealertId: string): Promise<boolean> 
  * —Helga aun no la reconoce como paquete y por tanto no tiene estado. No es un
  * error: la sincronizacion lo trata como "sin estado por ahora".
  */
-export async function fetchHelgaPackageState(search: string): Promise<HelgaPackageStatus | null> {
+export async function fetchHelgaPackageState(
+  search: string,
+  account?: HelgaAccount,
+): Promise<HelgaPackageStatus | null> {
   const data = await post<HelgaPackageStatus>(
     `/api/casillero/consulta-estado/${encodeURIComponent(search)}`,
     undefined,
-    { allowNotFound: true },
+    { allowNotFound: true, ...(account ? { account } : {}) },
   );
   return data ?? null;
 }
 
 /**
- * Op. E — paquetes disponibles para despacho de TODA la cuenta consolidada
- * (paginado). No es por destinatario: cada fila trae su `destinatario_id`. Es la
- * via para descubrir compras que el cliente no declaro; el manual pide poder
- * darlas de alta igual. Recorre las paginas hasta agotar el paginador de Laravel.
+ * Op. E — paquetes disponibles para despacho de TODA la cuenta (paginado). No es
+ * por destinatario: cada fila trae su `destinatario_id`. Es la via para descubrir
+ * compras que el cliente no declaro; el manual pide poder darlas de alta igual.
+ * Recorre las paginas hasta agotar el paginador de Laravel.
+ *
+ * "Toda la cuenta" es literal y es la razon de que el descubrimiento recorra las
+ * cuentas una por una: el listado de una cuenta EXCLUSIVA trae los paquetes de
+ * sus sub-casilleros y de nadie mas, que es exactamente lo que hay que atribuir
+ * a su cliente consolidado.
  */
 export async function fetchHelgaAvailablePackages(params: {
   pageSize?: number;
   search?: string;
+  /** Cuenta cuyo listado se pide. Ausente = la principal (comportamiento de siempre). */
+  account?: HelgaAccount;
 } = {}): Promise<HelgaAvailablePackage[]> {
   const pageSize = params.pageSize ?? 100;
   const all: HelgaAvailablePackage[] = [];
@@ -340,6 +365,7 @@ export async function fetchHelgaAvailablePackages(params: {
     const data = await post<HelgaPaginator<HelgaAvailablePackage>>(
       `/api/casillero/despachos/preliquidaciones/paqsdisponibles?page=${page}`,
       body,
+      params.account ? { account: params.account } : {},
     );
     if (Array.isArray(data?.data)) all.push(...data.data);
     lastPage = data?.last_page ?? page;

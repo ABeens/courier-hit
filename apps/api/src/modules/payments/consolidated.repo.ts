@@ -266,7 +266,17 @@ export const consolidatedRepo = {
     );
   },
 
-  /** Situacion y tramites de varios grupos de una vez (listado de proformas). */
+  /**
+   * Situacion y tramites de varios grupos de una vez (listado de proformas).
+   *
+   * Trae ademas el TIPO de cada tramite: es lo unico que permite al listado de
+   * proformas consolidadas respetar el filtro de tramite de la pantalla. El grupo
+   * de cobro no tiene tipo propio (lo tienen sus paquetes), asi que la pregunta
+   * "¿este cobro es de paqueteria?" solo se puede responder mirando aqui.
+   *
+   * El join es INNER y no LEFT a proposito: `payments.shipment_id` es NOT NULL con
+   * borrado en cascada, asi que un abono sin tramite no existe.
+   */
   async paymentsForGroups(groupIds: string[]) {
     if (groupIds.length === 0) return [];
     return db
@@ -274,8 +284,10 @@ export const consolidatedRepo = {
         groupId: payments.groupId,
         shipmentId: payments.shipmentId,
         status: payments.status,
+        shipmentType: shipments.shipmentType,
       })
       .from(payments)
+      .innerJoin(shipments, eq(payments.shipmentId, shipments.id))
       .where(inArray(payments.groupId, groupIds));
   },
 };

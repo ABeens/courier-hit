@@ -40,6 +40,17 @@ const HelgaAccountSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
   clientId: z.number().int().positive().nullable().default(null),
+  /**
+   * Credenciales de APLICACION propias de la cuenta. Vacias (lo normal) la cuenta
+   * usa las del despliegue: `client_id` y `client_secret` son de la app y se
+   * comparten entre los casilleros de HS Global (§1.1 de docs/13).
+   *
+   * Existen porque una cuenta EXCLUSIVA es de otra empresa, y nada garantiza que
+   * el proveedor le haya dado la misma aplicacion. Ver `provider-accounts`.
+   */
+  oauthClientId: z.string().min(1).nullable().default(null),
+  oauthClientSecret: z.string().min(1).nullable().default(null),
+  appId: z.string().min(1).nullable().default(null),
 });
 
 export type HelgaAccount = z.infer<typeof HelgaAccountSchema>;
@@ -315,6 +326,20 @@ const EnvSchema = z.object({
     .refine(isValidDuration, {
       message: 'HELGA_SIMULATED_STEP debe ser una duracion valida (p. ej. "30s", "2m", "1h").',
     }),
+
+  /**
+   * Clave con la que se cifran las credenciales de las cuentas EXCLUSIVAS del
+   * proveedor antes de guardarlas (`core/secrets.ts`): 32 bytes en base64.
+   *
+   * Opcional en el esquema y NO en el uso: sin ella la API arranca igual (un
+   * despliegue sin cuentas exclusivas no la necesita), pero el mantenimiento de
+   * cuentas falla con un mensaje que dice exactamente esto. Se prefiere eso a
+   * exigirla en el arranque y tumbar entornos que nunca van a usar la funcion.
+   *
+   * Cambiarla deja ILEGIBLES las credenciales ya guardadas: no se rota sin volver
+   * a capturar las contrasenas de cada cuenta.
+   */
+  PROVIDER_SECRETS_KEY: optionalEnv(),
 
   /**
    * Interruptor de la pantalla "Enlace con Miami" del portal (el panel de
@@ -629,6 +654,9 @@ export const helgaAccounts: readonly HelgaAccount[] = (() => {
         username: config.HELGA_USERNAME,
         password: config.HELGA_PASSWORD,
         clientId: null,
+        oauthClientId: null,
+        oauthClientSecret: null,
+        appId: null,
       },
     ];
   }

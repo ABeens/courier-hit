@@ -56,6 +56,13 @@ export const providerSyncRepo = {
         // Sub-casillero del dueño: con el se comprueba que el paquete que devuelve
         // el proveedor es de este cliente y no de otro (`checkLockerMatch`).
         clientSubLocker: clients.helgaSubLocker,
+        /**
+         * De que cuenta del proveedor vino el paquete. Es lo que decide CON QUE
+         * TOKEN se le pregunta a Helga por este tracking: cada cuenta solo ve sus
+         * paquetes, y con el token equivocado la respuesta es un 404 que se leeria
+         * como "todavia no llega a bodega". `null` = la cuenta principal.
+         */
+        providerAccountCode: shipments.providerAccountCode,
       })
       .from(shipments)
       .innerJoin(clients, eq(shipments.clientId, clients.id))

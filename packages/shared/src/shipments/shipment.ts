@@ -107,6 +107,17 @@ export interface ShipmentDto {
   billingNotes: string | null;
 
   /**
+   * DE QUE CUENTA del operador de Miami vino el paquete: su codigo de casillero
+   * (`SJO009623`), o `null` si vino de la cuenta principal de HS Global.
+   *
+   * Es la bandera de trazabilidad de los clientes CONSOLIDADOS, los que tienen
+   * cuenta propia y dedicada en el operador. El portal la muestra para que quien
+   * mira un paquete sepa por que casillero entro sin tener que abrir la ficha del
+   * cliente. Solo aplica a Paqueteria.
+   */
+  providerAccountCode: string | null;
+
+  /**
    * Ruta operativa del distrito de entrega del cliente. Se resuelve al leer
    * (join con las rutas por distrito) en vez de copiarse al tramite: si el
    * administrador reasigna la ruta de un distrito, los tramites en curso la

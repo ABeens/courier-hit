@@ -59,6 +59,7 @@ import {
 } from '../../integrations/helga/helga.client';
 import { storage } from '../../core/storage';
 import { clientsRepo } from '../clients/clients.repo';
+import { providerAccountsRepo } from '../provider-accounts/provider-accounts.repo';
 import { shipmentsRepo } from './shipments.repo';
 
 /** Fila de la vista de lectura del repo (tramite + cliente + ruta). */
@@ -158,6 +159,7 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     warehouse: row.warehouse,
     dua: row.dua,
     billingNotes: row.billingNotes,
+    providerAccountCode: row.providerAccountCode,
     routeNumber: row.routeNumber,
     invoiceTotalUsd: row.invoiceTotalUsd,
     invoiceTotalCrc: row.invoiceTotalCrc,
@@ -382,6 +384,14 @@ export const shipmentsService = {
   async prealertWithProvider(clientId: string, shipment: ShipmentDto): Promise<void> {
     if (!isHelgaEnabled()) return;
 
+    /**
+     * Un cliente CONSOLIDADO no se prealerta: su paqueteria cuelga de su propia
+     * cuenta en Helga y no de un destinatario nuestro (ver `insert`). Se comprueba
+     * antes que el enlace para no confundirlo con un casillero roto: el aviso de
+     * abajo pide una correccion manual que aqui no hay que hacer.
+     */
+    if (await providerAccountsRepo.findByClientId(clientId)) return;
+
     const link = await clientsRepo.providerLinkFor(clientId);
     if (!link?.helgaClientId) {
       console.warn(`[helga] casillero ${shipment.client?.code ?? '(sin dueño)'} sin enlazar: prealerta no replicada.`);
@@ -521,15 +531,41 @@ export const shipmentsService = {
     const code = formatShipmentCode(await shipmentsRepo.nextCodeSequence());
     const state = initialState(flowForType(values.shipmentType));
 
-    // Solo Paqueteria se replica ante el proveedor: los demas tipos nacen sin
-    // bandera (`null` = no aplica). El paquete arranca 'pending' y el intento
-    // inmediato de `prealertWithProvider` la sella; si no se intenta o falla,
-    // queda para la reconciliacion.
-    const helgaPrealertStatus = usesPackageFields(values.shipmentType)
-      ? HelgaSyncStatus.Pending
+    /**
+     * DE QUE CUENTA del proveedor es este paquete. Si su dueno es un cliente
+     * consolidado, de la cuenta exclusiva de ese cliente; si no, de la principal
+     * (`null`). Se sella al nacer porque es lo que despues le dice a la
+     * sincronizacion con que token preguntar por el tracking: cada cuenta de Helga
+     * ve solo sus paquetes (ver `shipments.schema`).
+     */
+    const providerAccount = values.clientId
+      ? await providerAccountsRepo.findByClientId(values.clientId)
       : null;
 
-    const id = await shipmentsRepo.insert({ ...values, code, state, createdBy, helgaPrealertStatus });
+    /**
+     * Solo Paqueteria se replica ante el proveedor: los demas tipos nacen sin
+     * bandera (`null` = no aplica). El paquete arranca 'pending' y el intento
+     * inmediato de `prealertWithProvider` la sella; si no se intenta o falla,
+     * queda para la reconciliacion.
+     *
+     * UN CLIENTE CONSOLIDADO TAMPOCO SE REPLICA, y por eso tambien nace en `null`.
+     * La op. C cuelga la prealerta de un `destinatario_id`, y este cliente no
+     * tiene uno nuestro: recibe por los sub-casilleros de su propia cuenta, que
+     * crea el administrador del proveedor. Dejarlo 'pending' seria prometer un
+     * reenvio que nunca puede ocurrir. Su paquete entra igual por el
+     * descubrimiento (op. E) en cuanto llega a la bodega de Miami.
+     */
+    const helgaPrealertStatus =
+      usesPackageFields(values.shipmentType) && !providerAccount ? HelgaSyncStatus.Pending : null;
+
+    const id = await shipmentsRepo.insert({
+      ...values,
+      code,
+      state,
+      createdBy,
+      helgaPrealertStatus,
+      providerAccountCode: providerAccount?.code ?? null,
+    });
     const row = await shipmentsRepo.findById(id);
     if (!row) throw ShipmentErrors.notFound();
     return toDto(row);

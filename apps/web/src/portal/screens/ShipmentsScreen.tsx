@@ -134,9 +134,23 @@ function hawbField(row: ShipmentDto): CardField {
  * y Agenciamiento el HAWB no existe como campo, asi que la seccion se queda con
  * su unica guia en vez de inventar una fila vacia que no aplica.
  */
+/**
+ * De qué cuenta del operador de Miami entró el paquete.
+ *
+ * Solo aparece cuando NO es la principal, es decir, cuando el dueño es un
+ * cliente consolidado con cuenta dedicada. En la principal el campo sería ruido:
+ * es de donde viene casi todo, y una fila que dice siempre lo mismo no informa
+ * nada. Aquí, en cambio, responde de un vistazo por qué casillero llegó y con
+ * qué cuenta se está consultando su estado.
+ */
+function originField(row: ShipmentDto): CardField[] {
+  if (!row.providerAccountCode) return [];
+  return [{ label: 'Cuenta en Miami', value: row.providerAccountCode, mono: true }];
+}
+
 function guideFields(row: ShipmentDto): CardField[] {
   return usesPackageFields(row.shipmentType)
-    ? [trackingField(row), hawbField(row)]
+    ? [trackingField(row), hawbField(row), ...originField(row)]
     : [trackingField(row)];
 }
 

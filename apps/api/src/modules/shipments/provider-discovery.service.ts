@@ -28,8 +28,16 @@
  *    `reconcilePrealerts` no lo levante (nace 'pending' por default del insert).
  * 4. SOLO PAQUETES DE NUESTROS CLIENTES. Una fila cuyo `destinatario_id` no
  *    corresponde a ningun casillero nuestro se ignora: son destinatarios creados a
- *    mano en Helga que no nos pertenecen.
- * 5. SIN NOTIFICACION AL CLIENTE. El alta NO llama a `notificationsService`, a
+ *    mano en Helga que no nos pertenecen. OJO: esto vale para la cuenta PRINCIPAL.
+ *    En una cuenta EXCLUSIVA no se cruza nada, porque toda la cuenta es de un solo
+ *    cliente (ver `ownerFor`).
+ * 5. UNA PASADA POR CUENTA. La op. E lista los paquetes de LA CUENTA con cuyo
+ *    token se pregunta, y cada cuenta de Helga solo ve los suyos. Asi que el
+ *    recorrido va cuenta por cuenta: la principal (que reparte entre muchos
+ *    clientes por `destinatario_id`) y despues cada cuenta exclusiva, cuyo listado
+ *    entero se le atribuye a su cliente consolidado. Un fallo con una cuenta no
+ *    detiene a las siguientes; queda sellado en la fila de esa cuenta.
+ * 6. SIN NOTIFICACION AL CLIENTE. El alta NO llama a `notificationsService`, a
  *    diferencia del avance de estado del flujo 1. El cliente no declaro este
  *    paquete y no le avisamos por un canal todavia sin validar en produccion. Es
  *    una decision de negocio revisable, no una limitacion tecnica.
@@ -47,9 +55,16 @@ import {
   roundMoney,
 } from '@courier/shared';
 import type { Session } from '@courier/shared';
-import { isHelgaEnabled, fetchHelgaAvailablePackages } from '../../integrations/helga/helga.client';
+import {
+  isHelgaEnabled,
+  isHelgaSimulated,
+  fetchHelgaAvailablePackages,
+} from '../../integrations/helga/helga.client';
 import type { HelgaAvailablePackage } from '../../integrations/helga/helga.types';
+import type { HelgaAccount } from '../../core/config';
 import { clientsRepo } from '../clients/clients.repo';
+import { providerAccountsRepo } from '../provider-accounts/provider-accounts.repo';
+import { providerAccountsService } from '../provider-accounts/provider-accounts.service';
 import { providerSyncRepo } from './provider-sync.repo';
 import { toNumber } from './provider-sync.service';
 import { shipmentsRepo } from './shipments.repo';
@@ -82,6 +97,8 @@ export interface DiscoveryReport {
   invalid: number;
   /** Filas que fallaron al insertarse. */
   failed: number;
+  /** Cuentas del proveedor recorridas en la corrida. */
+  accounts: number;
 }
 
 /**
@@ -148,14 +165,34 @@ function providerUsd(value: number | undefined, schema: ZodType<number>): number
   return roundMoney(parsed.data, Currency.USD);
 }
 
+/**
+ * Una cuenta del proveedor a la que hay que preguntarle su listado.
+ *
+ * `account` ausente significa "el transporte decide": es el caso del proveedor
+ * SIMULADO, que no pide credenciales, y el de un despliegue que solo tiene la
+ * cuenta principal del entorno.
+ */
+interface DiscoveryTarget {
+  /** Fila en `provider_accounts`, o `null` si es la principal (vive en el .env). */
+  id: string | null;
+  /** Codigo que se sella como origen en cada paquete; `null` = sin identificar. */
+  code: string | null;
+  account: HelgaAccount | null;
+  /**
+   * Dueno de TODO lo que traiga la cuenta. `null` en la principal, donde el dueno
+   * se resuelve paquete a paquete por su `destinatario_id`.
+   */
+  consolidatedClientId: string | null;
+}
+
 export const providerDiscoveryService = {
   /**
-   * Una corrida completa: trae el listado de la op. E, descarta lo que no
-   * corresponde y da de alta el resto.
+   * Una corrida completa: recorre las cuentas del proveedor y, en cada una, trae
+   * el listado de la op. E, descarta lo que no corresponde y da de alta el resto.
    *
-   * Un fallo con una fila no aborta el resto: el proveedor puede mandar una fila
-   * inconsistente entre veinte sanas, y detener toda la pasada por ella dejaria
-   * sin dar de alta a las demas dentro de una ventana que no se repite.
+   * El informe que devuelve es la SUMA de todas las cuentas: al robot le interesa
+   * cuanto entro en la corrida, y el detalle por cuenta ya va al log (y el fallo,
+   * a la propia fila de la cuenta).
    */
   async run(session: Session): Promise<DiscoveryReport> {
     const report: DiscoveryReport = {
@@ -165,6 +202,7 @@ export const providerDiscoveryService = {
       foreign: 0,
       invalid: 0,
       failed: 0,
+      accounts: 0,
     };
 
     if (!isHelgaEnabled()) {
@@ -172,36 +210,124 @@ export const providerDiscoveryService = {
       return report;
     }
 
+    for (const target of await this.targets()) {
+      report.accounts += 1;
+      const one = await this.runAccount(session, target);
+      report.fetched += one.fetched;
+      report.created += one.created;
+      report.known += one.known;
+      report.foreign += one.foreign;
+      report.invalid += one.invalid;
+      report.failed += one.failed;
+    }
+
+    return report;
+  },
+
+  /**
+   * Las cuentas de esta corrida.
+   *
+   * Con el proveedor SIMULADO se hace UNA sola pasada y sin credenciales: el
+   * simulador es un unico proveedor de mentira que responde lo mismo a cualquier
+   * cuenta, asi que recorrerlas todas seria pedir el mismo listado N veces (y
+   * atribuirselo a quien saliera primero).
+   */
+  async targets(): Promise<DiscoveryTarget[]> {
+    if (isHelgaSimulated()) {
+      return [{ id: null, code: null, account: null, consolidatedClientId: null }];
+    }
+    const accounts = await providerAccountsService.accountsForImport();
+    return accounts.map((a) => ({
+      id: a.id,
+      code: a.account.code,
+      account: a.account,
+      consolidatedClientId: a.consolidatedClientId,
+    }));
+  },
+
+  /**
+   * El listado de UNA cuenta, dado de alta.
+   *
+   * Un fallo con una fila no aborta el resto: el proveedor puede mandar una fila
+   * inconsistente entre veinte sanas, y detener toda la pasada por ella dejaria
+   * sin dar de alta a las demas dentro de una ventana que no se repite.
+   *
+   * Un fallo con la CUENTA entera (credenciales caducadas, lista blanca) tampoco
+   * aborta la corrida: se sella en la fila de esa cuenta, que es lo que el panel
+   * muestra como motivo de que no le lleguen paquetes, y se sigue con la
+   * siguiente.
+   */
+  async runAccount(session: Session, target: DiscoveryTarget): Promise<DiscoveryReport> {
+    const report: DiscoveryReport = {
+      fetched: 0,
+      created: 0,
+      known: 0,
+      foreign: 0,
+      invalid: 0,
+      failed: 0,
+      accounts: 1,
+    };
+    const label = target.code ?? 'cuenta principal';
+
     let rows: HelgaAvailablePackage[];
     try {
-      rows = await fetchHelgaAvailablePackages({ pageSize: DISCOVERY_PAGE_SIZE });
+      rows = await fetchHelgaAvailablePackages({
+        pageSize: DISCOVERY_PAGE_SIZE,
+        ...(target.account ? { account: target.account } : {}),
+      });
     } catch (err) {
       // Sin listado no hay nada que descubrir. Se registra y se reintenta en la
       // proxima corrida; no tiene sentido propagar y tumbar la tarea del robot.
-      console.error('[helga] fallo consultando los paquetes disponibles (op. E):', err);
+      console.error(`[helga] fallo consultando los paquetes disponibles (op. E) de ${label}:`, err);
+      await this.markImport(target, err instanceof Error ? err.message : String(err));
       return report;
     }
 
     report.fetched = rows.length;
-    if (rows.length === 0) return report;
+    if (rows.length === 0) {
+      await this.markImport(target, null);
+      return report;
+    }
 
-    // Las filas utilizables son las que traen llave de cruce y destinatario. Se
-    // resuelven en DOS consultas para todo el lote (duenos y trackings conocidos)
-    // en vez de dos por fila: la op. E devuelve la cuenta consolidada entera.
+    // Las filas utilizables son las que traen llave de cruce. El destinatario solo
+    // hace falta en la cuenta principal, que es donde decide de quien es el
+    // paquete; en una cuenta exclusiva ya se sabe, y exigirlo tiraria filas que
+    // el proveedor mando sin ese campo.
+    const needsRecipient = target.consolidatedClientId === null;
     const candidates = rows
       .map((row) => ({ row, tracking: trackingKeyFor(row), helgaClientId: row.destinatario_id }))
       .filter((c) => {
-        if (!c.tracking || c.helgaClientId === undefined || c.helgaClientId === null) {
+        const missingRecipient =
+          needsRecipient && (c.helgaClientId === undefined || c.helgaClientId === null);
+        if (!c.tracking || missingRecipient) {
           report.invalid += 1;
           return false;
         }
         return true;
-      }) as Array<{ row: HelgaAvailablePackage; tracking: string; helgaClientId: number }>;
+      }) as Array<{
+        row: HelgaAvailablePackage;
+        tracking: string;
+        helgaClientId: number | undefined;
+      }>;
 
-    const owners = await clientsRepo.findByHelgaClientIds([
-      ...new Set(candidates.map((c) => String(c.helgaClientId))),
-    ]);
+    /**
+     * Indice destinatario -> casillero nuestro. Solo se construye para la cuenta
+     * principal: es la unica que reparte sus paquetes entre varios clientes. En
+     * una cuenta exclusiva esta consulta seria trabajo tirado, porque el dueno es
+     * el mismo para todas las filas.
+     */
+    const owners = needsRecipient
+      ? await clientsRepo.findByHelgaClientIds([
+          ...new Set(
+            candidates
+              .map((c) => c.helgaClientId)
+              .filter((id): id is number => id !== undefined && id !== null)
+              .map(String),
+          ),
+        ])
+      : [];
     const clientByHelgaId = new Map(owners.map((o) => [o.helgaClientId, o]));
+
     const knownTrackings = await providerSyncRepo.activeTrackings([
       ...new Set(candidates.map((c) => c.tracking)),
     ]);
@@ -211,7 +337,15 @@ export const providerDiscoveryService = {
     const seen = new Set<string>();
 
     for (const { row, tracking, helgaClientId } of candidates) {
-      const owner = clientByHelgaId.get(String(helgaClientId));
+      /**
+       * DE QUIEN ES EL PAQUETE. Es la unica diferencia real entre los dos tipos de
+       * cuenta: la principal lo decide fila a fila por el destinatario, y una
+       * cuenta exclusiva no lo decide, ya lo sabe (relacion 1 a 1 con su cliente
+       * consolidado, vengan sus paquetes de uno o de veinte sub-casilleros).
+       */
+      const owner = target.consolidatedClientId
+        ? { id: target.consolidatedClientId, code: target.code ?? '' }
+        : clientByHelgaId.get(String(helgaClientId));
       if (!owner) {
         report.foreign += 1;
         continue;
@@ -224,9 +358,9 @@ export const providerDiscoveryService = {
       seen.add(tracking);
 
       try {
-        await this.createFromProvider(session, owner.id, tracking, row);
+        await this.createFromProvider(session, owner.id, tracking, row, target.code);
         report.created += 1;
-        console.info(`[helga] descubierto ${tracking} del casillero ${owner.code}.`);
+        console.info(`[helga] descubierto ${tracking} del casillero ${owner.code} (${label}).`);
       } catch (err) {
         // Carrera esperada: el cliente prealerto el mismo paquete mientras esta
         // corrida lo estaba insertando. No es un fallo, es el flujo 1 ganando.
@@ -239,7 +373,22 @@ export const providerDiscoveryService = {
       }
     }
 
+    await this.markImport(target, null);
     return report;
+  },
+
+  /**
+   * Sella el resultado de la pasada en la fila de la cuenta. La principal no tiene
+   * fila (vive en el entorno), asi que ahi no hay nada que sellar.
+   */
+  async markImport(target: DiscoveryTarget, error: string | null): Promise<void> {
+    if (!target.id) return;
+    try {
+      await providerAccountsRepo.markImport(target.id, error);
+    } catch (err) {
+      // El sello es diagnostico: perderlo no puede costar la corrida.
+      console.error(`[helga] no se pudo sellar la importación de ${target.code}:`, err);
+    }
   },
 
   /**
@@ -256,6 +405,7 @@ export const providerDiscoveryService = {
     clientId: string,
     tracking: string,
     row: HelgaAvailablePackage,
+    providerAccountCode: string | null = null,
   ): Promise<string> {
     const code = formatShipmentCode(await shipmentsRepo.nextCodeSequence());
     const kg = toNumber(row.peso_kg ?? row.peso);
@@ -282,6 +432,12 @@ export const providerDiscoveryService = {
       insuredValueUsd: providerUsd(row.valor_asegurado, insuredValueUsdSchema),
       // Decision 3: ya existe en Helga, no se vuelve a prealertar.
       helgaPrealertStatus: HelgaSyncStatus.Synced,
+      /**
+       * De que cuenta vino. No es solo trazabilidad: es lo que le dice a la
+       * sincronizacion con que token preguntar por este tracking despues (ver
+       * `shipments.schema`). `null` = la principal.
+       */
+      providerAccountCode,
       // Lo dio de alta el robot, actuando como el staff de la sesion de sistema.
       createdBy: session.userId,
     });

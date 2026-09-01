@@ -27,7 +27,7 @@ export const MASTER_LOCKER_ID = 'SJO008835';
  * Esta es la direccion que el cliente copia al comprar y un error aqui manda
  * paquetes a ninguna parte: cambiarla solo contra confirmacion escrita del
  * negocio. NO se puede sacar del API del proveedor (comprobado el 2026-07-26:
- * su ficha de cuenta solo trae la direccion de Costa Rica, docs/13 §6).
+ * su ficha de cuenta solo trae la direccion de Costa Rica, docs/13 §7).
  *
  * `addressLine2` lleva el casillero maestro incrustado (MASTER_LOCKER_ID con un
  * espacio) porque el negocio lo dicta como una sola linea de formulario: es el

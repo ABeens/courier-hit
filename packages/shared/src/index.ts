@@ -18,6 +18,7 @@ export * from './costs/dto';
 export * from './costs/shipment-cost';
 export * from './costs/shipment-cost-dto';
 export * from './providers/helga-states';
+export * from './providers/provider-account';
 export * from './reports/report';
 export * from './reports/dto';
 export * from './reports/financials';

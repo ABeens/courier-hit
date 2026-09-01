@@ -6,7 +6,21 @@
  * arman una sola vez en `conditions`: un reporte que filtrara distinto que la
  * pantalla que lo origina seria un reporte que nadie puede cuadrar.
  */
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { ClientRateKind, State } from '@courier/shared';
 import type { ProformaQuery, ReportQuery } from '@courier/shared';
@@ -374,21 +388,53 @@ export const reportsRepo = {
    * caido del listado sin que nadie lo pidiera.
    */
   async billedShipmentIds(query: ProformaQuery) {
-    const conds = [
-      ...conditions(query),
-      isNotNull(shipments.costsApprovedAt),
-      or(isNull(clientRates.kind), ne(clientRates.kind, ClientRateKind.Consolidada)),
-    ];
     const rows = await db
       .select({ id: shipments.id })
       .from(shipments)
       .leftJoin(clients, eq(shipments.clientId, clients.id))
       .leftJoin(clientRates, eq(clients.clientRateId, clientRates.id))
-      .where(and(...conds))
+      .where(and(...billedConditions(query)))
       .orderBy(desc(shipments.createdAt));
     return rows.map((r) => r.id);
   },
+
+  /**
+   * CUANTOS tramites facturados hay en el filtro. Lo cuenta la base de datos.
+   *
+   * Va aparte de `billedShipmentIds` porque la pantalla pregunta "cuantas
+   * proformas voy a abrir" ANTES de abrirlas, y responder eso trayendose quince
+   * mil ids (o peor, armando doscientas proformas enteras) es trabajo que nadie
+   * mira. Las dos comparten `billedConditions`, que es lo que impide que el
+   * numero que se anuncia y el lote que se descarga hablen de conjuntos distintos.
+   */
+  async countBilledShipments(query: ProformaQuery): Promise<number> {
+    const [row] = await db
+      .select({ total: count() })
+      .from(shipments)
+      .leftJoin(clients, eq(shipments.clientId, clients.id))
+      .leftJoin(clientRates, eq(clients.clientRateId, clientRates.id))
+      .where(and(...billedConditions(query)));
+    return row?.total ?? 0;
+  },
 };
+
+/**
+ * Que es un tramite "con proforma lista": facturado (costos aprobados) y no
+ * consolidado, dentro del filtro de alcance. Punto UNICO de esa definicion,
+ * compartido por el listado y por el conteo; con la condicion escrita dos veces,
+ * el numero que anuncia la pantalla y el documento que se descarga acabarian
+ * hablando de conjuntos distintos.
+ *
+ * El LEFT JOIN de la consulta es deliberado: un tramite sin casillero o un
+ * casillero sin tarifa no son consolidados y tienen que seguir apareciendo.
+ */
+function billedConditions(query: ProformaQuery): (SQL | undefined)[] {
+  return [
+    ...conditions(query),
+    isNotNull(shipments.costsApprovedAt),
+    or(isNull(clientRates.kind), ne(clientRates.kind, ClientRateKind.Consolidada)),
+  ];
+}
 
 /** Agrupa filas por una clave. Evita repetir el mismo bucle tres veces arriba. */
 function groupBy<T>(rows: readonly T[], key: (row: T) => string): Map<string, T[]> {

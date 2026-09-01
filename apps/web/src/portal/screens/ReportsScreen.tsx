@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { ReportKind, SHIPMENT_TYPE_LABELS, ShipmentType } from '@courier/shared';
-import type { ReportColumn, ReportRow } from '@courier/shared';
+import type { ProformaBatchSummary, ReportColumn, ReportRow } from '@courier/shared';
 import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
 import { API_BASE, ApiError, api } from '../lib/api';
@@ -29,36 +29,48 @@ interface ReportResponse {
   rows: ReportRow[];
 }
 
-/** Una proforma lista para descargar (trámite ya facturado). */
-interface ProformaItem {
-  shipmentId: string;
-  number: string;
-  clientName: string;
-  totalUsd: number;
+/**
+ * Texto del botón de un lote de proformas: el TOTAL del filtro, no lo que quepa
+ * en el documento. Es la corrección de un error que se leía como "el filtro no
+ * hace nada": el número venía recortado al tope de descarga, así que decía lo
+ * mismo (200) con cualquier trámite seleccionado.
+ */
+function batchLabel(
+  summary: ProformaBatchSummary | null,
+  noun: string,
+  empty: string,
+): string {
+  if (summary === null) return noun;
+  if (summary.total === 0) return empty;
+  return `${noun} (${summary.total.toLocaleString('es-CR')})`;
 }
 
 /**
- * Un cobro consolidado listo para documentar. Va aparte de `ProformaItem` porque
- * es otro documento: la unidad no es el trámite sino el COBRO, y sus paquetes NO
- * salen en el listado de proformas sueltas (lo pide el requerimiento y lo aplica
- * la API), así que los dos botones nunca cuentan lo mismo dos veces.
+ * Aviso de que el documento va a salir recortado, ANTES de abrirlo. El documento
+ * ya lo dice impreso, pero enterarse después de abrir trescientas páginas no
+ * ayuda a nadie a acotar el filtro.
  */
-interface ConsolidatedProformaItem {
-  paymentGroupId: string;
-  number: string;
-  clientName: string;
-  clientCode: string;
-  itemCount: number;
-  totalUsd: number;
+function batchHint(summary: ProformaBatchSummary | null, base: string): string {
+  if (!summary || summary.omitted === 0) return base;
+  return `${base}. Se descargarán las ${(summary.total - summary.omitted).toLocaleString('es-CR')} más recientes; ${summary.omitted.toLocaleString('es-CR')} quedan fuera por el límite, acota el filtro.`;
 }
 
 export function ReportsScreen() {
   const [catalog, setCatalog] = useState<CatalogItem[] | null>(null);
   /** Si el rol puede emitir proformas. Lo decide la API, no esta pantalla. */
   const [canProforma, setCanProforma] = useState(false);
-  const [ready, setReady] = useState<ProformaItem[] | null>(null);
-  /** Cobros consolidados listos del mismo filtro. */
-  const [readyGroups, setReadyGroups] = useState<ConsolidatedProformaItem[] | null>(null);
+  /**
+   * Cuántas proformas sueltas hay listas para el filtro actual, y cuántas no
+   * caben en el documento. `null` mientras no se sabe.
+   */
+  const [ready, setReady] = useState<ProformaBatchSummary | null>(null);
+  /**
+   * Lo mismo para los cobros CONSOLIDADOS. Es otro documento y otra cuenta: un
+   * casillero consolidado con cinco paquetes es UNA proforma, no cinco, y sus
+   * paquetes no salen en el otro botón (lo pide el requerimiento y lo aplica la
+   * API), así que los dos nunca cuentan lo mismo dos veces.
+   */
+  const [readyGroups, setReadyGroups] = useState<ProformaBatchSummary | null>(null);
   const [kind, setKind] = useState<ReportKind | ''>('');
   const [type, setType] = useState('');
   const [from, setFrom] = useState('');
@@ -128,13 +140,13 @@ export function ReportsScreen() {
     if (!canProforma) return;
     let cancelled = false;
     api
-      .get<{ items: ProformaItem[] }>(`/reports/proformas?${proformaParams().toString()}`)
+      .get<ProformaBatchSummary>(`/reports/proformas?${proformaParams().toString()}`)
       .then((data) => {
-        if (!cancelled) setReady(data.items);
+        if (!cancelled) setReady(data);
       })
       .catch((err) => {
         if (cancelled) return;
-        setReady([]);
+        setReady({ total: 0, omitted: 0 });
         /**
          * El fallo se DICE. Tragárselo dejaba el botón apagado sin distinguir
          * "no hay proformas listas" de "la consulta se cayó", que son dos
@@ -149,24 +161,20 @@ export function ReportsScreen() {
     };
   }, [canProforma, proformaParams]);
 
-  /**
-   * Lo mismo para los cobros CONSOLIDADOS, con el mismo filtro de alcance. Es una
-   * consulta aparte porque son otro documento y otra cuenta: un casillero
-   * consolidado con cinco paquetes es UNA proforma, no cinco.
-   */
+  /** Lo mismo para los cobros CONSOLIDADOS, con el mismo filtro de alcance. */
   useEffect(() => {
     if (!canProforma) return;
     let cancelled = false;
     api
-      .get<{ items: ConsolidatedProformaItem[] }>(
+      .get<ProformaBatchSummary>(
         `/reports/proformas/consolidadas?${proformaParams().toString()}`,
       )
       .then((data) => {
-        if (!cancelled) setReadyGroups(data.items);
+        if (!cancelled) setReadyGroups(data);
       })
       .catch((err) => {
         if (cancelled) return;
-        setReadyGroups([]);
+        setReadyGroups({ total: 0, omitted: 0 });
         setError(
           err instanceof ApiError
             ? err.message
@@ -242,14 +250,10 @@ export function ReportsScreen() {
             <button
               className="btn btn-ghost"
               onClick={openProformas}
-              disabled={!ready || ready.length === 0}
-              title="Trámites ya facturados dentro del filtro actual"
+              disabled={!ready || ready.total === 0}
+              title={batchHint(ready, 'Trámites ya facturados dentro del filtro actual')}
             >
-              {ready === null
-                ? 'Proformas'
-                : ready.length === 0
-                  ? 'Sin proformas listas'
-                  : `Proformas (${ready.length})`}
+              {batchLabel(ready, 'Proformas', 'Sin proformas listas')}
             </button>
           )}
           {/*
@@ -261,14 +265,10 @@ export function ReportsScreen() {
             <button
               className="btn btn-ghost"
               onClick={openConsolidatedProformas}
-              disabled={!readyGroups || readyGroups.length === 0}
-              title="Cobros consolidados dentro del filtro actual"
+              disabled={!readyGroups || readyGroups.total === 0}
+              title={batchHint(readyGroups, 'Cobros consolidados dentro del filtro actual')}
             >
-              {readyGroups === null
-                ? 'Proformas consolidadas'
-                : readyGroups.length === 0
-                  ? 'Sin cobros consolidados'
-                  : `Proformas consolidadas (${readyGroups.length})`}
+              {batchLabel(readyGroups, 'Proformas consolidadas', 'Sin cobros consolidados')}
             </button>
           )}
           <button className="btn btn-primary" onClick={downloadCsv} disabled={!report || !kind}>

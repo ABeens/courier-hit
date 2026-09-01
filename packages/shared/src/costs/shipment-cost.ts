@@ -93,6 +93,44 @@ export function computeTotals(lines: readonly Totalizable[]): CostTotals {
 }
 
 /**
+ * El total en la moneda pedida, sin volver a recorrer las lineas. Existe para no
+ * repetir el ternario `currency === USD ? totals.usd : totals.crc` en cada sitio
+ * que imprime un total: cuando manana haya una tercera moneda, este es el unico
+ * punto que cambia.
+ */
+export function totalIn(totals: CostTotals, currency: Currency): number {
+  return currency === Currency.USD ? totals.usd : totals.crc;
+}
+
+/**
+ * MONEDA EN LA QUE SE TRAMITO la factura: la de sus propias lineas.
+ *
+ * No es lo mismo que "la moneda en la que se puede expresar": cualquier factura
+ * se puede convertir a las dos (para eso viaja la tasa en cada linea). Es la
+ * moneda en la que el operador cargo los importes, y por tanto la que el cliente
+ * reconoce como la del cobro: un agenciamiento cargado en colones tiene que
+ * imprimirse en colones, aunque el sistema sepa cuanto son en dolares.
+ *
+ * Con lineas mezcladas gana la que concentra el mayor importe (comparadas en
+ * dolares, que es lo unico que hace comparables dos monedas). El empate
+ * -incluida una factura en cero- se resuelve por la PRIMERA linea, que es la que
+ * fijo la moneda del trámite: asi la respuesta no depende del orden en que se
+ * sumo ni cambia sola entre dos llamadas.
+ */
+export function invoiceCurrency(lines: readonly Totalizable[]): Currency {
+  let usdShare = 0;
+  let crcShare = 0;
+  for (const line of lines) {
+    const inUsd = convertMoney(line.amount, line.currency, Currency.USD, line.exchangeRate);
+    if (line.currency === Currency.USD) usdShare += inUsd;
+    else crcShare += inUsd;
+  }
+  if (crcShare > usdShare) return Currency.CRC;
+  if (usdShare > crcShare) return Currency.USD;
+  return lines[0]?.currency ?? Currency.USD;
+}
+
+/**
  * Desglose de una factura por categoria, en UNA moneda. Todas las cifras salen
  * de las mismas lineas que produjeron el total: nunca se digitan.
  */

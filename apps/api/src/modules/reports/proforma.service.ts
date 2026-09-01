@@ -11,10 +11,12 @@
  *    proforma que ya no representa ninguna factura.
  * 2. SOLO SOBRE TRAMITES FACTURADOS. Sin costos aprobados no hay total que
  *    imprimir; se responde 409 y no una proforma en blanco.
- * 3. LOS IMPORTES SE REEXPRESAN EN USD CON LA TASA DE LA FACTURA. Cada linea se
- *    convierte con SU propia tasa (regla M5) y el total en colones se calcula con
- *    la tasa congelada del tramite, no con la vigente de hoy: la proforma tiene
- *    que dar el mismo colon que la factura que la origino.
+ * 3. SE IMPRIME EN LA MONEDA EN QUE SE TRAMITO. La moneda del documento sale de
+ *    las lineas de costo (`invoiceCurrency`), no de una constante: un
+ *    agenciamiento cargado en colones se entrega en colones. El otro total va de
+ *    referencia. Cada linea se convierte con SU propia tasa (regla M5) y los
+ *    totales usan la tasa congelada del tramite, no la vigente de hoy: la
+ *    proforma tiene que dar el mismo colon que la factura que la origino.
  */
 import {
   CostCategory,
@@ -29,19 +31,22 @@ import {
   findDistrict,
   findProvince,
   formatConsolidatedProformaNumber,
+  invoiceCurrency,
   paymentGroupStatus,
   roundMoney,
   settledAmount,
+  totalIn,
 } from '@courier/shared';
 import type {
   ConsolidatedProformaDto,
   ConsolidatedProformaItem,
   ConsolidatedProformaListItem,
+  ProformaBatchSummary,
   ProformaDto,
   ProformaLine,
-  ProformaListItem,
   ProformaQuery,
   Session,
+  ShipmentType,
 } from '@courier/shared';
 import { AuthErrors, CostErrors, PaymentErrors, ShipmentErrors } from '../../core/errors';
 import { consolidatedRepo } from '../payments/consolidated.repo';
@@ -92,21 +97,30 @@ export const proformaService = {
      */
     const exchangeRate = row.lines[0]?.exchangeRate ?? 1;
 
+    /**
+     * La moneda del documento es la del TRAMITE: la que el operador uso al cargar
+     * los costos. Se pregunta a las lineas y no al tipo de tramite porque es la
+     * linea la que lleva el dato; el tipo solo sugiere un valor por defecto en la
+     * pantalla de costos, y el operador puede haberlo cambiado.
+     */
+    const currency = invoiceCurrency(row.lines);
+
     const lines: ProformaLine[] = row.lines.map((line) => ({
       quantity: 1,
       label: line.label,
       electronicInvoiceCode: line.electronicInvoiceCode,
-      amountUsd: convertMoney(line.amount, line.currency, Currency.USD, line.exchangeRate),
+      amount: convertMoney(line.amount, line.currency, currency, line.exchangeRate),
     }));
 
     const totals = computeTotals(row.lines);
-    const breakdown = breakdownByCategory(row.lines, Currency.USD);
+    const breakdown = breakdownByCategory(row.lines, currency);
 
     return {
       shipmentId: row.id,
       number: row.code,
       issuedAt: row.costsApprovedAt.toISOString(),
       exchangeRate,
+      currency,
       client: {
         name: row.clientName,
         idNumber: row.idNumber,
@@ -122,13 +136,13 @@ export const proformaService = {
         description: row.description,
         weightKg: row.weightKg,
         tracking: row.tracking,
-        freightUsd: breakdown.flete,
+        freight: breakdown.flete,
         // La columna "Otros / Permisos" de la plantilla junta lo trasladado que no
         // es impuesto con lo que son honorarios nuestros: para el cliente es una
         // sola cosa (lo que se le cobra aparte del flete y los impuestos).
-        othersUsd: roundMoney(breakdown.otros + breakdown.propio, Currency.USD),
-        taxesUsd: breakdown.impuestos,
-        totalUsd: totals.usd,
+        others: roundMoney(breakdown.otros + breakdown.propio, currency),
+        taxes: breakdown.impuestos,
+        total: totalIn(totals, currency),
         deliveredAt: row.deliveredAt?.toISOString() ?? null,
       },
       electronicInvoiceNumber: row.electronicInvoiceNumber,
@@ -136,33 +150,32 @@ export const proformaService = {
   },
 
   /**
-   * Proformas LISTAS del filtro actual: los tramites ya facturados.
+   * CUANTAS proformas hay listas en el filtro actual, para que la pantalla lo
+   * diga antes de abrirlas: "descargar todas" sin saber cuantas son es como
+   * alguien acaba abriendo un documento de trescientas paginas sin querer.
    *
-   * Devuelve la lista para que la pantalla diga cuantas va a bajar antes de
-   * hacerlo. El tope existe porque el lote se arma en memoria: 200 proformas ya
-   * son un documento de cientos de paginas, y mas alla de eso lo que hace falta
-   * no es un limite mas alto sino un filtro mas estrecho.
+   * Es un conteo y no la lista: la pantalla no pinta ninguna proforma, solo el
+   * numero. Antes se armaban las 200 del lote (tres consultas por tramite) para
+   * devolver algo que nadie miraba, y el numero salia YA RECORTADO por el tope,
+   * asi que se quedaba en 200 con cualquier filtro y parecia que filtrar no hacia
+   * nada. `omitted` viaja al lado porque es la otra mitad de la misma verdad: lo
+   * que hay y lo que va a caber.
    */
-  async ready(session: Session, query: ProformaQuery): Promise<ProformaListItem[]> {
+  async readyCount(session: Session, query: ProformaQuery): Promise<ProformaBatchSummary> {
     if (!can(session.role, Permission.ReportsProforma)) throw AuthErrors.forbidden();
 
-    const ids = await reportsRepo.billedShipmentIds(query);
-    const items: ProformaListItem[] = [];
-    for (const id of ids.slice(0, BATCH_LIMIT)) {
-      const proforma = await this.get(session, id);
-      items.push({
-        shipmentId: proforma.shipmentId,
-        number: proforma.number,
-        clientName: proforma.client.name,
-        issuedAt: proforma.issuedAt,
-        totalUsd: proforma.totalUsd,
-        electronicInvoiceNumber: proforma.electronicInvoiceNumber,
-      });
-    }
-    return items;
+    const total = await reportsRepo.countBilledShipments(query);
+    return { total, omitted: Math.max(0, total - BATCH_LIMIT) };
   },
 
-  /** Las proformas listas, completas, para imprimirlas de una sola vez. */
+  /**
+   * Las proformas listas, completas, para imprimirlas de una sola vez.
+   *
+   * El tope existe porque el lote se arma en memoria: 200 proformas ya son un
+   * documento de cientos de paginas, y mas alla de eso lo que hace falta no es un
+   * limite mas alto sino un filtro mas estrecho. Lo recortado se anuncia impreso
+   * (ver `renderProformas`), nunca en silencio.
+   */
   async batch(session: Session, query: ProformaQuery): Promise<ProformaDto[]> {
     if (!can(session.role, Permission.ReportsProforma)) throw AuthErrors.forbidden();
 
@@ -170,12 +183,6 @@ export const proformaService = {
     const out: ProformaDto[] = [];
     for (const id of ids.slice(0, BATCH_LIMIT)) out.push(await this.get(session, id));
     return out;
-  },
-
-  /** Cuantas proformas quedaron fuera del lote por el tope. 0 = salieron todas. */
-  async omittedFrom(query: ProformaQuery): Promise<number> {
-    const ids = await reportsRepo.billedShipmentIds(query);
-    return Math.max(0, ids.length - BATCH_LIMIT);
   },
 
   // -------------------------------------------------------------------------
@@ -200,6 +207,14 @@ export const proformaService = {
     const lines = await consolidatedRepo.groupPayments(groupId);
     if (lines.length === 0) throw PaymentErrors.groupNotFound();
 
+    /**
+     * La moneda del documento es la del COBRO, no la de las lineas de cada
+     * paquete: el grupo ya se cobro en una moneda concreta y el recibo del cliente
+     * habla en esa. Lo pagado y lo facturado tienen que poder compararse sin que
+     * el lector convierta nada.
+     */
+    const currency = group.currency;
+
     const items: ConsolidatedProformaItem[] = [];
     let client: ConsolidatedProformaDto['client'] | null = null;
     let totalUsd = 0;
@@ -212,7 +227,7 @@ export const proformaService = {
       // documento en vez de imprimir un detalle en blanco.
       if (!row || !row.costsApprovedAt || row.lines.length === 0) continue;
 
-      const breakdown = breakdownByCategory(row.lines, Currency.USD);
+      const breakdown = breakdownByCategory(row.lines, currency);
       const totals = computeTotals(row.lines);
       totalUsd += totals.usd;
       totalCrc += totals.crc;
@@ -232,15 +247,15 @@ export const proformaService = {
         tracking: row.tracking,
         description: row.description,
         weightKg: row.weightKg,
-        freightUsd: breakdown.flete,
-        othersUsd: roundMoney(breakdown.otros + breakdown.propio, Currency.USD),
-        taxesUsd: breakdown.impuestos,
-        totalUsd: totals.usd,
+        freight: breakdown.flete,
+        others: roundMoney(breakdown.otros + breakdown.propio, currency),
+        taxes: breakdown.impuestos,
+        total: totalIn(totals, currency),
         lines: row.lines.map((l) => ({
           quantity: 1,
           label: l.label,
           electronicInvoiceCode: l.electronicInvoiceCode,
-          amountUsd: convertMoney(l.amount, l.currency, Currency.USD, l.exchangeRate),
+          amount: convertMoney(l.amount, l.currency, currency, l.exchangeRate),
         })),
       });
     }
@@ -264,20 +279,25 @@ export const proformaService = {
       number: formatConsolidatedProformaNumber(group.id),
       issuedAt: group.createdAt.toISOString(),
       exchangeRate: group.exchangeRate,
+      currency,
       client,
       rateName: group.rateName ?? 'Consolidada',
       items,
       totalUsd: roundMoney(totalUsd, Currency.USD),
       totalCrc: roundMoney(totalCrc, Currency.CRC),
-      paidAmount: settledAmount(lines, group.currency),
-      paidCurrency: group.currency,
+      paidAmount: settledAmount(lines, currency),
       paidStatus: status,
       paidAt: status === PaymentStatus.Confirmado && confirmedAt ? confirmedAt.toISOString() : null,
       method: group.method,
     };
   },
 
-  /** Los cobros agrupados del filtro, para poder contarlos antes de bajarlos. */
+  /**
+   * Los cobros agrupados del filtro. Van TODOS, sin recortar por el tope: el
+   * recorte lo hace `consolidatedBatch`, que es quien arma el documento. Contar
+   * sobre una lista ya recortada era lo que dejaba el numero clavado en el tope
+   * dijera lo que dijera el filtro.
+   */
   async readyConsolidated(
     session: Session,
     query: ProformaQuery,
@@ -290,21 +310,41 @@ export const proformaService = {
       to: query.to ? new Date(query.to) : undefined,
     });
 
-    const byGroup = new Map<string, { statuses: PaymentStatus[]; shipments: Set<string> }>();
+    const byGroup = new Map<
+      string,
+      { statuses: PaymentStatus[]; shipments: Set<string>; types: Set<ShipmentType> }
+    >();
     for (const line of await consolidatedRepo.paymentsForGroups(groups.map((g) => g.id))) {
       if (!line.groupId) continue;
-      const entry = byGroup.get(line.groupId) ?? { statuses: [], shipments: new Set<string>() };
+      const entry = byGroup.get(line.groupId) ?? {
+        statuses: [],
+        shipments: new Set<string>(),
+        types: new Set<ShipmentType>(),
+      };
       entry.statuses.push(line.status);
       entry.shipments.add(line.shipmentId);
+      entry.types.add(line.shipmentType);
       byGroup.set(line.groupId, entry);
     }
 
     const items: ConsolidatedProformaListItem[] = [];
-    for (const group of groups.slice(0, BATCH_LIMIT)) {
+    for (const group of groups) {
       const entry = byGroup.get(group.id);
       // Un grupo con todos sus cobros INICIADOS es un formulario de tarjeta que
       // alguien abrio y no llego a usar: no hay documento que emitir.
       if (!entry || entry.statuses.every((s) => s === PaymentStatus.Iniciado)) continue;
+
+      /**
+       * El filtro por tipo de tramite recorta QUE COBROS salen, no que paquetes
+       * lleva cada uno: un cobro agrupado es UNA factura, y quitarle paquetes por
+       * un filtro de pantalla daria un documento cuyo total no cuadra con lo que
+       * se cobro. Entra el grupo que tenga al menos un paquete del tipo pedido.
+       *
+       * Sin esto el filtro se perdia por el camino (`listGroups` solo recibia
+       * cliente y fechas) y el boton contaba SIEMPRE todos los cobros, dijera lo
+       * que dijera el selector de tramite.
+       */
+      if (query.shipmentType && !query.shipmentType.some((t) => entry.types.has(t))) continue;
 
       items.push({
         paymentGroupId: group.id,
@@ -322,22 +362,37 @@ export const proformaService = {
     return items;
   },
 
-  /** Las proformas consolidadas del filtro, completas, en un solo documento. */
+  /** Cuantos cobros consolidados hay listos en el filtro, y cuantos no caben. */
+  async readyConsolidatedCount(
+    session: Session,
+    query: ProformaQuery,
+  ): Promise<ProformaBatchSummary> {
+    const total = (await this.readyConsolidated(session, query)).length;
+    return { total, omitted: Math.max(0, total - BATCH_LIMIT) };
+  },
+
+  /**
+   * Las proformas consolidadas del filtro, completas, en un solo documento.
+   *
+   * Devuelve tambien cuantas quedaron fuera por el tope, y no lo deja para otra
+   * llamada, porque ya lo sabe: preguntarlo aparte recorreria los mismos grupos
+   * una segunda vez para responder algo que este recorrido tiene delante.
+   */
   async consolidatedBatch(
     session: Session,
     query: ProformaQuery,
-  ): Promise<ConsolidatedProformaDto[]> {
+  ): Promise<{ proformas: ConsolidatedProformaDto[]; omitted: number }> {
     const listed = await this.readyConsolidated(session, query);
-    const out: ConsolidatedProformaDto[] = [];
-    for (const item of listed) {
+    const proformas: ConsolidatedProformaDto[] = [];
+    for (const item of listed.slice(0, BATCH_LIMIT)) {
       // Un grupo al que le reversaron las facturas no rompe el lote: se omite.
       try {
-        out.push(await this.getConsolidated(session, item.paymentGroupId));
+        proformas.push(await this.getConsolidated(session, item.paymentGroupId));
       } catch {
         continue;
       }
     }
-    return out;
+    return { proformas, omitted: Math.max(0, listed.length - BATCH_LIMIT) };
   },
 };
 

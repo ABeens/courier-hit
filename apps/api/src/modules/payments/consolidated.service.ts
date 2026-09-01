@@ -39,10 +39,13 @@ import {
   bankAccountsFor,
   billsAsGroup,
   canSetExchangeRate,
+  chargeBasisIn,
+  chargeCurrencyFor,
   exchangeRateSchema,
   isSettled,
   outstanding,
   outstandingCrc,
+  outstandingFor,
   paymentGroupStatus,
   pendingAmount,
   recordedPaymentStatus,
@@ -52,6 +55,7 @@ import {
 } from '@courier/shared';
 import type {
   BankAccount,
+  ChargeBasis,
   ConsolidatedItem,
   ConsolidatedQuoteDto,
   PaymentGroupDto,
@@ -116,9 +120,10 @@ async function resolveAccount(clientId: string): Promise<ResolvedAccount> {
   if (!account.rateKind || !billsAsGroup(account.rateKind)) throw PaymentErrors.notConsolidated();
 
   const candidates = await consolidatedRepo.billableShipments(clientId);
-  const items = candidates.filter(
-    (row) => outstandingCrc(settledAmount(row.settlement, Currency.CRC), row.invoiceTotalCrc) > 0,
-  );
+  // El saldo abierto se mide en la MONEDA DE COBRO, la misma con la que despues
+  // se le abona: filtrar por la otra columna dejaria entrar al grupo un paquete
+  // sin nada que cobrar, con un abono de cero encima.
+  const items = candidates.filter((row) => dueOf(row) > 0);
 
   return {
     clientId: account.clientId,
@@ -130,6 +135,23 @@ async function resolveAccount(clientId: string): Promise<ResolvedAccount> {
     allowsBankDeposit: account.allowsBankDeposit ?? true,
     items,
   };
+}
+
+/**
+ * MONEDA DE COBRO DEL GRUPO. Un grupo consolidado es siempre de paquetes, asi
+ * que es la de la Paqueteria: dolares. Se deriva del tipo de tramite en vez de
+ * escribirse a mano para que la regla siga viviendo en un solo sitio
+ * (`chargeCurrencyFor`) y no haya que acordarse de este archivo si cambia.
+ */
+const CHARGE_CURRENCY = chargeCurrencyFor(ShipmentType.Paqueteria);
+
+/**
+ * De un par de cifras en las dos monedas, la que corresponde a la moneda de
+ * cobro. Las sumas del grupo se calculan siempre en las dos (la pantalla del
+ * staff lee colones), pero cobrar y liquidar toca una sola columna.
+ */
+function inCharge<T>(usd: T, crc: T): T {
+  return CHARGE_CURRENCY === Currency.USD ? usd : crc;
 }
 
 /** Las cifras del grupo en las dos monedas, a partir de sus paquetes. */
@@ -160,9 +182,39 @@ function totalsOf(items: readonly ConsolidatedCandidate[]) {
   };
 }
 
-/** El saldo de UN paquete del grupo, en colones: lo que se le va a abonar. */
+type GroupTotals = ReturnType<typeof totalsOf>;
+
+/** El saldo de UN paquete del grupo, en colones. Es la cifra que lee el staff. */
 function dueCrcOf(row: ConsolidatedCandidate): number {
   return outstandingCrc(settledAmount(row.settlement, Currency.CRC), row.invoiceTotalCrc);
+}
+
+/** La base con la que se liquida UN paquete del grupo. */
+function basisOfRow(row: ConsolidatedCandidate): ChargeBasis {
+  return chargeBasisIn(CHARGE_CURRENCY, inCharge(row.invoiceTotalUsd, row.invoiceTotalCrc));
+}
+
+/**
+ * El saldo de UN paquete EN LA MONEDA DE COBRO: lo que se le va a abonar de
+ * verdad. Es el importe que entra en la fila de `payments`, y su suma sobre
+ * todos los paquetes es exactamente el total del grupo (ver `createGroup`).
+ */
+function dueOf(row: ConsolidatedCandidate): number {
+  return outstandingFor(settledAmount(row.settlement, CHARGE_CURRENCY), basisOfRow(row));
+}
+
+/**
+ * La base con la que se liquida EL GRUPO: la moneda de cobro y la suma de las
+ * facturas en esa moneda.
+ *
+ * Sin paquetes queda en null y no en cero, por la misma razon que un tramite sin
+ * factura: un total de cero se leeria como una cuenta ya saldada.
+ */
+function basisOf(items: readonly ConsolidatedCandidate[], totals: GroupTotals): ChargeBasis {
+  return chargeBasisIn(
+    CHARGE_CURRENCY,
+    items.length > 0 ? inCharge(totals.invoiceTotalUsd, totals.invoiceTotalCrc) : null,
+  );
 }
 
 /**
@@ -236,6 +288,8 @@ export const consolidatedService = {
         pendingUsd: 0,
         pendingCrc: 0,
         dueCrc: 0,
+        chargeCurrency: CHARGE_CURRENCY,
+        due: 0,
         settled: false,
         inValidation: false,
         availableMethods: [],
@@ -267,6 +321,11 @@ export const consolidatedService = {
     const settledPayments = account.items.flatMap((row) => row.settlement);
     const invoiceCrc = account.items.length > 0 ? totals.invoiceTotalCrc : null;
 
+    /** La base del cobro del grupo: moneda y total facturado en ella. */
+    const basis = basisOf(account.items, totals);
+    const settledInCharge = inCharge(totals.settledUsd, totals.settledCrc);
+    const pendingInCharge = inCharge(totals.pendingUsd, totals.pendingCrc);
+
     return {
       consolidated: true,
       clientId: account.clientId,
@@ -281,8 +340,10 @@ export const consolidatedService = {
       pendingUsd: totals.pendingUsd,
       pendingCrc: totals.pendingCrc,
       dueCrc: outstandingCrc(totals.settledCrc, invoiceCrc),
-      settled: isSettled(settledPayments, invoiceCrc),
-      inValidation: awaitsValidation(totals.settledCrc, totals.pendingCrc, invoiceCrc),
+      chargeCurrency: basis.currency,
+      due: outstandingFor(settledInCharge, basis),
+      settled: isSettled(settledPayments, basis),
+      inValidation: awaitsValidation(settledInCharge, pendingInCharge, basis),
       availableMethods: methodsFor(account),
       /**
        * Las cuentas de la Paqueteria: solo las de dolares. Un grupo consolidado es
@@ -308,7 +369,8 @@ export const consolidatedService = {
     if (account.items.length === 0) throw PaymentErrors.nothingToSettle();
 
     const totals = totalsOf(account.items);
-    if (isSettled(account.items.flatMap((r) => r.settlement), totals.invoiceTotalCrc)) {
+    const basis = basisOf(account.items, totals);
+    if (isSettled(account.items.flatMap((r) => r.settlement), basis)) {
       throw PaymentErrors.alreadySettled();
     }
 
@@ -318,7 +380,13 @@ export const consolidatedService = {
      * peticion se puede repetir desde una pestaña vieja o a mano, asi que no basta
      * con que la pantalla esconda el boton.
      */
-    if (awaitsValidation(totals.settledCrc, totals.pendingCrc, totals.invoiceTotalCrc)) {
+    if (
+      awaitsValidation(
+        inCharge(totals.settledUsd, totals.settledCrc),
+        inCharge(totals.pendingUsd, totals.pendingCrc),
+        basis,
+      )
+    ) {
       throw PaymentErrors.inValidation();
     }
 
@@ -368,8 +436,8 @@ export const consolidatedService = {
        */
       try {
         intent = await onvoClient.createPaymentIntent({
-          amount: outstandingCrc(totals.settledCrc, totals.invoiceTotalCrc),
-          currency: Currency.CRC,
+          amount: outstandingFor(inCharge(totals.settledUsd, totals.settledCrc), basis),
+          currency: basis.currency,
           paymentId: groupId,
           description: `Consolidado ${account.clientCode} — ${account.items.length} paquetes`,
         });
@@ -451,7 +519,10 @@ export const consolidatedService = {
     confirmedAt?: Date | null;
   }): Promise<string> {
     const totals = totalsOf(args.account.items);
-    const groupAmount = outstandingCrc(totals.settledCrc, totals.invoiceTotalCrc);
+    const groupAmount = outstandingFor(
+      inCharge(totals.settledUsd, totals.settledCrc),
+      basisOf(args.account.items, totals),
+    );
 
     /**
      * Tasa del GRUPO: el cociente del cobro completo, que es la que imprime la
@@ -477,7 +548,7 @@ export const consolidatedService = {
         clientRateId: args.account.rateId,
         method: args.method,
         amount: groupAmount,
-        currency: Currency.CRC,
+        currency: CHARGE_CURRENCY,
         exchangeRate: groupRate,
         createdBy: args.createdBy,
       },
@@ -487,8 +558,8 @@ export const consolidatedService = {
           groupId,
           method: args.method,
           status: args.status,
-          amount: dueCrcOf(row),
-          currency: Currency.CRC,
+          amount: dueOf(row),
+          currency: CHARGE_CURRENCY,
           exchangeRate: args.forcedRate ?? rateFor(row, args.globalRate),
           bankAccount: args.bankAccount ?? null,
           receiptNumber: args.receiptNumber ?? null,

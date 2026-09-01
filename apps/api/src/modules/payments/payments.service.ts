@@ -31,9 +31,11 @@ import {
   awaitsValidation,
   bankAccountsFor,
   canSetExchangeRate,
+  chargeBasisFor,
   exchangeRateSchema,
   isSettled,
   outstandingCrc,
+  outstandingFor,
   pendingAmount,
   recordedPaymentStatus,
   roundMoney,
@@ -229,9 +231,25 @@ export const paymentsService = {
      */
     const consolidated = effectiveRate ? billsAsGroup(effectiveRate.kind) : false;
 
+    /**
+     * LA BASE DEL COBRO: en que moneda sale el dinero de este tramite y contra
+     * que total se cancela (`chargeCurrencyFor`). Paqueteria en dolares, el
+     * resto en colones.
+     *
+     * Todo lo que decide si queda saldo sale de aqui. Los pares de cifras en las
+     * dos monedas que van mas abajo son para que la pantalla elija columna
+     * (`billingCurrencyFor`), no para liquidar.
+     */
+    const basis = chargeBasisFor(shipment.shipmentType, shipment);
+
     const settledCrc = settledAmount(paid, Currency.CRC);
     const settledUsd = settledAmount(paid, Currency.USD);
     const pendingCrc = pendingAmount(paid, Currency.CRC);
+    const pendingUsd = pendingAmount(paid, Currency.USD);
+
+    /** Las mismas dos cifras, ya en la moneda con la que se cobra y se salda. */
+    const settledInCharge = basis.currency === Currency.USD ? settledUsd : settledCrc;
+    const pendingInCharge = basis.currency === Currency.USD ? pendingUsd : pendingCrc;
 
     const methods: PaymentMethod[] = [];
     if (rate?.allowsCard && isOnvoEnabled()) methods.push(PaymentMethod.Tarjeta);
@@ -254,17 +272,25 @@ export const paymentsService = {
        * las dos columnas tendria que reexpresar con la tasa de hoy, que no es la
        * que se congelo en cada abono (regla M5).
        */
-      pendingUsd: pendingAmount(paid, Currency.USD),
+      pendingUsd,
       /** Saldo pendiente en colones; nunca negativo (un sobrepago no genera deuda). */
       dueCrc: outstandingCrc(settledCrc, shipment.invoiceTotalCrc),
-      settled: isSettled(paid, shipment.invoiceTotalCrc),
+      /**
+       * Moneda en la que se va a cobrar y saldo EN ESA MONEDA: el importe exacto
+       * que va a llevar el intento de la pasarela o que hay que depositar. Viaja
+       * para que la pantalla no lo deduzca por su cuenta y anuncie una cifra
+       * distinta de la que el servidor va a cobrar.
+       */
+      chargeCurrency: basis.currency,
+      due: outstandingFor(settledInCharge, basis),
+      settled: isSettled(paid, basis),
       /**
        * El saldo ya esta cubierto por un abono en validacion: la pantalla debe
        * mostrar el comprobante en revision, no un formulario para pagar otra vez.
        * Lo decide el servidor con la MISMA funcion que rechaza el segundo pago en
        * `start`, para que no pueda ofrecer un boton que la API va a rechazar.
        */
-      inValidation: awaitsValidation(settledCrc, pendingCrc, shipment.invoiceTotalCrc),
+      inValidation: awaitsValidation(settledInCharge, pendingInCharge, basis),
       availableMethods: methods,
       /**
        * A que cuentas puede depositar este tramite: Paqueteria solo las de
@@ -314,8 +340,15 @@ export const paymentsService = {
     // Cuenta consolidada: se paga el grupo entero, nunca un paquete suelto.
     await assertNotConsolidated(shipment.clientId);
 
+    /**
+     * En que moneda se cobra este tramite y contra que total se cancela. Es la
+     * MISMA base que usa la cotizacion, y por eso lo que se cobra aqui es
+     * exactamente lo que el cliente acaba de leer en la pantalla.
+     */
+    const basis = chargeBasisFor(shipment.shipmentType, shipment);
+
     const paid = await paymentsRepo.settlementView(input.shipmentId);
-    if (isSettled(paid, shipment.invoiceTotalCrc)) throw PaymentErrors.alreadySettled();
+    if (isSettled(paid, basis)) throw PaymentErrors.alreadySettled();
 
     /**
      * UN SOLO PAGO ABIERTO POR SALDO. Con un abono que ya cubre lo que falta y
@@ -332,9 +365,9 @@ export const paymentsService = {
      */
     if (
       awaitsValidation(
-        settledAmount(paid, Currency.CRC),
-        pendingAmount(paid, Currency.CRC),
-        shipment.invoiceTotalCrc,
+        settledAmount(paid, basis.currency),
+        pendingAmount(paid, basis.currency),
+        basis,
       )
     ) {
       throw PaymentErrors.inValidation();
@@ -368,13 +401,15 @@ export const paymentsService = {
      * Se cobra el SALDO pendiente, no el total: si el cliente ya abono una parte
      * por deposito, la tarjeta solo debe llevarse lo que falta.
      *
-     * Moneda y tasa (reglas M2 y M5): se cobra en colones —la moneda local de
-     * cobro— y se congela la tasa del dia. Que la tasa se guarde aqui, y no se
-     * relea al mostrar, es lo que permite reexpresar el abono en dolares mañana
-     * sin que la cifra cambie sola.
+     * Moneda y tasa (reglas M2 y M5): se cobra en la moneda del tramite
+     * (`chargeCurrencyFor`: Paqueteria en dolares, el resto en colones) y se
+     * congela la tasa del dia. La tasa se guarda IGUAL en los dos casos, tambien
+     * cuando el abono ya viene en dolares: es lo que permite reexpresar el
+     * importe en la otra moneda mañana sin que la cifra cambie sola, y lo que
+     * deja al reporte financiero sumar los dos tipos de tramite.
      */
     const globalRate = await settingsRepo.currentExchangeRate();
-    const amount = outstandingCrc(settledAmount(paid, Currency.CRC), shipment.invoiceTotalCrc);
+    const amount = outstandingFor(settledAmount(paid, basis.currency), basis);
 
     const isCard = input.method === PaymentMethod.Tarjeta;
 
@@ -402,7 +437,7 @@ export const paymentsService = {
        */
       status: isCard ? PaymentStatus.Iniciado : PaymentStatus.Pendiente,
       amount,
-      currency: Currency.CRC,
+      currency: basis.currency,
       exchangeRate: invoiceExchangeRate(shipment, globalRate),
       bankAccount: input.bankAccount ?? null,
       receiptNumber: input.receiptNumber ?? null,
@@ -422,7 +457,7 @@ export const paymentsService = {
       try {
         intent = await onvoClient.createPaymentIntent({
           amount,
-          currency: Currency.CRC,
+          currency: basis.currency,
           paymentId: id,
           description: `${shipment.code} — ${shipment.description}`,
         });
