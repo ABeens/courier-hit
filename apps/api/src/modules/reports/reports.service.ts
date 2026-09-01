@@ -28,6 +28,7 @@ import {
   ShipmentType,
   breakdownByCategory,
   can,
+  chargeBasisFor,
   collectionStatus,
   depositDifference,
   grossProfitUsd,
@@ -108,8 +109,16 @@ function collectionColumns(row: ServiceRow) {
   const confirmed = row.payments.filter((p) => p.status === PaymentStatus.Confirmado);
   const reference = confirmed.at(-1) ?? row.payments.at(-1) ?? null;
 
+  /**
+   * El estatus de cobro se decide en la moneda con la que se cobra el tramite
+   * (`chargeCurrencyFor`), la misma que usa la guarda de salida a ruta. Un
+   * reporte que dijera "Pendiente" de un paquete que el sistema deja salir por
+   * pagado seria peor que no tener la columna.
+   */
+  const basis = chargeBasisFor(row.shipmentType, row);
+
   return {
-    collectionStatus: COLLECTION_STATUS_LABELS[collectionStatus(row.payments, row.invoiceTotalCrc)],
+    collectionStatus: COLLECTION_STATUS_LABELS[collectionStatus(row.payments, basis)],
     bankAccount: reference?.bankAccount ? BANK_ACCOUNT_LABELS[reference.bankAccount] : null,
     /**
      * El numero de comprobante si lo hay; si no, se dice que existe un archivo
@@ -117,7 +126,7 @@ function collectionColumns(row: ServiceRow) {
      * del sistema y en un CSV solo seria ruido.
      */
     receipt: reference?.receiptNumber ?? (reference?.receiptFileKey ? 'Adjunto' : null),
-    paidAt: settledAt(row.payments, row.invoiceTotalCrc),
+    paidAt: settledAt(row.payments, basis),
   };
 }
 

@@ -137,23 +137,6 @@ export function pathTo(flow: Flow, target: State): State[] {
   return path;
 }
 
-/**
- * Dolares que cubren una deuda en colones sin quedarse corto, redondeando al
- * centimo HACIA ARRIBA.
- *
- * Deliberadamente NO usa `convertMoney`/`roundMoney`: esos redondean al mas
- * cercano, y medio centimo hacia abajo deja la factura sin cubrir por una
- * fraccion. `isSettled` compara lo abonado contra el total con `>=`, asi que ese
- * centimo es la diferencia entre un tramite que puede salir a ruta y uno que no.
- * Es el mismo criterio que el cobro real: al cliente se le cobra el importe que
- * salda la deuda, nunca uno que la deja abierta por redondeo.
- *
- * Vive aqui, y no repetida en cada seed, para que los dos cobren igual.
- */
-export function usdToCoverCrc(crc: number, exchangeRate: number): number {
-  return Math.ceil((crc / exchangeRate) * 100) / 100;
-}
-
 // ---------------------------------------------------------------------------
 // Escritura por lotes
 // ---------------------------------------------------------------------------

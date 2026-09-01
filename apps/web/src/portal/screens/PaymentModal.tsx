@@ -91,8 +91,18 @@ interface Quote {
   settledCrc: number;
   pendingCrc: number;
   pendingUsd: number;
-  /** Saldo en colones: lo que se le cobra a la tarjeta, se muestre o no así. */
+  /** Saldo en colones. Es la cifra con la que la operación cuadra el banco. */
   dueCrc: number;
+  /**
+   * LA MONEDA EN QUE SE COBRA ESTE TRÁMITE y el saldo en ella: Paquetería en
+   * dólares, Transporte y Agenciamiento en colones (`chargeCurrencyFor`).
+   *
+   * `due` es el importe EXACTO que va a llevar el intento de la pasarela. Lo
+   * calcula el servidor y viaja: la pantalla no lo deduce de las columnas, para
+   * no poder anunciar una cifra distinta de la que se cobra.
+   */
+  chargeCurrency: Currency;
+  due: number;
   settled: boolean;
   /** El saldo ya está cubierto por un abono sin validar: no se puede pagar otra vez. */
   inValidation: boolean;
@@ -203,8 +213,10 @@ export function PaymentModal({ shipment, role, onClose, onPaid, onProcessing }: 
    * MISMA proyeccion que hace la ficha del listado, para que el saldo de la
    * bandera y el de esta pantalla no se lean en monedas distintas.
    *
-   * Solo cambia como se DICE el importe. Lo que se le cobra a la tarjeta lo
-   * decide el servidor, y eso sigue siendo el saldo en colones.
+   * Solo cambia como se DICE el importe. Lo que se le COBRA lo decide el
+   * servidor y viaja aparte (`chargeCurrency` / `due`): en el cliente de
+   * Paqueteria las dos monedas coinciden, porque se le habla en la misma en que
+   * se le cobra, pero la cifra del cargo se lee siempre de la del servidor.
    */
   const currency = billingCurrencyFor(shipment.shipmentType, role);
   const amounts = quote ? billingAmounts(quote, currency, quote.settled) : null;
@@ -915,10 +927,17 @@ export function PaymentModal({ shipment, role, onClose, onPaid, onProcessing }: 
                   {shipment.code} · {shipment.description}
                 </p>
               </div>
-              {amounts && (
+              {quote && (
                 <div className="pay-head-amount">
                   <span>A pagar</span>
-                  <strong>{formatMoney(amounts.due, amounts.currency)}</strong>
+                  {/*
+                    El importe del CARGO, tal cual lo calculó el servidor y en su
+                    moneda. Es el único sitio de la pantalla donde la cifra tiene
+                    que ser la del cobro y no la de la columna que se está
+                    leyendo: el cliente la va a comparar con el estado de cuenta
+                    de su tarjeta.
+                  */}
+                  <strong>{formatMoney(quote.due, quote.chargeCurrency)}</strong>
                 </div>
               )}
             </div>

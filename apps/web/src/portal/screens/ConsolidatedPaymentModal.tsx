@@ -27,9 +27,15 @@ import {
   PaymentMethod,
   PaymentStatus,
   bankAccountOptionLabel,
+  billingAmounts,
   formatMoney,
 } from '@courier/shared';
-import type { ConsolidatedQuoteDto, PaymentGroupDto, PaymentIntentDto } from '@courier/shared';
+import type {
+  ConsolidatedItem,
+  ConsolidatedQuoteDto,
+  PaymentGroupDto,
+  PaymentIntentDto,
+} from '@courier/shared';
 import { API_BASE, ApiError, api } from '../lib/api';
 import { Icon } from '../components/Icon';
 import { ModalOverlay } from '../components/ModalOverlay';
@@ -77,12 +83,27 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
     : '/payments/consolidated/quote';
 
   /**
-   * El cobro es SIEMPRE en colones: es la moneda de cobro local y la que decide
-   * si un trámite queda saldado. A diferencia del pago suelto, aquí no se le
-   * habla al cliente en dólares porque el grupo mezcla varias facturas y el total
-   * exacto del cobro es el que se le carga a la tarjeta o se deposita.
+   * EL GRUPO SE COBRA EN SU MONEDA, y esta pantalla habla en esa y solo en esa.
+   *
+   * Un grupo consolidado es siempre de paquetes, y la Paquetería se cobra en
+   * dólares (`chargeCurrencyFor`): son la moneda de sus líneas de costo, la de
+   * las cuentas a las que se deposita y la cifra contra la que se cancela. La
+   * moneda y el importe los decide la API y viajan en la cotización; la pantalla
+   * no los deduce, porque el único error que no se puede cometer aquí es
+   * anunciar un monto distinto del que se va a cobrar.
+   *
+   * Y se enseña UNA sola: dos números para la misma deuda obligan al cliente a
+   * preguntar con cuál se le va a cobrar.
    */
-  const due = quote?.dueCrc ?? 0;
+  const chargeCurrency = quote?.chargeCurrency ?? Currency.CRC;
+  const due = quote?.due ?? 0;
+
+  /** Las demás cifras del grupo, proyectadas a esa misma moneda. */
+  const amounts = quote ? billingAmounts(quote, chargeCurrency, quote.settled) : null;
+
+  /** El saldo de UN paquete del grupo, en la moneda en que se cobra. */
+  const dueOfItem = (item: ConsolidatedItem): number =>
+    chargeCurrency === Currency.USD ? item.dueUsd : item.dueCrc;
 
   /**
    * ¿Se puede pagar ahora mismo? Hace falta que la cuenta sea consolidada, que
@@ -102,7 +123,7 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
       title,
       message,
       code: quote ? `${quote.clientCode} · ${quote.items.length} paquetes` : '',
-      amount: formatMoney(due, Currency.CRC),
+      amount: formatMoney(due, chargeCurrency),
     };
   }
 
@@ -337,19 +358,18 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
         <div className="card-item-field">
           <dt>Facturado</dt>
           <dd>
-            {quote.invoiceTotalCrc != null ? formatMoney(quote.invoiceTotalCrc, Currency.CRC) : '—'}
-            {quote.invoiceTotalUsd != null && (
-              <> · {formatMoney(quote.invoiceTotalUsd, Currency.USD)}</>
-            )}
+            {amounts?.invoiceTotal != null
+              ? formatMoney(amounts.invoiceTotal, chargeCurrency)
+              : '—'}
           </dd>
         </div>
         <div className="card-item-field">
           <dt>Abonado</dt>
-          <dd>{formatMoney(quote.settledCrc, Currency.CRC)}</dd>
+          <dd>{formatMoney(amounts?.paid ?? 0, chargeCurrency)}</dd>
         </div>
         <div className="card-item-field">
           <dt>Saldo</dt>
-          <dd className="pay-due">{formatMoney(due, Currency.CRC)}</dd>
+          <dd className="pay-due">{formatMoney(due, chargeCurrency)}</dd>
         </div>
       </dl>
     </div>
@@ -374,10 +394,7 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
               {item.weightKg != null && <> · {item.weightKg} kg</>}
             </dt>
             <dd>
-              <strong>{formatMoney(item.dueCrc, Currency.CRC)}</strong>
-              {item.invoiceTotalUsd != null && (
-                <span className="cell-sub"> {formatMoney(item.dueUsd, Currency.USD)}</span>
-              )}
+              <strong>{formatMoney(dueOfItem(item), chargeCurrency)}</strong>
             </dd>
           </div>
         ))}
@@ -423,9 +440,9 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
 
           {quote?.settled && <div className="banner ok">Esta cuenta ya está al día.</div>}
 
-          {quote?.consolidated && !quote.settled && quote.pendingCrc > 0 && (
+          {quote?.consolidated && !quote.settled && (amounts?.pending ?? 0) > 0 && (
             <div className="banner">
-              Hay {formatMoney(quote.pendingCrc, Currency.CRC)} a la espera de validación.
+              Hay {formatMoney(amounts!.pending, chargeCurrency)} a la espera de validación.
               {quote.inValidation && <> No hace falta que pagues de nuevo.</>}
             </div>
           )}
@@ -555,7 +572,7 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
           {method === PaymentMethod.Tarjeta && canPay && (
             <div className="banner">
               Al continuar abriremos el formulario seguro de pago con tarjeta por{' '}
-              {formatMoney(due, Currency.CRC)}.
+              {formatMoney(due, chargeCurrency)}.
             </div>
           )}
         </div>
@@ -566,7 +583,7 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
           </button>
           {canPay && method && !cardOpen && (
             <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Registrando…' : `Pagar ${formatMoney(due, Currency.CRC)}`}
+              {saving ? 'Registrando…' : `Pagar ${formatMoney(due, chargeCurrency)}`}
             </button>
           )}
         </div>
@@ -584,7 +601,7 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
               </div>
               <div className="pay-head-amount">
                 <span>A pagar</span>
-                <strong>{formatMoney(due, Currency.CRC)}</strong>
+                <strong>{formatMoney(due, chargeCurrency)}</strong>
               </div>
             </div>
 

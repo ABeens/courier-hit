@@ -28,6 +28,7 @@ import {
   editableFieldsAt,
   flowForType,
   initialState,
+  chargeBasisFor,
   isSettled,
   paged,
   pendingAmount,
@@ -172,7 +173,12 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
      * alguien sumo por su cuenta, no que haya dos reglas.
      */
     settledCrc: settledAmount(row.settlement, Currency.CRC),
-    settled: isSettled(row.settlement, row.invoiceTotalCrc),
+    /**
+     * Y la bandera se decide en la MONEDA DE COBRO del tramite, no en la columna
+     * de colones que va justo arriba: la Paqueteria se cobra en dolares
+     * (`chargeCurrencyFor`) y es contra esa cifra contra la que se cancela.
+     */
+    settled: isSettled(row.settlement, chargeBasisFor(row.shipmentType, row)),
     pendingCrc: pendingAmount(row.settlement, Currency.CRC),
     /**
      * Los mismos abonos en dolares. Se mandan SIEMPRE, no solo en Paqueteria: la

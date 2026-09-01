@@ -600,9 +600,13 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
                     busca primero si el trámite se puede mover, y eso depende del
                     cobro. Sin factura aprobada no pinta nada. */}
                 <PayFlag
+                  shipmentType={row.shipmentType}
+                  invoiceTotalUsd={row.invoiceTotalUsd}
                   invoiceTotalCrc={row.invoiceTotalCrc}
+                  settledUsd={row.settledUsd}
                   settledCrc={row.settledCrc}
                   settled={row.settled}
+                  pendingUsd={row.pendingUsd}
                   pendingCrc={row.pendingCrc}
                   amounts={amounts}
                 />

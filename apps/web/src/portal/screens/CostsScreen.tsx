@@ -160,9 +160,13 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
                 {view === 'facturados' && (
                   <td>
                     <PayFlag
+                      shipmentType={row.shipmentType}
+                      invoiceTotalUsd={row.invoiceTotalUsd}
                       invoiceTotalCrc={row.invoiceTotalCrc}
+                      settledUsd={row.settledUsd}
                       settledCrc={row.settledCrc}
                       settled={row.settled}
+                      pendingUsd={row.pendingUsd}
                       pendingCrc={row.pendingCrc}
                     />
                   </td>

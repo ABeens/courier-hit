@@ -57,6 +57,7 @@ import {
   findDistrict,
   flowForType,
   formatShipmentCode,
+  chargeBasisFor,
   isSettled,
   percentageBase,
   roundMoney,
@@ -88,7 +89,6 @@ import {
   locationOf,
   nextSequence,
   pathTo,
-  usdToCoverCrc,
 } from './seed-support';
 
 /** Marca del registro de historial que siembra este archivo (lo borra `--reset`). */
@@ -1071,11 +1071,15 @@ async function seed(tx: Tx): Promise<void> {
       });
     }
 
-    // 5) Pagos. El monto a cubrir es el total congelado en colones.
+    // 5) Pagos. Se cobra en la moneda del tramite: Paqueteria en dolares,
+    // Transporte y Agenciamiento en colones (`chargeBasisFor`).
     if (approved && sc.payment !== 'none') {
-      const dueCrc = totals!.crc;
+      const basis = chargeBasisFor(sc.type, {
+        invoiceTotalUsd: totals!.usd,
+        invoiceTotalCrc: totals!.crc,
+      });
+      const due = basis.invoiceTotal!;
       const paidAt = at(State.EnRutaEntrega) ?? new Date(Math.min(NOW.getTime(), approvedAt!.getTime() + DAY));
-      const usdFor = (crc: number): number => usdToCoverCrc(crc, exchangeRate);
       const receipt = `${1_240_000 + i * 13}`;
 
       const deposit = (amount: number, status: PaymentStatus, note: string | null = null): PaymentRow => ({
@@ -1083,7 +1087,7 @@ async function seed(tx: Tx): Promise<void> {
         method: PaymentMethod.DepositoBancario,
         status,
         amount,
-        currency: Currency.CRC,
+        currency: basis.currency,
         exchangeRate,
         /**
          * Una cuenta de las que ESE tramite admite (Paqueteria solo las de
@@ -1102,12 +1106,12 @@ async function seed(tx: Tx): Promise<void> {
         createdAt: paidAt,
       });
 
-      const card = (amountUsd: number): PaymentRow => ({
+      const card = (amount: number): PaymentRow => ({
         shipmentId,
         method: PaymentMethod.Tarjeta,
         status: PaymentStatus.Confirmado,
-        amount: amountUsd,
-        currency: Currency.USD,
+        amount,
+        currency: basis.currency,
         exchangeRate,
         bankAccount: null,
         receiptNumber: null,
@@ -1124,24 +1128,24 @@ async function seed(tx: Tx): Promise<void> {
       const mine: PaymentRow[] = [];
       switch (sc.payment) {
         case 'pending':
-          mine.push(deposit(dueCrc, PaymentStatus.Pendiente));
+          mine.push(deposit(due, PaymentStatus.Pendiente));
           break;
         case 'rejected':
-          mine.push(deposit(dueCrc, PaymentStatus.Rechazado, 'El comprobante no corresponde al monto facturado.'));
+          mine.push(deposit(due, PaymentStatus.Rechazado, 'El comprobante no corresponde al monto facturado.'));
           break;
         case 'partial':
-          mine.push(deposit(roundMoney(dueCrc * 0.4, Currency.CRC), PaymentStatus.Confirmado, 'Abono parcial.'));
+          mine.push(deposit(roundMoney(due * 0.4, basis.currency), PaymentStatus.Confirmado, 'Abono parcial.'));
           break;
         case 'full-deposit':
-          mine.push(deposit(dueCrc, PaymentStatus.Confirmado));
+          mine.push(deposit(due, PaymentStatus.Confirmado));
           break;
         case 'full-card':
-          mine.push(card(usdFor(dueCrc)));
+          mine.push(card(due));
           break;
         case 'split': {
-          const first = roundMoney(dueCrc * 0.4, Currency.CRC);
+          const first = roundMoney(due * 0.4, basis.currency);
           mine.push(deposit(first, PaymentStatus.Confirmado, 'Primer abono.'));
-          mine.push(card(usdFor(dueCrc - first)));
+          mine.push(card(roundMoney(due - first, basis.currency)));
           break;
         }
       }
@@ -1156,7 +1160,7 @@ async function seed(tx: Tx): Promise<void> {
         exchangeRate: p.exchangeRate,
         status: p.status ?? PaymentStatus.Pendiente,
       }));
-      if (needsSettled && !isSettled(settleable, dueCrc)) {
+      if (needsSettled && !isSettled(settleable, basis)) {
         throw new Error(`[seed-demo] ${shipment!.code} salió a ruta sin pago suficiente.`);
       }
       paymentRows.push(...mine);

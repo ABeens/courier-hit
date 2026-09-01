@@ -21,22 +21,38 @@
  * Las cifras llegan calculadas por la API; aqui solo se resta el saldo, con la
  * misma funcion compartida que usa el servidor para cobrarlo.
  *
- * HABLA EN COLONES SALVO QUE SE LE DIGA OTRA COSA. Es la moneda de la operacion:
- * la que cuadra contra el banco y la que decide si el tramite esta saldado. El
- * tablero del cliente le pasa `amounts` con la moneda que a EL le toca leer
- * (`billingCurrencyFor`), que en Paqueteria son dolares sin convertir.
+ * HABLA EN COLONES SALVO QUE SE LE DIGA OTRA COSA. Es la moneda de la operacion,
+ * la que cuadra contra el banco. El tablero del cliente le pasa `amounts` con la
+ * moneda que a EL le toca leer (`billingCurrencyFor`), que en Paqueteria son
+ * dolares sin convertir.
+ *
+ * Lo que NO se lee en colones es si el tramite esta en validacion: esa pregunta
+ * se responde en la moneda en que se cobra (`chargeBasisFor`), que es contra la
+ * que se cancela la deuda. Por eso la ficha recibe los pares de las dos monedas
+ * y no solo la columna que va a pintar.
  */
-import type { BillingAmounts } from '@courier/shared';
-import { Currency, awaitsValidation, billingAmounts, formatMoney } from '@courier/shared';
+import type { BillingAmounts, ShipmentType } from '@courier/shared';
+import {
+  Currency,
+  awaitsValidation,
+  billingAmounts,
+  chargeBasisFor,
+  formatMoney,
+} from '@courier/shared';
 
 export interface PayState {
-  /** Monto de factura congelado; null = costos aun sin aprobar. */
+  /** Decide en que moneda se cobra y se salda el tramite (`chargeCurrencyFor`). */
+  shipmentType: ShipmentType;
+  /** Montos de factura congelados en las dos monedas; null = costos sin aprobar. */
+  invoiceTotalUsd: number | null;
   invoiceTotalCrc: number | null;
-  /** Abonado confirmado, en colones. */
+  /** Abonado confirmado, en las dos monedas. */
+  settledUsd: number;
   settledCrc: number;
-  /** True si lo abonado cubre la factura. */
+  /** True si lo abonado cubre la factura. Lo decide la API con `isSettled`. */
   settled: boolean;
-  /** Abonos subidos y aun sin validar, en colones. */
+  /** Abonos subidos y aun sin validar, en las dos monedas. */
+  pendingUsd: number;
   pendingCrc: number;
 }
 
@@ -61,23 +77,17 @@ interface Props extends PayState {
  * alguno es como el cliente termina pagando dos veces.
  */
 export function awaitingValidation(row: PayState): boolean {
-  return awaitsValidation(row.settledCrc, row.pendingCrc, row.invoiceTotalCrc);
+  // En la MONEDA DE COBRO, no en la que se esta pintando: un comprobante en
+  // dolares comparado contra un saldo en colones no cubre nada, y la ficha
+  // ofreceria pagar de nuevo un saldo que ya tiene comprobante encima.
+  const basis = chargeBasisFor(row.shipmentType, row);
+  const { paid, pending } = billingAmounts(row, basis.currency, row.settled);
+  return awaitsValidation(paid, pending, basis);
 }
 
-/** Lo que trae `PayState` es la columna en colones; asi se lee como cualquier otra. */
+/** La columna en colones, que es la que lee la operacion cuando nadie pide otra. */
 function crcAmounts(row: PayState): BillingAmounts {
-  return billingAmounts(
-    {
-      invoiceTotalCrc: row.invoiceTotalCrc,
-      settledCrc: row.settledCrc,
-      pendingCrc: row.pendingCrc,
-      invoiceTotalUsd: null,
-      settledUsd: 0,
-      pendingUsd: 0,
-    },
-    Currency.CRC,
-    row.settled,
-  );
+  return billingAmounts(row, Currency.CRC, row.settled);
 }
 
 export function PayFlag({ amounts, ...row }: Props) {

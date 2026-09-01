@@ -17,6 +17,7 @@ import {
   Currency,
   DeliveryOutcome,
   State,
+  chargeBasisFor,
   isSettled,
   paged,
   pendingAmount,
@@ -64,8 +65,17 @@ export const deliveriesService = {
     const items = rows.map(({ settlement, ...row }) => ({
       ...row,
       settledCrc: settledAmount(settlement, Currency.CRC),
-      settled: isSettled(settlement, row.invoiceTotalCrc),
+      // En la moneda de cobro del tramite, la misma con la que la guarda de
+      // salida a ruta responde esa pregunta (`chargeBasisFor`).
+      settled: isSettled(settlement, chargeBasisFor(row.shipmentType, row)),
       pendingCrc: pendingAmount(settlement, Currency.CRC),
+      /**
+       * Los mismos abonos en dolares. Van SIEMPRE, igual que en el listado de
+       * tramites: la bandera de cobro pregunta "¿esto ya esta en validacion?" en
+       * la moneda en que se cobra, y en Paqueteria es esta.
+       */
+      settledUsd: settledAmount(settlement, Currency.USD),
+      pendingUsd: pendingAmount(settlement, Currency.USD),
       updatedAt: row.updatedAt.toISOString(),
     }));
     return paged(items, total, query);

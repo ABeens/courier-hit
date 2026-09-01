@@ -47,15 +47,21 @@ export interface DeliveryQueueRow {
   districtCode: string;
   addressLine: string;
   routeNumber: number | null;
+  invoiceTotalUsd: number | null;
   invoiceTotalCrc: number | null;
   /**
    * Estado del cobro, derivado por la API de los pagos confirmados. En esta
    * pantalla no es un dato mas: la guarda de la maquina de estados exige el pago
    * antes de sacar el paquete a ruta, asi que un saldo aqui significa que alguien
    * adelanto el trámite a mano y el mensajero va a llegar a cobrar.
+   *
+   * Las dos monedas, porque la bandera decide en la que se cobra el trámite
+   * (`chargeBasisFor`) y en Paquetería son dólares.
    */
+  settledUsd: number;
   settledCrc: number;
   settled: boolean;
+  pendingUsd: number;
   pendingCrc: number;
   updatedAt: string;
 }
@@ -152,9 +158,13 @@ export function DeliveriesScreen() {
                     paquete lleva saldo: es lo único de esta tarjeta que cambia lo
                     que hace al llegar. */}
                 <PayFlag
+                  shipmentType={row.shipmentType}
+                  invoiceTotalUsd={row.invoiceTotalUsd}
                   invoiceTotalCrc={row.invoiceTotalCrc}
+                  settledUsd={row.settledUsd}
                   settledCrc={row.settledCrc}
                   settled={row.settled}
+                  pendingUsd={row.pendingUsd}
                   pendingCrc={row.pendingCrc}
                 />
                 <span className="spill">

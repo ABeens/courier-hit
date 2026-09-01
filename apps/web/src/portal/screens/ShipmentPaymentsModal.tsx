@@ -47,6 +47,7 @@ import {
   canSetExchangeRate,
   convertMoney,
   formatMoney,
+  chargeBasisFor,
   isSettled,
   outstanding,
   pendingAmount,
@@ -113,7 +114,9 @@ function figuresOf(payments: readonly PaymentDto[], shipment: ShipmentDto): Figu
   const settledUsd = settledAmount(payments, Currency.USD);
 
   return {
-    settled: isSettled(payments, shipment.invoiceTotalCrc),
+    // En la moneda con la que se cobra el trámite (`chargeBasisFor`), la misma
+    // con la que responde la API: en Paquetería, dólares.
+    settled: isSettled(payments, chargeBasisFor(shipment.shipmentType, shipment)),
     settledCrc,
     settledUsd,
     pendingCrc: pendingAmount(payments, Currency.CRC),
@@ -153,8 +156,16 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
   const [amount, setAmount] = useState('');
   /** El importe ya lo tocó una persona: dejar de precargarlo con el saldo. */
   const [amountTouched, setAmountTouched] = useState(false);
-  const [currency, setCurrency] = useState<Currency>(Currency.CRC);
+  /**
+   * La moneda ARRANCA en la de la cuenta preseleccionada, por la misma razón por
+   * la que después la sigue (`pickAccount`): un formulario que abre con la cuenta
+   * en dólares y la moneda en colones ya está proponiendo un abono incoherente
+   * antes de que nadie toque nada.
+   */
   const [bankAccount, setBankAccount] = useState<BankAccount>(bankAccountsForStaff()[0]!);
+  const [currency, setCurrency] = useState<Currency>(
+    BANK_ACCOUNTS[bankAccountsForStaff()[0]!].currency,
+  );
   const [exchangeRate, setExchangeRate] = useState('');
   const [receiptNumber, setReceiptNumber] = useState('');
   const [depositDate, setDepositDate] = useState(today());
@@ -377,7 +388,7 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
       setRejectNote('');
       setNotice({
         text: confirm
-          ? isSettled(items, shipment.invoiceTotalCrc)
+          ? isSettled(items, chargeBasisFor(shipment.shipmentType, shipment))
             ? 'Abono confirmado. El trámite queda pagado.'
             : 'Abono confirmado. El trámite conserva saldo.'
           : 'Abono rechazado. El trámite conserva su saldo.',

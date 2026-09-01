@@ -26,11 +26,18 @@ import {
   attachmentRejection,
   bankAccountOptionLabel,
   bankAccountsForStaff,
+  billingAmounts,
   canSetExchangeRate,
   formatMoney,
   recordedPaymentStatus,
 } from '@courier/shared';
-import type { BankAccount, ConsolidatedQuoteDto, PaymentGroupDto, Role } from '@courier/shared';
+import type {
+  BankAccount,
+  ConsolidatedItem,
+  ConsolidatedQuoteDto,
+  PaymentGroupDto,
+  Role,
+} from '@courier/shared';
 import { FileField } from '../components/FileField';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { API_BASE, ApiError, api } from '../lib/api';
@@ -68,6 +75,20 @@ export function ConsolidatedDepositModal({ quote, role, onClose, onSaved }: Prop
    */
   const bornAs = recordedPaymentStatus(role);
   const [receiptFieldRequired] = useState(bornAs !== PaymentStatus.Confirmado);
+
+  /**
+   * LAS CIFRAS VAN EN LA MONEDA EN QUE SE COBRA EL GRUPO, que la decide la API
+   * (`chargeCurrencyFor`: un grupo es siempre de paquetes, así que dólares).
+   *
+   * No es una preferencia de formato: los abonos que este formulario crea nacen
+   * en esa moneda, y el depósito entró a una cuenta de esa moneda. Enseñarle al
+   * operario un saldo en colones para que lo coteje contra un comprobante en
+   * dólares es pedirle que convierta de cabeza el dato que está validando.
+   */
+  const chargeCurrency = quote.chargeCurrency;
+  const amounts = billingAmounts(quote, chargeCurrency, quote.settled);
+  const dueOfItem = (item: ConsolidatedItem): number =>
+    chargeCurrency === Currency.USD ? item.dueUsd : item.dueCrc;
 
   /** Mismo catálogo que aplica la API, para que el rechazo llegue al elegirlo. */
   function pickReceipt(file: File | null) {
@@ -185,18 +206,18 @@ export function ConsolidatedDepositModal({ quote, role, onClose, onSaved }: Prop
               <div className="card-item-field">
                 <dt>Facturado</dt>
                 <dd>
-                  {quote.invoiceTotalCrc != null
-                    ? formatMoney(quote.invoiceTotalCrc, Currency.CRC)
+                  {amounts.invoiceTotal != null
+                    ? formatMoney(amounts.invoiceTotal, chargeCurrency)
                     : '—'}
                 </dd>
               </div>
               <div className="card-item-field">
                 <dt>Confirmado</dt>
-                <dd>{formatMoney(quote.settledCrc, Currency.CRC)}</dd>
+                <dd>{formatMoney(amounts.paid, chargeCurrency)}</dd>
               </div>
               <div className="card-item-field">
                 <dt>Saldo a cobrar</dt>
-                <dd className="pay-due">{formatMoney(quote.dueCrc, Currency.CRC)}</dd>
+                <dd className="pay-due">{formatMoney(quote.due, chargeCurrency)}</dd>
               </div>
             </dl>
           </div>
@@ -211,7 +232,7 @@ export function ConsolidatedDepositModal({ quote, role, onClose, onSaved }: Prop
                     {item.weightKg != null && <> · {item.weightKg} kg</>}
                   </dt>
                   <dd>
-                    <strong>{formatMoney(item.dueCrc, Currency.CRC)}</strong>
+                    <strong>{formatMoney(dueOfItem(item), chargeCurrency)}</strong>
                   </dd>
                 </div>
               ))}
@@ -330,7 +351,7 @@ export function ConsolidatedDepositModal({ quote, role, onClose, onSaved }: Prop
           >
             {saving
               ? 'Registrando…'
-              : `Registrar ${formatMoney(quote.dueCrc, Currency.CRC)}`}
+              : `Registrar ${formatMoney(quote.due, chargeCurrency)}`}
           </button>
         </div>
       </form>

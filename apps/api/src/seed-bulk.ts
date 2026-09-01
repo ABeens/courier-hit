@@ -61,6 +61,7 @@ import {
   computeTotals,
   flowForType,
   formatShipmentCode,
+  chargeBasisFor,
   isSettled,
   percentageBase,
   roundMoney,
@@ -93,7 +94,6 @@ import {
   locationOf,
   nextSequence,
   pathTo,
-  usdToCoverCrc,
 } from './seed-support';
 
 // ---------------------------------------------------------------------------
@@ -1071,12 +1071,13 @@ function buildShipment(args: BuildArgs): void {
     });
   }
 
-  // --- 5) Pagos. El monto a cubrir es el total congelado en colones ---
+  // --- 5) Pagos. Se cobra en la moneda del tramite: Paqueteria en dolares,
+  // Transporte y Agenciamiento en colones (`chargeBasisFor`) ---
   if (approved) {
-    const dueCrc = totals!.crc;
+    const basis = chargeBasisFor(type, { invoiceTotalUsd: totals!.usd, invoiceTotalCrc: totals!.crc });
+    const due = basis.invoiceTotal!;
     const settledRequired = reached(State.EnRutaEntrega);
     const paidAt = firstAt(State.EnRutaEntrega) ?? new Date(Math.min(NOW.getTime(), approvedAt!.getTime() + DAY));
-    const usdFor = (crc: number): number => usdToCoverCrc(crc, exchangeRate);
     const account = (): BankAccount => rng.pick(bankAccountsFor(type));
 
     const deposit = (amount: number, status: PaymentStatus, note: string | null = null): typeof payments.$inferInsert => ({
@@ -1084,10 +1085,11 @@ function buildShipment(args: BuildArgs): void {
       method: PaymentMethod.DepositoBancario,
       status,
       amount,
-      currency: Currency.CRC,
+      currency: basis.currency,
       exchangeRate,
       // Una cuenta de las que ESE tramite admite (Paqueteria solo las de
-      // dolares): la misma regla que el formulario del cliente.
+      // dolares): la misma regla que el formulario del cliente, y la misma
+      // moneda con la que se registra el abono.
       bankAccount: account(),
       receiptNumber: String(1_000_000 + n),
       depositedAt: paidAt,
@@ -1099,12 +1101,12 @@ function buildShipment(args: BuildArgs): void {
       createdAt: paidAt,
     });
 
-    const card = (amountUsd: number, attempt: number): typeof payments.$inferInsert => ({
+    const card = (amount: number, attempt: number): typeof payments.$inferInsert => ({
       shipmentId,
       method: PaymentMethod.Tarjeta,
       status: PaymentStatus.Confirmado,
-      amount: amountUsd,
-      currency: Currency.USD,
+      amount,
+      currency: basis.currency,
       exchangeRate,
       bankAccount: null,
       receiptNumber: null,
@@ -1122,21 +1124,21 @@ function buildShipment(args: BuildArgs): void {
     if (settledRequired) {
       // Salio a ruta: la factura esta cubierta, con la forma de pago que sea.
       const roll = rng.next();
-      if (roll < 0.5) mine.push(deposit(dueCrc, PaymentStatus.Confirmado));
-      else if (roll < 0.88) mine.push(card(usdFor(dueCrc), 0));
+      if (roll < 0.5) mine.push(deposit(due, PaymentStatus.Confirmado));
+      else if (roll < 0.88) mine.push(card(due, 0));
       else {
-        const first = roundMoney(dueCrc * 0.4, Currency.CRC);
+        const first = roundMoney(due * 0.4, basis.currency);
         mine.push(deposit(first, PaymentStatus.Confirmado, 'Primer abono.'));
-        mine.push(card(usdFor(dueCrc - first), 1));
+        mine.push(card(roundMoney(due - first, basis.currency), 1));
       }
     } else if (finalState === State.EnBodegaPendientePago) {
       // La cola de cobro: sin abonar, esperando confirmacion, rechazado o a medias.
       const roll = rng.next();
       if (roll < 0.4) {
         /* sin pago todavia */
-      } else if (roll < 0.68) mine.push(deposit(dueCrc, PaymentStatus.Pendiente));
-      else if (roll < 0.78) mine.push(deposit(dueCrc, PaymentStatus.Rechazado, 'El comprobante no corresponde al monto facturado.'));
-      else mine.push(deposit(roundMoney(dueCrc * (0.2 + rng.next() * 0.5), Currency.CRC), PaymentStatus.Confirmado, 'Abono parcial.'));
+      } else if (roll < 0.68) mine.push(deposit(due, PaymentStatus.Pendiente));
+      else if (roll < 0.78) mine.push(deposit(due, PaymentStatus.Rechazado, 'El comprobante no corresponde al monto facturado.'));
+      else mine.push(deposit(roundMoney(due * (0.2 + rng.next() * 0.5), basis.currency), PaymentStatus.Confirmado, 'Abono parcial.'));
     }
 
     // Invariante: si el tramite salio a ruta, el pago DEBE estar cubierto
@@ -1149,7 +1151,7 @@ function buildShipment(args: BuildArgs): void {
         exchangeRate: p.exchangeRate,
         status: p.status ?? PaymentStatus.Pendiente,
       }));
-      if (!isSettled(settleable, dueCrc)) {
+      if (!isSettled(settleable, basis)) {
         throw new Error(`[seed-bulk] ${code} salió a ruta sin pago suficiente.`);
       }
     }

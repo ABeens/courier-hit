@@ -65,6 +65,12 @@ export const deliveriesRepo = {
         districtCode: clients.districtCode,
         addressLine: clients.addressLine,
         routeNumber: effectiveRouteNumber,
+        /**
+         * Los DOS totales congelados. El de dolares no se pinta en la cola: hace
+         * falta para saber si el paquete esta pagado, porque la Paqueteria se
+         * cobra y se salda en dolares (`chargeBasisFor`).
+         */
+        invoiceTotalUsd: shipments.invoiceTotalUsd,
         invoiceTotalCrc: shipments.invoiceTotalCrc,
         /**
          * Abonos del tramite: el mensajero tiene que ver si sale con un paquete

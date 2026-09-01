@@ -30,6 +30,7 @@ import {
   canTransition,
   conditionsFor,
   flowForType,
+  chargeBasisFor,
   isSettled,
   permissionFor,
   statesOf,
@@ -84,7 +85,10 @@ async function assertConditions(
 
       case Condition.RequiresConfirmedPayment: {
         const paid = await paymentsRepo.settlementView(row.id);
-        if (!isSettled(paid, row.invoiceTotalCrc)) {
+        // En la moneda con la que se le cobro (`chargeCurrencyFor`). Preguntarlo
+        // en la otra columna retiene un paquete de Paqueteria que ya pago sus
+        // dolares, por los colones que la conversion deja sueltos.
+        if (!isSettled(paid, chargeBasisFor(row.shipmentType, row))) {
           throw TransitionErrors.requiresConfirmedPayment();
         }
         break;
