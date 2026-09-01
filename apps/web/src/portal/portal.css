@@ -1423,6 +1423,76 @@ select.input { cursor: pointer; padding-right: 30px; }
 }
 
 /* ============================================================
+   Fotos del paquete (dentro del historial)
+
+   Las toma la bodega de Miami y las sirve el proveedor. Van en rejilla de
+   miniaturas cuadradas y no a lo ancho: casi siempre hay UNA, y una foto a todo
+   el ancho del modal empujaria el recorrido fuera de la primera pantalla, que es
+   justo lo que esta ventana existe para ensenar.
+
+   Cada miniatura es un <button>: se amplia con clic, con Enter y con la barra, y
+   el foco lo pinta el estilo de foco del portal sin nada extra. */
+.pkg-photos { margin-bottom: 22px; }
+
+.pkg-photos-title {
+  margin-bottom: 8px;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pkg-photo-grid {
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+}
+
+.pkg-photo {
+  position: relative; padding: 0; overflow: hidden; cursor: zoom-in;
+  aspect-ratio: 1; border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--line-2);
+}
+/* `cover` y no `contain`: la miniatura es un vistazo, y una caja de un paquete
+   centrada con franjas a los lados se lee peor que un recorte lleno. La foto
+   entera se ve al ampliarla, que para eso esta. */
+.pkg-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+.pkg-photo:hover img { opacity: 0.88; }
+
+/* La lupa solo aparece al pasar por encima o al enfocar: en reposo taparia parte
+   de la foto para decir algo que el cursor `zoom-in` ya dice. */
+.pkg-photo-zoom {
+  position: absolute; right: 5px; bottom: 5px;
+  display: grid; place-items: center; width: 22px; height: 22px;
+  border-radius: 50%; background: rgba(20,24,40,.62); color: #fff;
+  opacity: 0; transition: opacity .14s ease;
+}
+.pkg-photo-zoom svg { width: 13px; height: 13px; }
+.pkg-photo:hover .pkg-photo-zoom,
+.pkg-photo:focus-visible .pkg-photo-zoom { opacity: 1; }
+
+/* --- La foto ampliada -------------------------------------------------------
+   No es un `.modal`: no lleva ni cabecera ni pie, porque el contenido es la foto
+   y cualquier marco le quita sitio. Se limita a la ventana para que una foto
+   grande no obligue a hacer scroll dentro de la capa. */
+.photo-zoom { position: relative; max-width: min(920px, 100%); }
+
+.photo-zoom img {
+  display: block; max-width: 100%; max-height: calc(100dvh - 120px);
+  border-radius: var(--r-lg); box-shadow: var(--sh-3); background: var(--surface);
+}
+
+.photo-zoom-when {
+  display: block; margin-top: 8px; text-align: center;
+  font-family: var(--font-mono); font-size: 11.5px; color: rgba(255,255,255,.82);
+}
+
+.photo-zoom-close {
+  position: absolute; top: -14px; right: -14px;
+  width: 32px; height: 32px; border-radius: 50%; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  font-size: 20px; line-height: 1; box-shadow: var(--sh-2);
+}
+
+/* ============================================================
    Resumen (pantalla Dashboard)
 
    Es la unica pantalla del portal que no trabaja sobre UN listado, asi que se

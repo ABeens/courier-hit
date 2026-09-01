@@ -126,6 +126,39 @@ export interface HelgaTrackingEvent {
 }
 
 /**
+ * Una foto adjunta al paquete (op. B, `datos.fotos[]`). Las toma la bodega al
+ * digitar el paquete: verificado en vivo (2026-09-01) que los 5 paquetes
+ * disponibles de SJO008835 traian exactamente una, creada a los minutos de su
+ * `fecha_recibido`.
+ *
+ * El manual NO documenta la forma de estos elementos (solo dice "archivos
+ * fotograficos adjuntos al paquete"), asi que todo lo de abajo sale de la
+ * respuesta real y va opcional: si el proveedor cambia una clave, preferimos
+ * quedarnos sin foto a romper la consulta de estado, que es lo que mueve los
+ * estados de TODOS los paquetes.
+ */
+export interface HelgaPackagePhoto {
+  id?: number | string;
+  /** Nombre del fichero en su sistema. OJO: dice `.png` y el contenido es webp. */
+  nombre?: string;
+  /**
+   * URL de descarga FIRMADA (`/descargar/{id}?signature=...`). Verificado en vivo
+   * que responde 200 sin token y sin Origin, o sea que el navegador del cliente
+   * puede pedirla directamente. No se persiste: no sabemos cuanto dura la firma.
+   */
+  urlImagen?: string;
+  /** Instante en que se registro la foto. UTC (ver `photoTakenAt`). */
+  created_at?: string;
+  /**
+   * `true` = prueba de ENTREGA del proveedor, no foto de bodega. Son cosas
+   * distintas y al titular solo se le ensena la segunda (ver `shipmentsService.photos`).
+   */
+  is_prueba_entrega?: boolean;
+  /** Id del paquete en su sistema; no lo usamos, se declara por trazabilidad. */
+  envio_courier_paquete_id?: number;
+}
+
+/**
  * Respuesta de la op. B (`POST /api/casillero/consulta-estado/{busqueda}`): el
  * estado ACTUAL de UN paquete, buscado por HAWB, tracking de tienda o guia. El
  * proveedor devuelve un unico objeto en `datos` (no una lista). `404` si el
@@ -153,6 +186,12 @@ export interface HelgaPackageStatus {
   valor_manifestado?: number;
   /** Historial de tracking para el timeline. */
   Seguimiento?: HelgaTrackingEvent[];
+  /**
+   * Fotos del paquete tomadas en bodega. Solo viene en la op. B: el listado de
+   * paquetes disponibles (op. E) NO las trae, asi que hay que preguntar por
+   * paquete.
+   */
+  fotos?: HelgaPackagePhoto[];
   /** Duenos del paquete; `codigo_casillero` identifica el sub-casillero. */
   cliente?: Array<{ codigo_casillero?: string }>;
 }

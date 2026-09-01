@@ -104,7 +104,7 @@ Luego siembra el administrador inicial y las tarifas de cliente de ejemplo:
 pnpm --filter @courier/api db:seed
 ```
 
-El seed es idempotente: si el admin ya existe, no toca nada. Crea `admin@hsglobal.ltd` y, si no defines `SEED_ADMIN_PASSWORD`, **genera una contraseña robusta y la imprime una sola vez en consola**. Cópiala en ese momento; para volver a fijarla hay que forzar el reseteo:
+El seed es idempotente: si el admin ya existe, no toca nada. Crea `admin@hsglobal-services.com` y, si no defines `SEED_ADMIN_PASSWORD`, **genera una contraseña robusta y la imprime una sola vez en consola**. Cópiala en ese momento; para volver a fijarla hay que forzar el reseteo:
 
 ```bash
 pnpm --filter @courier/api db:seed -- --force
@@ -122,7 +122,7 @@ pnpm --filter @courier/api db:seed:demo
 
 Siembra 7 usuarios de staff (uno por rol), 12 casilleros repartidos por todo el país, el catálogo de servicios de costo, rutas por distrito, anuncios en sus cuatro estados y 38 trámites de los 5 tipos que cubren **todos** los estados de las tres máquinas, con su historial, líneas de costo, pagos (pendiente, rechazado, parcial, pagado) e intentos de entrega. Requiere haber corrido antes `db:seed`, porque toma las tarifas de cliente de ahí.
 
-Todo lo que crea es reconocible por el dominio de correo `@demo.hsglobal.ltd`, y esa marca es la que permite borrarlo sin tocar datos reales:
+Todo lo que crea es reconocible por el dominio de correo `@demo.hsglobal-services.com`, y esa marca es la que permite borrarlo sin tocar datos reales:
 
 ```bash
 pnpm --filter @courier/api db:seed:demo -- --reset

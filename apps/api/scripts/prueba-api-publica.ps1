@@ -37,7 +37,7 @@
 [CmdletBinding()]
 param(
   [string]$BaseUrl = 'http://localhost:3001',
-  [string]$Email = 'laura.jimenez@demo.hsglobal.ltd',
+  [string]$Email = 'laura.jimenez@demo.hsglobal-services.com',
   [string]$Password = 'Demo1234!',
   [switch]$ConLimite
 )

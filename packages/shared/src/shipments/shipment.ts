@@ -286,6 +286,44 @@ export interface ShipmentEventsResponse {
 }
 
 /**
+ * Una foto del paquete tomada en la bodega de Miami. La toma el proveedor al
+ * digitar el paquete y la sirve el, no nosotros: por eso `url` apunta a su
+ * dominio y no a un fichero de nuestro almacenamiento.
+ *
+ * NO se persiste ninguno de estos campos. La url viene firmada y no sabemos
+ * cuanto dura la firma, asi que se resuelve cada vez que se abre el detalle; una
+ * url guardada se romperia en silencio el dia que caduque.
+ */
+export interface ShipmentPhotoDto {
+  /** Id de la foto en el proveedor. Estable dentro del paquete: sirve de key. */
+  id: string;
+  /** Url de descarga directa, ya firmada. Se pinta con un <img> tal cual. */
+  url: string;
+  /**
+   * Cuando la registro la bodega. Instante UTC en ISO 8601, como el resto de la
+   * API; la hora local se arma en la presentacion. `null` si el proveedor no la
+   * mando o mando algo que no se pudo interpretar.
+   */
+  takenAt: string | null;
+}
+
+/**
+ * Fotos de un paquete. `available` distingue los dos "sin fotos" que para el
+ * cliente NO son lo mismo:
+ *
+ *   - `available: true` con lista vacia = preguntamos y este paquete no tiene
+ *     fotos. Es una respuesta.
+ *   - `available: false` = no se pudo preguntar (integracion apagada, el paquete
+ *     todavia no existe del lado del proveedor, o su API fallo). No es que no
+ *     haya fotos, es que no lo sabemos, y la pantalla debe callar en vez de
+ *     afirmar que no las hay.
+ */
+export interface ShipmentPhotosResponse {
+  items: ShipmentPhotoDto[];
+  available: boolean;
+}
+
+/**
  * Marca con la que una correccion administrativa se distingue de un avance real
  * en el historial (la escribe `transitionsService.correct`). Vive aqui, y no como
  * literal en cada sitio, porque ya la leen dos capas: quien la escribe y quien

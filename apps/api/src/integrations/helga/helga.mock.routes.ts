@@ -17,6 +17,7 @@
  * puerta ya esta cerrada por configuracion (estas rutas no existen si el modo no
  * es simulado, y el modo simulado no arranca en produccion).
  */
+import { readFile } from 'node:fs/promises';
 import { Hono } from 'hono';
 import { zValidator } from '../../core/validator';
 import { z } from 'zod';
@@ -142,4 +143,32 @@ helgaMockRoutes.post(
 helgaMockRoutes.post('/reset', (c) => {
   mockReset();
   return c.json({ ok: true });
+});
+
+/**
+ * Las fotos de bodega del simulador (ver `mockPhotos`). Es la unica ruta de este
+ * panel pensada para el NAVEGADOR y no para curl: el portal las pide con un
+ * `<img>`, igual que pediria las del proveedor de verdad.
+ *
+ * Se sirven desde aqui, y no desde `apps/web/public`, para que no acaben
+ * publicadas en el sitio: son fotos reales de bodega y solo tienen sentido en
+ * desarrollo. Por eso tampoco pasan por el almacenamiento de adjuntos, que es
+ * para archivos de clientes.
+ *
+ * El fichero se lee del arbol de fuentes (`import.meta.url`): estas rutas solo
+ * existen con HELGA_MODE=simulated, que el arranque prohibe en produccion, asi
+ * que nunca se ejecuta desde el `dist` empaquetado.
+ */
+helgaMockRoutes.get('/photos/:name', async (c) => {
+  const name = c.req.param('name');
+  // Lista blanca, no saneo: con dos ficheros conocidos no hace falta razonar
+  // sobre `..` ni sobre rutas absolutas.
+  if (name !== 'warehouse-1.webp' && name !== 'warehouse-2.webp') return c.notFound();
+
+  const file = new URL(`./fixtures/${name}`, import.meta.url);
+  const body = await readFile(file);
+  return c.body(body, 200, {
+    'content-type': 'image/webp',
+    'cache-control': 'public, max-age=3600',
+  });
 });

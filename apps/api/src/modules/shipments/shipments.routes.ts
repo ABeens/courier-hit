@@ -150,6 +150,15 @@ shipmentsRoutes.get('/:id/events', canRead, async (c) => {
 });
 
 /**
+ * Fotos que la bodega de Miami le tomo al paquete. Va aparte del detalle y no
+ * dentro de el porque sale de una llamada al proveedor: incrustarlas en `/:id`
+ * ataria el listado y cada lectura del tramite a que su API responda.
+ */
+shipmentsRoutes.get('/:id/photos', canRead, async (c) => {
+  return c.json(await shipmentsService.photos(c.get('session'), c.req.param('id')));
+});
+
+/**
  * Documento adjunto del tramite (la factura de la compra, tipicamente). Va como
  * multipart porque lleva un archivo; el resto del modulo es JSON.
  *

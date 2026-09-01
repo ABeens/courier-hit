@@ -32,7 +32,7 @@
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { helgaSimulatedStepMs } from '../../core/config';
+import { config, helgaSimulatedStepMs } from '../../core/config';
 import { HELGA_DEFAULT_TARIFF_POSITION } from './helga.constants';
 
 /** Archivo donde vive el mundo simulado, relativo al cwd de la API (apps/api). */
@@ -188,6 +188,86 @@ function measuresFor(tracking: string): MockMeasures {
     width,
     height,
   };
+}
+
+/**
+ * Fotos que el proveedor adjunta al paquete (op. B, `datos.fotos[]`).
+ *
+ * Son DOS FOTOS REALES de la bodega de Miami, descargadas de la cuenta SJO008835
+ * y guardadas en `fixtures/`. Se usan de verdad y no un marcador de color porque
+ * lo que hay que poder juzgar es como QUEDA la pantalla: fotos oscuras, en
+ * apaisado y con la etiqueta al reves, que es lo que manda la bodega. Con un
+ * rectangulo de relleno la rejilla se ve estupenda y no se aprende nada.
+ *
+ * De las etiquetas se difumino el bloque de direccion y el numero de guia: son
+ * paquetes de clientes reales y el repositorio no guarda sus datos.
+ *
+ * CUANTAS y EN QUE ORDEN se derivan del tracking, no son fijas: en vivo cada
+ * paquete traia UNA sola foto, asi que la mayoria lleva una (y no siempre la
+ * misma) y una parte lleva las dos, que es lo que permite ver la rejilla con mas
+ * de una miniatura. Con dos ficheros no hay fotos unicas por paquete, pero al
+ * menos la pantalla deja de verse clonada.
+ *
+ * La ultima va marcada `is_prueba_entrega`: es la prueba de entrega del
+ * proveedor, que no se le ensena al titular. Esta aqui para que el filtro de
+ * `toPhotoDto` se ejercite en la simulacion; si alguna vez aparece en el detalle,
+ * ese filtro se rompio.
+ */
+function mockPhotos(pkg: MockPackage): Array<{
+  id: number;
+  nombre: string;
+  urlImagen: string;
+  created_at: string;
+  is_prueba_entrega: boolean;
+}> {
+  const receivedAt = new Date(pkg.startedAt + helgaSimulatedStepMs);
+  // El proveedor manda la fecha sin zona y en UTC: se emite igual (ver `photoTakenAt`).
+  const stamp = receivedAt.toISOString().slice(0, 19).replace('T', ' ');
+  const id = hashSlice(pkg.tracking, 'foto') % 100_000;
+
+  // Url ABSOLUTA y de otro origen, como la del proveedor: el navegador la pide
+  // directamente y el portal no puede suponer que la foto es suya.
+  const photoUrl = (name: string) => `http://localhost:${config.PORT}/api/dev/helga/photos/${name}`;
+
+  // La segunda foto llega un minuto despues: la bodega las toma seguidas, y con
+  // la misma marca de tiempo no se veria si la pantalla las ordena.
+  const secondStamp = new Date(receivedAt.getTime() + 60_000).toISOString().slice(0, 19).replace('T', ' ');
+
+  /**
+   * Reparto estable por tracking: el mismo paquete sale siempre igual, pero dos
+   * paquetes distintos no salen clonados. La mitad lleva una sola foto (como en
+   * vivo) y la otra mitad las dos, en un orden u otro, que es lo que deja ver la
+   * rejilla con mas de una miniatura.
+   *
+   * Es mitad y mitad, y no uno de cada tres como se probo primero, porque un
+   * casillero de demo tiene POCOS paquetes con foto: con un tercio, el titular
+   * podia no ver ni un solo caso de dos.
+   */
+  const ONE = ['warehouse-1.webp'];
+  const TWO = ['warehouse-2.webp'];
+  const files = [ONE, TWO, [...ONE, ...TWO], [...TWO, ...ONE]][
+    hashSlice(pkg.tracking, 'fotos-n') % 4
+  ] as string[];
+
+  const warehouse = files.map((file, i) => ({
+    id: id + i,
+    nombre: `${stamp.slice(0, 10)}-${id + i}.png`,
+    urlImagen: photoUrl(file),
+    created_at: i === 0 ? stamp : secondStamp,
+    is_prueba_entrega: false,
+  }));
+
+  return [
+    ...warehouse,
+    {
+      id: id + files.length,
+      nombre: `${stamp.slice(0, 10)}-entrega-${id + files.length}.png`,
+      // Es la misma imagen: lo que se prueba es el filtro, no la foto.
+      urlImagen: photoUrl('warehouse-2.webp'),
+      created_at: secondStamp,
+      is_prueba_entrega: true,
+    },
+  ];
 }
 
 // --- El reloj ----------------------------------------------------------------
@@ -458,6 +538,7 @@ function opPackageState(search: string): Response {
       valor_declarado: pkg.commercialValue,
       valor_manifestado: pkg.commercialValue,
       Seguimiento: trackingEvents(pkg),
+      fotos: mockPhotos(pkg),
       cliente: locker ? [{ codigo_casillero: locker }] : [],
     },
     'Consulta exitosa.',

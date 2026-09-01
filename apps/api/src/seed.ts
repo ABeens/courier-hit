@@ -89,7 +89,7 @@ function printCreds(email: string, id: string | undefined, password: string, pro
 async function main(): Promise<void> {
   await seedClientRates();
 
-  const email = (process.env.SEED_ADMIN_EMAIL ?? 'admin@hsglobal.ltd').trim().toLowerCase();
+  const email = (process.env.SEED_ADMIN_EMAIL ?? 'admin@hsglobal-services.com').trim().toLowerCase();
   const name = process.env.SEED_ADMIN_NAME ?? 'Administrador HS';
   const provided = process.env.SEED_ADMIN_PASSWORD;
   const force = process.argv.includes('--force') || process.env.SEED_ADMIN_FORCE === '1';

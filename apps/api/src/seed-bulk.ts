@@ -25,7 +25,7 @@
  *      salio a ruta cumple `isSettled`, con las mismas funciones que usa la API.
  *
  * Se reconoce por dos marcas, y eso es lo que permite que `--reset` borre solo
- * lo suyo: los usuarios usan el dominio `@bulk.hsglobal.ltd` y TODOS los
+ * lo suyo: los usuarios usan el dominio `@bulk.hsglobal-services.com` y TODOS los
  * trackings empiezan por `BLK` (los tramites sin dueño de la sala de control no
  * cuelgan de ningun casillero, asi que el tracking es su unica marca).
  *
@@ -127,7 +127,7 @@ const MONTHS = option('months', 'SEED_BULK_MONTHS', 18);
 /** Semilla del generador: misma semilla, misma base. */
 const SEED = option('seed', 'SEED_BULK_SEED', 20_260_816);
 
-const BULK_DOMAIN = 'bulk.hsglobal.ltd';
+const BULK_DOMAIN = 'bulk.hsglobal-services.com';
 const BULK_PASSWORD = process.env.SEED_BULK_PASSWORD ?? 'Bulk1234!';
 
 /** Prefijo de TODOS los trackings sembrados aqui: es la marca de borrado. */

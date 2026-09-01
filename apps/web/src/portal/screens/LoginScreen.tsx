@@ -57,7 +57,7 @@ export function LoginScreen({ onLoggedIn }: { onLoggedIn: () => void }) {
         <label className="field-label" htmlFor="email">Correo electrónico</label>
         <input
           id="email" className="input" type="email" autoComplete="username"
-          value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@hsglobal.ltd"
+          value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@correo.com"
         />
 
         <label className="field-label" htmlFor="password">Contraseña</label>

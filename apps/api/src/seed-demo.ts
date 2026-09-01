@@ -6,7 +6,7 @@
  * NO es el seed de arranque. `seed.ts` siembra lo minimo real (el primer admin y
  * las tarifas de cliente); esto siembra lo FALSO que hace falta para ver el
  * producto lleno. Por eso vive aparte y todo lo que crea es reconocible:
- *   - los usuarios usan el dominio `@demo.hsglobal.ltd`;
+ *   - los usuarios usan el dominio `@demo.hsglobal-services.com`;
  *   - los servicios, anuncios y rutas que crea estan listados aqui.
  * Eso es lo que permite que `--reset` borre SOLO lo sembrado por este archivo y
  * jamas toque datos reales.
@@ -96,7 +96,7 @@ const DEMO_RATE_NOTE = 'Tasa inicial de la demo.';
 const DEMO_FREIGHT_NOTE = 'Tarifa inicial de la demo.';
 
 /** Dominio de correo que marca a un usuario como sembrado por esta demo. */
-const DEMO_DOMAIN = 'demo.hsglobal.ltd';
+const DEMO_DOMAIN = 'demo.hsglobal-services.com';
 const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD ?? 'Demo1234!';
 
 const DAY = 86_400_000;

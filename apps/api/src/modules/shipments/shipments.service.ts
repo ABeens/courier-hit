@@ -28,6 +28,7 @@ import {
   editableFieldsAt,
   flowForType,
   initialState,
+  knownTracking,
   chargeBasisFor,
   isSettled,
   paged,
@@ -49,6 +50,8 @@ import type {
   Session,
   ShipmentDto,
   ShipmentEventsResponse,
+  ShipmentPhotoDto,
+  ShipmentPhotosResponse,
   UpdateShipmentInput,
 } from '@courier/shared';
 import { AuthErrors, ShipmentErrors } from '../../core/errors';
@@ -56,11 +59,15 @@ import { formatShipmentCode } from '@courier/shared';
 import {
   createHelgaPrealert,
   deleteHelgaPrealert,
+  fetchHelgaPackageState,
   isHelgaEnabled,
+  isHelgaSimulated,
 } from '../../integrations/helga/helga.client';
+import type { HelgaPackagePhoto } from '../../integrations/helga/helga.types';
 import { storage } from '../../core/storage';
 import { clientsRepo } from '../clients/clients.repo';
 import { providerAccountsRepo } from '../provider-accounts/provider-accounts.repo';
+import { providerAccountsService } from '../provider-accounts/provider-accounts.service';
 import { shipmentsRepo } from './shipments.repo';
 
 /** Fila de la vista de lectura del repo (tramite + cliente + ruta). */
@@ -117,6 +124,47 @@ function ownerVisibleNote(flow: Flow, state: State, note: string | null): string
   if (!conditionsFor(flow, state).includes(Condition.RequiresComment)) return null;
   if (note.startsWith(CORRECTION_NOTE_PREFIX)) return null;
   return note;
+}
+
+/**
+ * Instante en que la bodega registro una foto, normalizado a UTC ISO como el
+ * resto de la API.
+ *
+ * El proveedor lo manda SIN zona (`"2026-09-01 00:04:52"`) y se interpreta como
+ * UTC. No es una suposicion gratuita: en los paquetes de la cuenta principal ese
+ * `created_at` va exactamente 5 horas por delante del `fecha_recibido` del mismo
+ * paquete, que su sistema (colombiano) emite en hora de Bogota (UTC-5). Leerlo
+ * como local nos correria las fotos 5 o 6 horas segun quien mire.
+ *
+ * TODO(13): confirmarlo por escrito con Helga. Mientras tanto la unica
+ * consecuencia de equivocarse es la hora que se lee debajo de la foto.
+ */
+function photoTakenAt(raw: string | undefined): string | null {
+  if (!raw?.trim()) return null;
+  const normalized = raw.trim().replace(' ', 'T');
+  const hasZone = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(normalized);
+  const parsed = new Date(hasZone ? normalized : `${normalized}Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+/**
+ * Foto del proveedor -> DTO, o `null` si no es una foto que el titular deba ver.
+ *
+ * Se descartan dos casos. Sin `urlImagen` no hay nada que pintar (su API no
+ * ofrece otra forma de llegar al fichero). Y `is_prueba_entrega` marca la prueba
+ * de ENTREGA del proveedor —la firma de que le dejo el paquete a HS Global— que
+ * no es una foto del paquete en bodega y no responde a lo que el cliente viene a
+ * ver aqui.
+ */
+function toPhotoDto(photo: HelgaPackagePhoto): ShipmentPhotoDto | null {
+  if (photo.is_prueba_entrega === true) return null;
+  const url = photo.urlImagen?.trim();
+  if (!url) return null;
+  return {
+    id: String(photo.id ?? url),
+    url,
+    takenAt: photoTakenAt(photo.created_at),
+  };
 }
 
 /**
@@ -277,6 +325,66 @@ export const shipmentsService = {
         createdAt: e.createdAt.toISOString(),
       })),
     };
+  },
+
+  /**
+   * Fotos que la bodega de Miami le tomo al paquete (mismas reglas de acceso que
+   * el detalle: 404 si el tramite no es del cliente de la sesion).
+   *
+   * Se preguntan AL VUELO al proveedor y no se guardan. Dos razones, y las dos
+   * pesan mas que el ahorro de la llamada:
+   *
+   *   - la url viene firmada y no sabemos cuanto dura la firma, asi que una url
+   *     persistida caducaria en silencio y el detalle mostraria imagenes rotas;
+   *   - la foto la sirve el proveedor, no nuestro almacenamiento: copiarla seria
+   *     duplicar un dato del que no somos duenos para que envejezca peor.
+   *
+   * Cualquier tropiezo (integracion apagada, cuenta que ya no se puede descifrar,
+   * su API caida, el paquete todavia sin existir de su lado) devuelve
+   * `available: false` en vez de lanzar: esto es un extra del detalle y no puede
+   * tumbar la pantalla que el cliente vino a ver.
+   */
+  async photos(session: Session, id: string): Promise<ShipmentPhotosResponse> {
+    const shipment = await this.get(session, id); // valida existencia y propiedad
+    const unavailable: ShipmentPhotosResponse = { items: [], available: false };
+
+    if (!isHelgaEnabled()) return unavailable;
+    // Solo Paqueteria pasa por la bodega del proveedor; Transporte y
+    // Agenciamiento no tienen paquete que fotografiar alli.
+    if (!usesPackageFields(shipment.shipmentType)) return unavailable;
+
+    // Sin guia legible no hay con que preguntar: el paquete desconocido lleva su
+    // propio consecutivo en `tracking` y el proveedor no lo reconoceria.
+    const tracking = knownTracking(shipment);
+    if (!tracking) return unavailable;
+
+    /**
+     * La cuenta de la que vino el paquete, igual que en la sincronizacion: con
+     * varias cuentas, preguntar con el token de la principal no da un error sino
+     * un 404 que se leeria como "este paquete no tiene fotos". Con el proveedor
+     * simulado el codigo se ignora, que el simulador es uno solo.
+     */
+    let account;
+    if (shipment.providerAccountCode && !isHelgaSimulated()) {
+      const accounts = await providerAccountsService.accountsForImport();
+      account = accounts.find((a) => a.account.code === shipment.providerAccountCode)?.account;
+      if (!account) return unavailable;
+    }
+
+    try {
+      const pkg = await fetchHelgaPackageState(tracking, account);
+      // 404: el paquete aun no existe del lado del proveedor (prealerta sin
+      // llegar a bodega). No es que no tenga fotos, es que todavia no hay paquete.
+      if (!pkg) return unavailable;
+
+      const items = (pkg.fotos ?? [])
+        .map(toPhotoDto)
+        .filter((photo): photo is ShipmentPhotoDto => photo !== null);
+      return { items, available: true };
+    } catch (err) {
+      console.error(`[helga] fallo pidiendo las fotos de ${shipment.code} (${tracking}):`, err);
+      return unavailable;
+    }
   },
 
   /**
