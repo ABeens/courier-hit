@@ -157,7 +157,7 @@ const EnvSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
-  MAIL_FROM: z.string().default('HS Global Services <no-reply@hsglobalcr.com>'),
+  MAIL_FROM: z.string().default('HS Global Services <servicioalcliente1@hsglobal-services.com>'),
   /**
    * Region de los servicios de AWS (SES y el bucket de adjuntos). Obligatoria en
    * cuanto se enciende cualquiera de los dos (ver superRefine). El SDK sabria

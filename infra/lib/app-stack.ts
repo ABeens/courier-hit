@@ -589,7 +589,7 @@ function handler(event) {
       // precio: los correos los firma `amazonses.com` y no el dominio, o sea algo
       // mas de riesgo de spam. Se arregla poniendo los tres CNAME algun dia, sin
       // tocar esto.
-      MAIL_FROM: `HS Global Services <servicioalcliente@${SITE_DOMAIN}>`,
+      MAIL_FROM: `HS Global Services <servicioalcliente1@${SITE_DOMAIN}>`,
       HELGA_MODE: 'off',
       ONVO_MODE: 'on',
       // La tasa de referencia sí va encendida desde el primer despliegue: no
