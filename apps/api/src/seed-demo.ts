@@ -28,7 +28,7 @@
  * Requiere haber corrido antes `db:seed` (necesita las tarifas de cliente).
  */
 import { hash } from '@node-rs/argon2';
-import { eq, inArray, like } from 'drizzle-orm';
+import { eq, inArray, like, or } from 'drizzle-orm';
 import {
   AnnouncementType,
   BankAccount,
@@ -97,6 +97,15 @@ const DEMO_FREIGHT_NOTE = 'Tarifa inicial de la demo.';
 
 /** Dominio de correo que marca a un usuario como sembrado por esta demo. */
 const DEMO_DOMAIN = 'demo.hsglobal-services.com';
+/**
+ * Dominios que uso esta demo antes de `DEMO_DOMAIN`. Se conservan porque
+ * `--reset` busca por correo: una base sembrada con el dominio anterior dejaria
+ * vivos a esos usuarios y la resiembra chocaria contra la cedula unica.
+ * Solo se anaden aqui; nunca se siembra con ellos.
+ */
+const LEGACY_DEMO_DOMAINS: readonly string[] = ['demo.hsglobal.ltd'];
+/** Patrones `LIKE` de todo correo que esta demo pudo haber sembrado. */
+const DEMO_EMAIL_PATTERNS = [DEMO_DOMAIN, ...LEGACY_DEMO_DOMAINS].map((d) => `%@${d}`);
 const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD ?? 'Demo1234!';
 
 const DAY = 86_400_000;
@@ -576,7 +585,7 @@ async function resetDemo(tx: Tx): Promise<void> {
   const demoUsers = await tx
     .select({ id: users.id })
     .from(users)
-    .where(like(users.email, `%@${DEMO_DOMAIN}`));
+    .where(or(...DEMO_EMAIL_PATTERNS.map((p) => like(users.email, p))));
   const userIds = demoUsers.map((u) => u.id);
 
   if (userIds.length > 0) {
@@ -615,7 +624,7 @@ async function seed(tx: Tx): Promise<void> {
   const [existing] = await tx
     .select({ id: users.id })
     .from(users)
-    .where(like(users.email, `%@${DEMO_DOMAIN}`))
+    .where(or(...DEMO_EMAIL_PATTERNS.map((p) => like(users.email, p))))
     .limit(1);
   if (existing && !reset) {
     console.log('[seed-demo] Ya hay datos de demo sembrados. No se cambió nada.');
