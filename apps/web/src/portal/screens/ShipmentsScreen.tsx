@@ -249,12 +249,21 @@ interface Props {
    */
   initialState?: State;
   initialQuery?: string;
+  /** Solo trámites con un depósito por validar: el cuadro de tesorería del Resumen. */
+  initialPendingDeposit?: boolean;
 }
 
-export function ShipmentsScreen({ role, initialView, initialState, initialQuery }: Props) {
+export function ShipmentsScreen({
+  role,
+  initialView,
+  initialState,
+  initialQuery,
+  initialPendingDeposit,
+}: Props) {
   const [view, setView] = useState<ShipmentView>(initialView);
   const [q, setQ] = useState(initialQuery ?? '');
   const [state, setState] = useState<string>(initialState ?? '');
+  const [pendingDeposit, setPendingDeposit] = useState(initialPendingDeposit ?? false);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
@@ -351,6 +360,7 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
       q: q.trim() || undefined,
       state: state || undefined,
       shipmentType: TYPES_BY_VIEW[view].join(',') || undefined,
+      pendingDeposit: pendingDeposit ? 'true' : undefined,
       // El usuario elige dias en su hora local; el rango viaja como instantes UTC.
       from: from ? startOfLocalDayUtc(from) : undefined,
       to: to ? startOfNextLocalDayUtc(to) : undefined,
@@ -366,6 +376,9 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
    */
   const chips: FilterChip[] = [
     ...(state ? [{ label: `Estado: ${STATE_LABELS[state as State]}`, onClear: () => setState('') }] : []),
+    ...(pendingDeposit
+      ? [{ label: 'Pago: depósito por validar', onClear: () => setPendingDeposit(false) }]
+      : []),
     ...(from ? [{ label: `Desde: ${formatDayInput(from)}`, onClear: () => setFrom('') }] : []),
     ...(to ? [{ label: `Hasta: ${formatDayInput(to)}`, onClear: () => setTo('') }] : []),
   ];
@@ -373,6 +386,7 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
   /** Deja el listado sin recortar. El buscador no entra: se ve y se limpia solo. */
   function clearFilters() {
     setState('');
+    setPendingDeposit(false);
     setFrom('');
     setTo('');
   }
@@ -489,6 +503,22 @@ export function ShipmentsScreen({ role, initialView, initialState, initialQuery 
             ))}
           </select>
         </div>
+
+        {/* Cola de tesorería: los trámites con un comprobante subido que nadie
+            ha validado. Solo para staff: el titular no valida nada, y desde el
+            Resumen se llega aquí con el filtro ya puesto. */}
+        {canCollect && !isOwn && (
+          <div>
+            <label className="field-label" htmlFor="f-pay">Pago</label>
+            <select
+              id="f-pay" className="input" value={pendingDeposit ? 'pending' : ''}
+              onChange={(e) => setPendingDeposit(e.target.value === 'pending')}
+            >
+              <option value="">Todos</option>
+              <option value="pending">Con depósito por validar</option>
+            </select>
+          </div>
+        )}
 
         {/* El rango va en una fila: son los dos extremos de UN filtro, y
             separados en dos bloques sueltos se leen como dos fechas sin relación. */}

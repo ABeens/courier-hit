@@ -579,10 +579,16 @@ function handler(event) {
       WEB_ORIGIN: siteUrl ?? `https://${distribution.distributionDomainName}`,
       UPLOADS_BUCKET: base.uploadsBucket.bucketName,
 
-      // Integraciones apagadas en el primer despliegue. Se encienden una a una
-      // cuando su tramite externo esta listo (docs/12 §8): SES fuera del sandbox,
-      // la IP en la lista blanca de Helga, las llaves de Onvo.
-      MAIL_ENABLED: 'false',
+      // Interruptores de las integraciones. Llegaron apagados en el primer
+      // despliegue y se fueron encendiendo a medida que cerraba cada tramite
+      // externo (docs/12 §8). Lo que dice aqui es lo que MANDA: un `cdk deploy`
+      // devuelve el parametro a este valor, asi que un encendido hecho solo con
+      // `put-parameter` se perderia en el siguiente despliegue del stack.
+      //
+      // Correo: encendido (sep-2026). Mientras la cuenta de SES siga en el
+      // sandbox solo llegan a destinatarios verificados a mano; la API sigue
+      // funcionando y los fallos de envio quedan en el log del mailer.
+      MAIL_ENABLED: 'true',
       // El remitente tiene que estar VERIFICADO en SES. Se verifico la direccion
       // suelta y no el dominio entero, porque verificar el dominio son tres CNAME
       // en Squarespace y el acceso al panel no es nuestro (docs/15 §1.3). El
@@ -590,18 +596,24 @@ function handler(event) {
       // mas de riesgo de spam. Se arregla poniendo los tres CNAME algun dia, sin
       // tocar esto.
       MAIL_FROM: `HS Global Services <servicioalcliente1@${SITE_DOMAIN}>`,
-      HELGA_MODE: 'off',
+      // Helga: encendida (sep-2026). Las credenciales son SecureString y se
+      // cargan con infra/scripts/helga-enable.ps1, NO desde aqui; si faltan, la
+      // API no arranca (core/config.ts), que es lo buscado. Nunca `simulated`.
+      HELGA_MODE: 'on',
       ONVO_MODE: 'on',
       // La tasa de referencia sí va encendida desde el primer despliegue: no
       // depende de ningun tramite externo (API publica, sin credenciales).
       HACIENDA_ENABLED: 'true',
-      MIAMI_LINK_ENABLED: 'false',
+      // Pantallas del operador de Miami (enlace con Miami y cuentas exclusivas).
+      // Encendida (sep-2026); necesita PROVIDER_SECRETS_KEY, que es SecureString
+      // y se carga con infra/scripts/provider-secrets-key.ps1.
+      MIAMI_LINK_ENABLED: 'true',
       // API publica encendida desde el primer despliegue: no depende de ningun
       // tramite externo, y sin llaves emitidas no la puede usar nadie todavia.
       // Queda aqui para poder apagarla desde SSM sin desplegar (docs/16 §6).
       PUBLIC_API_ENABLED: 'true',
-      // El robot solo tiene tareas de Helga: encenderlo antes no agenda nada.
-      ROBOT_ENABLED: 'false',
+      // El robot solo tiene tareas de Helga: va encendido porque Helga lo esta.
+      ROBOT_ENABLED: 'true',
     };
 
     for (const [name, value] of Object.entries(parameters)) {

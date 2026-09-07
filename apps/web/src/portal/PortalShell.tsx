@@ -463,6 +463,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
               initialView={nav?.intent.view ?? (isClient ? 'propios' : 'paqueteria')}
               initialState={nav?.intent.state}
               initialQuery={nav?.intent.q}
+              initialPendingDeposit={nav?.intent.pendingDeposit}
             />
           ) : current === Resource.Tramite ? (
             // Mismo modulo, dos lecturas: el staff opera la cola de Transporte y
@@ -473,6 +474,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
               initialView={isClient ? 'propios-tramites' : 'transporte'}
               initialState={nav?.intent.state}
               initialQuery={nav?.intent.q}
+              initialPendingDeposit={nav?.intent.pendingDeposit}
             />
           ) : current === Resource.Dashboard ? (
             <DashboardScreen allowed={allowed} onNavigate={selectResource} />

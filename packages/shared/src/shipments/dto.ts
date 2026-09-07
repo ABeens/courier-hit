@@ -559,6 +559,15 @@ export const listShipmentsQuerySchema = z.object({
     .pipe(z.array(z.nativeEnum(ShipmentType)).nonempty().optional()),
   state: z.nativeEnum(State).optional(),
   clientId: z.string().uuid().optional(),
+  /**
+   * Solo los tramites con al menos un deposito subido por el cliente y aun sin
+   * validar. Es la cola de tesoreria: el Resumen llega aqui con `true` desde el
+   * cuadro "Depositos por validar", y la pantalla lo ofrece como filtro mas.
+   */
+  pendingDeposit: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
   /** Inicio del rango por fecha de ingreso, inclusive. */
   from: instantSchema.optional(),
   /** Fin del rango por fecha de ingreso, exclusivo (la web manda el inicio del dia siguiente). */

@@ -136,6 +136,16 @@ const STYLES = `
   th, td { padding: 7px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
   th { font-size: 11px; letter-spacing: .5px; text-transform: uppercase; color: #374151; background: #f9fafb; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /*
+   * Tablas anchas (el desglose por paquete: 8 y 9 columnas). Con ancho
+   * automatico la suma de los minimos de cada columna se pasaba de los 182mm
+   * utiles de la hoja y la tabla se salia por el borde derecho. Con reparto fijo
+   * por colgroup el ancho lo manda la hoja y no el contenido: las descripciones
+   * y los tracking largos parten de linea, y cada importe conserva su columna.
+   */
+  table.wide { table-layout: fixed; font-size: 11px; }
+  table.wide th, table.wide td { padding: 6px 5px; overflow-wrap: anywhere; }
+  table.wide th { white-space: normal; }
   tfoot td { font-weight: 700; border-top: 2px solid #111827; border-bottom: none; }
   tfoot tr.crc td { font-weight: 600; color: #374151; border-top: none; }
   .empty { color: #9ca3af; }
@@ -187,11 +197,16 @@ function linesTable(proforma: ProformaDto): string {
 function detailTable(proforma: ProformaDto): string {
   const d = proforma.detail;
   const { currency } = proforma;
-  return `<table>
+  return `<table class="wide">
     <caption>
       Facturación boleta entrega — referencia ${esc(proforma.number)} ·
       montos en ${esc(currency)} (${esc(CURRENCY_SYMBOLS[currency])})
     </caption>
+    <colgroup>
+      <col style="width:11%"><col style="width:14%"><col style="width:6%">
+      <col style="width:13%"><col style="width:11%"><col style="width:12%">
+      <col style="width:11%"><col style="width:12%"><col style="width:10%">
+    </colgroup>
     <thead><tr>
       <th>AWB</th><th>Descripción</th><th class="num">Peso</th><th>Tracking</th>
       <th class="num">Flete</th><th class="num">Otros / Permisos</th><th class="num">Impuestos</th>
@@ -311,11 +326,16 @@ function consolidatedItemsTable(proforma: ConsolidatedProformaDto): string {
     )
     .join('');
 
-  return `<table>
+  return `<table class="wide">
     <caption>
       Paquetes consolidados (${proforma.items.length}) ·
       montos en ${esc(currency)} (${esc(CURRENCY_SYMBOLS[currency])})
     </caption>
+    <colgroup>
+      <col style="width:12%"><col style="width:16%"><col style="width:7%">
+      <col style="width:14%"><col style="width:12%"><col style="width:13%">
+      <col style="width:12%"><col style="width:14%">
+    </colgroup>
     <thead><tr>
       <th>Trámite</th><th>Descripción</th><th class="num">Peso kg</th><th>Tracking</th>
       <th class="num">Flete</th><th class="num">Otros / Permisos</th><th class="num">Impuestos</th>

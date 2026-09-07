@@ -128,14 +128,25 @@ const QUEUE_META: Partial<Record<State, { hint: string; icon: ReactElement; targ
 
 const CHECK_ICON = <path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />;
 
-/** Cuadro de los depositos: no es un estado del trámite, es cola de tesoreria. */
-const PAYMENTS_TILE = {
+/**
+ * Cuadro de los depositos: no es un estado del trámite, es cola de tesoreria.
+ *
+ * Lleva al listado de trámites (vista amplia) acotado a los que tienen un
+ * comprobante sin validar: es ahi, en los pagos de cada trámite, donde el
+ * deposito se aprueba o se rechaza. La cifra es de trámites, igual que ese
+ * listado, para que el cuadro y la cabecera de destino digan lo mismo.
+ */
+const PAYMENTS_TILE: { label: string; hint: string; tone: Tone; icon: ReactElement; targets: Target[] } = {
   label: 'Depósitos por validar',
-  hint: 'Comprobantes subidos por el cliente sin revisar',
-  tone: 'info' as Tone,
+  hint: 'Trámites con comprobante subido por el cliente, sin revisar',
+  tone: 'info',
   icon: CHECK_ICON,
   targets: [
-    { resource: Resource.Costs, name: 'Costos', intent: { costsView: 'facturados' as const } },
+    {
+      resource: Resource.Package,
+      name: 'Validar depósitos',
+      intent: { view: 'todos', pendingDeposit: true },
+    },
   ],
 };
 

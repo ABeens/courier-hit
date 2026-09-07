@@ -20,6 +20,8 @@ export interface NavIntent {
   state?: State;
   /** Búsqueda precargada (consecutivo, tracking, cliente…). */
   q?: string;
+  /** Solo trámites con un depósito por validar (cola de tesorería). */
+  pendingDeposit?: boolean;
   /** Cola inicial de la pantalla de Costos. */
   costsView?: CostsView;
 }

@@ -205,6 +205,22 @@ en que se encienden y qué hace falta para cada una.
 
 Ninguna bloquea a las demás salvo donde se dice.
 
+### Todo de una vez
+
+Para subir la version actual y encender correo, Helga y robot en una sola
+pasada hay un script que encadena los pasos de abajo en el orden correcto:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\infra\scripts\go-live.ps1 -DryRun
+powershell -ExecutionPolicy Bypass -File .\infra\scripts\go-live.ps1
+```
+
+Comprueba la sesion, Docker y el estado de SES, despliega con
+`deploy-local.sh`, pone los interruptores y delega en `helga-enable.ps1` (que
+pide los secretos y reinicia). Se niega a encender el correo si el remitente de
+`MAIL_FROM` no esta verificado en SES. Los interruptores viven ademas en
+`lib/app-stack.ts`, ya en `on`: un `cdk deploy` no los apaga.
+
 ### El mecanismo, una vez
 
 Todas se encienden igual: se cambia un parámetro y se reinicia. La configuración

@@ -9,10 +9,11 @@
  */
 import { and, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
-import { HelgaSyncStatus, toSlice } from '@courier/shared';
+import { HelgaSyncStatus, PaymentStatus, toSlice } from '@courier/shared';
 import type { ListShipmentsQuery, State } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
+import { payments } from '../payments/payments.schema';
 import { settlementColumn } from '../payments/settlement';
 import { cantonRoutes } from '../routes/canton-route.schema';
 import { districtRoutes } from '../routes/district-route.schema';
@@ -130,6 +131,17 @@ function buildConditions(
   if (query.clientId) conds.push(eq(shipments.clientId, query.clientId));
   if (query.state) conds.push(eq(shipments.state, query.state));
   if (query.shipmentType) conds.push(inArray(shipments.shipmentType, query.shipmentType));
+
+  /**
+   * Cola de tesoreria: tramites con un abono `pendiente` (comprobante subido,
+   * nadie lo ha validado). Se apoya en `payments_shipment_idx`; el EXISTS no
+   * multiplica filas, asi que el conteo sigue cuadrando con el listado.
+   */
+  if (query.pendingDeposit) {
+    conds.push(
+      sql`exists (select 1 from ${payments} where ${payments.shipmentId} = ${shipments.id} and ${payments.status} = ${PaymentStatus.Pendiente})`,
+    );
+  }
 
   // Rango por fecha de ingreso: inicio inclusive, fin exclusivo (la web manda el
   // arranque del dia siguiente), asi el ultimo dia del rango entra completo.

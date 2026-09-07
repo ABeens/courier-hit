@@ -1,4 +1,4 @@
-# Carga las credenciales de Helga y enciende la integracion.
+﻿# Carga las credenciales de Helga y enciende la integracion.
 #
 # Helga es el casillero de Miami: sin esto no hay casilleros enlazados ni
 # prealertas, o sea que el negocio no opera. Es la integracion mas critica.
@@ -22,6 +22,12 @@
 # Uso:
 #   powershell -ExecutionPolicy Bypass -File .\infra\scripts\helga-enable.ps1 -DryRun
 #   powershell -ExecutionPolicy Bypass -File .\infra\scripts\helga-enable.ps1
+#   powershell -ExecutionPolicy Bypass -File .\infra\scripts\helga-enable.ps1 -DesdeEnv
+#
+# Con -DesdeEnv los secretos se leen de apps/api/.env (HELGA_CLIENT_SECRET,
+# HELGA_APP_ID y HELGA_PASSWORD como contrasena comun) y no se pregunta nada.
+# Sirve para lanzarlo sin consola interactiva; lo que falte en el .env se sigue
+# pidiendo por consola.
 #
 # Si alguna cuenta cambia de contrasena o abren un casillero nuevo, se edita la
 # tabla $Cuentas de abajo y se vuelve a lanzar: reescribe la lista entera.
@@ -35,7 +41,10 @@ param(
   [switch]$DryRun,
   # Todas las cuentas comparten contrasena hoy. Con este switch se pide una por
   # cuenta, para el dia que dejen de compartirla.
-  [switch]$PasswordPorCuenta
+  [switch]$PasswordPorCuenta,
+  # Lee los secretos de apps/api/.env en vez de pedirlos por consola.
+  [switch]$DesdeEnv,
+  [string]$EnvFile = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -61,7 +70,31 @@ $Cuentas = @(
   @{ code = 'SJO609776'; name = 'ADUANERA HC'; username = 'aherrera@hsglobal-services.com'; clientId = $null }
 )
 
-function Read-Secret($etiqueta) {
+# Valores del .env local, solo con -DesdeEnv. Se parsea a mano (NOMBRE=valor,
+# sin comillas ni expansiones) porque es lo unico que usa ese archivo.
+$EnvValues = @{}
+if ($DesdeEnv) {
+  if (-not $EnvFile) { $EnvFile = Join-Path $PSScriptRoot '../../apps/api/.env' }
+  if (-not (Test-Path $EnvFile)) {
+    Write-Error "No existe $EnvFile"
+    exit 1
+  }
+  foreach ($linea in Get-Content $EnvFile) {
+    $l = $linea.Trim()
+    if (-not $l -or $l.StartsWith('#')) { continue }
+    $idx = $l.IndexOf('=')
+    if ($idx -lt 1) { continue }
+    $EnvValues[$l.Substring(0, $idx).Trim()] = $l.Substring($idx + 1).Trim()
+  }
+  Write-Host "Secretos leidos de $EnvFile" -ForegroundColor DarkGray
+}
+
+# Con -DesdeEnv devuelve el valor del .env si existe; si no, pregunta.
+function Read-Secret($etiqueta, $clave = '') {
+  if ($DesdeEnv -and $clave -and $EnvValues.ContainsKey($clave) -and $EnvValues[$clave]) {
+    Write-Host "  $clave tomada del .env" -ForegroundColor DarkGray
+    return $EnvValues[$clave]
+  }
   $seguro = Read-Host -Prompt $etiqueta -AsSecureString
   $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($seguro)
   try {
@@ -73,8 +106,22 @@ function Read-Secret($etiqueta) {
 }
 
 function Set-Secret($nombre, $valor) {
-  aws ssm put-parameter --region $Region --name "$Path/$nombre" `
-    --value $valor --type SecureString --overwrite --output text | Out-Null
+  # El valor viaja en un archivo temporal (file://) y no en la linea de comandos:
+  # PowerShell, al invocar un ejecutable nativo, le quita las comillas dobles
+  # al argumento. A un JSON como HELGA_ACCOUNTS lo deja sin comillas, la API no
+  # lo puede parsear y NO ARRANCA (paso el 2026-09-06). El archivo se borra al
+  # terminar, exista o no error.
+  $tmp = [System.IO.Path]::GetTempFileName()
+  try {
+    [System.IO.File]::WriteAllText($tmp, $valor, (New-Object System.Text.UTF8Encoding($false)))
+    $uri = 'file://' + $tmp.Replace([char]92, '/')
+    aws ssm put-parameter --region $Region --name "$Path/$nombre" `
+      --value $uri --type SecureString --overwrite --output text | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "No se pudo escribir $nombre" }
+  }
+  finally {
+    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+  }
   Write-Host "  $nombre cargada" -ForegroundColor Green
 }
 
@@ -106,8 +153,8 @@ if ($DryRun) {
   exit 0
 }
 
-$clientSecret = Read-Secret 'HELGA_CLIENT_SECRET'
-$appId = Read-Secret 'HELGA_APP_ID (Enter para omitirlo)'
+$clientSecret = Read-Secret 'HELGA_CLIENT_SECRET' 'HELGA_CLIENT_SECRET'
+$appId = Read-Secret 'HELGA_APP_ID (Enter para omitirlo)' 'HELGA_APP_ID'
 
 if (-not $clientSecret) {
   Write-Error 'HELGA_CLIENT_SECRET es obligatorio con HELGA_MODE=on. Sin el, la API no arranca.'
@@ -116,7 +163,7 @@ if (-not $clientSecret) {
 
 $comun = $null
 if (-not $PasswordPorCuenta) {
-  $comun = Read-Secret 'Contrasena comun de las cuentas'
+  $comun = Read-Secret 'Contrasena comun de las cuentas' 'HELGA_PASSWORD'
   if (-not $comun) {
     Write-Error 'La contrasena es obligatoria. Con -PasswordPorCuenta se pide una por cuenta.'
     exit 1
