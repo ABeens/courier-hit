@@ -223,7 +223,10 @@ export const shipmentsRepo = {
    */
   async findActiveByTracking(tracking: string) {
     const [row] = await db
-      .select({ id: shipments.id, code: shipments.code })
+      // `clientId` viaja para poder distinguir el choque contra un paquete SIN
+      // DUEÑO (que el cliente puede reclamar) del choque contra un tramite que ya
+      // tiene dueño. Son dos mensajes distintos, ver `assertTrackingFree`.
+      .select({ id: shipments.id, code: shipments.code, clientId: shipments.clientId })
       .from(shipments)
       .where(
         and(

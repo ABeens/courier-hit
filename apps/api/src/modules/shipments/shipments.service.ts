@@ -243,10 +243,21 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
   };
 }
 
-/** Un tracking activo no se puede repetir (mismo criterio que el indice parcial). */
+/**
+ * Un tracking activo no se puede repetir (mismo criterio que el indice parcial).
+ *
+ * El choque tiene DOS lecturas y por eso hay dos errores. Si el trámite que ocupa
+ * el tracking ya tiene dueño, es un duplicado y no hay nada que hacer. Si no lo
+ * tiene, es un paquete que el operador de Miami reportó antes de que su dueño lo
+ * prealertara: la caja está en bodega esperando y lo que corresponde es que el
+ * cliente nos avise para asignársela, no que se quede pensando que su prealerta
+ * ya estaba hecha.
+ */
 async function assertTrackingFree(tracking: string): Promise<void> {
   const clash = await shipmentsRepo.findActiveByTracking(tracking);
-  if (clash) throw ShipmentErrors.trackingInUse(clash.code);
+  if (!clash) return;
+  if (clash.clientId === null) throw ShipmentErrors.trackingHeldUnassigned(clash.code);
+  throw ShipmentErrors.trackingInUse(clash.code);
 }
 
 /**

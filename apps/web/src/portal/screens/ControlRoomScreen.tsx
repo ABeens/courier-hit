@@ -11,10 +11,13 @@
  * bien. Cubre dos poblaciones que en el fondo son el mismo problema («esta caja
  * no está donde debería, o no es de quien dice»):
  *
- *   - PAQUETES SIN DUEÑO: llegaron a la bodega de HS Global sin que nadie los
- *     anunciara (ni el cliente los prealertó, ni el operador de Miami los
- *     reportó). Mientras no tengan dueño no avanzan, no se cotizan y no se
- *     cobran: son cajas esperando a que alguien las reclame.
+ *   - PAQUETES SIN DUEÑO: nadie sabe de quién son. Llegan por dos vías. Una es
+ *     el alta manual desde Recepción, cuando aparece una caja en la bodega de HS
+ *     Global que nadie anunció. La otra es el robot de descubrimiento: trae de
+ *     Miami los paquetes que están bajo nuestra cuenta del proveedor y cuyo
+ *     destinatario no cruza con ningún casillero nuestro. Mientras no tengan
+ *     dueño no avanzan, no se cotizan y no se cobran: son cajas esperando a que
+ *     alguien las reclame.
  *   - CUALQUIER TRÁMITE del sistema, para cambiarle el dueño (homónimos, dos
  *     cuentas de la misma familia, un dedazo en el alta) o corregirle el estado.
  *
@@ -402,7 +405,7 @@ export function ControlRoomScreen({ role }: { role: Role }) {
         {view === 'sin-dueno'
           ? filtered
             ? 'Ningún paquete sin dueño coincide con los filtros.'
-            : 'No hay paquetes sin dueño. Cuando aparezca uno en bodega que el sistema no reconozca, regístralo aquí.'
+            : 'No hay paquetes sin dueño. Aquí caen los que aparecen en bodega sin que nadie los anuncie, tanto los que registras desde Recepción como los que el robot trae de Miami sin destinatario reconocido.'
           : view === 'todos'
             ? filtered
               ? 'Ningún trámite coincide con los filtros.'

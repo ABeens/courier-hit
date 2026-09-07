@@ -26,11 +26,18 @@
  * 3. NO SE PREALERTA DE VUELTA. El paquete YA existe en Helga: mandarlo por la
  *    op. C lo duplicaria. El alta sella `helgaPrealertStatus = 'synced'` para que
  *    `reconcilePrealerts` no lo levante (nace 'pending' por default del insert).
- * 4. SOLO PAQUETES DE NUESTROS CLIENTES. Una fila cuyo `destinatario_id` no
- *    corresponde a ningun casillero nuestro se ignora: son destinatarios creados a
- *    mano en Helga que no nos pertenecen. OJO: esto vale para la cuenta PRINCIPAL.
- *    En una cuenta EXCLUSIVA no se cruza nada, porque toda la cuenta es de un solo
- *    cliente (ver `ownerFor`).
+ * 4. LO QUE NO SE PUEDE ATRIBUIR ENTRA SIN DUEÑO, NO SE TIRA. Si el
+ *    `destinatario_id` no corresponde a ningun casillero nuestro, o la fila llega
+ *    sin destinatario, el tramite nace con `clientId = null` y espera en la sala
+ *    de control. Antes se descartaba, y como la op. E solo lista lo que esta en
+ *    DIGITADO, el paquete desaparecia del listado al avanzar y se perdia. Un
+ *    paquete que esta en la bodega del proveedor bajo NUESTRA cuenta consolidada
+ *    es nuestro problema aunque no sepamos todavia de quien es.
+ *    OJO: esto solo ocurre en la cuenta PRINCIPAL. En una cuenta EXCLUSIVA no se
+ *    cruza nada, porque toda la cuenta es de un solo cliente consolidado.
+ *    Lo unico que se sigue descartando son las filas SIN TRACKING NI HAWB, y no
+ *    por criterio: el tracking es la llave que dice si una fila ya se importo, y
+ *    sin ella cada corrida daria de alta el mismo paquete otra vez.
  * 5. UNA PASADA POR CUENTA. La op. E lista los paquetes de LA CUENTA con cuyo
  *    token se pregunta, y cada cuenta de Helga solo ve los suyos. Asi que el
  *    recorrido va cuenta por cuenta: la principal (que reparte entre muchos
@@ -91,9 +98,22 @@ export interface DiscoveryReport {
   created: number;
   /** Filas descartadas porque su tracking ya tiene un tramite activo. */
   known: number;
-  /** Filas descartadas porque el destinatario no es un casillero nuestro. */
-  foreign: number;
-  /** Filas descartadas por no traer tracking ni HAWB utilizable. */
+  /**
+   * Tramites nuevos creados SIN DUEÑO, porque la fila no se pudo atribuir a
+   * ningun casillero nuestro: o su destinatario no es cliente nuestro, o la fila
+   * llego sin destinatario. Van a la cola de la sala de control.
+   */
+  unassigned: number;
+  /**
+   * Filas descartadas por no traer tracking ni HAWB utilizable.
+   *
+   * Son las UNICAS que se siguen tirando, y no por criterio sino por una
+   * limitacion dura: el tracking es la llave con la que se sabe si una fila ya
+   * se importo. Sin ella, cada corrida del robot volveria a dar de alta el mismo
+   * paquete, y en quince minutos la cola de sin dueño serian copias. El alta
+   * manual de la sala de control si puede prescindir del tracking porque la hace
+   * una persona una sola vez.
+   */
   invalid: number;
   /** Filas que fallaron al insertarse. */
   failed: number;
@@ -199,7 +219,7 @@ export const providerDiscoveryService = {
       fetched: 0,
       created: 0,
       known: 0,
-      foreign: 0,
+      unassigned: 0,
       invalid: 0,
       failed: 0,
       accounts: 0,
@@ -216,7 +236,7 @@ export const providerDiscoveryService = {
       report.fetched += one.fetched;
       report.created += one.created;
       report.known += one.known;
-      report.foreign += one.foreign;
+      report.unassigned += one.unassigned;
       report.invalid += one.invalid;
       report.failed += one.failed;
     }
@@ -262,7 +282,7 @@ export const providerDiscoveryService = {
       fetched: 0,
       created: 0,
       known: 0,
-      foreign: 0,
+      unassigned: 0,
       invalid: 0,
       failed: 0,
       accounts: 1,
@@ -289,17 +309,18 @@ export const providerDiscoveryService = {
       return report;
     }
 
-    // Las filas utilizables son las que traen llave de cruce. El destinatario solo
-    // hace falta en la cuenta principal, que es donde decide de quien es el
-    // paquete; en una cuenta exclusiva ya se sabe, y exigirlo tiraria filas que
-    // el proveedor mando sin ese campo.
+    /**
+     * Lo unico que hace utilizable a una fila es la LLAVE DE CRUCE (tracking o
+     * HAWB). Sin destinatario la fila SI entra: se da de alta sin dueño y espera
+     * en la sala de control. Antes tambien se exigia el destinatario en la cuenta
+     * principal, y eso tiraba paquetes reales por un campo que solo dice de quien
+     * es, no si existe.
+     */
     const needsRecipient = target.consolidatedClientId === null;
     const candidates = rows
       .map((row) => ({ row, tracking: trackingKeyFor(row), helgaClientId: row.destinatario_id }))
       .filter((c) => {
-        const missingRecipient =
-          needsRecipient && (c.helgaClientId === undefined || c.helgaClientId === null);
-        if (!c.tracking || missingRecipient) {
+        if (!c.tracking) {
           report.invalid += 1;
           return false;
         }
@@ -346,21 +367,40 @@ export const providerDiscoveryService = {
       const owner = target.consolidatedClientId
         ? { id: target.consolidatedClientId, code: target.code ?? '' }
         : clientByHelgaId.get(String(helgaClientId));
-      if (!owner) {
-        report.foreign += 1;
-        continue;
-      }
 
+      // Ya lo tenemos: entro por el flujo 1, por una corrida anterior, o esta
+      // repetido dentro de este mismo listado.
       if (knownTrackings.has(tracking) || seen.has(tracking)) {
         report.known += 1;
         continue;
       }
       seen.add(tracking);
 
+      /**
+       * EL DUEÑO DESCONOCIDO YA NO DESCARTA LA FILA. El paquete esta en la bodega
+       * del proveedor bajo NUESTRA cuenta consolidada, asi que es nuestro problema
+       * aunque no sepamos de quien es. Antes se tiraba, y como la op. E solo lista
+       * lo que esta en DIGITADO, ese paquete desaparecia del listado en cuanto
+       * avanzaba y no habia forma de recuperarlo: se perdia.
+       *
+       * Nace sin dueño y cae en la cola de la sala de control. Ahi no avanza de
+       * estado (la sincronizacion con el proveedor hace INNER JOIN contra el
+       * casillero, y sin dueño no hay casillero), no se cotiza y no se cobra,
+       * hasta que un Admin le asigne dueño o lo descarte.
+       */
       try {
-        await this.createFromProvider(session, owner.id, tracking, row, target.code);
-        report.created += 1;
-        console.info(`[helga] descubierto ${tracking} del casillero ${owner.code} (${label}).`);
+        await this.createFromProvider(session, owner?.id ?? null, tracking, row, target.code);
+        if (owner) {
+          report.created += 1;
+          console.info(`[helga] descubierto ${tracking} del casillero ${owner.code} (${label}).`);
+        } else {
+          report.unassigned += 1;
+          const motivo =
+            helgaClientId === undefined || helgaClientId === null
+              ? 'la fila no trae destinatario'
+              : `el destinatario ${helgaClientId} no es casillero nuestro`;
+          console.info(`[helga] descubierto ${tracking} SIN DUEÑO (${label}): ${motivo}.`);
+        }
       } catch (err) {
         // Carrera esperada: el cliente prealerto el mismo paquete mientras esta
         // corrida lo estaba insertando. No es un fallo, es el flujo 1 ganando.
@@ -402,7 +442,8 @@ export const providerDiscoveryService = {
    */
   async createFromProvider(
     session: Session,
-    clientId: string,
+    /** `null` = no se pudo atribuir: nace sin dueño, en la sala de control. */
+    clientId: string | null,
     tracking: string,
     row: HelgaAvailablePackage,
     providerAccountCode: string | null = null,

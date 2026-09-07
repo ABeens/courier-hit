@@ -304,6 +304,24 @@ export const ShipmentErrors = {
       `Ya existe un trámite activo con ese tracking (${code}).`,
       409,
     ),
+  /**
+   * El tracking lo tiene ocupado un paquete SIN DUEÑO: el operador de Miami lo
+   * reportó antes de que su dueño lo prealertara, así que la caja ya está en
+   * bodega esperando a que alguien la reclame.
+   *
+   * Va aparte de `trackingInUse` porque para quien lo lee no es el mismo hecho.
+   * "Ya existe un trámite" suena a que se prealertó dos veces y no hay nada que
+   * hacer; esto es lo contrario: el paquete es probablemente suyo y basta con
+   * avisarnos para que se lo asignemos. El código va en el mensaje para que
+   * pueda citarlo al escribir.
+   */
+  trackingHeldUnassigned: (code: string) =>
+    new AppError(
+      'SHIPMENT_TRACKING_UNASSIGNED',
+      `Ya hay un paquete en bodega con ese tracking (${code}) que todavía no tiene dueño. ` +
+        'Comunícate con nosotros para que lo revisemos y te lo asignemos.',
+      409,
+    ),
   fieldNotForType: () =>
     new AppError(
       'SHIPMENT_FIELD_NOT_FOR_TYPE',

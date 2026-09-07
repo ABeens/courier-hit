@@ -388,6 +388,14 @@ export const PUBLIC_API_OPERATIONS: readonly ApiOperation[] = [
         code: 'SHIPMENT_TRACKING_IN_USE',
         when: 'Ya existe un paquete en curso con esa misma guia.',
       },
+      {
+        status: 409,
+        code: 'SHIPMENT_TRACKING_UNASSIGNED',
+        when:
+          'Esa guia la tiene un paquete que ya esta en bodega pero todavia sin dueño: ' +
+          'llego a Miami antes de que nadie lo prealertara. No se reintenta, hay que ' +
+          'escribirnos para que lo asignemos al casillero correcto.',
+      },
     ],
   },
 ];

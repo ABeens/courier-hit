@@ -178,7 +178,7 @@ export function registerJobs(scheduler: Scheduler): void {
         const r = await providerDiscoveryService.run(session);
         console.log(
           `[scheduler] helga-discovery: cuentas=${r.accounts} listados=${r.fetched} ` +
-            `creados=${r.created} conocidos=${r.known} ajenos=${r.foreign} ` +
+            `creados=${r.created} sin_dueno=${r.unassigned} conocidos=${r.known} ` +
             `sin_tracking=${r.invalid} fallidos=${r.failed}`,
         );
       },
