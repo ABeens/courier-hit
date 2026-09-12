@@ -159,6 +159,21 @@ shipmentsRoutes.get('/:id/photos', canRead, async (c) => {
 });
 
 /**
+ * Foto del paquete entregado (la prueba que subio el mensajero). El historial
+ * (`/:id/events`) dice en que asiento va y con que ruta; esta ruta la sirve.
+ * Cuelga del tramite y con `canRead`, no del modulo de entregas: quien la mira
+ * es quien puede ver el historial, no solo el mensajero.
+ */
+shipmentsRoutes.get('/:id/delivery-photos/:attemptId', canRead, async (c) => {
+  const { body, contentType } = await shipmentsService.deliveryPhotoFile(
+    c.get('session'),
+    c.req.param('id'),
+    c.req.param('attemptId'),
+  );
+  return c.body(body, 200, { 'content-type': contentType });
+});
+
+/**
  * Documento adjunto del tramite (la factura de la compra, tipicamente). Va como
  * multipart porque lleva un archivo; el resto del modulo es JSON.
  *

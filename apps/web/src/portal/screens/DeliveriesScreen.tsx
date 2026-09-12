@@ -30,7 +30,6 @@ import { FilterBar } from '../components/FilterBar';
 import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
 import { Pagination } from '../components/Pagination';
 import { PayFlag } from '../components/PayFlag';
-import { API_BASE } from '../lib/api';
 import { usePagedList } from '../lib/usePagedList';
 import { DeliveryConfirmModal } from './DeliveryConfirmModal';
 
@@ -244,9 +243,4 @@ export function DeliveriesScreen() {
       )}
     </div>
   );
-}
-
-/** Ruta de descarga de la foto de un intento; la usa el historial del trámite. */
-export function attemptPhotoUrl(attemptId: string): string {
-  return `${API_BASE}/api/deliveries/attempts/${attemptId}/photo`;
 }

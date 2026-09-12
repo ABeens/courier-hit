@@ -1495,6 +1495,12 @@ select.input { cursor: pointer; padding-right: 30px; }
 .pkg-photo:hover .pkg-photo-zoom,
 .pkg-photo:focus-visible .pkg-photo-zoom { opacity: 1; }
 
+/* La foto de la entrega vive dentro de su asiento del historial: una sola
+   miniatura, del mismo tamano que las de bodega, debajo de la nota del tramo y
+   encima de la hora. `display: block` para que no se alinee como texto en linea
+   con lo que la rodea. */
+.trace-photo { display: block; width: 92px; margin-top: 8px; }
+
 /* --- La foto ampliada -------------------------------------------------------
    No es un `.modal`: no lleva ni cabecera ni pie, porque el contenido es la foto
    y cualquier marco le quita sitio. Se limita a la ventana para que una foto

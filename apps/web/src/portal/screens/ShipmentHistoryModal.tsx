@@ -30,7 +30,7 @@ import type {
   ShipmentPhotoDto,
   ShipmentPhotosResponse,
 } from '@courier/shared';
-import { ApiError, api } from '../lib/api';
+import { API_BASE, ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { formatStamp } from '../lib/datetime';
 import { STATE_TONE } from '../lib/tone';
@@ -39,6 +39,30 @@ import { tracePlace } from '../lib/trace';
 interface Props {
   row: ShipmentDto;
   onClose: () => void;
+}
+
+/**
+ * Lo que la capa de ampliacion necesita de una foto, venga de donde venga. Hay
+ * dos origenes y no comparten tipo: las de bodega las sirve el proveedor
+ * (`ShipmentPhotoDto`) y la de la entrega la sirve nuestra API pegada a su
+ * asiento del historial. La ampliacion no tiene por que saber cual es cual.
+ */
+interface ZoomedPhoto {
+  url: string;
+  alt: string;
+  /** Instante UTC de la foto, o null si no se conoce. */
+  takenAt: string | null;
+  /** Como se lee la fecha debajo: «Tomada el», «Entregado el». */
+  takenLabel: string;
+}
+
+/**
+ * Foto de entrega -> url absoluta. La API manda la ruta relativa a su origen
+ * (`/api/...`) y aqui se le antepone el mismo origen que al documento adjunto:
+ * en desarrollo la API vive en otro puerto y un `src` relativo iria a la web.
+ */
+function deliveryPhotoSrc(photoUrl: string): string {
+  return `${API_BASE}${photoUrl}`;
 }
 
 /** Marca del asiento actual: el paquete esta AQUI. */
@@ -86,7 +110,7 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [photos, setPhotos] = useState<ShipmentPhotoDto[]>([]);
   /** Foto abierta a tamaño completo, o null. Es la ampliacion del criterio. */
-  const [zoomed, setZoomed] = useState<ShipmentPhotoDto | null>(null);
+  const [zoomed, setZoomed] = useState<ZoomedPhoto | null>(null);
 
   /**
    * Las fotos van en su propia peticion y con su propio estado: las sirve el
@@ -179,7 +203,14 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
                       key={photo.id}
                       type="button"
                       className="pkg-photo"
-                      onClick={() => setZoomed(photo)}
+                      onClick={() =>
+                        setZoomed({
+                          url: photo.url,
+                          alt: `Paquete ${row.code} en la bodega de Miami`,
+                          takenAt: photo.takenAt,
+                          takenLabel: 'Tomada el',
+                        })
+                      }
                       aria-label={`Ampliar la foto ${i + 1} de ${photos.length}`}
                     >
                       <img src={photo.url} alt={`Paquete ${row.code}, foto ${i + 1}`} loading="lazy" />
@@ -204,6 +235,7 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
                   /* El primero de la lista es el ultimo que ocurrio: es DONDE esta
                      el tramite ahora, y por eso se resalta. El resto ya se cumplio. */
                   const isCurrent = i === 0;
+                  const photoSrc = event.photoUrl ? deliveryPhotoSrc(event.photoUrl) : null;
                   return (
                     <li
                       key={event.id}
@@ -231,6 +263,31 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
                         {event.note && <p className="trace-note">{event.note}</p>}
                         {event.createdByName && (
                           <p className="trace-note">Registrado por {event.createdByName}</p>
+                        )}
+
+                        {/* La prueba del asiento (la foto del paquete entregado)
+                            va DENTRO del tramo y no arriba con las de bodega:
+                            no es "mi paquete", es "asi quedo entregado", y se
+                            lee junto a la hora y el lugar de esa entrega. */}
+                        {photoSrc && (
+                          <button
+                            type="button"
+                            className="pkg-photo trace-photo"
+                            onClick={() =>
+                              setZoomed({
+                                url: photoSrc,
+                                alt: `Paquete ${row.code} entregado`,
+                                takenAt: event.createdAt,
+                                takenLabel: 'Entregado el',
+                              })
+                            }
+                            aria-label="Ampliar la foto de la entrega"
+                          >
+                            <img src={photoSrc} alt={`Paquete ${row.code} entregado`} loading="lazy" />
+                            <span className="pkg-photo-zoom" aria-hidden="true">
+                              <ZoomIcon />
+                            </span>
+                          </button>
                         )}
 
                         <time className="trace-when" dateTime={event.createdAt}>
@@ -264,10 +321,10 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
             aria-modal="true"
             aria-label={`Foto del paquete ${row.code}`}
           >
-            <img src={zoomed.url} alt={`Paquete ${row.code} en la bodega de Miami`} />
+            <img src={zoomed.url} alt={zoomed.alt} />
             {zoomed.takenAt && (
               <time className="photo-zoom-when" dateTime={zoomed.takenAt}>
-                Tomada el {formatStamp(zoomed.takenAt)}
+                {zoomed.takenLabel} {formatStamp(zoomed.takenAt)}
               </time>
             )}
             <button
