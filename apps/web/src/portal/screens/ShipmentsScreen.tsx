@@ -579,10 +579,10 @@ export function ShipmentsScreen({
             className={`card-item tone-${STATE_TONE[row.state]}${isOwn ? ' is-clickable' : ''}`}
             key={row.id}
             /*
-              La ficha del titular ABRE su trazabilidad. El gesto va sobre la
-              tarjeta entera y no sobre un botón «Ver historial» porque pulsar la
-              tarjeta es lo que el cliente intenta igual, y en su tablero no hay
-              otra acción que le compita por el clic.
+              La ficha del titular ABRE su trazabilidad. Además del botón «Ver
+              historial» del aside, el gesto va sobre la tarjeta entera porque
+              pulsar la tarjeta es lo que el cliente intenta igual, y en su
+              tablero no hay otra acción que le compita por el clic.
 
               No se usa <button> como contenedor: dentro ya viven el enlace al
               documento y el botón de pago, y un control no puede anidar otros.
@@ -590,7 +590,8 @@ export function ShipmentsScreen({
 
               Los tableros de staff NO son pulsables: ahí la tarjeta está llena de
               acciones (editar, avanzar, corregir) y un clic al aire abriendo una
-              ventana estorbaría más de lo que ayuda.
+              ventana estorbaría más de lo que ayuda. Ahí el historial se abre
+              solo con el botón.
             */
             {...(isOwn
               ? {
@@ -652,6 +653,13 @@ export function ShipmentsScreen({
                 {!(isOwn && row.state === State.EnBodegaPendientePago) && (
                   <span className="spill"><span className="dot" />{STATE_LABELS[row.state]}</span>
                 )}
+                {/* Historial del trámite, en TODAS las fichas de Paquetería y
+                    Trámites. En los tableros de staff es la única vía (la
+                    tarjeta no es pulsable); en el del cliente duplica el gesto
+                    de la tarjeta, pero un botón visible se descubre y un clic
+                    "al aire" no. El aside corta la propagación, así que aquí
+                    no se abre dos veces. */}
+                <IconButton label="Ver historial" icon="clock" onClick={() => setTracing(row)} />
                 {/* Documento del trámite (la factura que adjuntó el cliente al
                     prealertar). Es un <a> y no un botón porque la descarga la
                     resuelve el navegador contra la API, que es quien comprueba
