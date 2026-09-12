@@ -12,28 +12,12 @@
  * quita el paquete a alguien que hoy lo ve en su portal, y eso hay que decirlo
  * antes de pulsar, no después.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { assignShipmentOwnerSchema, clientFullLabel } from '@courier/shared';
-import type { Page, ShipmentDto } from '@courier/shared';
+import type { ShipmentDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
+import { ClientPicker } from '../components/ClientPicker';
 import { ModalOverlay } from '../components/ModalOverlay';
-
-interface ClientOption {
-  id: string;
-  code: string;
-  name: string;
-  idNumber: string;
-}
-
-/**
- * Cuántos casilleros se ofrecen en el desplegable.
- *
- * Antes se pedían TODOS y se pintaba un `<option>` por casillero: con unos pocos
- * miles, el desplegable es inservible (nadie encuentra a nadie desplazándose) y
- * el modal tarda en abrir. El buscador de arriba es el que resuelve, y este tope
- * es lo que queda a la vista mientras se escribe. Si sobran, se dice.
- */
-const CLIENT_OPTIONS = 50;
 
 interface Props {
   row: ShipmentDto;
@@ -44,32 +28,9 @@ interface Props {
 export function AssignOwnerModal({ row, onClose, onSaved }: Props) {
   const isReassignment = row.client !== null;
   const [clientId, setClientId] = useState('');
-  const [clientQuery, setClientQuery] = useState('');
-  const [clients, setClients] = useState<ClientOption[]>([]);
-  /** Cuántos casilleros hay en total con esa búsqueda, para avisar si sobran. */
-  const [clientMatches, setClientMatches] = useState(0);
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const loadClients = useCallback(async () => {
-    const params = new URLSearchParams({ pageSize: String(CLIENT_OPTIONS) });
-    if (clientQuery.trim()) params.set('q', clientQuery.trim());
-    try {
-      const res = await api.get<Page<ClientOption>>(`/clients?${params.toString()}`);
-      setClients(res.items);
-      setClientMatches(res.total);
-    } catch {
-      // el error se verá al enviar; no bloqueamos el formulario
-      setClients([]);
-      setClientMatches(0);
-    }
-  }, [clientQuery]);
-
-  useEffect(() => {
-    const t = setTimeout(loadClients, 250); // debounce de la búsqueda
-    return () => clearTimeout(t);
-  }, [loadClients]);
 
   /**
    * Los dos candados de dinero de la API, comprobados también aquí para avisar
@@ -141,36 +102,7 @@ export function AssignOwnerModal({ row, onClose, onSaved }: Props) {
             <label className="field-label" htmlFor="a-client">
               {isReassignment ? 'Nuevo dueño' : 'Dueño'}
             </label>
-            <input
-              className="input"
-              placeholder="Buscar por nombre, casillero o cédula…"
-              value={clientQuery}
-              onChange={(e) => setClientQuery(e.target.value)}
-              style={{ marginBottom: 8 }}
-            />
-            <select
-              id="a-client"
-              className="input"
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              disabled={locked}
-            >
-              <option value="">Elige un cliente…</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.code} — {c.name} ({c.idNumber})
-                </option>
-              ))}
-            </select>
-            {/* El desplegable está recortado y hay que decirlo: quien no ve a su
-                cliente ahí tiene que saber que no es que no exista, sino que hay
-                más de los que caben. */}
-            {clientMatches > clients.length && (
-              <div className="field-hint">
-                {clients.length} de {clientMatches.toLocaleString('es-CR')} casilleros. Afina la
-                búsqueda para ver el resto.
-              </div>
-            )}
+            <ClientPicker id="a-client" value={clientId} onChange={setClientId} disabled={locked} />
           </div>
 
           <div>

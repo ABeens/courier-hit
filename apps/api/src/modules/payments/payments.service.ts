@@ -623,6 +623,17 @@ export const paymentsService = {
     await assertNotConsolidated(shipment.clientId);
 
     /**
+     * Un tramite ya pagado no admite mas depositos. La pantalla oculta el
+     * formulario, pero la barrera real es esta: un abono digitado de mas contra
+     * un saldo en cero seria un cobro doble que luego habria que devolver.
+     * Misma base y misma pregunta (`isSettled`) que usa el pago del cliente.
+     */
+    const paid = await paymentsRepo.settlementView(input.shipmentId);
+    if (isSettled(paid, chargeBasisFor(shipment.shipmentType, shipment))) {
+      throw PaymentErrors.alreadySettled();
+    }
+
+    /**
      * La tasa es un valor general del sistema (ver `canSetExchangeRate`): quien
      * no puede fijarla registra el deposito con la de la factura, que es ademas
      * la que cuadra el abono con lo cobrado. Sin esta guarda, el permiso seria

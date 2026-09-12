@@ -726,8 +726,15 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
             </div>
           )}
 
-          {/* --- Registro de un depósito nuevo --- */}
-          {canRecord && !isConsolidatedAccount && shipment.invoiceTotalCrc != null && (
+          {/* --- Registro de un depósito nuevo ---
+              Con el trámite pagado no hay nada que registrar: el formulario
+              desaparece (y la API lo rechaza igual). Mientras cargan los abonos
+              tampoco se muestra, porque sin ellos todo trámite parece sin pagar. */}
+          {canRecord &&
+            !loading &&
+            !figures.settled &&
+            !isConsolidatedAccount &&
+            shipment.invoiceTotalCrc != null && (
             <div className="pay-sec">
               <div className="card-sec-title">Registrar depósito recibido</div>
 

@@ -11,7 +11,8 @@
  * Paqueteria; quien tiene tramite.manage ve los manuales) Y del tablero desde
  * el que se abre el modal. La API revalida.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
+import { ClientPicker } from '../components/ClientPicker';
 import { ModalOverlay } from '../components/ModalOverlay';
 import {
   MANUAL_SHIPMENT_TYPES,
@@ -30,25 +31,8 @@ import {
   updateShipmentSchema,
   usesPackageFields,
 } from '@courier/shared';
-import type { Page, Role, ShipmentDto } from '@courier/shared';
+import type { Role, ShipmentDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
-
-interface ClientOption {
-  id: string;
-  code: string;
-  name: string;
-  idNumber: string;
-}
-
-/**
- * Cuantos casilleros se ofrecen en el desplegable de cliente.
- *
- * Antes se pedian TODOS y se pintaba un `<option>` por casillero: con unos pocos
- * miles el desplegable es inservible y el modal tarda en abrir. El buscador de
- * arriba es el que resuelve; este tope es lo que queda a la vista mientras se
- * escribe, y si sobran se dice.
- */
-const CLIENT_OPTIONS = 50;
 
 interface Props {
   mode: 'create' | 'edit';
@@ -100,10 +84,6 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
   // `row.client` puede venir vacío (paquete sin dueño), aunque esos no se editan
   // desde aquí sino desde la sala de control.
   const [clientId, setClientId] = useState(row?.client?.id ?? '');
-  const [clientQuery, setClientQuery] = useState('');
-  const [clients, setClients] = useState<ClientOption[]>([]);
-  /** Cuantos casilleros hay en total con esa busqueda, para avisar si sobran. */
-  const [clientMatches, setClientMatches] = useState(0);
   const [tracking, setTracking] = useState(row?.tracking ?? '');
   const [description, setDescription] = useState(row?.description ?? '');
   const [store, setStore] = useState(row?.store ?? '');
@@ -152,26 +132,6 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
     ? [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg, ShipmentField.DeclaredValue, ShipmentField.InsuredValue, ShipmentField.TariffPosition, ShipmentField.Retain, ShipmentField.BillingNotes]
     : [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Warehouse, ShipmentField.Dua, ShipmentField.BillingNotes];
   const someFrozen = editable !== null && (weightLocked || relevantFields.some((f) => !editable.includes(f)));
-
-  const loadClients = useCallback(async () => {
-    if (mode === 'edit') return; // el cliente de un tramite no se reasigna aqui
-    const params = new URLSearchParams({ pageSize: String(CLIENT_OPTIONS) });
-    if (clientQuery.trim()) params.set('q', clientQuery.trim());
-    try {
-      const res = await api.get<Page<ClientOption>>(`/clients?${params.toString()}`);
-      setClients(res.items);
-      setClientMatches(res.total);
-    } catch {
-      // el error se vera al enviar; no bloqueamos el formulario
-      setClients([]);
-      setClientMatches(0);
-    }
-  }, [clientQuery, mode]);
-
-  useEffect(() => {
-    const t = setTimeout(loadClients, 250); // debounce de la busqueda
-    return () => clearTimeout(t);
-  }, [loadClients]);
 
   /**
    * DUA con mascara: el usuario digita solo numeros y `formatDua` intercala los
@@ -330,31 +290,9 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
           {mode === 'create' ? (
             <div className="col-full">
               <label className="field-label" htmlFor="t-client">Cliente</label>
-              <input
-                className="input" placeholder="Buscar por nombre, casillero o cédula…"
-                value={clientQuery} onChange={(e) => setClientQuery(e.target.value)}
-                style={{ marginBottom: 8 }}
-              />
-              <select
-                id="t-client" className="input" value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-              >
-                <option value="">Elige un cliente…</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.code} — {c.name} ({c.idNumber})
-                  </option>
-                ))}
-              </select>
-              {/* El desplegable esta recortado y hay que decirlo: quien no ve a su
-                  cliente ahi tiene que saber que no es que no exista, sino que hay
-                  mas de los que caben. */}
-              {clientMatches > clients.length && (
-                <div className="field-hint">
-                  {clients.length} de {clientMatches.toLocaleString('es-CR')} casilleros. Afina la
-                  búsqueda para ver el resto.
-                </div>
-              )}
+              {/* Un solo campo: busca y elige. El cliente de un tramite no se
+                  reasigna aqui (eso es de la sala de control). */}
+              <ClientPicker id="t-client" value={clientId} onChange={setClientId} />
             </div>
           ) : (
             <div className="col-full">

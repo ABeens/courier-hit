@@ -64,6 +64,30 @@ export const hawbSchema = z
   .toUpperCase()
   .regex(/^[A-Z0-9-]{1,30}$/, 'El HAWB (LES) solo admite letras, números y guiones.');
 
+/** Prefijo con el que la bodega de Miami imprime el consecutivo LES. */
+export const LES_PREFIX = 'LES';
+/** Largo minimo del LES completo, prefijo incluido ("LES" + al menos un caracter). */
+export const LES_MIN_LENGTH = 4;
+
+/**
+ * Consecutivo LES tal como lo lee la pistola en la mesa de bodega: empieza por
+ * "LES" y tiene al menos 4 caracteres. Es mas estricto que `hawbSchema` a
+ * proposito: en Recepcion el operador solo debe poder ingresar codigos con la
+ * forma del consecutivo, para que un tracking de tienda o un numero suelto
+ * digitado por error no termine buscandose como LES (y ofreciendo darlo de alta
+ * como paquete sin dueno). Cada regla tiene su mensaje para que el aviso en el
+ * campo diga que fue exactamente lo que no cumplio.
+ */
+export const lesSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .min(1, 'Escanea o digita el LES.')
+  .startsWith(LES_PREFIX, `El LES debe comenzar por ${LES_PREFIX}.`)
+  .min(LES_MIN_LENGTH, `El LES debe tener al menos ${LES_MIN_LENGTH} caracteres.`)
+  .max(30, 'El LES es demasiado largo.')
+  .regex(/^[A-Z0-9-]+$/, 'El LES solo admite letras, números y guiones.');
+
 /** DUA con el formato del manual: ###-####-###### (docs/manuales/flujo.md L82). */
 export const duaSchema = z
   .string()
@@ -500,9 +524,12 @@ export type CorrectStateInput = z.infer<typeof correctStateSchema>;
  * digita el LES y el sistema resuelve el resto: si el tramite existe lo mueve a
  * "Facturación en proceso"; si no, responde con un codigo estable para que la
  * web abra el alta manual.
+ *
+ * Aqui el HAWB se valida con `lesSchema` y no con `hawbSchema`: en la mesa de
+ * bodega solo entran codigos con la forma del consecutivo LES.
  */
 export const receiveShipmentSchema = z.object({
-  hawb: hawbSchema,
+  hawb: lesSchema,
 });
 export type ReceiveShipmentInput = z.infer<typeof receiveShipmentSchema>;
 

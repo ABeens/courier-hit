@@ -129,6 +129,35 @@
 .pw-toggle:hover { color: var(--ink-2); background: var(--paper-2); }
 .pw-toggle svg { width: 18px; height: 18px; }
 
+/* ---- Buscador de cliente con desplegable (ClientPicker) ---- */
+/* Un solo campo: se escribe para filtrar y se elige de la lista de abajo. */
+.combo { position: relative; }
+.combo .input { padding-right: 44px; }
+.combo-icon, .combo-clear {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: var(--r-xs); color: var(--faint); padding: 0;
+}
+.combo-clear:hover:not(:disabled) { color: var(--ink-2); background: var(--paper-2); }
+.combo-clear:disabled { cursor: not-allowed; }
+.combo.has-value .input { color: var(--ink); font-weight: 500; }
+.combo-menu {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 5;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
+  box-shadow: var(--sh-2); max-height: 280px; overflow-y: auto; padding: 6px;
+}
+.combo-list { list-style: none; margin: 0; padding: 0; }
+.combo-item {
+  display: flex; align-items: baseline; gap: 10px; padding: 9px 10px;
+  border-radius: var(--r-xs); cursor: pointer; font-size: 14px; color: var(--ink);
+}
+.combo-item.is-active { background: var(--brand-softer); }
+.combo-code { flex: none; font-size: 13px; color: var(--brand); }
+.combo-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-id { flex: none; font-size: 12.5px; color: var(--muted); }
+.combo-note { padding: 9px 10px; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.combo-list:not(:empty) + .combo-note { border-top: 1px solid var(--line-2); margin-top: 4px; }
+
 /* ---- Registro de casillero (asistente de 3 pasos, pagina /registro) ---- */
 .register-card .btn { width: 100%; margin-top: 22px; }
 /* El paso de datos es el unico ancho: reparte los campos en varias columnas. */
@@ -450,6 +479,9 @@ select.input { cursor: pointer; padding-right: 30px; }
 .scan-row { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 .scan-row .input { height: 40px; }
 .scan-row .search { flex: 1; min-width: 200px; }
+/* Aviso de formato del LES: cae debajo del campo y del botón, a todo el ancho. */
+.scan-row-error { flex-basis: 100%; margin: 0; }
+.scan-row .input[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 3.5px var(--danger-soft); }
 
 /* ---- Barra de filtros plegable (componente FilterBar) ----
    Único patrón de filtros del portal: solo el buscador queda a la vista y el

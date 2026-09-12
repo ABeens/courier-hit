@@ -84,6 +84,12 @@ export function ReceptionScreen({ canRegisterUnassigned = false }: { canRegister
   const [hawb, setHawb] = useState('');
   const [log, setLog] = useState<LogEntry[]>([]);
   const [busy, setBusy] = useState(false);
+  /**
+   * Aviso de formato bajo el campo. Lo digitado no cumple la forma del
+   * consecutivo LES (empieza por "LES", al menos 4 caracteres), así que ni se
+   * envía. Se borra en cuanto el operador vuelve a teclear.
+   */
+  const [fieldError, setFieldError] = useState<string | null>(null);
   /** LES desconocido que se está dando de alta como paquete sin dueño. */
   const [registering, setRegistering] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -114,18 +120,33 @@ export function ReceptionScreen({ canRegisterUnassigned = false }: { canRegister
     // al servidor para avisar que el código venía mal. `parsed.data` sale ya
     // normalizado (trim + mayúsculas) y es lo que se envía, así que el mismo LES
     // leído en otra caja no termina resolviendo a un trámite distinto.
+    //
+    // Un ingreso que no tiene la forma del consecutivo LES (empieza por "LES",
+    // al menos 4 caracteres) no se registra: el aviso queda bajo el campo y lo
+    // digitado se deja seleccionado, para que el operador lo corrija o el
+    // siguiente escaneo lo reemplace. También se anota en la bitácora, para que
+    // el intento no se pierda al escanear el siguiente bulto.
     const parsed = receiveShipmentSchema.safeParse({ hawb: value });
     if (!parsed.success) {
-      record({
-        hawb: value,
-        shipment: null,
-        ok: false,
-        label: 'No se registró',
-        tone: 'tone-danger',
-        message: parsed.error.issues[0]?.message ?? 'Datos inválidos.',
-      });
+      const message = parsed.error.issues[0]?.message ?? 'Datos inválidos.';
+      setFieldError(message);
+      setLog((prev) => [
+        {
+          at: new Date().toISOString(),
+          hawb: value,
+          shipment: null,
+          ok: false,
+          label: 'Formato no permitido',
+          tone: 'tone-danger',
+          message,
+        },
+        ...prev,
+      ]);
+      inputRef.current?.focus();
+      inputRef.current?.select();
       return;
     }
+    setFieldError(null);
 
     setBusy(true);
     try {
@@ -158,18 +179,29 @@ export function ReceptionScreen({ canRegisterUnassigned = false }: { canRegister
         </div>
       </div>
 
-      <form onSubmit={submit} className="scan-row">
+      <form onSubmit={submit} className="scan-row" noValidate>
         <input
           ref={inputRef}
           className="input search mono"
           placeholder="Escanea o digita el LES (HAWB), p. ej. LES48450141…"
           value={hawb}
           autoComplete="off"
-          onChange={(e) => setHawb(e.target.value)}
+          aria-invalid={fieldError !== null}
+          aria-describedby={fieldError !== null ? 'reception-les-error' : undefined}
+          onChange={(e) => {
+            setHawb(e.target.value);
+            setFieldError(null);
+          }}
         />
         <button className="btn btn-primary" type="submit" disabled={busy}>
           {busy ? 'Registrando…' : 'Registrar'}
         </button>
+        {fieldError !== null && (
+          <div id="reception-les-error" className="banner err scan-row-error" role="alert">
+            {fieldError} El consecutivo debe comenzar por LES y tener al menos 4 caracteres,
+            p. ej. LES48450141.
+          </div>
+        )}
       </form>
 
       <div className="cards">
