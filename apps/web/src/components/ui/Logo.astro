@@ -17,8 +17,9 @@ const ratio = 1145 / 961;
 const h = size;
 const w = Math.round(size * ratio);
 
+// "HS Global" y "Services" comparten estilo y color: es un solo wordmark en
+// dos lineas, no un titulo con subtitulo.
 const fg = dark ? '#fff' : 'var(--ink)';
-const accent = 'var(--brand)';
 ---
 <div class:list={['logo', className]} style={`--logo-h:${size}px`}>
   <img
@@ -31,7 +32,7 @@ const accent = 'var(--brand)';
   />
   <div class="logo__text">
     <div class="logo__name" style={`color:${fg}`}>HS Global</div>
-    <div class="logo__sub" style={`color:${accent}`}>Services</div>
+    <div class="logo__sub" style={`color:${fg}`}>Services</div>
   </div>
 </div>
 
@@ -51,12 +52,9 @@ const accent = 'var(--brand)';
     box-sizing: content-box;
   }
   .logo__text { line-height: 1; font-family: var(--font-display); }
-  .logo__name {
+  .logo__name, .logo__sub {
     font-size: calc(var(--logo-h) * 0.42);
     font-weight: 700; letter-spacing: -0.02em;
   }
-  .logo__sub {
-    font-size: calc(var(--logo-h) * 0.24);
-    font-weight: 600; letter-spacing: 0.18em; margin-top: 3px; text-transform: uppercase;
-  }
+  .logo__sub { margin-top: 3px; }
 </style>

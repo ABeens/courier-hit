@@ -20,17 +20,14 @@
   background: #fff; border-radius: 10px; padding: 6px 10px; box-sizing: content-box;
 }
 .brandmark__text { display: block; line-height: 1; font-family: var(--font-display); }
-.brandmark__name {
+/* "HS Global" y "Services" comparten estilo y color: un solo wordmark en dos
+   lineas, no un titulo con subtitulo. */
+.brandmark__name, .brandmark__sub {
   display: block; color: var(--ink);
   font-size: calc(var(--brandmark-h) * 0.42); font-weight: 700; letter-spacing: -0.02em;
 }
-.brandmark__sub {
-  display: block; color: var(--brand);
-  font-size: calc(var(--brandmark-h) * 0.24); font-weight: 600;
-  letter-spacing: .18em; margin-top: 3px; text-transform: uppercase;
-}
-.brandmark--dark .brandmark__name { color: #fff; }
-.brandmark--dark .brandmark__sub { color: oklch(0.86 0.09 263); }
+.brandmark__sub { margin-top: 3px; }
+.brandmark--dark .brandmark__name, .brandmark--dark .brandmark__sub { color: #fff; }
 
 /* ---- Autenticacion: marco comun (login, registro, invitacion) ---- */
 .auth {
@@ -329,13 +326,10 @@
   background: #fff; border-radius: 10px; padding: 5px 9px; box-sizing: content-box;
 }
 .side-brand-text { font-family: var(--font-display); line-height: 1; }
-.side-brand-text .n {
+.side-brand-text .n, .side-brand-text .s {
   display: block; font-weight: 700; font-size: 16px; letter-spacing: -0.01em; color: #fff;
 }
-.side-brand-text .s {
-  display: block; margin-top: 3px; font-weight: 600; font-size: 10px;
-  letter-spacing: 0.18em; text-transform: uppercase; color: oklch(0.86 0.09 263);
-}
+.side-brand-text .s { margin-top: 3px; }
 /* La navegacion scrollea sola si no cabe (secciones abiertas + pantalla baja);
    la marca de arriba se queda fija. */
 .side-nav {
