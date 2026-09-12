@@ -448,7 +448,7 @@ export const TERMS: LegalSection[] = [
       },
       {
         type: 'p',
-        text: 'Para dudas sobre este documento escríbenos a servicioalcliente@hsglobal-services.com o desde la página de contacto.',
+        text: 'Para dudas sobre este documento escríbenos a servicioalcliente1@hsglobal-services.com o desde la página de contacto.',
       },
     ],
   },
@@ -604,7 +604,7 @@ export const PRIVACY: LegalSection[] = [
       },
       {
         type: 'p',
-        text: 'Buena parte de tus datos los puedes ver y corregir tú mismo desde el portal. Para lo demás, escríbenos a servicioalcliente@hsglobal-services.com desde el correo registrado en tu cuenta: responderemos dentro de los plazos legales. Si no quedas conforme con la respuesta, puedes acudir a la autoridad de protección de datos de Costa Rica.',
+        text: 'Buena parte de tus datos los puedes ver y corregir tú mismo desde el portal. Para lo demás, escríbenos a servicioalcliente1@hsglobal-services.com desde el correo registrado en tu cuenta: responderemos dentro de los plazos legales. Si no quedas conforme con la respuesta, puedes acudir a la autoridad de protección de datos de Costa Rica.',
       },
     ],
   },
@@ -648,7 +648,7 @@ export const PRIVACY: LegalSection[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Para cualquier consulta sobre el tratamiento de tus datos personales escríbenos a servicioalcliente@hsglobal-services.com o desde la página de contacto.',
+        text: 'Para cualquier consulta sobre el tratamiento de tus datos personales escríbenos a servicioalcliente1@hsglobal-services.com o desde la página de contacto.',
       },
     ],
   },
