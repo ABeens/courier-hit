@@ -53,6 +53,7 @@ export const dashboardRepo = {
       .select({
         id: shipments.id,
         code: shipments.code,
+        hawb: shipments.hawb,
         shipmentType: shipments.shipmentType,
         state: shipments.state,
         tracking: shipments.tracking,

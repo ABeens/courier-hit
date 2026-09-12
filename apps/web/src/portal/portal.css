@@ -1676,6 +1676,23 @@ button.dash-row:focus-visible { outline: 2px solid var(--brand); outline-offset:
 .table tbody tr.is-link:hover .cell-go { color: var(--brand); }
 .table tbody tr.is-link:hover .cell-go svg { transform: translateX(2px); }
 
+/* Cada trámite es un <tbody> de dos filas: el consecutivo, pequeño y a lo ancho
+   pegado a la izquierda, y debajo los datos (LES de primera columna). Lo que se
+   pulsa, se ilumina y se enfoca es el GRUPO: si solo reaccionara una de las dos
+   filas, el trámite pareceria partido en dos. */
+.table tbody.row-group.is-link { cursor: pointer; }
+.table tbody.row-group.is-link:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.table tbody.row-group:hover tr { background: var(--brand-softer); }
+.table tbody.row-group.is-link:hover .cell-go { color: var(--brand); }
+.table tbody.row-group.is-link:hover .cell-go svg { transform: translateX(2px); }
+/* La fila del consecutivo se pega a la de datos: sin raya entre las dos y sin
+   aire por debajo, para que se lea como un rotulo de la fila y no como otra. */
+.table tbody.row-group tr.row-lead td { padding: 7px 13px 0; border-bottom: none; line-height: 1.2; }
+.table tbody.row-group tr.row-lead small { font-size: 11px; color: var(--muted); letter-spacing: 0.02em; }
+/* El "sin raya en la ultima fila" de la tabla base aplica por <tbody>; aqui la
+   raya que separa un trámite del siguiente si hace falta, salvo en el ultimo. */
+.table tbody.row-group:not(:last-child) tr:last-child td { border-bottom: 1px solid var(--line-2); }
+
 /* `.table-dense` ya no aprieta nada: la densidad que definia paso a ser la base
    de `.table`. Sobrevive por lo unico que no es densidad, el ancho minimo: el
    tablero lleva mas columnas que un listado normal y necesita mas sitio antes de

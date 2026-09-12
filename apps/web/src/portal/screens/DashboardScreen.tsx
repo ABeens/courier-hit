@@ -43,6 +43,8 @@ interface Queue {
 interface RecentRow {
   id: string;
   code: string;
+  /** HAWB (LES). Nulo mientras el bulto no ha llegado a Miami. */
+  hawb: string | null;
   shipmentType: ShipmentType;
   state: State;
   tracking: string;
@@ -254,7 +256,7 @@ export function DashboardScreen({ allowed, onNavigate }: Props) {
               <table className="table table-dense">
                 <thead>
                   <tr>
-                    <th>Consecutivo</th>
+                    <th>HAWB (LES)</th>
                     <th>Trámite</th>
                     <th>Cliente</th>
                     <th>Tracking</th>
@@ -263,29 +265,38 @@ export function DashboardScreen({ allowed, onNavigate }: Props) {
                     <th aria-hidden="true" />
                   </tr>
                 </thead>
-                <tbody>
-                  {data?.recent.map((row) => {
-                    const target = pickTarget([targetForType(row.shipmentType)], allowed);
-                    /* La fila no lleva a una ficha (no existe pantalla de detalle):
-                       abre el tablero del trámite con su consecutivo ya buscado,
-                       que es donde estan todas sus acciones. */
-                    const open = target
-                      ? () => onNavigate(target.resource, { ...target.intent, q: row.code })
-                      : undefined;
-                    return (
-                      <tr
-                        key={row.id}
-                        className={open ? 'is-link' : undefined}
-                        onClick={open}
-                        tabIndex={open ? 0 : undefined}
-                        onKeyDown={(e) => {
-                          if (open && (e.key === 'Enter' || e.key === ' ')) {
-                            e.preventDefault();
-                            open();
-                          }
-                        }}
-                      >
-                        <td className="mono">{row.code}</td>
+                {data?.recent.map((row) => {
+                  const target = pickTarget([targetForType(row.shipmentType)], allowed);
+                  /* La fila no lleva a una ficha (no existe pantalla de detalle):
+                     abre el tablero del trámite con su consecutivo ya buscado,
+                     que es donde estan todas sus acciones. */
+                  const open = target
+                    ? () => onNavigate(target.resource, { ...target.intent, q: row.code })
+                    : undefined;
+                  /* Cada trámite es un GRUPO de dos filas dentro de su propio
+                     <tbody>: arriba el consecutivo, en pequeño y a lo ancho, y
+                     debajo los datos con el LES de primera columna. El grupo es
+                     lo que se pulsa y lo que se ilumina, no cada fila suelta. */
+                  return (
+                    <tbody
+                      key={row.id}
+                      className={open ? 'row-group is-link' : 'row-group'}
+                      onClick={open}
+                      tabIndex={open ? 0 : undefined}
+                      onKeyDown={(e) => {
+                        if (open && (e.key === 'Enter' || e.key === ' ')) {
+                          e.preventDefault();
+                          open();
+                        }
+                      }}
+                    >
+                      <tr className="row-lead">
+                        <td colSpan={7}>
+                          <small className="mono">{row.code}</small>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="mono">{row.hawb ?? '—'}</td>
                         <td>{SHIPMENT_TYPE_LABELS[row.shipmentType]}</td>
                         <td>{row.clientName}</td>
                         <td className="mono">{row.tracking}</td>
@@ -298,9 +309,9 @@ export function DashboardScreen({ allowed, onNavigate }: Props) {
                         <td>{formatDate(row.createdAt)}</td>
                         <td className="cell-go">{open && <Chevron />}</td>
                       </tr>
-                    );
-                  })}
-                </tbody>
+                    </tbody>
+                  );
+                })}
               </table>
             </div>
             {data && data.recent.length === 0 && <div className="empty">Todavía no hay trámites.</div>}
