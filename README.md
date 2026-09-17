@@ -174,6 +174,7 @@ Si vuelves a correr `pnpm dev` con ese server ya arriba, Astro lo reutiliza en v
 | `pnpm --filter @courier/api db:generate` | Genera una migración a partir de cambios en los `*.schema.ts`. |
 | `pnpm --filter @courier/api db:migrate` | Aplica las migraciones pendientes. |
 | `pnpm --filter @courier/api db:push` | Empuja el esquema sin migración (solo para prototipar). |
+| `pnpm --filter @courier/api db:repair` | Diagnostica (y con `-- --apply` repara) una base cuyo esquema va adelantado del control de migraciones. |
 | `pnpm --filter @courier/api db:seed` | Siembra admin y tarifas. |
 | `pnpm --filter @courier/api db:seed:demo` | Siembra datos falsos de demo (`-- --reset` para rehacerlos). |
 
