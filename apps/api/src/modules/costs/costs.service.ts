@@ -26,6 +26,7 @@ import {
   Currency,
   Flow,
   ServiceKind,
+  ServiceValueType,
   State,
   PaymentStatus,
   applyPercentage,
@@ -36,6 +37,7 @@ import {
   computeTotals,
   costLineExchangeRateSchema,
   flowForType,
+  formatMoney,
   percentageBase,
   permissionFor,
   roundMoney,
@@ -43,6 +45,7 @@ import {
 import type {
   CostLineDto,
   CostLineInput,
+  CostService,
   SaveShipmentCostsInput,
   Session,
   ShipmentCostsDto,
@@ -108,6 +111,26 @@ function toLineDto(row: Awaited<ReturnType<typeof costsRepo.listLines>>[number])
 }
 
 /**
+ * Moneda con la que se propone un servicio del catalogo. Paqueteria se cotiza en
+ * dolares; en Transporte/Agenciamiento el catalogo es manual y sin moneda, asi
+ * que se propone colones y el operador decide.
+ */
+function currencyFor(service: CostService, flow: Flow): Currency {
+  return service.currency ?? (flow === Flow.Paqueteria ? Currency.USD : Currency.CRC);
+}
+
+/**
+ * Como se resume el valor del servicio en el desplegable de la pantalla. El
+ * manual no lleva: su importe se digita al cargar el costo, todavia no existe.
+ */
+function detailFor(service: CostService, currency: Currency): string | null {
+  if (service.defaultValue === null) return null;
+  return service.valueType === ServiceValueType.Percentage
+    ? `${service.defaultValue}% del subtotal`
+    : formatMoney(service.defaultValue, currency);
+}
+
+/**
  * Sugerencias al abrir la pantalla: el flete calculado (solo Paqueteria, y va
  * primero porque se aplica solo) y los servicios habilitados del catalogo que
  * aplican al tipo de tramite, que el operador agrega si corresponden.
@@ -128,13 +151,17 @@ async function buildSuggestions(row: ShipmentRow): Promise<SuggestedCostLine[]> 
       costServiceId: service.id,
       label: service.name,
       category: service.category,
+      valueType: service.valueType,
       source: isPercentage ? CostLineSource.Percentage : CostLineSource.Service,
       percentage: isPercentage ? service.defaultValue : null,
       amount: isPercentage ? null : service.defaultValue,
-      // Paqueteria se cotiza en dolares; en Transporte/Agenciamiento el catalogo
-      // es manual y sin moneda, asi que se propone colones y el operador decide.
-      currency: service.currency ?? (flow === Flow.Paqueteria ? Currency.USD : Currency.CRC),
-      detail: isPercentage && service.defaultValue !== null ? `${service.defaultValue}% del subtotal` : null,
+      currency: currencyFor(service, flow),
+      /**
+       * Lo que el desplegable de la pantalla muestra al lado del nombre. El monto
+       * fijo tambien lo lleva: no se puede editar en el tramite, asi que quien
+       * elige el concepto tiene que ver cuanto va a cobrar antes de agregarlo.
+       */
+      detail: detailFor(service, currencyFor(service, flow)),
       auto: false,
     });
   }

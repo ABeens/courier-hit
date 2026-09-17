@@ -9,7 +9,7 @@
  */
 import { z } from 'zod';
 import { Currency } from '../money/currency';
-import { CostCategory } from './cost-service';
+import { CostCategory, ServiceValueType } from './cost-service';
 import { CostLineSource } from './shipment-cost';
 
 /** Moneda de un campo monetario. Explicita siempre (regla M2). */
@@ -105,6 +105,13 @@ export interface CostLineDto {
 export interface SuggestedCostLine {
   costServiceId: string | null;
   label: string;
+  /**
+   * Como se determina el importe (ver `ServiceValueType`). Es lo que decide si la
+   * pantalla deja digitarlo: `Manual` se llena al cargar el costo, `Fixed` y
+   * `Percentage` ya vienen resueltos del catalogo y se muestran, no se editan.
+   * `null` en el flete, que no sale del catalogo sino de la tarifa del casillero.
+   */
+  valueType: ServiceValueType | null;
   /**
    * Categoria que tendra la linea si se agrega. Viaja en la sugerencia para que
    * la pantalla pueda decir "esto cuenta como costo" antes de guardar; el valor

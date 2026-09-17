@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Currency } from '../money/currency';
-import { CARD_SURCHARGE, cardChargeFor, cardSurchargeLabel } from './surcharge';
+import { CARD_SURCHARGE, cardChargeFor } from './surcharge';
 
 /** Lo que la pasarela se queda de un cobro: su porcentaje del total, mas el fijo. */
 function gatewayFee(total: number, fixed: number): number {
@@ -59,8 +59,4 @@ test('un saldo negativo no genera cobro (regla M3: montos >= 0)', () => {
 
 test('una comision del 100 % no tiene despeje: falla en vez de cobrar un absurdo', () => {
   assert.throws(() => cardChargeFor(100, Currency.USD, 500, { percent: 1, fixedUsd: 0 }));
-});
-
-test('la tarifa se dice en una linea', () => {
-  assert.equal(cardSurchargeLabel(), '3.9% + $0.35');
 });

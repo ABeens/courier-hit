@@ -20,6 +20,7 @@ import {
   Currency,
   Permission,
   STATE_LABELS,
+  ServiceValueType,
   State,
   can,
   canSetExchangeRate,
@@ -62,6 +63,24 @@ interface DraftLine {
    * "todavia no elige" como en "concepto escrito a mano".
    */
   pick: string;
+  /**
+   * Como se determina el importe de la linea, copiado del catalogo. `null` = la
+   * fila todavia no eligio concepto (o es el flete, que no sale del catalogo).
+   */
+  valueType: ServiceValueType | null;
+}
+
+/**
+ * True si el importe de la linea se DIGITA aqui.
+ *
+ * Solo lo admiten los conceptos marcados en el catalogo como manuales ("se define
+ * al cargar"): el monto fijo y el porcentaje ya vienen resueltos del catalogo y
+ * cambiarlos en un tramite suelto seria cobrar algo distinto a lo publicado. El
+ * flete es la excepcion: no es catalogo, sale de la tarifa del casillero y el
+ * operador sigue pudiendo ajustarlo.
+ */
+function isAmountEditable(line: DraftLine): boolean {
+  return line.source === CostLineSource.Freight || line.valueType === ServiceValueType.Manual;
 }
 
 let keySeq = 0;
@@ -78,6 +97,7 @@ function fromSuggestion(s: SuggestedCostLine): DraftLine {
     amount: s.amount !== null ? String(s.amount) : '',
     currency: s.currency,
     pick: s.costServiceId ?? CUSTOM_PICK,
+    valueType: s.valueType,
   };
 }
 
@@ -93,6 +113,15 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
     try {
       const dto = await api.get<ShipmentCostsDto>(`/costs/${shipment.id}`);
       setData(dto);
+      /**
+       * El tipo de valor no se guarda en la linea (la linea es un snapshot de
+       * importes, no del catalogo): se reconoce por el servicio del que salio.
+       * Si ese servicio ya no esta habilitado, la linea queda como manual, que es
+       * lo unico util: nadie puede consultar el valor de catalogo que ya no esta.
+       */
+      const valueTypeOf = (costServiceId: string | null) =>
+        dto.suggestions.find((s) => s.costServiceId === costServiceId)?.valueType ??
+        ServiceValueType.Manual;
       const savedLines = dto.lines.map((l) => ({
         key: nextKey(),
         costServiceId: l.costServiceId,
@@ -102,6 +131,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
         amount: String(l.amount),
         currency: l.currency,
         pick: l.costServiceId ?? CUSTOM_PICK,
+        valueType: l.source === CostLineSource.Freight ? null : valueTypeOf(l.costServiceId),
       }));
       /**
        * El flete no se "agrega": es el cobro base del tramite y sale de la tarifa
@@ -202,6 +232,8 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
         amount: '',
         currency: defaultCurrency,
         pick: '',
+        // Sin concepto elegido no hay nada que digitar todavia.
+        valueType: null,
       },
     ]);
   }
@@ -222,6 +254,8 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
         source: CostLineSource.Service,
         percentage: '',
         amount: '',
+        // Un concepto suelto no esta en el catalogo: el importe lo pone quien lo escribe.
+        valueType: ServiceValueType.Manual,
       });
       return;
     }
@@ -237,6 +271,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
       percentage: service.percentage !== null ? String(service.percentage) : '',
       amount: service.amount !== null ? String(service.amount) : '',
       currency: service.currency,
+      valueType: service.valueType,
     });
   }
 
@@ -254,6 +289,15 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
     // decir cual es el hueco, en vez de devolver un error de esquema.
     if (lines.some((l) => l.source !== CostLineSource.Freight && l.label.trim() === '')) {
       setError('Elige el concepto de cada línea (o escríbelo, si es un concepto suelto).');
+      return false;
+    }
+    /**
+     * Un monto en blanco viajaria como 0 y se guardaria como una linea que no
+     * cobra nada. Solo puede pasar en las lineas que se digitan aqui: las del
+     * catalogo ya traen su valor.
+     */
+    if (lines.some((l) => l.source !== CostLineSource.Percentage && l.amount.trim() === '')) {
+      setError('Digita el monto de las líneas que se llenan al cargar el costo.');
       return false;
     }
     const payload = {
@@ -445,25 +489,37 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
                       )}
                     </td>
                     <td>
+                      {/* El porcentaje y el monto fijo son del catalogo: se leen.
+                          Solo el concepto manual (y el flete) se digitan aqui. */}
                       {line.source === CostLineSource.Percentage ? (
-                        <input
-                          className="input" type="number" min="0" max="100" step="0.1"
-                          value={line.percentage} disabled={approved}
-                          onChange={(e) => patchLine(line.key, { percentage: e.target.value })}
-                          aria-label={`Porcentaje de ${line.label || 'la línea'}`}
-                        />
-                      ) : (
+                        <>
+                          <strong>{line.percentage || 0}%</strong>
+                          <div className="field-hint">Del catálogo</div>
+                        </>
+                      ) : isAmountEditable(line) ? (
                         <input
                           className="input" type="number" min="0" step="0.01"
                           value={line.amount} disabled={approved}
                           onChange={(e) => patchLine(line.key, { amount: e.target.value })}
                           aria-label={`Monto de ${line.label || 'la línea'}`}
                         />
+                      ) : line.pick === '' ? (
+                        <span className="muted">Elige el concepto</span>
+                      ) : (
+                        <>
+                          <strong>{formatMoney(Number(line.amount) || 0, line.currency)}</strong>
+                          <div className="field-hint">Del catálogo</div>
+                        </>
                       )}
                     </td>
                     <td>
                       {line.source === CostLineSource.Percentage ? (
                         <span className="muted">% del subtotal</span>
+                      ) : !isAmountEditable(line) ? (
+                        // La moneda del monto fijo tambien viene del catalogo.
+                        <span className="muted">
+                          {line.pick === '' ? '—' : CURRENCY_LABELS[line.currency]}
+                        </span>
                       ) : (
                         <select
                           className="input" value={line.currency} disabled={approved}

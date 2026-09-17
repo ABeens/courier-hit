@@ -28,7 +28,7 @@
  * mantenga. Si algun dia se editan desde Configuración, este es el unico lugar
  * del que salen y mover la fuente no rompe a quien los consume.
  */
-import { Currency, ceilMoney, convertMoney, formatMoney, roundMoney } from '../money/currency';
+import { Currency, ceilMoney, convertMoney, roundMoney } from '../money/currency';
 
 /** Lo que cobra la pasarela por un cobro con tarjeta. */
 export interface CardSurchargeRate {
@@ -103,10 +103,4 @@ export function cardChargeFor(
   const total = ceilMoney((base + fixed) / (1 - rate.percent), currency);
 
   return { currency, amount: base, surcharge: roundMoney(total - base, currency), total };
-}
-
-/** La tarifa dicha en una linea, para explicarle al cliente de donde sale el recargo. */
-export function cardSurchargeLabel(rate: CardSurchargeRate = CARD_SURCHARGE): string {
-  const percent = Number((rate.percent * 100).toFixed(2));
-  return `${percent}% + ${formatMoney(rate.fixedUsd, Currency.USD)}`;
 }

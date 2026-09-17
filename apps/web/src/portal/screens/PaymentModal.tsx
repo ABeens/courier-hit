@@ -37,7 +37,6 @@ import {
   bankAccountOptionLabel,
   billingAmounts,
   billingCurrencyFor,
-  cardSurchargeLabel,
   convertMoney,
   formatMoney,
 } from '@courier/shared';
@@ -891,17 +890,16 @@ export function PaymentModal({ shipment, role, onClose, onPaid, onProcessing }: 
                 pasarela sería enseñarle al cliente un importe distinto del que
                 leyó en el saldo, ya con la tarjeta en la mano.
               */}
-              {quote.cardCharge && quote.cardCharge.surcharge > 0 ? (
+              Al continuar abriremos el formulario seguro de pago con tarjeta.
+              {quote.cardCharge && quote.cardCharge.surcharge > 0 && (
                 <>
-                  Al continuar abriremos el formulario seguro de pago con tarjeta. El pago con
-                  tarjeta suma la comisión de la pasarela ({cardSurchargeLabel()}):{' '}
-                  {formatMoney(quote.cardCharge.amount, quote.chargeCurrency)} de saldo +{' '}
-                  {formatMoney(quote.cardCharge.surcharge, quote.chargeCurrency)} de comisión ={' '}
-                  <strong>{formatMoney(quote.cardCharge.total, quote.chargeCurrency)}</strong>.
-                  Por depósito bancario no se cobra esa comisión.
+                  {' '}
+                  Comisión bancaria por pago con tarjeta:{' '}
+                  <strong>
+                    {formatMoney(quote.cardCharge.surcharge, quote.chargeCurrency)}
+                  </strong>
+                  .
                 </>
-              ) : (
-                <>Al continuar abriremos el formulario seguro de pago con tarjeta.</>
               )}
             </div>
           )}

@@ -28,7 +28,6 @@ import {
   PaymentStatus,
   bankAccountOptionLabel,
   billingAmounts,
-  cardSurchargeLabel,
   formatMoney,
 } from '@courier/shared';
 import type {
@@ -595,10 +594,8 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
               {cardCharge && cardCharge.surcharge > 0 && (
                 <>
                   {' '}
-                  Incluye la comisión de la pasarela ({cardSurchargeLabel()}):{' '}
-                  {formatMoney(cardCharge.amount, chargeCurrency)} de saldo +{' '}
-                  {formatMoney(cardCharge.surcharge, chargeCurrency)} de comisión. Por depósito
-                  bancario no se cobra esa comisión.
+                  Comisión bancaria por pago con tarjeta:{' '}
+                  <strong>{formatMoney(cardCharge.surcharge, chargeCurrency)}</strong>.
                 </>
               )}
             </div>

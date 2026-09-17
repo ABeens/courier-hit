@@ -52,6 +52,8 @@ export async function buildFreight(row: FreightSubject): Promise<FreightLine | n
     costServiceId: null,
     label: `Flete (${rate.rateName})`,
     category: CostCategory.Flete,
+    // No es un servicio del catalogo: su importe sale de la tarifa del casillero.
+    valueType: null,
     source: CostLineSource.Freight,
     percentage: null,
     amount: roundMoney(billableKg * rate.pricePerKg, rate.currency),
