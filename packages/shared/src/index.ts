@@ -23,6 +23,7 @@ export * from './reports/report';
 export * from './reports/dto';
 export * from './reports/financials';
 export * from './reports/proforma';
+export * from './payments/surcharge';
 export * from './payments/payment';
 export * from './payments/dto';
 export * from './payments/consolidated';

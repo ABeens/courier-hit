@@ -37,10 +37,17 @@ import {
   bankAccountOptionLabel,
   billingAmounts,
   billingCurrencyFor,
+  cardSurchargeLabel,
   convertMoney,
   formatMoney,
 } from '@courier/shared';
-import type { PaymentDto, PaymentIntentDto, Role, ShipmentDto } from '@courier/shared';
+import type {
+  CardCharge,
+  PaymentDto,
+  PaymentIntentDto,
+  Role,
+  ShipmentDto,
+} from '@courier/shared';
 import { API_BASE, ApiError, api } from '../lib/api';
 import { Icon } from '../components/Icon';
 import { ModalOverlay } from '../components/ModalOverlay';
@@ -103,6 +110,13 @@ interface Quote {
    */
   chargeCurrency: Currency;
   due: number;
+  /**
+   * El cobro con TARJETA desglosado: saldo, recargo por la comisión de la
+   * pasarela y total. Lo calcula el servidor con la misma función con la que
+   * después cobra, así que el total es EXACTAMENTE lo que se le va a cargar a la
+   * tarjeta. Null cuando no se ofrece tarjeta.
+   */
+  cardCharge: CardCharge | null;
   settled: boolean;
   /** El saldo ya está cubierto por un abono sin validar: no se puede pagar otra vez. */
   inValidation: boolean;
@@ -234,7 +248,18 @@ export function PaymentModal({ shipment, role, onClose, onPaid, onProcessing }: 
       title,
       message,
       code: shipment.code,
-      amount: amounts ? formatMoney(amounts.due, amounts.currency) : '',
+      /**
+       * Con TARJETA la cifra es el TOTAL cobrado, recargo incluido: es la que el
+       * cliente acaba de aceptar y la que va a ver en su estado de cuenta.
+       * Repetirle aquí solo el saldo le dejaría buscando de dónde salió la
+       * diferencia. El depósito no lleva recargo y sigue siendo el saldo.
+       */
+      amount:
+        method === PaymentMethod.Tarjeta && quote?.cardCharge
+          ? formatMoney(quote.cardCharge.total, quote.chargeCurrency)
+          : amounts
+            ? formatMoney(amounts.due, amounts.currency)
+            : '',
     };
   }
 
@@ -636,6 +661,27 @@ export function PaymentModal({ shipment, role, onClose, onPaid, onProcessing }: 
                 currency,
               )}
             </strong>
+            {/*
+              EL RECARGO DEL COBRO, dicho aparte del abono. El historial cuenta lo
+              que cancela la factura; lo que pasó por la tarjeta fue esta cifra de
+              más, y sin decirla el cliente no cuadra el importe con el estado de
+              cuenta de su tarjeta.
+            */}
+            {payment.surchargeAmount > 0 && (
+              <span className="muted">
+                {' '}
+                + {formatMoney(
+                  convertMoney(
+                    payment.surchargeAmount,
+                    payment.currency,
+                    currency,
+                    payment.exchangeRate,
+                  ),
+                  currency,
+                )}{' '}
+                de comisión
+              </span>
+            )}
             <span className={statusPill(payment.status)}>
               {/*
                 "Pendiente de validación" describe el depósito: alguien tiene que
@@ -839,7 +885,24 @@ export function PaymentModal({ shipment, role, onClose, onPaid, onProcessing }: 
 
           {method === PaymentMethod.Tarjeta && canPay && (
             <div className="banner">
-              Al continuar abriremos el formulario seguro de pago con tarjeta.
+              {/*
+                EL RECARGO SE DICE ANTES DE PAGAR, con las tres cifras: el saldo,
+                la comisión y el total. Anunciarlo solo en el formulario de la
+                pasarela sería enseñarle al cliente un importe distinto del que
+                leyó en el saldo, ya con la tarjeta en la mano.
+              */}
+              {quote.cardCharge && quote.cardCharge.surcharge > 0 ? (
+                <>
+                  Al continuar abriremos el formulario seguro de pago con tarjeta. El pago con
+                  tarjeta suma la comisión de la pasarela ({cardSurchargeLabel()}):{' '}
+                  {formatMoney(quote.cardCharge.amount, quote.chargeCurrency)} de saldo +{' '}
+                  {formatMoney(quote.cardCharge.surcharge, quote.chargeCurrency)} de comisión ={' '}
+                  <strong>{formatMoney(quote.cardCharge.total, quote.chargeCurrency)}</strong>.
+                  Por depósito bancario no se cobra esa comisión.
+                </>
+              ) : (
+                <>Al continuar abriremos el formulario seguro de pago con tarjeta.</>
+              )}
             </div>
           )}
 
@@ -937,7 +1000,9 @@ export function PaymentModal({ shipment, role, onClose, onPaid, onProcessing }: 
                     leyendo: el cliente la va a comparar con el estado de cuenta
                     de su tarjeta.
                   */}
-                  <strong>{formatMoney(quote.due, quote.chargeCurrency)}</strong>
+                  <strong>
+                    {formatMoney(quote.cardCharge?.total ?? quote.due, quote.chargeCurrency)}
+                  </strong>
                 </div>
               )}
             </div>

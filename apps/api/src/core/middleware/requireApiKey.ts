@@ -66,6 +66,7 @@ export function requireApiKey() {
     if (!check.ok) {
       if (check.reason === 'revoked') throw PublicApiErrors.keyRevoked();
       if (check.reason === 'inactive') throw PublicApiErrors.accountInactive();
+      if (check.reason === 'api_disabled') throw PublicApiErrors.apiAccessDisabled();
       throw PublicApiErrors.keyInvalid();
     }
 

@@ -1,0 +1,1 @@
+ALTER TABLE "clients" ADD COLUMN "api_access_enabled" boolean DEFAULT false NOT NULL;

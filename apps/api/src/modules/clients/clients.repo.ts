@@ -34,6 +34,11 @@ const columns = {
    * cliente cierra a la vez el portal, la sesion en curso y sus llaves de API.
    */
   status: users.status,
+  /**
+   * Acceso a la API del casillero. Vive en `clients` y no en `users` porque una
+   * llave pertenece al casillero, no a la persona (ver `api_keys.client_id`).
+   */
+  apiAccessEnabled: clients.apiAccessEnabled,
   clientRateName: clientRates.name,
   clientRateId: clients.clientRateId,
   creditLimit: clients.creditLimit,

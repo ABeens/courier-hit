@@ -28,6 +28,7 @@ import {
   PaymentStatus,
   bankAccountOptionLabel,
   billingAmounts,
+  cardSurchargeLabel,
   formatMoney,
 } from '@courier/shared';
 import type {
@@ -98,6 +99,17 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
   const chargeCurrency = quote?.chargeCurrency ?? Currency.CRC;
   const due = quote?.due ?? 0;
 
+  /**
+   * LO QUE SE LE COBRA SEGÚN EL MEDIO: con tarjeta, el saldo más la comisión de
+   * la pasarela (`cardCharge`, que calcula el servidor); por depósito, el saldo
+   * pelado, porque un depósito no genera comisión.
+   *
+   * Es la cifra del botón, la de la cabecera del cobro y la del aviso: las tres
+   * tienen que decir lo mismo, y con la tarjeta elegida eso es el total.
+   */
+  const cardCharge = quote?.cardCharge ?? null;
+  const payable = method === PaymentMethod.Tarjeta && cardCharge ? cardCharge.total : due;
+
   /** Las demás cifras del grupo, proyectadas a esa misma moneda. */
   const amounts = quote ? billingAmounts(quote, chargeCurrency, quote.settled) : null;
 
@@ -123,7 +135,8 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
       title,
       message,
       code: quote ? `${quote.clientCode} · ${quote.items.length} paquetes` : '',
-      amount: formatMoney(due, chargeCurrency),
+      /** Con tarjeta, el TOTAL cobrado: es lo que el cliente acaba de aceptar. */
+      amount: formatMoney(payable, chargeCurrency),
     };
   }
 
@@ -571,8 +584,23 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
 
           {method === PaymentMethod.Tarjeta && canPay && (
             <div className="banner">
+              {/*
+                EL RECARGO SE DICE ANTES DE PAGAR, con las tres cifras. Anunciarlo
+                solo dentro del formulario de la pasarela sería enseñarle un
+                importe distinto del saldo que acaba de leer, ya con la tarjeta en
+                la mano.
+              */}
               Al continuar abriremos el formulario seguro de pago con tarjeta por{' '}
-              {formatMoney(due, chargeCurrency)}.
+              {formatMoney(payable, chargeCurrency)}.
+              {cardCharge && cardCharge.surcharge > 0 && (
+                <>
+                  {' '}
+                  Incluye la comisión de la pasarela ({cardSurchargeLabel()}):{' '}
+                  {formatMoney(cardCharge.amount, chargeCurrency)} de saldo +{' '}
+                  {formatMoney(cardCharge.surcharge, chargeCurrency)} de comisión. Por depósito
+                  bancario no se cobra esa comisión.
+                </>
+              )}
             </div>
           )}
         </div>
@@ -583,7 +611,7 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
           </button>
           {canPay && method && !cardOpen && (
             <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Registrando…' : `Pagar ${formatMoney(due, chargeCurrency)}`}
+              {saving ? 'Registrando…' : `Pagar ${formatMoney(payable, chargeCurrency)}`}
             </button>
           )}
         </div>
@@ -601,7 +629,7 @@ export function ConsolidatedPaymentModal({ clientId, onClose, onPaid, onProcessi
               </div>
               <div className="pay-head-amount">
                 <span>A pagar</span>
-                <strong>{formatMoney(due, chargeCurrency)}</strong>
+                <strong>{formatMoney(cardCharge?.total ?? due, chargeCurrency)}</strong>
               </div>
             </div>
 

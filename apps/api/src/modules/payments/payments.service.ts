@@ -31,6 +31,7 @@ import {
   awaitsValidation,
   bankAccountsFor,
   canSetExchangeRate,
+  cardChargeFor,
   chargeBasisFor,
   exchangeRateSchema,
   isSettled,
@@ -81,6 +82,7 @@ function toDto(row: NonNullable<PaymentRowView>): PaymentDto {
     method: row.method,
     status: row.status,
     amount: row.amount,
+    surchargeAmount: row.surchargeAmount,
     currency: row.currency,
     exchangeRate: row.exchangeRate,
     bankAccount: row.bankAccount,
@@ -118,13 +120,27 @@ function toDto(row: NonNullable<PaymentRowView>): PaymentDto {
  * factura no trae techo por si solo.
  */
 function invoiceExchangeRate(row: ShipmentRow, globalRate: number | null): number {
+  const rate = resolveExchangeRate(row, globalRate);
+  if (rate == null) throw PaymentErrors.exchangeRateUnavailable();
+  return rate;
+}
+
+/**
+ * La misma tasa, pero SIN fallar cuando no hay ninguna: null.
+ *
+ * La necesita la cotizacion, que no guarda nada y por tanto no puede negarse a
+ * contestar: su trabajo es decirle a la pantalla con que se puede pagar, y una
+ * pantalla en blanco por una tasa sin fijar esconde tambien el deposito, que no
+ * necesita tasa para nada. Quien SI guarda un monto usa la version de arriba,
+ * que falla (regla M5).
+ */
+function resolveExchangeRate(row: ShipmentRow, globalRate: number | null): number | null {
   const usd = row.invoiceTotalUsd ?? 0;
   const crc = row.invoiceTotalCrc ?? 0;
   const rate = usd > 0 && crc > 0 ? crc / usd : globalRate;
 
   const checked = exchangeRateSchema.safeParse(rate);
-  if (!checked.success) throw PaymentErrors.exchangeRateUnavailable();
-  return checked.data;
+  return checked.success ? checked.data : null;
 }
 
 /**
@@ -218,10 +234,11 @@ export const paymentsService = {
     const shipment = await loadBillableShipment(shipmentId);
     assertOwnership(session, shipment);
 
-    const [rate, paid, effectiveRate] = await Promise.all([
+    const [rate, paid, effectiveRate, globalRate] = await Promise.all([
       clientsRepo.paymentOptionsFor(shipment.clientId),
       paymentsRepo.settlementView(shipmentId),
       clientsRepo.rateFor(shipment.clientId),
+      settingsRepo.currentExchangeRate(),
     ]);
 
     /**
@@ -255,6 +272,24 @@ export const paymentsService = {
     if (rate?.allowsCard && isOnvoEnabled()) methods.push(PaymentMethod.Tarjeta);
     if (rate?.allowsBankDeposit ?? true) methods.push(PaymentMethod.DepositoBancario);
 
+    const due = outstandingFor(settledInCharge, basis);
+
+    /**
+     * EL COBRO CON TARJETA DESGLOSADO: saldo, recargo por la comision de la
+     * pasarela y total. Se calcula con la MISMA funcion y la MISMA tasa que usa
+     * `start`, para que lo que el cliente acepta en la pantalla sea exactamente
+     * lo que se le cobra.
+     *
+     * Null cuando no hay tarjeta que ofrecer (o no hay tasa con la que convertir
+     * el fijo en dolares): la pantalla entonces no tiene recargo que anunciar, y
+     * el deposito, que no lleva ninguno, sigue funcionando igual.
+     */
+    const chargeRate = resolveExchangeRate(shipment, globalRate);
+    const cardCharge =
+      methods.includes(PaymentMethod.Tarjeta) && chargeRate != null
+        ? cardChargeFor(due, basis.currency, chargeRate)
+        : null;
+
     return {
       shipmentId,
       shipmentCode: shipment.code,
@@ -282,7 +317,13 @@ export const paymentsService = {
        * distinta de la que el servidor va a cobrar.
        */
       chargeCurrency: basis.currency,
-      due: outstandingFor(settledInCharge, basis),
+      due,
+      /**
+       * El desglose del cobro con tarjeta. Viaja aparte de `due` porque el
+       * recargo NO es parte del saldo: el saldo se cancela igual pagando por
+       * deposito, sin comision de por medio.
+       */
+      cardCharge,
       settled: isSettled(paid, basis),
       /**
        * El saldo ya esta cubierto por un abono en validacion: la pantalla debe
@@ -409,9 +450,22 @@ export const paymentsService = {
      * deja al reporte financiero sumar los dos tipos de tramite.
      */
     const globalRate = await settingsRepo.currentExchangeRate();
+    const exchangeRate = invoiceExchangeRate(shipment, globalRate);
     const amount = outstandingFor(settledAmount(paid, basis.currency), basis);
 
     const isCard = input.method === PaymentMethod.Tarjeta;
+
+    /**
+     * EL RECARGO DE LA TARJETA. La comision de la pasarela la paga quien la
+     * provoca: el cliente que elige tarjeta ve el recargo en la cotizacion antes
+     * de aceptar y se le cobra el total (`cardChargeFor`). El deposito no genera
+     * comision y no lleva recargo.
+     *
+     * El abono sigue siendo el SALDO y no el total: lo que cancela la factura es
+     * lo facturado. El recargo va en su propia columna, con la misma moneda y la
+     * misma tasa de esta fila.
+     */
+    const charge = isCard ? cardChargeFor(amount, basis.currency, exchangeRate) : null;
 
     /**
      * Antes de abrir otro formulario de tarjeta se tiran los que quedaron
@@ -437,8 +491,9 @@ export const paymentsService = {
        */
       status: isCard ? PaymentStatus.Iniciado : PaymentStatus.Pendiente,
       amount,
+      surchargeAmount: charge?.surcharge ?? 0,
       currency: basis.currency,
-      exchangeRate: invoiceExchangeRate(shipment, globalRate),
+      exchangeRate,
       bankAccount: input.bankAccount ?? null,
       receiptNumber: input.receiptNumber ?? null,
       depositedAt: input.depositedAt ? new Date(input.depositedAt) : null,
@@ -456,7 +511,12 @@ export const paymentsService = {
        */
       try {
         intent = await onvoClient.createPaymentIntent({
-          amount,
+          /**
+           * A la pasarela va el TOTAL: saldo mas recargo. Es la unica cifra de
+           * todo el flujo que incluye el recargo, y es la que el cliente va a ver
+           * en el estado de cuenta de su tarjeta.
+           */
+          amount: charge?.total ?? amount,
           currency: basis.currency,
           paymentId: id,
           description: `${shipment.code} — ${shipment.description}`,

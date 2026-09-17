@@ -542,26 +542,52 @@ export const shipmentsService = {
    * NO bloquea —a diferencia del registro del casillero— porque el tramite ya es
    * util de nuestro lado aunque el proveedor no responda; la sincronizacion lo
    * recuperara despues por tracking.
+   *
+   * El DOCUMENTO (la orden de compra) es un parametro explicito y no opcional
+   * para que cada puerta tenga que decidir: el portal del cliente lo exige y lo
+   * pasa siempre (ver la ruta), y la API publica, contrato ya publicado, pasa
+   * `null` a proposito. Con un valor por omision, abrir una puerta nueva dejaria
+   * de exigirlo sin que nada lo delate.
+   *
+   * Cuando viene, el archivo se guarda ANTES del alta: asi un documento con
+   * formato o tamaño no admitido se rechaza sin dejar detras una prealerta que
+   * ya ocupa el tracking. Si lo que falla es el alta, se borra el archivo recien
+   * guardado para no acumular huerfanos en el almacen.
    */
-  async prealert(session: Session, input: PrealertShipmentInput): Promise<ShipmentDto> {
+  async prealert(
+    session: Session,
+    input: PrealertShipmentInput,
+    document: File | null,
+  ): Promise<ShipmentDto> {
     if (!session.clientId) throw ShipmentErrors.missingClientProfile();
     if (!usesPackageFields(input.shipmentType)) throw AuthErrors.forbidden();
 
-    const created = await this.insert(
-      {
-        clientId: session.clientId,
-        shipmentType: input.shipmentType,
-        tracking: input.tracking,
-        description: input.description,
-        store: input.store ?? null,
-        carrier: input.carrier ?? null,
-        // El cliente solo declara el valor comercial; el asegurado, el arancel y el
-        // retener los completa el staff, asi que aqui nacen null.
-        declaredValueUsd:
-          input.declaredValueUsd === undefined ? null : roundMoney(input.declaredValueUsd, Currency.USD),
-      },
-      session.userId,
-    );
+    const documentFileKey = document ? await storage.put('documents', document, DOCUMENT_ATTACHMENT) : null;
+
+    let created: ShipmentDto;
+    try {
+      created = await this.insert(
+        {
+          clientId: session.clientId,
+          shipmentType: input.shipmentType,
+          tracking: input.tracking,
+          description: input.description,
+          store: input.store ?? null,
+          carrier: input.carrier ?? null,
+          // El cliente solo declara el valor comercial; el asegurado, el arancel y el
+          // retener los completa el staff, asi que aqui nacen null.
+          declaredValueUsd:
+            input.declaredValueUsd === undefined ? null : roundMoney(input.declaredValueUsd, Currency.USD),
+          documentFileKey,
+        },
+        session.userId,
+      );
+    } catch (err) {
+      // El tracking repetido es el caso corriente: sin esto, cada reintento del
+      // cliente dejaria una copia mas del documento que ya nadie alcanza.
+      if (documentFileKey) await storage.remove(documentFileKey);
+      throw err;
+    }
 
     // Sin condicion por tipo: llegados aqui el tramite es de Paqueteria, y todo
     // paquete prealertado se replica ante el proveedor.

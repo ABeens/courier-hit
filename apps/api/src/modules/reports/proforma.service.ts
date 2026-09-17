@@ -2,16 +2,23 @@
  * Proforma de un tramite: el documento que se le entrega al cliente.
  * Plantilla de referencia: `source_docs/Material/Ejemplo de Proforma.xlsx`.
  *
- * Tres decisiones que viven aqui:
+ * Cuatro decisiones que viven aqui:
  *
  * 1. SE ARMA, NO SE GUARDA. La proforma se deriva del tramite, su cliente y sus
- *    lineas de costo cada vez que se pide. No hay tabla ni consecutivo propio: si
- *    se reversan los costos, la proforma vieja simplemente deja de existir, que es
- *    la respuesta correcta. Persistirla obligaria a decidir que hacer con una
- *    proforma que ya no representa ninguna factura.
+ *    lineas de costo cada vez que se pide. Si se reversan los costos, la proforma
+ *    vieja simplemente deja de existir, que es la respuesta correcta. Guardar el
+ *    documento obligaria a decidir que hacer con una proforma que ya no
+ *    representa ninguna factura.
  * 2. SOLO SOBRE TRAMITES FACTURADOS. Sin costos aprobados no hay total que
  *    imprimir; se responde 409 y no una proforma en blanco.
- * 3. SE IMPRIME EN LA MONEDA EN QUE SE TRAMITO. La moneda del documento sale de
+ * 3. EL NUMERO SI SE GUARDA, Y ES PROPIO. Del documento no se persiste nada
+ *    salvo su numero, que sale de la serie de proformas (`HSP000001000`) y no del
+ *    consecutivo del tramite ni del id del cobro. Se pide al EMITIR, despues de
+ *    comprobar que hay algo que imprimir: numerar un documento que va a responder
+ *    409 dejaria huecos en la serie sin ninguna factura detras. Y una vez
+ *    asignado no cambia, ni aunque se reversen y reaprueben los costos: el
+ *    cliente cita su numero de proforma, y esa tiene que seguir siendo la suya.
+ * 4. SE IMPRIME EN LA MONEDA EN QUE SE TRAMITO. La moneda del documento sale de
  *    las lineas de costo (`invoiceCurrency`), no de una constante: un
  *    agenciamiento cargado en colones se entrega en colones. El otro total va de
  *    referencia. Cada linea se convierte con SU propia tasa (regla M5) y los
@@ -30,7 +37,7 @@ import {
   findCanton,
   findDistrict,
   findProvince,
-  formatConsolidatedProformaNumber,
+  formatProformaNumber,
   invoiceCurrency,
   paymentGroupStatus,
   roundMoney,
@@ -115,9 +122,19 @@ export const proformaService = {
     const totals = computeTotals(row.lines);
     const breakdown = breakdownByCategory(row.lines, currency);
 
+    /**
+     * El numero del documento, de la serie de proformas. Se pide AQUI, ya pasada
+     * la comprobacion de arriba: el tramite sin facturar responde 409 sin haber
+     * tocado la serie. El formato lo pone shared, punto unico.
+     */
+    const number = formatProformaNumber(
+      await reportsRepo.issueProformaNumber({ shipmentId: row.id }),
+    );
+
     return {
       shipmentId: row.id,
-      number: row.code,
+      number,
+      shipmentCode: row.code,
       issuedAt: row.costsApprovedAt.toISOString(),
       exchangeRate,
       currency,
@@ -274,9 +291,19 @@ export const proformaService = {
       .map((l) => l.confirmedAt as Date)
       .sort((a, b) => b.getTime() - a.getTime())[0];
 
+    /**
+     * Numero de la MISMA serie que la proforma suelta, pedido despues de saber
+     * que el cobro tiene paquetes que imprimir. Antes era el id corto del grupo,
+     * que no es un consecutivo: no se ordena, no se dicta por telefono y no dice
+     * en que orden se emitieron los documentos.
+     */
+    const number = formatProformaNumber(
+      await reportsRepo.issueProformaNumber({ paymentGroupId: group.id }),
+    );
+
     return {
       paymentGroupId: group.id,
-      number: formatConsolidatedProformaNumber(group.id),
+      number,
       issuedAt: group.createdAt.toISOString(),
       exchangeRate: group.exchangeRate,
       currency,
@@ -348,7 +375,6 @@ export const proformaService = {
 
       items.push({
         paymentGroupId: group.id,
-        number: formatConsolidatedProformaNumber(group.id),
         clientName: group.clientName,
         clientCode: group.clientCode,
         issuedAt: group.createdAt.toISOString(),

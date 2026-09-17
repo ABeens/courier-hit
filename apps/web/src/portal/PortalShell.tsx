@@ -180,6 +180,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
   const isClient = me.role === Role.Client;
   const navEntries = isClient ? CLIENT_NAV : STAFF_NAV;
   const miamiLink = me.features.miamiLink;
+  const apiAccess = me.features.apiAccess;
   /**
    * Lo que el rol puede ver, menos lo que este despliegue no ofrece. Al quitar
    * el recurso de este conjunto (y no solo del menu) la bandera apagada tambien
@@ -196,6 +197,13 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
       resources.delete(Resource.ProviderAccounts);
     }
     /**
+     * La pantalla "API" solo existe para el casillero al que un administrador se
+     * la habilito (docs/16 §3). Se quita del conjunto, no solo del menu, para
+     * que el deep-link /app/llaves-api caiga en la pantalla por defecto en vez
+     * de en una pantalla cuyos endpoints responden 403.
+     */
+    if (!apiAccess) resources.delete(Resource.ApiKeys);
+    /**
      * Prealertar ya no es una pantalla: vive dentro de "Mis paquetes". Se quita
      * tambien de este conjunto (y no solo del menu) para que el deep-link viejo
      * /app/prealerta caiga en la pantalla por defecto en vez de en el hueco de
@@ -203,7 +211,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
      */
     resources.delete(Resource.Prealert);
     return resources;
-  }, [me.role, miamiLink]);
+  }, [me.role, miamiLink, apiAccess]);
   /**
    * El menu del rol sin lo que no puede ver. Una seccion que se queda sin
    * pantallas desaparece entera: no tiene sentido un desplegable vacio.
@@ -490,6 +498,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
             <ClientsScreen
               canWrite={can(me.role, Permission.ClientsWrite)}
               canSuspend={can(me.role, Permission.ClientsSuspend)}
+              canManageApiAccess={can(me.role, Permission.ClientsApiAccess)}
             />
           ) : current === Resource.Reports ? (
             <ReportsScreen />

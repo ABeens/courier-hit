@@ -57,6 +57,8 @@ export interface ClientListItem {
   reviewStatus: ClientReviewStatus;
   /** Estado de la cuenta: `inactivo` es un casillero sin acceso al sistema. */
   status: UserStatus;
+  /** Si el casillero puede usar la API (docs/16 §3). Apagado mientras nadie lo encienda. */
+  apiAccessEnabled: boolean;
   /** Nombre de la tarifa asignada; null si quedo sin tarifa. */
   clientRateName: string | null;
   clientRateId: string | null;
@@ -150,6 +152,35 @@ export const clientsService = {
     await authRepo.updateUser(current.userId, { status });
     if (status === UserStatus.Inactivo) await authRepo.deleteSessionsByUser(current.userId);
 
+    return this.get(id);
+  },
+
+  /**
+   * Enciende o apaga el ACCESO A LA API del casillero (permiso
+   * `clients.api_access`).
+   *
+   * Es una bandera y nada mas: no toca la cuenta, ni la sesion, ni las llaves.
+   *
+   *   - NO revoca las llaves al apagarla, por lo mismo que no lo hace el bloqueo
+   *     de la cuenta: revocar es irreversible, y volver a encenderla tiene que
+   *     devolverle al cliente su integracion funcionando, no obligarlo a
+   *     reemitir credenciales y desplegar de nuevo. Mientras este apagada, la
+   *     llave no autentica (`apiKeysService.verify` lee la bandera en vivo).
+   *   - NO cierra la sesion del portal: el titular sigue entrando con
+   *     normalidad, lo unico que pierde es la pantalla "API" (y sus endpoints)
+   *     en la siguiente peticion, porque la sesion se rearma leyendo el
+   *     casillero.
+   *   - NO marca el casillero como revisado: eso es efecto de editar su ficha
+   *     comercial, y habilitar una integracion no es haber mirado sus datos.
+   *
+   * Idempotente: volver a pedir el estado que ya tiene no hace nada.
+   */
+  async setApiAccess(id: string, enabled: boolean): Promise<ClientListItem> {
+    const current = await clientsRepo.findById(id);
+    if (!current) throw ShipmentErrors.clientNotFound();
+    if (current.apiAccessEnabled === enabled) return this.get(id);
+
+    await clientsRepo.update(id, { apiAccessEnabled: enabled });
     return this.get(id);
   },
 

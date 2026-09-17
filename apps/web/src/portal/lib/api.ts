@@ -53,18 +53,16 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 /**
- * Subida de un archivo (multipart). No pasa por `request` porque ahi el cuerpo
- * se serializa a JSON y aqui hay que dejar que el navegador arme el multipart
- * con su boundary: fijar `content-type` a mano rompe la peticion.
+ * Envio MULTIPART: lo que lleva un archivo, solo o acompañado de campos de
+ * texto. No pasa por `request` porque ahi el cuerpo se serializa a JSON y aqui
+ * hay que dejar que el navegador arme el multipart con su boundary: fijar
+ * `content-type` a mano rompe la peticion.
  *
  * Devuelve lo mismo y falla igual que el resto del cliente (`ApiError` con el
  * `code` estable), que es justo lo que no daba el `fetch` suelto que se repetia
  * en cada modal con archivo.
  */
-async function upload<T>(path: string, file: File, field = 'file'): Promise<T> {
-  const form = new FormData();
-  form.set(field, file);
-
+async function postForm<T>(path: string, form: FormData): Promise<T> {
   const res = await fetch(`${BASE}/api${path}`, {
     method: 'POST',
     credentials: 'include',
@@ -75,15 +73,23 @@ async function upload<T>(path: string, file: File, field = 'file'): Promise<T> {
   const data = text ? JSON.parse(text) : null;
 
   if (!res.ok) {
-    const err = data?.error ?? { code: 'UNKNOWN', message: 'No se pudo subir el archivo.' };
+    const err = data?.error ?? { code: 'UNKNOWN', message: 'No se pudo enviar el archivo.' };
     throw new ApiError(res.status, err.code, err.message);
   }
   return data as T;
 }
 
+/** Atajo del caso corriente: un unico archivo y nada mas. */
+function upload<T>(path: string, file: File, field = 'file'): Promise<T> {
+  const form = new FormData();
+  form.set(field, file);
+  return postForm<T>(path, form);
+}
+
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   upload,
+  postForm,
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),

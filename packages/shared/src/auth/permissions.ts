@@ -268,6 +268,25 @@ export enum Permission {
    * mas: la pantalla y el endpoint preguntan por el PERMISO, nunca por el rol.
    */
   ClientsSuspend = 'clients.suspend',
+  /**
+   * Prender y apagar el ACCESO A LA API de un casillero. Nace apagado: un
+   * cliente no puede emitir llaves ni llamar a `/api/v1` hasta que un
+   * administrador lo habilite, y apagarlo de nuevo le cierra las dos cosas.
+   *
+   * VA APARTE DE `clients.suspend` aunque las dos sean puertas. Suspender es
+   * dejar al cliente fuera del sistema entero (portal incluido) y es una medida
+   * sobre la CUENTA; esto solo decide si una integracion automatizada es parte
+   * de lo contratado, y el titular sigue entrando al portal con normalidad. Un
+   * mismo permiso obligaria a que quien habilita una integracion pueda tambien
+   * dejar a un cliente sin cuenta.
+   *
+   * Tampoco cuelga de `clients.write`: editar la ficha ES revisarla (apaga el
+   * flag "Nuevo"), y habilitar la API no es haber revisado nada.
+   *
+   * Hoy solo `admin`. La pantalla y el endpoint preguntan por el PERMISO, nunca
+   * por el rol, asi que abrirselo a otro es sumarlo en ROLE_PERMISSIONS.
+   */
+  ClientsApiAccess = 'clients.api_access',
   ConfigManage = 'config.manage',
   /**
    * Dar de alta y mantener las cuentas EXCLUSIVAS del operador de Miami, y crear
@@ -336,6 +355,10 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   [Permission.ClientsWrite]: { resource: Resource.Clients, action: Action.Write, scope: Scope.All },
   // Action.Manage y no Write: no edita el casillero, decide si su dueño entra.
   [Permission.ClientsSuspend]: { resource: Resource.Clients, action: Action.Manage, scope: Scope.All },
+  // Resource.Clients: se opera desde la ficha del casillero, no desde un modulo
+  // propio. Action.Manage por lo mismo que el anterior: no edita datos, abre o
+  // cierra una puerta.
+  [Permission.ClientsApiAccess]: { resource: Resource.Clients, action: Action.Manage, scope: Scope.All },
   [Permission.ConfigManage]: { resource: Resource.Config, action: Action.Manage, scope: Scope.All },
   [Permission.ProviderAccountsManage]: { resource: Resource.ProviderAccounts, action: Action.Manage, scope: Scope.All },
   [Permission.TariffsManage]: { resource: Resource.Tariffs, action: Action.Manage, scope: Scope.All },
@@ -374,6 +397,8 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   Permission.ClientsWrite,
   // Solo admin: cerrarle la puerta a un cliente no es editar su ficha.
   Permission.ClientsSuspend,
+  // Solo admin: la API de un cliente se enciende una vez y a conciencia.
+  Permission.ClientsApiAccess,
   Permission.ConfigManage,
   // Solo admin: son credenciales de una cuenta ajena del proveedor, y el alta del
   // unico tipo de cliente que no puede nacer del landing.

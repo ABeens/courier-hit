@@ -37,6 +37,7 @@ import {
   UNRESOLVED_PAYMENT_STATUSES,
   awaitsValidation,
   bankAccountsFor,
+  cardChargeFor,
   billsAsGroup,
   canSetExchangeRate,
   chargeBasisIn,
@@ -184,6 +185,32 @@ function totalsOf(items: readonly ConsolidatedCandidate[]) {
 
 type GroupTotals = ReturnType<typeof totalsOf>;
 
+/**
+ * Tasa que se congela en un cobro agrupado (regla M5), o null si no hay ninguna
+ * con la que congelarlo.
+ *
+ * La fuente primaria es el cociente de las facturas del grupo, igual que en el
+ * pago suelto: es la tasa con la que se construyeron esos totales. El respaldo es
+ * la global del sistema, y quien la impone (`forcedRate`) manda sobre las dos.
+ *
+ * DEVUELVE NULL en vez de fallar porque tambien la consulta la cotizacion, que no
+ * guarda nada: negarse a contestar ahi esconderia tambien el deposito, que no
+ * necesita tasa. Quien guarda un monto convierte ese null en error.
+ */
+function groupExchangeRate(
+  totals: GroupTotals,
+  globalRate: number | null,
+  forcedRate?: number,
+): number | null {
+  if (forcedRate != null) return forcedRate;
+  const checked = exchangeRateSchema.safeParse(
+    totals.invoiceTotalUsd > 0 && totals.invoiceTotalCrc > 0
+      ? totals.invoiceTotalCrc / totals.invoiceTotalUsd
+      : globalRate,
+  );
+  return checked.success ? checked.data : null;
+}
+
 /** El saldo de UN paquete del grupo, en colones. Es la cifra que lee el staff. */
 function dueCrcOf(row: ConsolidatedCandidate): number {
   return outstandingCrc(settledAmount(row.settlement, Currency.CRC), row.invoiceTotalCrc);
@@ -290,6 +317,7 @@ export const consolidatedService = {
         dueCrc: 0,
         chargeCurrency: CHARGE_CURRENCY,
         due: 0,
+        cardCharge: null,
         settled: false,
         inValidation: false,
         availableMethods: [],
@@ -297,7 +325,10 @@ export const consolidatedService = {
       };
     }
 
-    const account = await resolveAccount(clientId);
+    const [account, globalRate] = await Promise.all([
+      resolveAccount(clientId),
+      settingsRepo.currentExchangeRate(),
+    ]);
     const totals = totalsOf(account.items);
 
     const items: ConsolidatedItem[] = account.items.map((row) => ({
@@ -325,6 +356,21 @@ export const consolidatedService = {
     const basis = basisOf(account.items, totals);
     const settledInCharge = inCharge(totals.settledUsd, totals.settledCrc);
     const pendingInCharge = inCharge(totals.pendingUsd, totals.pendingCrc);
+    const due = outstandingFor(settledInCharge, basis);
+
+    const methods = methodsFor(account);
+
+    /**
+     * EL COBRO CON TARJETA DESGLOSADO: saldo del grupo, recargo por la comision
+     * de la pasarela y total. Misma funcion y misma tasa que `start`, para que la
+     * cifra que el cliente acepta sea la que se le cobra. Null si no hay tarjeta
+     * que ofrecer: el deposito no lleva recargo.
+     */
+    const chargeRate = groupExchangeRate(totals, globalRate);
+    const cardCharge =
+      methods.includes(PaymentMethod.Tarjeta) && chargeRate != null
+        ? cardChargeFor(due, basis.currency, chargeRate)
+        : null;
 
     return {
       consolidated: true,
@@ -341,10 +387,16 @@ export const consolidatedService = {
       pendingCrc: totals.pendingCrc,
       dueCrc: outstandingCrc(totals.settledCrc, invoiceCrc),
       chargeCurrency: basis.currency,
-      due: outstandingFor(settledInCharge, basis),
+      due,
+      /**
+       * El desglose del cobro con tarjeta. Aparte de `due` porque el recargo no
+       * es parte del saldo: pagando por deposito, el mismo saldo se cancela sin
+       * comision de por medio.
+       */
+      cardCharge,
       settled: isSettled(settledPayments, basis),
       inValidation: awaitsValidation(settledInCharge, pendingInCharge, basis),
-      availableMethods: methodsFor(account),
+      availableMethods: methods,
       /**
        * Las cuentas de la Paqueteria: solo las de dolares. Un grupo consolidado es
        * siempre de paquetes, asi que la lista es la misma que le tocaria a
@@ -409,10 +461,31 @@ export const consolidatedService = {
     if (isCard) await discardOpenCardGroups(account.clientId);
 
     const globalRate = await settingsRepo.currentExchangeRate();
+
+    /**
+     * EL RECARGO DE LA TARJETA, sobre el total del grupo. La comision de la
+     * pasarela la paga quien la provoca, y es UNA sola: el cobro agrupado pasa
+     * por la tarjeta en un unico cargo. El deposito no lleva recargo.
+     *
+     * Se calcula con la MISMA funcion y la MISMA tasa que la cotizacion que el
+     * cliente acaba de leer, para que el total que acepta sea el que se le cobra.
+     */
+    const groupRate = groupExchangeRate(totals, globalRate);
+    if (isCard && groupRate == null) throw PaymentErrors.exchangeRateUnavailable();
+    const charge =
+      isCard && groupRate != null
+        ? cardChargeFor(
+            outstandingFor(inCharge(totals.settledUsd, totals.settledCrc), basis),
+            basis.currency,
+            groupRate,
+          )
+        : null;
+
     const groupId = await this.createGroup({
       account,
       method: input.method,
       globalRate,
+      surchargeAmount: charge?.surcharge ?? 0,
       /**
        * El deposito nace PENDIENTE (hay un comprobante que revisar) y la tarjeta
        * INICIADA (todavia no se ha intentado cobrar nada). Es la misma regla del
@@ -436,7 +509,11 @@ export const consolidatedService = {
        */
       try {
         intent = await onvoClient.createPaymentIntent({
-          amount: outstandingFor(inCharge(totals.settledUsd, totals.settledCrc), basis),
+          /**
+           * A la pasarela va el TOTAL: saldo del grupo mas recargo. Es la cifra
+           * que el cliente vera en el estado de cuenta de su tarjeta.
+           */
+          amount: charge?.total ?? outstandingFor(inCharge(totals.settledUsd, totals.settledCrc), basis),
           currency: basis.currency,
           paymentId: groupId,
           description: `Consolidado ${account.clientCode} — ${account.items.length} paquetes`,
@@ -509,6 +586,13 @@ export const consolidatedService = {
     globalRate: number | null;
     /** Tasa impuesta por quien la puede fijar; sin ella manda la de cada factura. */
     forcedRate?: number;
+    /**
+     * Recargo por la comision de la pasarela, cobrado ENCIMA del total del grupo.
+     * Solo lo trae el cobro con tarjeta; el deposito no genera comision. Lo
+     * calcula quien cobra (`start`) con `cardChargeFor`, que es la misma cuenta
+     * que ya vio el cliente en la cotizacion.
+     */
+    surchargeAmount?: number;
     status: PaymentStatus;
     bankAccount?: BankAccount | null;
     receiptNumber?: string | null;
@@ -530,17 +614,8 @@ export const consolidatedService = {
      * (regla M5): una tasa que impone el servidor no entra por una puerta con
      * menos validacion que la que digita una persona.
      */
-    const groupRate =
-      args.forcedRate ??
-      (() => {
-        const checked = exchangeRateSchema.safeParse(
-          totals.invoiceTotalUsd > 0 && totals.invoiceTotalCrc > 0
-            ? totals.invoiceTotalCrc / totals.invoiceTotalUsd
-            : args.globalRate,
-        );
-        if (!checked.success) throw PaymentErrors.exchangeRateUnavailable();
-        return checked.data;
-      })();
+    const groupRate = groupExchangeRate(totals, args.globalRate, args.forcedRate);
+    if (groupRate == null) throw PaymentErrors.exchangeRateUnavailable();
 
     return consolidatedRepo.insertGroupWithPayments(
       {
@@ -548,6 +623,7 @@ export const consolidatedService = {
         clientRateId: args.account.rateId,
         method: args.method,
         amount: groupAmount,
+        surchargeAmount: args.surchargeAmount ?? 0,
         currency: CHARGE_CURRENCY,
         exchangeRate: groupRate,
         createdBy: args.createdBy,
@@ -586,6 +662,7 @@ export const consolidatedService = {
       method: group.method,
       status: paymentGroupStatus(lines.map((l) => l.status)),
       amount: group.amount,
+      surchargeAmount: group.surchargeAmount,
       currency: group.currency,
       exchangeRate: group.exchangeRate,
       itemCount: lines.length,

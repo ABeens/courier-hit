@@ -58,6 +58,23 @@ export const setClientStatusSchema = z.object({
 export type SetClientStatusInput = z.infer<typeof setClientStatusSchema>;
 
 /**
+ * Habilitacion del ACCESO A LA API de un casillero (permiso
+ * `clients.api_access`). Nace apagado para todos: la integracion por llaves no
+ * viene con la cuenta, la enciende un administrador cuando se contrata y la
+ * apaga cuando deja de estarlo.
+ *
+ * Cuerpo y endpoint propios por lo mismo que el bloqueo de acceso: es otro
+ * permiso, y no puede colarse por `updateClientSchema`, que al guardar da el
+ * casillero por revisado. Es un booleano explicito y no un "toggle" sin cuerpo
+ * para que la peticion sea idempotente: reintentarla no deja el interruptor al
+ * reves de lo que se quiso.
+ */
+export const setClientApiAccessSchema = z.object({
+  enabled: z.boolean(),
+});
+export type SetClientApiAccessInput = z.infer<typeof setClientApiAccessSchema>;
+
+/**
  * Limite de credito del casillero (Parte 3 L48: "ingresarles un límite de
  * crédito"). Es un TECHO de politica comercial, no un monto transaccional: por
  * eso lleva moneda explicita (regla M2) pero no tasa de cambio (no hay un

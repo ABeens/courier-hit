@@ -399,7 +399,14 @@ export const authService = {
     return { session: await this.buildSession(id, user), expiresAt };
   },
 
-  /** Arma el objeto Session del dominio; agrega clientCode si es customer. */
+  /**
+   * Arma el objeto Session del dominio; agrega clientCode si es customer.
+   *
+   * Tambien trae la bandera de acceso a la API del casillero. Se lee AQUI, en
+   * cada resolucion de sesion, y no se guarda en la fila de `sessions`: asi
+   * apagarla surte efecto en la siguiente peticion del cliente, igual que el
+   * bloqueo de la cuenta, en vez de esperar a que caduque la cookie.
+   */
   async buildSession(sessionId: string, user: UserRow): Promise<Session> {
     const session: Session = {
       sessionId,
@@ -412,6 +419,7 @@ export const authService = {
       if (client) {
         session.clientId = client.id;
         session.clientCode = client.code;
+        session.apiAccess = client.apiAccessEnabled;
       }
     }
     // Consistencia defensiva: el principal siempre concuerda con el rol.

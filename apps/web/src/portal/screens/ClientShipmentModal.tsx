@@ -1,7 +1,7 @@
 /**
  * PREALERTA de un paquete por el titular del casillero ("Requerimientos Parte 2 -
- * Portal Cliente", L45-71): tienda, transportista, tracking, descripcion y valor
- * declarado de la compra que viene en camino a Miami.
+ * Portal Cliente", L45-71): tienda, transportista, tracking, descripcion, valor
+ * declarado y la ORDEN DE COMPRA de lo que viene en camino a Miami.
  *
  * SOLO PAQUETERIA, y por eso no hay selector de tipo. Los tramites de Transporte
  * (aereo, maritimo FCL/LCL) y de Agenciamiento no los prealerta el cliente: nacen
@@ -16,11 +16,12 @@
  *
  * El dueño del tramite NO se elige: lo pone la API desde la sesion.
  *
- * El documento (la factura de la compra, tipicamente) es OPCIONAL y viaja en una
- * SEGUNDA peticion, porque un archivo obliga a multipart: mezclarlo con el JSON
- * haria que un adjunto rechazado tumbara tambien los datos ya validados.
- * Separadas, un fallo al subir deja el tramite registrado y solo hay que
- * reintentar el archivo, que es lo que ofrece el boton de reintento.
+ * La orden de compra es OBLIGATORIA y viaja en la MISMA peticion que los datos,
+ * en multipart. Antes eran dos peticiones y el documento era opcional, que es lo
+ * unico que podia ser: el alta se resolvia primero, asi que un fallo al subir el
+ * archivo dejaba igualmente el tramite registrado y solo cabia ofrecer un
+ * reintento. Juntas, o entra todo o no entra nada, y no hay prealerta sin
+ * documento que despues haya que perseguir.
  */
 import { useState } from 'react';
 import {
@@ -54,25 +55,14 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<ShipmentDto | null>(null);
   const [busy, setBusy] = useState(false);
-  /**
-   * Tramite que quedo registrado pero SIN su documento. Mientras exista, se
-   * ofrece reintentar solo la subida: repetir el formulario entero chocaria
-   * contra el tracking, que ya esta tomado por este mismo tramite.
-   */
-  const [pendingDocument, setPendingDocument] = useState<{ id: string; file: File } | null>(null);
 
-  /** Campos de texto del formulario. El documento se limpia aparte: su suerte
-   *  no va atada a la del formulario (puede quedar pendiente de reintento). */
+  /** Campos del formulario, con el tramite ya creado. */
   function resetFields() {
     setTracking('');
     setDescription('');
     setStore('');
     setCarrier('');
     setDeclaredValue('');
-  }
-
-  /** El selector se vacía solo al quedarse sin archivo (ver `FileField`). */
-  function clearDocument() {
     setDocumentFile(null);
   }
 
@@ -84,49 +74,23 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
    */
   function pickDocument(file: File | null) {
     if (!file) {
-      clearDocument();
+      setDocumentFile(null);
       return;
     }
     const rejection = attachmentRejection(DOCUMENT_ATTACHMENT, file.type, file.name);
     if (rejection) {
       setError(rejection);
-      clearDocument();
+      setDocumentFile(null);
       return;
     }
     setError(null);
     setDocumentFile(file);
   }
 
-  /** Sube el documento de un tramite ya creado. Devuelve si lo consiguio. */
-  async function uploadDocument(shipmentId: string, file: File): Promise<boolean> {
-    try {
-      await api.upload<ShipmentDto>(`/shipments/${shipmentId}/document`, file);
-      setPendingDocument(null);
-      return true;
-    } catch (err) {
-      setPendingDocument({ id: shipmentId, file });
-      setError(
-        err instanceof ApiError
-          ? `El trámite quedó registrado, pero el documento no se adjuntó: ${err.message}`
-          : 'El trámite quedó registrado, pero no se pudo adjuntar el documento.',
-      );
-      return false;
-    }
-  }
-
-  async function retryDocument() {
-    if (!pendingDocument) return;
-    setBusy(true);
-    setError(null);
-    if (await uploadDocument(pendingDocument.id, pendingDocument.file)) clearDocument();
-    setBusy(false);
-  }
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setCreated(null);
-    setPendingDocument(null);
     setBusy(true);
     try {
       const parsed = prealertShipmentSchema.safeParse({
@@ -142,22 +106,43 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
         setBusy(false);
         return;
       }
-      const result = await api.post<ShipmentDto>('/shipments/prealert', parsed.data);
+      /**
+       * El documento se exige DESPUES de los datos para que los avisos bajen en
+       * el mismo orden en que estan los campos: el archivo es el ultimo. La API
+       * repite la exigencia; esto solo evita el viaje.
+       */
+      if (!documentFile) {
+        setError('Adjunta la orden de compra: sin ella no podemos registrar la prealerta.');
+        setBusy(false);
+        return;
+      }
+
+      /**
+       * Multipart: los campos van como texto (es lo unico que hay en un
+       * formulario) y la API los valida con este mismo esquema del lado de alla.
+       * El valor declarado se manda tal cual lo escribio el cliente; el numero
+       * lo arma el servidor.
+       */
+      const form = new FormData();
+      form.set('shipmentType', parsed.data.shipmentType);
+      form.set('tracking', parsed.data.tracking);
+      form.set('description', parsed.data.description);
+      if (parsed.data.store) form.set('store', parsed.data.store);
+      if (parsed.data.carrier) form.set('carrier', parsed.data.carrier);
+      if (parsed.data.declaredValueUsd !== undefined) {
+        form.set('declaredValueUsd', String(parsed.data.declaredValueUsd));
+      }
+      form.set('document', documentFile);
+
+      const result = await api.postForm<ShipmentDto>('/shipments/prealert', form);
       setCreated(result);
       // Los datos se limpian con el tramite ya creado: repetirlos solo chocaria
       // contra su propio tracking, que a partir de aqui esta tomado.
       resetFields();
-
       /**
-       * El documento va aparte y NO puede deshacer el alta: si falla, el tramite
-       * ya existe y lo unico pendiente es el archivo, que se conserva en el
-       * estado para reintentar solo esa subida.
-       */
-      if (documentFile && (await uploadDocument(result.id, documentFile))) clearDocument();
-      /**
-       * El modal NO se cierra solo: el alta puede haber dejado el documento
-       * pendiente de reintento, y encadenar varias (llega mas de un paquete el
-       * mismo dia) es lo normal. Lo que si se refresca es el listado de detras.
+       * El modal NO se cierra solo: encadenar varias prealertas (llega mas de un
+       * paquete el mismo dia) es lo normal. Lo que si se refresca es el listado
+       * de detras.
        */
       onCreated();
     } catch (err) {
@@ -231,22 +216,16 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
 
           <FileField
             id="p-document"
-            label="Documento (opcional)"
+            label="Orden de compra"
             accept={DOCUMENT_ATTACHMENT.accept}
             file={documentFile}
             onPick={pickDocument}
             disabled={busy}
-            hint={`Adjunta la factura de la compra. Se aceptan ${DOCUMENT_ATTACHMENT.label}; las fotos y capturas de pantalla no sirven, tiene que ser el documento.`}
+            hint={`Obligatoria: adjunta la orden de compra o la factura de la tienda. Se aceptan ${DOCUMENT_ATTACHMENT.label}; las fotos y capturas de pantalla no sirven, tiene que ser el documento.`}
           />
         </div>
 
         <div className="modal-foot">
-          {/* Solo cuando el tramite ya paso y lo unico que falto fue el archivo. */}
-          {pendingDocument && (
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={retryDocument}>
-              {busy ? 'Adjuntando…' : 'Reintentar adjuntar'}
-            </button>
-          )}
           <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
             {created ? 'Cerrar' : 'Cancelar'}
           </button>

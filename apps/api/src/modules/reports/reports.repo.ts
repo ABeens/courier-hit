@@ -1,6 +1,9 @@
 /**
- * Consultas de los reportes. Solo lectura: este modulo no es dueño de ninguna
- * tabla, cruza las de tramites, clientes, eventos y pagos.
+ * Consultas de los reportes. Casi todo es lectura: cruza las tablas de tramites,
+ * clientes, eventos y pagos sin ser dueño de ninguna. La UNICA excepcion es
+ * `proforma_numbers`, la serie de proformas, que si es suya y si se escribe (ver
+ * `issueProformaNumber`): emitir un documento numerado es un acto, no una
+ * consulta, y el numero tiene que sobrevivir a la impresion que lo pidio.
  *
  * Los filtros son los mismos del dashboard (rango de fechas, tipo, cliente) y se
  * arman una sola vez en `conditions`: un reporte que filtrara distinto que la
@@ -33,6 +36,7 @@ import { payments } from '../payments/payments.schema';
 import { clientRates } from '../tariffs/tariffs.schema';
 import { shipmentCosts } from '../costs/shipment-cost.schema';
 import { shipmentEvents, shipments } from '../shipments/shipments.schema';
+import { proformaNumbers } from './reports.schema';
 
 /**
  * Nombre de quien movio el estado, como SUBCONSULTA en vez de un cuarto JOIN.
@@ -242,7 +246,7 @@ export const reportsRepo = {
     if (rows.length === 0) return [];
     const ids = rows.map((r) => r.id);
 
-    const [paid, costs, milestones] = await Promise.all([
+    const [paid, costs, milestones, proformaSeqs] = await Promise.all([
       db
         .select({
           shipmentId: payments.shipmentId,
@@ -289,6 +293,15 @@ export const reportsRepo = {
           ),
         )
         .groupBy(shipmentEvents.shipmentId, shipmentEvents.state),
+
+      /**
+       * Numeros de proforma YA EMITIDOS. La columna PROFORMA del reporte era el
+       * consecutivo del tramite repetido; ahora dice el numero del documento que
+       * de verdad se entrego, y queda vacia en el que nunca se imprimio. Leer y
+       * no emitir es la mitad importante: un reporte de mil filas no puede gastar
+       * mil numeros de la serie de facturacion (ver `proformaNumbersByShipment`).
+       */
+      this.proformaNumbersByShipment(ids),
     ]);
 
     const paymentsBy = groupBy(paid, (p) => p.shipmentId);
@@ -307,6 +320,7 @@ export const reportsRepo = {
       costs: costsBy.get(row.id) ?? [],
       miamiArrivalAt: milestoneBy.get(row.id)?.miamiArrivalAt ?? null,
       deliveredAt: milestoneBy.get(row.id)?.deliveredAt ?? null,
+      proformaSequence: proformaSeqs.get(row.id) ?? null,
     }));
   },
 
@@ -415,6 +429,72 @@ export const reportsRepo = {
       .leftJoin(clientRates, eq(clients.clientRateId, clientRates.id))
       .where(and(...billedConditions(query)));
     return row?.total ?? 0;
+  },
+
+  /**
+   * El numero de proforma del documento que se esta emitiendo: el que ya tenia,
+   * o uno nuevo de la serie si es la primera vez.
+   *
+   * SE ASIGNA AL EMITIR y no al aprobar los costos. La proforma se pide muchas
+   * menos veces de las que se factura (hay tramites facturados que nunca se
+   * imprimen), y numerar al aprobar llenaria la serie de numeros que no
+   * corresponden a ningun documento entregado.
+   *
+   * El "leer, insertar, releer" no es un bucle de reintento disfrazado: el
+   * `on conflict do nothing` cubre la carrera de dos impresiones simultaneas del
+   * mismo documento, y la relectura recupera el numero que gano esa carrera. La
+   * primera lectura existe para no gastar un `nextval` en el caso normal, que es
+   * el de un documento que ya tiene numero: `nextval` avanza la secuencia aunque
+   * el INSERT se descarte despues, y eso deja huecos en el consecutivo.
+   */
+  async issueProformaNumber(
+    owner: { shipmentId: string } | { paymentGroupId: string },
+  ): Promise<number> {
+    const where =
+      'shipmentId' in owner
+        ? eq(proformaNumbers.shipmentId, owner.shipmentId)
+        : eq(proformaNumbers.paymentGroupId, owner.paymentGroupId);
+
+    const read = async () => {
+      const [row] = await db
+        .select({ sequence: proformaNumbers.sequence })
+        .from(proformaNumbers)
+        .where(where)
+        .limit(1);
+      return row?.sequence ?? null;
+    };
+
+    const existing = await read();
+    if (existing !== null) return existing;
+
+    const [created] = await db
+      .insert(proformaNumbers)
+      .values({ ...owner, sequence: sql`nextval('hs_proforma_number_seq')` })
+      .onConflictDoNothing()
+      .returning({ sequence: proformaNumbers.sequence });
+    if (created) return created.sequence;
+
+    const raced = await read();
+    if (raced === null) throw new Error('No se pudo asignar el número de proforma.');
+    return raced;
+  },
+
+  /**
+   * Los numeros ya emitidos de un conjunto de tramites, para la columna PROFORMA
+   * del reporte. NO emite ninguno: un reporte es una lectura, y listar mil
+   * tramites no puede consumir mil numeros de una serie de facturacion. El que
+   * todavia no tiene proforma emitida sale con la celda vacia, que es la verdad.
+   */
+  async proformaNumbersByShipment(shipmentIds: readonly string[]): Promise<Map<string, number>> {
+    if (shipmentIds.length === 0) return new Map();
+    const rows = await db
+      .select({ shipmentId: proformaNumbers.shipmentId, sequence: proformaNumbers.sequence })
+      .from(proformaNumbers)
+      .where(inArray(proformaNumbers.shipmentId, [...shipmentIds]));
+
+    const map = new Map<string, number>();
+    for (const row of rows) if (row.shipmentId) map.set(row.shipmentId, row.sequence);
+    return map;
   },
 };
 

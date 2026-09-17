@@ -5,6 +5,7 @@
  */
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   date,
   doublePrecision,
@@ -94,6 +95,20 @@ export const clients = pgTable(
     cantonCode: text('canton_code').notNull(),
     districtCode: text('district_code').notNull(),
     addressLine: text('address_line').notNull(),
+    /**
+     * Si el casillero puede usar la API (docs/16). Nace APAGADO, y ese default
+     * es la regla, no una precaucion: la integracion por llaves no viene con la
+     * cuenta, la enciende un administrador (`clients.api_access`) cuando se
+     * contrata. Apagarla cierra a la vez la pantalla "API" del portal y
+     * `/api/v1`, sin revocar ninguna llave: volver a encenderla le devuelve la
+     * integracion funcionando.
+     *
+     * Vive en `clients` y no en `users` porque una llave pertenece al CASILLERO
+     * (ver `api_keys.client_id`), no a la persona que la emitio; en `users`
+     * habria que explicar que significa la columna en un empleado de staff, que
+     * no tiene API ninguna.
+     */
+    apiAccessEnabled: boolean('api_access_enabled').notNull().default(false),
     /** Todo casillero nace 'nuevo' para que un admin lo revise despues. */
     reviewStatus: clientReviewStatusEnum('review_status')
       .notNull()

@@ -174,6 +174,13 @@ interface ClientSpec {
   memberSinceDays: number;
   verified?: boolean;
   status?: UserStatus;
+  /**
+   * Acceso a la API habilitado (docs/16 §3). Apagado por omision, igual que en
+   * produccion: solo un casillero lo trae encendido, que es lo que hace falta
+   * para probar la pantalla "API" y `/api/v1` sin borrar la regla de que la
+   * integracion se contrata.
+   */
+  apiAccess?: boolean;
 }
 
 /** 12 casilleros repartidos por las 7 provincias, con todas las combinaciones. */
@@ -191,6 +198,7 @@ const CLIENTS: readonly ClientSpec[] = [
     creditLimit: { amount: 500, currency: Currency.USD },
     memberSinceDays: 420,
     verified: true,
+    apiAccess: true,
   },
   {
     handle: 'mario.solano',
@@ -705,6 +713,7 @@ async function seed(tx: Tx): Promise<void> {
           ...locationOf(c.districtCode),
           addressLine: c.addressLine,
           reviewStatus: c.reviewStatus,
+          apiAccessEnabled: c.apiAccess === true,
           clientRateId: (rateByName.get(c.rate) ?? defaultRate).id,
           // Techo de politica comercial: monto + moneda explicita, sin tasa (M2).
           creditLimit: c.creditLimit?.amount ?? null,

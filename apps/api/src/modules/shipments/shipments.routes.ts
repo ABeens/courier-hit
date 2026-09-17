@@ -60,16 +60,51 @@ shipmentsRoutes.get('/', canRead, zValidator('query', listShipmentsQuerySchema),
   return c.json(await shipmentsService.list(c.get('session'), c.req.valid('query')));
 });
 
-/** Prealerta del titular del casillero. El dueño sale de la sesion, no del cuerpo. */
-shipmentsRoutes.post(
-  '/prealert',
-  requirePermission(Permission.PrealertCreate),
-  zValidator('json', prealertShipmentSchema),
-  async (c) => {
-    const created = await shipmentsService.prealert(c.get('session'), c.req.valid('json'));
-    return c.json(created, 201);
-  },
-);
+/**
+ * Prealerta del titular del casillero. El dueño sale de la sesion, no del cuerpo.
+ *
+ * El cuerpo es MULTIPART y no JSON, a diferencia del resto del modulo, porque la
+ * orden de compra es OBLIGATORIA: los datos y el documento tienen que llegar
+ * juntos para que no exista una prealerta sin el. Antes iban en dos peticiones
+ * (alta en JSON y archivo despues), y ahi el documento solo podia ser opcional:
+ * si la segunda fallaba, el tramite ya estaba dado de alta.
+ *
+ * Los campos de texto se validan con el MISMO esquema compartido de siempre y el
+ * archivo lo valida el almacen, igual que en el registro de una visita de
+ * entrega. El adjunto por separado (`POST /:id/document`) sigue existiendo: es
+ * por donde se REEMPLAZA el documento de un tramite ya registrado.
+ *
+ * Solo cubre esta puerta. Por la API publica (`POST /v1/prealerts`) la prealerta
+ * se sigue aceptando sin documento: es un contrato publicado y exigirlo ahi
+ * romperia a quien ya la consume.
+ */
+shipmentsRoutes.post('/prealert', requirePermission(Permission.PrealertCreate), async (c) => {
+  const form = await c.req.parseBody();
+  const document = form['document'];
+  if (!(document instanceof File)) throw StorageErrors.fileRequired('la orden de compra');
+
+  /**
+   * En multipart todo llega como texto. El valor declarado se convierte aqui
+   * (el esquema lo espera numerico, que es como vive en el dominio) y el campo
+   * vacio se manda como ausente para que el mensaje que lo pide sea el suyo y no un
+   * "debe ser un número" sobre una cadena vacia.
+   */
+  const text = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.trim() ? value : undefined;
+  const declared = text(form['declaredValueUsd']);
+
+  const input = prealertShipmentSchema.parse({
+    shipmentType: form['shipmentType'],
+    tracking: form['tracking'],
+    description: form['description'],
+    store: text(form['store']),
+    carrier: text(form['carrier']),
+    declaredValueUsd: declared === undefined ? undefined : Number(declared),
+  });
+
+  const created = await shipmentsService.prealert(c.get('session'), input, document);
+  return c.json(created, 201);
+});
 
 /** Alta por staff. El permiso definitivo lo valida el servicio segun el tipo. */
 shipmentsRoutes.post('/', canWrite, zValidator('json', createShipmentSchema), async (c) => {

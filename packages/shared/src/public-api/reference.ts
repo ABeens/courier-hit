@@ -82,6 +82,13 @@ export const PUBLIC_API_COMMON_ERRORS: readonly ApiErrorCase[] = [
     when: 'La cuenta del casillero esta deshabilitada; sus llaves dejan de servir con ella.',
   },
   {
+    status: 403,
+    code: 'API_ACCESS_DISABLED',
+    when:
+      'El casillero no tiene habilitado el acceso a la API. Se pide a HS Global Services; la ' +
+      'llave sigue existiendo y vuelve a servir en cuanto lo habiliten.',
+  },
+  {
     status: 404,
     code: 'ROUTE_NOT_FOUND',
     when:

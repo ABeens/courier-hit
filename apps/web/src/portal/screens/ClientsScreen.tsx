@@ -41,6 +41,8 @@ export interface ClientRow {
   reviewStatus: ClientReviewStatus;
   /** Estado de la cuenta: `inactivo` es un casillero con el acceso bloqueado. */
   status: UserStatus;
+  /** Acceso a la API (docs/16 §3). Apagado hasta que un administrador lo encienda. */
+  apiAccessEnabled: boolean;
   clientRateName: string | null;
   clientRateId: string | null;
   creditLimit: number | null;
@@ -93,10 +95,13 @@ const CLIENT_STATUS_LABEL: Record<ClientReviewStatus, string> = {
 export function ClientsScreen({
   canWrite,
   canSuspend,
+  canManageApiAccess,
 }: {
   canWrite: boolean;
   /** Permiso `clients.suspend`: bloquear o reactivar el acceso del titular. */
   canSuspend: boolean;
+  /** Permiso `clients.api_access`: habilitar o deshabilitar la API del casillero. */
+  canManageApiAccess: boolean;
 }) {
   const [q, setQ] = useState('');
   const [onlyNew, setOnlyNew] = useState(false);
@@ -149,6 +154,35 @@ export function ClientsScreen({
       void load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cambiar el acceso.');
+    }
+  }
+
+  /**
+   * Habilita o deshabilita el acceso a la API del casillero. Se confirma antes
+   * porque al apagarlo se cae la integracion del cliente (sus llaves dejan de
+   * autenticar en la siguiente peticion) y desde esta pantalla no hay forma de
+   * enterarse de que se rompio algo.
+   *
+   * Las llaves NO se revocan: volver a encenderlo le devuelve la integracion
+   * funcionando, sin reemitir credenciales ni desplegar de nuevo.
+   */
+  async function toggleApiAccess(row: ClientRow) {
+    const enabling = !row.apiAccessEnabled;
+    const confirmed = window.confirm(
+      enabling
+        ? `¿Habilitar el acceso a la API de ${row.name} (${row.code})? Podrá emitir llaves desde su portal y usarlas contra la API pública.`
+        : `¿Deshabilitar el acceso a la API de ${row.name} (${row.code})? Sus llaves dejarán de funcionar y perderá la pantalla "API" del portal. No se revoca ninguna: si vuelves a habilitarlo, siguen sirviendo.`,
+    );
+    if (!confirmed) return;
+
+    setError(null);
+    setNotice(null);
+    try {
+      await api.patch(`/clients/${row.id}/api-access`, { enabled: enabling });
+      setNotice(`${row.name}: API ${enabling ? 'habilitada' : 'deshabilitada'}.`);
+      void load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo cambiar el acceso a la API.');
     }
   }
 
@@ -258,6 +292,22 @@ export function ClientsScreen({
                     {blocked ? 'Acceso bloqueado' : CLIENT_STATUS_LABEL[row.reviewStatus]}
                   </span>
                   {canWrite && <IconButton label="Editar cliente" icon="edit" onClick={() => setEditing(row)} />}
+                  {/* La API es un eje aparte del acceso al portal: un casillero
+                      bloqueado tampoco la usa (la llave mira la cuenta en vivo),
+                      pero reactivarlo no decide si la tenia contratada. */}
+                  {canManageApiAccess && (
+                    <IconButton
+                      label={row.apiAccessEnabled ? 'Deshabilitar API' : 'Habilitar API'}
+                      icon="key"
+                      tone={row.apiAccessEnabled ? 'danger' : undefined}
+                      hint={
+                        row.apiAccessEnabled
+                          ? 'Deshabilitar la API (sus llaves dejan de funcionar; no se revocan)'
+                          : 'Habilitar la API (podrá emitir llaves desde su portal)'
+                      }
+                      onClick={() => void toggleApiAccess(row)}
+                    />
+                  )}
                   {canSuspend &&
                     (blocked ? (
                       <IconButton
@@ -299,6 +349,13 @@ export function ClientsScreen({
                   <dl className="card-sec-fields">
                     <Field label="Tarifa" value={row.clientRateName} empty="Sin tarifa" />
                     <Field label="Límite de crédito" value={credit} empty="Sin límite" />
+                    {/* Se muestra siempre, también apagada: es lo que responde
+                        "¿por qué este cliente no ve la pantalla de API?". */}
+                    <Field
+                      label="API"
+                      value={row.apiAccessEnabled ? 'Habilitada' : null}
+                      empty="Deshabilitada"
+                    />
                   </dl>
                 </section>
               </div>

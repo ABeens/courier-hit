@@ -62,6 +62,21 @@ export const payments = pgTable(
 
     /** Monto abonado. Siempre >= 0 (regla M3, ademas con CHECK abajo). */
     amount: doublePrecision('amount').notNull(),
+    /**
+     * RECARGO POR TARJETA cobrado ENCIMA del abono: la comision de la pasarela
+     * trasladada al cliente (`cardChargeFor`). En la moneda y con la tasa de esta
+     * misma fila, que son las del cobro (reglas M2 y M5).
+     *
+     * Columna aparte y no sumado en `amount` a proposito: lo que cancela la
+     * factura es el abono, no el recargo. Metido dentro, el tramite aparecería
+     * pagado de mas contra su propia factura y el reporte financiero contaria
+     * como ingreso un dinero que se queda en la pasarela. Lo que se le cobro a la
+     * tarjeta es la suma de los dos.
+     *
+     * CERO en todo lo que no sea tarjeta (un deposito no genera comision) y en
+     * los cobros anteriores a este recargo, que es justo lo que dice el default.
+     */
+    surchargeAmount: doublePrecision('surcharge_amount').notNull().default(0),
     /** Moneda del monto, explicita (regla M2). */
     currency: currencyEnum('currency').notNull(),
     /** Colones por 1 USD al registrar el pago (regla M5). Obligatoria, siempre > 0. */
@@ -123,6 +138,7 @@ export const payments = pgTable(
      * ultima linea, la unica que tambien cubre un script o una correccion manual.
      */
     check('payments_amount_nonneg', sql`${t.amount} >= 0`),
+    check('payments_surcharge_nonneg', sql`${t.surchargeAmount} >= 0`),
     check('payments_rate_positive', sql`${t.exchangeRate} > 0`),
   ],
 );
@@ -173,6 +189,13 @@ export const paymentGroups = pgTable(
 
     /** Total cobrado por el grupo. Siempre >= 0 (regla M3, con CHECK abajo). */
     amount: doublePrecision('amount').notNull(),
+    /**
+     * RECARGO POR TARJETA del cobro agrupado, encima del total. Vive AQUI y no
+     * repartido entre los abonos porque la comision es UNA, la del unico cargo
+     * que pasa por la tarjeta; prorratearla entre los paquetes habria dejado
+     * centimos sueltos que no cuadran con lo que cobro la pasarela.
+     */
+    surchargeAmount: doublePrecision('surcharge_amount').notNull().default(0),
     /** Moneda del total, explicita (regla M2). */
     currency: currencyEnum('currency').notNull(),
     /** Colones por 1 USD congelados al crear el grupo (regla M5). Siempre > 0. */
@@ -195,6 +218,7 @@ export const paymentGroups = pgTable(
       .on(t.gatewayReference)
       .where(sql`${t.gatewayReference} is not null`),
     check('payment_groups_amount_nonneg', sql`${t.amount} >= 0`),
+    check('payment_groups_surcharge_nonneg', sql`${t.surchargeAmount} >= 0`),
     check('payment_groups_rate_positive', sql`${t.exchangeRate} > 0`),
   ],
 );

@@ -123,7 +123,14 @@ const STYLES = `
   .brand small { display: block; font-size: 11px; font-weight: 400; color: #6b7280; letter-spacing: 0; }
   .head { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
   .meta { text-align: right; font-size: 12px; }
-  .meta .num { font-size: 18px; font-weight: 700; }
+  /*
+   * El numero de proforma va ROTULADO y no suelto en grande. Antes era el unico
+   * codigo de la esquina y se leia como "el numero del documento" fuera lo que
+   * fuera; ahora conviven dos (la proforma y el tramite que factura) y sin
+   * rotulo el lector no sabe cual citar cuando llama a preguntar por su cobro.
+   */
+  .meta .label { font-size: 10px; letter-spacing: 1px; color: #6b7280; text-transform: uppercase; }
+  .meta .num { font-size: 18px; font-weight: 700; letter-spacing: .5px; }
   .who { margin: 22px 0 18px; }
   .who h2 { margin: 0 0 6px; font-size: 11px; letter-spacing: 1px; color: #6b7280; text-transform: uppercase; }
   .who div { font-size: 13px; }
@@ -199,7 +206,7 @@ function detailTable(proforma: ProformaDto): string {
   const { currency } = proforma;
   return `<table class="wide">
     <caption>
-      Facturación boleta entrega — referencia ${esc(proforma.number)} ·
+      Facturación boleta entrega · trámite ${esc(proforma.shipmentCode)} ·
       montos en ${esc(currency)} (${esc(CURRENCY_SYMBOLS[currency])})
     </caption>
     <colgroup>
@@ -236,7 +243,9 @@ function sheet(proforma: ProformaDto): string {
     <div class="head">
       <div class="brand">HS Global Services<small>Proforma</small></div>
       <div class="meta">
+        <div class="label">Proforma n.º</div>
         <div class="num">${esc(proforma.number)}</div>
+        <div>Trámite: ${esc(proforma.shipmentCode)}</div>
         <div>Fecha: ${day(proforma.issuedAt)}</div>
         ${fe}
       </div>
@@ -408,7 +417,9 @@ function consolidatedSheet(proforma: ConsolidatedProformaDto): string {
     <div class="head">
       <div class="brand">HS Global Services<small>Proforma consolidada</small></div>
       <div class="meta">
+        <div class="label">Proforma n.º</div>
         <div class="num">${esc(proforma.number)}</div>
+        <div>Paquetes: ${proforma.items.length}</div>
         <div>Fecha: ${day(proforma.issuedAt)}</div>
         <div>Tarifa: ${esc(proforma.rateName)}</div>
       </div>

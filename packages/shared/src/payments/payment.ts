@@ -304,6 +304,15 @@ export interface PaymentDto {
   status: PaymentStatus;
   /** Monto abonado. Siempre >= 0 (regla M3). */
   amount: number;
+  /**
+   * Recargo cobrado ENCIMA del abono para trasladar la comision de la pasarela
+   * (`cardChargeFor`). Cero en todo lo que no sea tarjeta.
+   *
+   * No suma en el saldo del tramite y no aparece en ninguna de las cuentas de
+   * este archivo: lo que cancela la factura es `amount`. Lo que se le cobro a la
+   * tarjeta es la suma de los dos.
+   */
+  surchargeAmount: number;
   /** Moneda del monto, explicita (regla M2). */
   currency: Currency;
   /** Colones por 1 USD al momento de registrar el pago (regla M5). Siempre > 0. */

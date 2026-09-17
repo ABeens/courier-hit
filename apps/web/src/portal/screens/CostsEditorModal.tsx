@@ -39,6 +39,12 @@ interface Props {
   onApproved: (message: string) => void;
 }
 
+/**
+ * Valor del desplegable cuando la linea no sale del catalogo, sino que el
+ * operador escribe el concepto a mano. No colisiona con un uuid de servicio.
+ */
+const CUSTOM_PICK = '__custom__';
+
 /** Linea en edicion. `key` es local: las lineas nuevas aun no tienen id de BD. */
 interface DraftLine {
   key: string;
@@ -49,6 +55,13 @@ interface DraftLine {
   percentage: string;
   amount: string;
   currency: Currency;
+  /**
+   * Lo elegido en el desplegable de concepto: id del servicio del catalogo,
+   * `CUSTOM_PICK` para un concepto suelto, o vacio en una fila recien agregada
+   * que aun no elige. Va aparte de `costServiceId` porque ese es null tanto en
+   * "todavia no elige" como en "concepto escrito a mano".
+   */
+  pick: string;
 }
 
 let keySeq = 0;
@@ -64,6 +77,7 @@ function fromSuggestion(s: SuggestedCostLine): DraftLine {
     percentage: s.percentage !== null ? String(s.percentage) : '',
     amount: s.amount !== null ? String(s.amount) : '',
     currency: s.currency,
+    pick: s.costServiceId ?? CUSTOM_PICK,
   };
 }
 
@@ -87,6 +101,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
         percentage: l.percentage !== null ? String(l.percentage) : '',
         amount: String(l.amount),
         currency: l.currency,
+        pick: l.costServiceId ?? CUSTOM_PICK,
       }));
       /**
        * El flete no se "agrega": es el cobro base del tramite y sale de la tarifa
@@ -136,6 +151,8 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
 
   /** Solo lo que el operador elige: el flete ya viene aplicado como linea. */
   const catalog = (data?.suggestions ?? []).filter((s) => !s.auto);
+  /** Moneda con la que arranca una fila nueva: la que propone el catalogo. */
+  const defaultCurrency = data?.suggestions[0]?.currency ?? Currency.USD;
   /** De donde sale el flete ("3 kg × 13.45 USD/kg"), para mostrarlo bajo su nombre. */
   const freightDetail =
     data?.suggestions.find((s) => s.source === CostLineSource.Freight)?.detail ?? null;
@@ -168,6 +185,61 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
 
+  /**
+   * Fila nueva en blanco: se agrega vacia y el concepto se elige en su propio
+   * desplegable. La moneda arranca en la que propone el catalogo del tramite
+   * (dolares en Paqueteria, colones en Transporte/Agenciamiento).
+   */
+  function addLine() {
+    setLines((prev) => [
+      ...prev,
+      {
+        key: nextKey(),
+        costServiceId: null,
+        label: '',
+        source: CostLineSource.Service,
+        percentage: '',
+        amount: '',
+        currency: defaultCurrency,
+        pick: '',
+      },
+    ]);
+  }
+
+  /**
+   * Elegir concepto en el desplegable de una fila. Un servicio del catalogo trae
+   * consigo su tipo (monto o porcentaje), su valor por defecto y su moneda; el
+   * concepto suelto deja el nombre en blanco para que el operador lo escriba.
+   */
+  function pickService(key: string, value: string) {
+    if (value === CUSTOM_PICK) {
+      // Se limpia tambien el monto: el valor por defecto era del servicio que se
+      // acaba de soltar, y arrastrarlo a otro concepto es un monto heredado sin dueño.
+      patchLine(key, {
+        pick: CUSTOM_PICK,
+        costServiceId: null,
+        label: '',
+        source: CostLineSource.Service,
+        percentage: '',
+        amount: '',
+      });
+      return;
+    }
+    const service = catalog.find((s) => s.costServiceId === value);
+    // Un servicio que ya no esta en el catalogo (deshabilitado despues de
+    // guardar) sigue listado desde la propia linea: no hay nada que reescribir.
+    if (!service) return;
+    patchLine(key, {
+      pick: value,
+      costServiceId: service.costServiceId,
+      label: service.label,
+      source: service.source,
+      percentage: service.percentage !== null ? String(service.percentage) : '',
+      amount: service.amount !== null ? String(service.amount) : '',
+      currency: service.currency,
+    });
+  }
+
   async function save(): Promise<boolean> {
     setError(null);
     if (!rateOk) {
@@ -176,6 +248,12 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
           ? 'Digita la tasa de cambio (colones por 1 dólar) o fíjala en Configuración.'
           : 'No hay tasa de cambio vigente. Pide a un administrador que la registre en Configuración.',
       );
+      return false;
+    }
+    // El concepto sin elegir llega a la API como nombre vacio: se ataja aqui para
+    // decir cual es el hueco, en vez de devolver un error de esquema.
+    if (lines.some((l) => l.source !== CostLineSource.Freight && l.label.trim() === '')) {
+      setError('Elige el concepto de cada línea (o escríbelo, si es un concepto suelto).');
       return false;
     }
     const payload = {
@@ -333,10 +411,37 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
                           {freightDetail && <div className="field-hint">{freightDetail}</div>}
                         </>
                       ) : (
-                        <input
-                          className="input" value={line.label} disabled={approved}
-                          onChange={(e) => patchLine(line.key, { label: e.target.value })}
-                        />
+                        <>
+                          <select
+                            className="input" value={line.pick} disabled={approved}
+                            onChange={(e) => pickService(line.key, e.target.value)}
+                            aria-label="Concepto de la línea"
+                          >
+                            {line.pick === '' && <option value="">Elige un concepto…</option>}
+                            {catalog.map((s) => (
+                              <option key={s.costServiceId} value={s.costServiceId ?? CUSTOM_PICK}>
+                                {s.label}
+                                {s.detail ? ` (${s.detail})` : ''}
+                              </option>
+                            ))}
+                            {/* Servicio ya guardado que salio del catalogo: se lista
+                                desde la propia linea para no perder su nombre. */}
+                            {line.costServiceId !== null &&
+                              !catalog.some((s) => s.costServiceId === line.costServiceId) && (
+                                <option value={line.costServiceId}>{line.label}</option>
+                              )}
+                            <option value={CUSTOM_PICK}>Otro concepto…</option>
+                          </select>
+                          {/* Concepto suelto: el nombre lo escribe el operador. */}
+                          {line.pick === CUSTOM_PICK && (
+                            <input
+                              className="input" value={line.label} disabled={approved}
+                              style={{ marginTop: 6 }} placeholder="Nombre del concepto"
+                              aria-label="Nombre del concepto"
+                              onChange={(e) => patchLine(line.key, { label: e.target.value })}
+                            />
+                          )}
+                        </>
                       )}
                     </td>
                     <td>
@@ -345,14 +450,14 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
                           className="input" type="number" min="0" max="100" step="0.1"
                           value={line.percentage} disabled={approved}
                           onChange={(e) => patchLine(line.key, { percentage: e.target.value })}
-                          aria-label={`Porcentaje de ${line.label}`}
+                          aria-label={`Porcentaje de ${line.label || 'la línea'}`}
                         />
                       ) : (
                         <input
                           className="input" type="number" min="0" step="0.01"
                           value={line.amount} disabled={approved}
                           onChange={(e) => patchLine(line.key, { amount: e.target.value })}
-                          aria-label={`Monto de ${line.label}`}
+                          aria-label={`Monto de ${line.label || 'la línea'}`}
                         />
                       )}
                     </td>
@@ -363,7 +468,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
                         <select
                           className="input" value={line.currency} disabled={approved}
                           onChange={(e) => patchLine(line.key, { currency: e.target.value as Currency })}
-                          aria-label={`Moneda de ${line.label}`}
+                          aria-label={`Moneda de ${line.label || 'la línea'}`}
                         >
                           {Object.values(Currency).map((c) => (
                             <option key={c} value={c}>{CURRENCY_LABELS[c]}</option>
@@ -375,7 +480,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
                       {/* El flete es cobro fijo del servicio: se ajusta el monto, no se quita. */}
                       {!approved && line.source !== CostLineSource.Freight && (
                         <IconButton
-                          label={`Quitar ${line.label}`}
+                          label={`Quitar ${line.label || 'la línea'}`}
                           icon="trash"
                           tone="danger"
                           onClick={() => setLines((prev) => prev.filter((l) => l.key !== line.key))}
@@ -390,21 +495,13 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
 
           {lines.length === 0 && <div className="empty">Aún no hay líneas de costo.</div>}
 
-          {!approved && catalog.length > 0 && (
-            <div>
-              <div className="field-label">Agregar del catálogo</div>
-              <div className="actions" style={{ flexWrap: 'wrap' }}>
-                {catalog.map((s, i) => (
-                  <button
-                    key={`${s.costServiceId ?? 'freight'}-${i}`}
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setLines((prev) => [...prev, fromSuggestion(s)])}
-                  >
-                    + {s.label}
-                    {s.detail ? ` (${s.detail})` : ''}
-                  </button>
-                ))}
-              </div>
+          {/* Se agrega la FILA vacia y el concepto se elige dentro de ella: el
+              catalogo vive en el desplegable de cada linea, no aqui afuera. */}
+          {!approved && (
+            <div className="actions">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={addLine}>
+                + Agregar línea
+              </button>
             </div>
           )}
 

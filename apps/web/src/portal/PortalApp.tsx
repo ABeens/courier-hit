@@ -12,13 +12,23 @@ import { PortalShell } from './PortalShell';
 import './portal.css';
 
 /**
- * Banderas de despliegue que deciden que OFRECE el portal (no que permite: eso
- * sigue saliendo del rol). Las manda la API en GET /api/auth/me a partir del
- * .env, asi que el portal no se recompila para prender o apagar una.
+ * Banderas que deciden que OFRECE el portal (no que permite: eso sigue saliendo
+ * del rol). Las manda la API en GET /api/auth/me, asi que el portal no se
+ * recompila para prender o apagar una.
+ *
+ * Son de dos clases y el portal las trata igual, porque hace lo mismo con las
+ * dos (quitar un modulo del menu): unas son del DESPLIEGUE, salidas del .env de
+ * la API, y otras de la CUENTA que pregunta.
  */
 export interface Features {
-  /** `MIAMI_LINK_ENABLED`: pantalla "Enlace con Miami" en el menu del Admin. */
+  /** Despliegue (`MIAMI_LINK_ENABLED`): pantalla "Enlace con Miami" del Admin. */
   miamiLink: boolean;
+  /**
+   * Cuenta: este casillero tiene habilitado el acceso a la API (docs/16 §3). Lo
+   * enciende un administrador cliente por cliente y nace apagado, asi que la
+   * pantalla "API" no esta para todos los clientes. Siempre `false` en staff.
+   */
+  apiAccess: boolean;
 }
 
 export interface Me {

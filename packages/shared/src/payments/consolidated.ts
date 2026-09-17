@@ -26,6 +26,7 @@
 import { z } from 'zod';
 import { Currency } from '../money/currency';
 import { BankAccount, PaymentMethod, PaymentStatus } from './payment';
+import type { CardCharge } from './surcharge';
 
 /** Un paquete dentro del grupo, tal como se lista antes y despues de cobrar. */
 export interface ConsolidatedItem {
@@ -90,6 +91,15 @@ export interface ConsolidatedQuoteDto {
    */
   chargeCurrency: Currency;
   due: number;
+  /**
+   * El cobro con TARJETA desglosado: saldo, recargo por la comision de la
+   * pasarela y total (`cardChargeFor`). Null cuando no se ofrece tarjeta.
+   *
+   * Viaja aparte de `due` porque el recargo no es parte del saldo: el mismo
+   * saldo se cancela sin recargo pagando por deposito. El total es lo que se le
+   * cobra a la tarjeta.
+   */
+  cardCharge: CardCharge | null;
   /** True si el grupo entero ya esta cubierto por abonos confirmados. */
   settled: boolean;
   /** El saldo del grupo ya esta cubierto por abonos sin validar. */
@@ -113,6 +123,11 @@ export interface PaymentGroupDto {
   status: PaymentStatus;
   /** Total cobrado por el grupo, en la moneda del cobro. */
   amount: number;
+  /**
+   * Recargo por la comision de la pasarela, cobrado encima del total. Cero en el
+   * deposito, que no genera comision. No cancela factura: es el costo de cobrar.
+   */
+  surchargeAmount: number;
   currency: Currency;
   /** Colones por 1 USD congelados al crear el grupo (regla M5). */
   exchangeRate: number;

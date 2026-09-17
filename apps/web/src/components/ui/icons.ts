@@ -74,4 +74,6 @@ export const ICONS: Record<string, string> = {
   userPlus: 'o 9 7 4|M3 21v-2a4 4 0 0 1 4-4h4|M19 8v6|M22 11h-6',
   /* Prohibir: deshabilitar un usuario, desactivar un servicio o un anuncio. */
   ban: 'o 12 12 9|M5.6 5.6l12.8 12.8',
+  /* Llave: el acceso a la API de un casillero (mismo trazo que su entrada de menu). */
+  key: 'M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4',
 };

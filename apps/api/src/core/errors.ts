@@ -656,6 +656,18 @@ export const ApiKeyErrors = {
       `Ya tienes ${max} llaves activas, el maximo. Revoca una que no uses antes de crear otra.`,
       409,
     ),
+  /**
+   * El casillero no tiene habilitado el acceso a la API (`clients.api_access`).
+   * 403 y no 404: la pantalla existe y el permiso del rol esta, lo que falta es
+   * que un administrador encienda la funcion para esta cuenta. El mensaje dice a
+   * quien pedirselo, porque el cliente no puede hacer nada por su cuenta.
+   */
+  accessDisabled: () =>
+    new AppError(
+      'API_ACCESS_DISABLED',
+      'Tu casillero no tiene habilitado el acceso a la API. Solicítalo a HS Global Services.',
+      403,
+    ),
 };
 
 /**
@@ -689,6 +701,19 @@ export const PublicApiErrors = {
     new AppError(
       'ACCOUNT_INACTIVE',
       'La cuenta asociada a esta llave está deshabilitada. Contacta a soporte.',
+      403,
+    ),
+  /**
+   * La cuenta esta activa pero su acceso a la API esta APAGADO (un administrador
+   * no lo ha encendido, o lo apago). Es un 403 distinto de `ACCOUNT_INACTIVE`
+   * porque lo que hay que hacer es distinto: alli la cuenta esta bloqueada
+   * entera, aqui el titular entra a su portal con normalidad y lo unico cerrado
+   * es la integracion.
+   */
+  apiAccessDisabled: () =>
+    new AppError(
+      'API_ACCESS_DISABLED',
+      'El casillero de esta llave no tiene habilitado el acceso a la API. Contacta a soporte.',
       403,
     ),
   /**

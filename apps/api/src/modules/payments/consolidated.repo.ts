@@ -125,6 +125,7 @@ export const consolidatedRepo = {
         rateName: clientRates.name,
         method: paymentGroups.method,
         amount: paymentGroups.amount,
+        surchargeAmount: paymentGroups.surchargeAmount,
         currency: paymentGroups.currency,
         exchangeRate: paymentGroups.exchangeRate,
         gatewayReference: paymentGroups.gatewayReference,

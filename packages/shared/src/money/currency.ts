@@ -72,6 +72,21 @@ export function roundMoney(value: number, currency: Currency): number {
 }
 
 /**
+ * Redondea un monto HACIA ARRIBA a los decimales de su moneda. Hermano de
+ * `roundMoney` para el caso en que quedarse corto cuesta dinero: un importe que
+ * tiene que CUBRIR otra cifra (el recargo que traslada la comision de la
+ * pasarela, `cardChargeFor`) no puede bajar ni un centimo, o lo que falta lo
+ * acaba poniendo la empresa.
+ *
+ * Sigue siendo el mismo punto unico de redondeo (regla M4): la politica de
+ * decimales sale de `CURRENCY_DECIMALS` y no de quien llama.
+ */
+export function ceilMoney(value: number, currency: Currency): number {
+  const factor = 10 ** CURRENCY_DECIMALS[currency];
+  return Math.ceil(value * factor) / factor;
+}
+
+/**
  * Convierte un monto entre CRC y USD con una tasa EXPLICITA.
  *
  * Convencion de la tasa en todo el sistema: **colones por 1 USD** (p. ej. 512.75).

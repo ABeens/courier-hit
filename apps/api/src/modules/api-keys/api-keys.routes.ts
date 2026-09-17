@@ -5,10 +5,16 @@
  * Un solo permiso para las cuatro operaciones, `api_keys.manage`, que solo tiene
  * el rol cliente: emitir una credencial a nombre de un tercero es actuar como el.
  * El alcance es siempre el casillero de la sesion, nunca un id del cuerpo.
+ *
+ * Ademas del permiso, las cuatro exigen que ESTE casillero tenga la API
+ * habilitada (`requireApiAccess`). El permiso lo llevan todos los clientes por
+ * ser clientes; la bandera la enciende un administrador cuenta por cuenta, y
+ * mientras este apagada estas rutas responden 403 aunque se llamen por URL.
  */
 import { Hono } from 'hono';
 import { Permission, createApiKeySchema, rotateApiKeySchema } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
+import { requireApiAccess } from '../../core/middleware/requireApiAccess';
 import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
 import { zValidator } from '../../core/validator';
@@ -16,7 +22,7 @@ import { apiKeysService } from './api-keys.service';
 
 export const apiKeysRoutes = new Hono<AppEnv>();
 
-apiKeysRoutes.use('*', requireSession(), requirePermission(Permission.ApiKeysManage));
+apiKeysRoutes.use('*', requireSession(), requirePermission(Permission.ApiKeysManage), requireApiAccess());
 
 /** Las llaves del casillero, activas y revocadas. Sin paginar: son pocas. */
 apiKeysRoutes.get('/', async (c) => {

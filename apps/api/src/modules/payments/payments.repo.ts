@@ -19,6 +19,7 @@ const columns = {
   method: payments.method,
   status: payments.status,
   amount: payments.amount,
+  surchargeAmount: payments.surchargeAmount,
   currency: payments.currency,
   exchangeRate: payments.exchangeRate,
   bankAccount: payments.bankAccount,

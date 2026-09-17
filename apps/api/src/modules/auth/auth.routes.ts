@@ -80,9 +80,15 @@ authRoutes.post('/logout', requireSession(), async (c) => {
 });
 
 /**
- * Sesion hidratada del portal. Ademas del rol viajan las banderas de despliegue
- * que cambian lo que el portal OFRECE (`features`), no lo que permite: el
- * permiso sigue saliendo del rol y lo revalida cada endpoint.
+ * Sesion hidratada del portal. Ademas del rol viajan las banderas que cambian lo
+ * que el portal OFRECE (`features`), no lo que permite: el permiso sigue
+ * saliendo del rol y lo revalida cada endpoint.
+ *
+ * Son de dos clases y conviven a proposito, porque el portal hace lo mismo con
+ * las dos (quitar un modulo del menu): unas son del DESPLIEGUE (`miamiLink`, del
+ * .env) y otras de la CUENTA que pregunta (`apiAccess`, encendida casillero por
+ * casillero). Un cliente sin API habilitada no ve la pantalla "API"; un staff
+ * nunca la tiene, y por eso llega en `false`.
  */
 authRoutes.get('/me', requireSession(), (c) => {
   const s = c.get('session');
@@ -91,6 +97,6 @@ authRoutes.get('/me', requireSession(), (c) => {
     principal: s.principal,
     role: s.role,
     clientCode: s.clientCode,
-    features: { miamiLink: miamiLinkEnabled },
+    features: { miamiLink: miamiLinkEnabled, apiAccess: s.apiAccess === true },
   });
 });

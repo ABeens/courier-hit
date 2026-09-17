@@ -262,6 +262,12 @@ function refineTypeFieldCoherence(
  * Que sea un literal y no una comprobacion en el refine es deliberado: asi el
  * tipo inferido de `PrealertShipmentInput` ya excluye los demas tipos y ningun
  * llamador puede construir una prealerta de agenciamiento ni por descuido.
+ *
+ * NO incluye la orden de compra. El documento es obligatorio cuando el titular
+ * prealerta desde el portal, pero un archivo no cabe en un esquema de Zod: viaja
+ * en el mismo multipart y lo exige la ruta, que es quien lo recibe. Lo que este
+ * esquema valida son los datos, y son los mismos vengan de donde vengan (el
+ * portal, la API publica).
  */
 export const prealertShipmentSchema = z
   .object({

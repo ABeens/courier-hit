@@ -122,9 +122,14 @@ export const shipments = pgTable(
     retain: boolean('retain'),
 
     /**
-     * Documento que acompaña al tramite (la factura de la compra, tipicamente).
-     * Lo adjunta el cliente al prealertar —o el staff despues— y es OPCIONAL: la
-     * prealerta sin documento sigue siendo valida, solo obliga a pedirlo luego.
+     * Documento que acompaña al tramite: la ORDEN DE COMPRA de lo que se
+     * prealerta. Desde el portal del cliente es obligatorio y llega con el alta
+     * misma, asi que una prealerta hecha por ahi nunca nace sin el.
+     *
+     * La columna sigue siendo NULLABLE porque hay tramites que no pasan por esa
+     * puerta: los que registra el staff, el paquete que aparece en bodega sin
+     * dueño y las prealertas de la API publica, donde el documento se adjunta
+     * despues (`POST /:id/document`) si llega a adjuntarse.
      *
      * Guarda la CLAVE OPACA del almacen, no una ruta ni el nombre original (ver
      * `core/storage.ts`): el dia que el driver pase a S3 esta columna no cambia.

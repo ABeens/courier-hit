@@ -25,6 +25,8 @@ export interface ApiKeyAuthRow {
   lastUsedAt: Date | null;
   userId: string;
   userStatus: string;
+  /** Si el casillero tiene habilitada la API (`clients.api_access`, docs/16 §3). */
+  apiAccessEnabled: boolean;
 }
 
 export const apiKeysRepo = {
@@ -71,6 +73,7 @@ export const apiKeysRepo = {
         lastUsedAt: apiKeys.lastUsedAt,
         userId: users.id,
         userStatus: users.status,
+        apiAccessEnabled: clients.apiAccessEnabled,
       })
       .from(apiKeys)
       .innerJoin(clients, eq(apiKeys.clientId, clients.id))

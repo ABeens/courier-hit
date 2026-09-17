@@ -173,19 +173,28 @@ export const publicApiService = {
    * Prealerta. Delega en el servicio de tramites con el tipo Paqueteria fijado
    * aqui: por la API publica no se puede dar de alta otra cosa, igual que en el
    * portal (los tramites de transporte y agenciamiento los registra HS Global).
+   *
+   * SIN DOCUMENTO (`null`), y ahi se separa del portal, donde la orden de compra
+   * es obligatoria. Este contrato ya esta publicado y es JSON: exigir un archivo
+   * romperia a quien hoy prealerta desde su tienda. El documento se adjunta
+   * despues, por el portal o por el staff.
    */
   async prealert(apiClient: ApiClient, input: PublicPrealertInput): Promise<PublicPackage> {
     const row = await clientsRepo.findById(apiClient.clientId);
     if (!row) throw ShipmentErrors.missingClientProfile();
 
-    const created = await shipmentsService.prealert(sessionFor(apiClient, row.userId), {
-      shipmentType: ShipmentType.Paqueteria,
-      tracking: input.tracking,
-      description: input.description,
-      store: input.store,
-      carrier: input.carrier,
-      declaredValueUsd: input.declaredValueUsd,
-    });
+    const created = await shipmentsService.prealert(
+      sessionFor(apiClient, row.userId),
+      {
+        shipmentType: ShipmentType.Paqueteria,
+        tracking: input.tracking,
+        description: input.description,
+        store: input.store,
+        carrier: input.carrier,
+        declaredValueUsd: input.declaredValueUsd,
+      },
+      null,
+    );
     return toPublicPackage(created);
   },
 };

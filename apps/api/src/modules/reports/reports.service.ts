@@ -31,6 +31,7 @@ import {
   chargeBasisFor,
   collectionStatus,
   depositDifference,
+  formatProformaNumber,
   grossProfitUsd,
   internationalFreightUsd,
   marginPercentage,
@@ -158,8 +159,14 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
       tracking: row.tracking,
       description: row.description,
       state: STATE_LABELS[row.state],
-      // PROFORMA es el id del tramite: una proforma por tramite, sin secuencia aparte.
-      proforma: row.code,
+      /**
+       * PROFORMA es el numero de la proforma emitida, de su propia serie
+       * (`HSP000001000`). Vacio mientras no se haya emitido ninguna: la columna
+       * repetia el consecutivo del tramite, asi que decia que TODO tramite tenia
+       * proforma, incluido el que nunca se facturo. El reporte no la emite, solo
+       * lee la que exista (ver `proformaNumbersByShipment`).
+       */
+      proforma: row.proformaSequence === null ? null : formatProformaNumber(row.proformaSequence),
       invoiceTotalUsd: row.invoiceTotalUsd,
       billingNotes: row.billingNotes,
       electronicInvoiceNumber: row.electronicInvoiceNumber,

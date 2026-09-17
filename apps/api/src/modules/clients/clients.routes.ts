@@ -18,6 +18,7 @@ import {
   deliveryAddressSchema,
   listClientsQuerySchema,
   listProviderLinksSchema,
+  setClientApiAccessSchema,
   setClientStatusSchema,
   updateClientSchema,
   updateProfileSchema,
@@ -143,5 +144,23 @@ clientsRoutes.patch(
   zValidator('json', setClientStatusSchema),
   async (c) => {
     return c.json(await clientsService.setStatus(c.req.param('id'), c.req.valid('json').status));
+  },
+);
+
+/**
+ * Habilitacion del acceso a la API del casillero (docs/16 §3). Endpoint propio y
+ * permiso propio (`clients.api_access`, solo Admin) por las mismas dos razones
+ * que el bloqueo: no es edicion comercial (no puede dar el casillero por
+ * revisado) y no es la misma puerta que suspender la cuenta.
+ *
+ * Nace apagado para todos; esto es lo unico que lo enciende y lo unico que lo
+ * vuelve a apagar. Ver `clientsService.setApiAccess` para lo que NO arrastra.
+ */
+clientsRoutes.patch(
+  '/:id/api-access',
+  requirePermission(Permission.ClientsApiAccess),
+  zValidator('json', setClientApiAccessSchema),
+  async (c) => {
+    return c.json(await clientsService.setApiAccess(c.req.param('id'), c.req.valid('json').enabled));
   },
 );

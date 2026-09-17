@@ -114,7 +114,7 @@ function clientIdOf(session: Session): string {
  */
 export type ApiKeyCheck =
   | { ok: true; keyId: string; clientId: string; clientCode: string }
-  | { ok: false; reason: 'invalid' | 'revoked' | 'inactive' };
+  | { ok: false; reason: 'invalid' | 'revoked' | 'inactive' | 'api_disabled' };
 
 export const apiKeysService = {
   /** Las llaves del casillero de la sesion, con el techo y cuantas van. */
@@ -220,10 +220,16 @@ export const apiKeysService = {
   /**
    * Comprueba la llave que llego en una peticion de la API publica.
    *
-   * Las cuatro barreras, en orden de coste: forma -> existencia -> secreto ->
-   * estado de la cuenta. La ultima se consulta EN VIVO y no se cachea: dar de
-   * baja a un cliente tiene que cortarle el acceso en la siguiente peticion, no
-   * cuando expire algo.
+   * Las cinco barreras, en orden de coste: forma -> existencia -> secreto ->
+   * estado de la cuenta -> acceso a la API del casillero. Las dos ultimas se
+   * consultan EN VIVO y no se cachean: dar de baja a un cliente, o apagarle la
+   * API, tiene que cortar el acceso en la siguiente peticion, no cuando expire
+   * algo.
+   *
+   * El orden entre esas dos importa para el mensaje, no para la seguridad: una
+   * cuenta bloqueada y una API apagada se arreglan de formas distintas, y quien
+   * llama tiene que poder distinguirlas. Una cuenta bloqueada lo esta para todo,
+   * asi que manda sobre la otra.
    */
   async verify(raw: string): Promise<ApiKeyCheck> {
     const parsed = parseApiKey(raw);
@@ -237,6 +243,9 @@ export const apiKeysService = {
     if (!hashesMatch(row.tokenHash, hashToken(raw.trim()))) return { ok: false, reason: 'invalid' };
     if (row.revokedAt !== null) return { ok: false, reason: 'revoked' };
     if (row.userStatus !== UserStatus.Activo) return { ok: false, reason: 'inactive' };
+    // La llave sigue siendo valida (no se revoca nada al apagar la bandera): lo
+    // que esta cerrado es la puerta. Volver a encenderla la hace servir otra vez.
+    if (!row.apiAccessEnabled) return { ok: false, reason: 'api_disabled' };
 
     // Anotar el uso no puede hacer fallar la peticion: es telemetria, no parte de
     // la autenticacion. Va sin `await` y con el error tragado a proposito.
