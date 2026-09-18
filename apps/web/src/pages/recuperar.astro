@@ -1,0 +1,15 @@
+---
+/*
+  Pagina PÚBLICA de "olvidé mi contraseña". Es el destino del enlace del mismo
+  nombre en la pantalla de inicio de sesión. No requiere sesión.
+
+  Monta una isla React client:only porque el formulario y la llamada a la API
+  viven en el navegador.
+*/
+import Base from '../layouts/Base.astro';
+import ForgotPasswordScreen from '../portal/screens/ForgotPasswordScreen';
+---
+
+<Base title="Recuperar contraseña · HS Global Services">
+  <ForgotPasswordScreen client:only="react" />
+</Base>

@@ -8,7 +8,12 @@
  */
 import { Hono } from 'hono';
 import { zValidator } from '../../core/validator';
-import { Permission, setExchangeRateSchema, setFreightRateSchema } from '@courier/shared';
+import {
+  Permission,
+  setCardSurchargeSchema,
+  setExchangeRateSchema,
+  setFreightRateSchema,
+} from '@courier/shared';
 import type { AppEnv } from '../../core/http';
 import { requireAnyPermission } from '../../core/middleware/requireAnyPermission';
 import { requirePermission } from '../../core/middleware/requirePermission';
@@ -76,5 +81,46 @@ settingsRoutes.put(
   zValidator('json', setFreightRateSchema),
   async (c) => {
     return c.json(await settingsService.setFreightRate(c.get('session'), c.req.valid('json')));
+  },
+);
+
+/**
+ * Recargo por pago con tarjeta (porcentaje + fijo en dolares).
+ *
+ * Lo LEE, ademas de quien lo fija, quien aprueba costos y quien valida pagos: es
+ * lo que explica por que el cobro de un cliente trae unos dolares mas que su
+ * factura, y sin poder verlo no hay forma de contestarle.
+ *
+ * El cliente NO llama a esta ruta: el recargo de su cobro le llega ya calculado
+ * en la cotizacion del pago, con las cifras exactas que se le van a cobrar.
+ */
+settingsRoutes.get(
+  '/card-surcharge',
+  requireAnyPermission(
+    Permission.CardSurchargeWrite,
+    Permission.CostsManage,
+    Permission.CostsTramiteManage,
+    Permission.PaymentsValidate,
+  ),
+  async (c) => {
+    return c.json(await settingsService.cardSurcharge());
+  },
+);
+
+/** Historial de cambios: es auditoria, la ve quien puede fijar el recargo. */
+settingsRoutes.get(
+  '/card-surcharge/history',
+  requirePermission(Permission.CardSurchargeWrite),
+  async (c) => {
+    return c.json({ items: await settingsService.cardSurchargeHistory() });
+  },
+);
+
+settingsRoutes.put(
+  '/card-surcharge',
+  requirePermission(Permission.CardSurchargeWrite),
+  zValidator('json', setCardSurchargeSchema),
+  async (c) => {
+    return c.json(await settingsService.setCardSurcharge(c.get('session'), c.req.valid('json')));
   },
 );

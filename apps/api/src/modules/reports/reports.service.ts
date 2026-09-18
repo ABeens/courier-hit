@@ -160,8 +160,8 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
       description: row.description,
       state: STATE_LABELS[row.state],
       /**
-       * PROFORMA es el numero de la proforma emitida, de su propia serie
-       * (`HSP000001000`). Vacio mientras no se haya emitido ninguna: la columna
+       * PROFORMA es el numero de la proforma emitida, el consecutivo de su
+       * propia serie. Vacio mientras no se haya emitido ninguna: la columna
        * repetia el consecutivo del tramite, asi que decia que TODO tramite tenia
        * proforma, incluido el que nunca se facturo. El reporte no la emite, solo
        * lee la que exista (ver `proformaNumbersByShipment`).

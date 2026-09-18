@@ -1,0 +1,15 @@
+---
+/*
+  Pagina PÚBLICA para fijar una contraseña nueva: el usuario llega aquí desde el
+  enlace del correo de restablecimiento con ?token=... No requiere sesión.
+
+  Monta una isla React client:only porque lee el token del querystring en el
+  navegador. Es la hermana de /invitacion, que hace lo mismo para el alta de staff.
+*/
+import Base from '../layouts/Base.astro';
+import ResetPasswordScreen from '../portal/screens/ResetPasswordScreen';
+---
+
+<Base title="Restablecer contraseña · HS Global Services">
+  <ResetPasswordScreen client:only="react" />
+</Base>

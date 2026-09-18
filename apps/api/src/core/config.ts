@@ -86,6 +86,16 @@ const EnvSchema = z.object({
   EMAIL_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   // Invitacion de staff: el token de fijar contrasena dura mas que un codigo (docs/roles.md §1.3.4).
   INVITE_TTL_HOURS: z.coerce.number().int().positive().default(72),
+  /**
+   * Restablecer contrasena ("olvide mi contrasena"): vigencia del enlace del
+   * correo. Mucho mas corto que la invitacion de staff (72h) y por un motivo
+   * concreto: la invitacion se le manda a alguien que todavia no tiene cuenta y
+   * quiza tarde dias en entrar, mientras que un reset lo pide una persona que
+   * esta intentando entrar AHORA. La ventana en la que el enlace sirve para
+   * secuestrar la cuenta (correo reenviado, buzon compartido) no tiene por que
+   * durar mas que eso.
+   */
+  RESET_TTL_MINUTES: z.coerce.number().int().positive().default(60),
 
   // --- API publica para clientes (docs/16) ---
   /**

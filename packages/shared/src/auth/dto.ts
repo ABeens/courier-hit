@@ -123,3 +123,23 @@ export const acceptInviteSchema = z.object({
   password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres.'),
 });
 export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;
+
+/**
+ * Solicitud de restablecimiento ("olvidé mi contraseña"): solo el correo. La
+ * respuesta del endpoint es la misma exista o no la cuenta (ver `auth.routes`),
+ * asi que aqui no hay nada mas que validar.
+ */
+export const forgotPasswordSchema = z.object({ email: emailSchema });
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+/**
+ * Fijar la contrasena desde el enlace de restablecimiento. Tiene la misma forma
+ * que `acceptInviteSchema` y no se fusionan a proposito: son dos contratos
+ * publicos distintos (invitacion de staff y olvido de contrasena) que pueden
+ * divergir, aunque hoy consuman la misma tabla de tokens.
+ */
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, 'Token inválido.'),
+  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres.'),
+});
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

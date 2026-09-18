@@ -155,6 +155,30 @@ export const authRepo = {
     await db.insert(passwordResets).values(values);
   },
 
+  /**
+   * Quema los tokens vigentes de un usuario para un proposito. Se llama antes de
+   * emitir uno nuevo, para que solo el ULTIMO enlace enviado funcione: pedir
+   * tres veces "olvide mi contrasena" no debe dejar tres llaves validas
+   * circulando por la bandeja de entrada.
+   *
+   * Los marca usados en vez de borrarlos: la fila es el rastro de que se emitio
+   * un enlace y cuando, y eso vale para investigar despues. Y filtra por
+   * `purpose` porque una invitacion de staff sin estrenar no tiene por que morir
+   * cuando esa misma persona pide un reset.
+   */
+  async invalidatePasswordResets(userId: string, purpose: string) {
+    await db
+      .update(passwordResets)
+      .set({ usedAt: new Date() })
+      .where(
+        and(
+          eq(passwordResets.userId, userId),
+          eq(passwordResets.purpose, purpose),
+          isNull(passwordResets.usedAt),
+        ),
+      );
+  },
+
   /** Token vigente: no usado y sin expirar. */
   async findValidPasswordReset(tokenHash: string) {
     const [row] = await db

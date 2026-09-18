@@ -4,8 +4,8 @@
  * Es lo unico que el modulo de reportes persiste. El documento no se guarda (se
  * arma al pedirlo, ver `proforma.service.ts`); lo que se guarda es el numero que
  * se le asigno, porque un consecutivo que cambiara en cada impresion no seria un
- * consecutivo: el cliente llama citando "la proforma HSP000001042" y esa tiene
- * que seguir siendo la suya.
+ * consecutivo: el cliente llama citando "la proforma 1042" y esa tiene que
+ * seguir siendo la suya.
  *
  * UNA SOLA SERIE para los dos documentos (proforma de tramite y proforma de cobro
  * consolidado): son el mismo documento del mismo negocio y llevar dos libros
@@ -30,7 +30,7 @@ import { shipments } from '../shipments/shipments.schema';
 /**
  * Secuencia del numero de proforma. Arranca en 1000 como las demas series del
  * negocio (`hs_shipment_code_seq`, `hs_client_code_seq`): la primera proforma es
- * HSP000001000 y ningun documento sale con un numero de un digito.
+ * la 1000 y ningun documento sale con un numero de un digito.
  */
 export const proformaNumberSeq = pgSequence('hs_proforma_number_seq', {
   startWith: 1000,
@@ -42,10 +42,10 @@ export const proformaNumbers = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     /**
-     * Valor crudo de la secuencia. Se guarda el NUMERO, no el texto formateado:
-     * el formato (`formatProformaNumber`) vive en @courier/shared y es el unico
-     * punto que lo escribe. Guardar "HSP000001000" obligaria a que la base
-     * conociera el prefijo y a migrar filas el dia que cambie.
+     * Valor crudo de la secuencia. Se guarda el NUMERO, no el texto que se
+     * imprime: el formato (`formatProformaNumber`) vive en @courier/shared y es
+     * el unico punto que lo escribe. Guardar el texto obligaria a migrar filas
+     * el dia que el negocio quiera un ancho fijo o una serie por año.
      */
     sequence: integer('sequence').notNull().unique(),
 

@@ -23,12 +23,14 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { COST_LINE_SOURCE_VALUES, DEFAULT_COST_CATEGORY } from '@courier/shared';
 import { currencyEnum } from '../../core/currency.schema';
 import { users } from '../auth/auth.schema';
 import { costCategoryEnum, costServices } from '../cost-services/cost-service.schema';
+import { payments } from '../payments/payments.schema';
 import { shipments } from '../shipments/shipments.schema';
 
 export const costLineSourceEnum = pgEnum('cost_line_source', COST_LINE_SOURCE_VALUES);
@@ -65,11 +67,31 @@ export const shipmentCosts = pgTable(
     currency: currencyEnum('currency').notNull(),
     /** Colones por 1 USD al cargar el costo (regla M5). Obligatoria, siempre > 0. */
     exchangeRate: doublePrecision('exchange_rate').notNull(),
+    /**
+     * ABONO QUE PRODUJO ESTA LINEA. Solo lo lleva el recargo por pagar con
+     * tarjeta: la comision de la pasarela se asienta como costo trasladado
+     * (`CostCategory.Otros`) cuando el cobro se confirma, ya con la factura
+     * congelada. Null en todas las demas, que las carga el operador.
+     *
+     * No es adorno: es la LLAVE DE IDEMPOTENCIA. La pasarela reintenta sus
+     * webhooks, asi que el mismo cobro puede confirmarse dos veces; el unico de
+     * abajo hace que el segundo intento no cargue la comision otra vez ni vuelva
+     * a subir la factura.
+     */
+    paymentId: uuid('payment_id').references(() => payments.id, { onDelete: 'set null' }),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('shipment_costs_shipment_idx').on(t.shipmentId, t.createdAt),
+    /**
+     * UN ABONO, UNA LINEA. Unico y parcial (solo las filas que lo llevan): las
+     * lineas que carga el operador dejan la columna nula y no compiten por el
+     * unico. Es lo que sostiene la idempotencia del webhook.
+     */
+    uniqueIndex('shipment_costs_payment_idx')
+      .on(t.paymentId)
+      .where(sql`${t.paymentId} is not null`),
     /**
      * Las reglas de rango (M3) y de tasa presente y positiva (M5) tambien se
      * validan en Zod y en el servicio. Repetirlas aqui es deliberado: la BD es la

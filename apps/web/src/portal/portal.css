@@ -115,6 +115,15 @@
 .login-card .field-label { margin-top: 16px; }
 .login-card .btn { width: 100%; margin-top: 22px; }
 
+/* Etiqueta con un enlace a la derecha (la contrasena del login y su
+   "¿Olvidaste tu contraseña?"). El margen superior pasa a la fila para que
+   ambos queden sobre la misma linea base. */
+.field-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.login-card .field-row { margin-top: 16px; }
+.login-card .field-row .field-label { margin-top: 0; }
+.field-row__link { font-size: 13px; font-weight: 600; color: var(--brand); white-space: nowrap; }
+.field-row__link:hover { text-decoration: underline; }
+
 /* Campo de contrasena con boton para mostrarla/ocultarla. */
 .pw-field { position: relative; }
 .pw-field .input { padding-right: 46px; }
@@ -154,6 +163,62 @@
 .combo-id { flex: none; font-size: 12.5px; color: var(--muted); }
 .combo-note { padding: 9px 10px; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
 .combo-list:not(:empty) + .combo-note { border-top: 1px solid var(--line-2); margin-top: 4px; }
+
+/* ---- Selector con buscador (OptionPicker) ----
+   Estilo "chosen": cerrado se lee como un select y al abrirlo aparece un panel
+   con su propio buscador y la lista completa. El panel se pinta en el body con
+   posicion fija porque dentro de una tabla con scroll (.table-wrap) se
+   recortaria. Por eso tambien lleva z-index propio: escala del portal, modal 80
+   · hoja 90 · panel del picker 95, que es el unico sitio desde donde se abre.
+   Abre hacia arriba y el alto lo pone el componente segun el hueco que haya:
+   columna flexible con la lista encogible, para que el buscador nunca se pierda. */
+.picker { position: relative; }
+.picker-field {
+  width: 100%; height: 46px; padding: 0 10px 0 14px;
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--ink);
+  font: inherit; font-size: 14.5px; cursor: pointer; transition: all .15s ease;
+}
+.picker-field:hover:not(:disabled) { border-color: oklch(0.84 0.01 263); }
+.picker-field.is-open, .picker-field:focus-visible {
+  border-color: var(--brand); box-shadow: 0 0 0 3.5px var(--brand-soft); outline: none;
+}
+.picker-field:disabled { background: var(--paper-2); color: var(--muted); cursor: not-allowed; }
+.picker-field.is-empty .picker-value { color: var(--faint); }
+.picker-value { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-detail { flex: none; font-size: 12.5px; color: var(--muted); }
+.picker-caret { flex: none; display: grid; place-items: center; color: var(--faint); }
+
+.picker-panel {
+  z-index: 95; display: flex; flex-direction: column; gap: 6px; padding: 6px;
+  max-height: 320px; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); box-shadow: var(--sh-2);
+}
+.picker-search { flex: none; position: relative; }
+.picker-search .input { height: 38px; padding-left: 34px; font-size: 14px; }
+.picker-search svg {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--faint); pointer-events: none;
+}
+/* `min-height: 0` es lo que deja encoger la lista cuando el hueco aprieta: sin
+   el, el panel crece por debajo de su max-height y se sale de la ventana. */
+.picker-list {
+  list-style: none; margin: 0; padding: 0;
+  flex: 1 1 auto; min-height: 0; max-height: 240px; overflow-y: auto;
+}
+.picker-item {
+  display: flex; align-items: baseline; gap: 10px; padding: 8px 10px;
+  border-radius: var(--r-xs); cursor: pointer; font-size: 14px; color: var(--ink);
+}
+.picker-item.is-active { background: var(--brand-softer); }
+.picker-item.is-selected { font-weight: 600; }
+.picker-item-label { flex: 1 1 auto; min-width: 0; }
+.picker-item-detail { flex: none; font-size: 12.5px; color: var(--muted); }
+/* El trozo que coincide con lo escrito: se marca con color, no con fondo. */
+.picker-hit { background: none; color: var(--brand); font-weight: 700; }
+.picker-note { flex: none; padding: 9px 10px; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
 
 /* ---- Registro de casillero (asistente de 3 pasos, pagina /registro) ---- */
 .register-card .btn { width: 100%; margin-top: 22px; }
@@ -573,6 +638,20 @@ select.input { cursor: pointer; padding-right: 30px; }
    costo) se edita al vuelo: no necesita el cuerpo de un campo de formulario, y
    con el alto de captura la fila crece mas que con cualquier otra cosa. */
 .table .input { height: 32px; padding: 0 10px; font-size: 13px; }
+.table .picker-field { height: 32px; padding: 0 6px 0 10px; font-size: 13px; }
+/* Fila recien agregada: destella al nacer y queda con una marca al costado
+   hasta la siguiente alta o hasta guardar. Sin esto, una linea nueva al final de
+   una tabla larga no se nota: aparece fuera de la vista y todas las filas se
+   parecen. */
+@keyframes row-new {
+  0%   { background: var(--brand-soft); }
+  100% { background: transparent; }
+}
+.table tbody tr.is-new > td { animation: row-new 1.6s ease-out 1; }
+.table tbody tr.is-new > td:first-child { box-shadow: inset 2px 0 0 var(--brand); }
+@media (prefers-reduced-motion: reduce) {
+  .table tbody tr.is-new > td { animation: none; background: var(--brand-softer); }
+}
 .cell-name { font-weight: 700; color: var(--ink); }
 .cell-sub { color: var(--muted); font-size: 12px; }
 .role-chip { font-size: 12px; font-weight: 600; color: var(--ink-2); }

@@ -60,7 +60,10 @@ export function LoginScreen({ onLoggedIn }: { onLoggedIn: () => void }) {
           value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@correo.com"
         />
 
-        <label className="field-label" htmlFor="password">Contraseña</label>
+        <div className="field-row">
+          <label className="field-label" htmlFor="password">Contraseña</label>
+          <a className="field-row__link" href="/recuperar">¿Olvidaste tu contraseña?</a>
+        </div>
         <PasswordField id="password" value={password} onChange={setPassword} placeholder="••••••••" />
 
         <button className="btn btn-primary btn-lg" type="submit" disabled={busy}>

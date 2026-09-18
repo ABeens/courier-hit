@@ -2,7 +2,7 @@
 # (`proforma_numbers` + la secuencia `hs_proforma_number_seq`, docs/10 §4.1).
 #
 # A partir de aqui cada proforma que se emita recibe su propio consecutivo
-# (HSP000001000, HSP000001001, ...) en vez de imprimir el del tramite. Las
+# (1000, 1001, 1002, ...) en vez de imprimir el del tramite. Las
 # proformas ya entregadas antes de esto no se renumeran hacia atras: no hay nada
 # guardado de ellas, asi que la primera vez que se vuelvan a abrir tomaran el
 # siguiente numero de la serie y ese sera el suyo desde entonces.
@@ -32,5 +32,5 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ''
-Write-Host 'Listo. La serie de proformas existe y arranca en HSP000001000.' -ForegroundColor Green
+Write-Host 'Listo. La serie de proformas existe y arranca en la 1000.' -ForegroundColor Green
 Write-Host 'Para verlo: Costos -> facturados -> descargar proforma. El numero sale rotulado en la esquina.' -ForegroundColor Green

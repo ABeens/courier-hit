@@ -12,6 +12,7 @@ import { users } from '../auth/auth.schema';
 import {
   SETTINGS_ROW_ID,
   appSettings,
+  cardSurchargeHistory,
   exchangeRateHistory,
   freightRateHistory,
 } from './settings.schema';
@@ -173,6 +174,123 @@ export const settingsRepo = {
 
       return { previousUsdPerLb };
     });
+  },
+
+  /**
+   * Recargo por pago con tarjeta VIGENTE, o null en cada cifra si nadie lo ha
+   * fijado. Camino caliente igual que la tasa: lo consulta cada cotizacion y cada
+   * cobro con tarjeta, asi que toca una fila por clave primaria.
+   *
+   * Devuelve las dos cifras crudas y no una tarifa ya armada: quien decide que
+   * hacer con el "nadie lo ha fijado" es el servicio, que es el que conoce el
+   * defecto.
+   */
+  async currentCardSurcharge(): Promise<{ percent: number | null; fixedUsd: number | null }> {
+    const [row] = await db
+      .select({
+        percent: appSettings.cardSurchargePercent,
+        fixedUsd: appSettings.cardSurchargeFixedUsd,
+      })
+      .from(appSettings)
+      .where(eq(appSettings.id, SETTINGS_ROW_ID))
+      .limit(1);
+    return { percent: row?.percent ?? null, fixedUsd: row?.fixedUsd ?? null };
+  },
+
+  /** El mismo recargo con su sello (quien lo fijo y cuando), para Configuración. */
+  async cardSurchargeSetting() {
+    const [row] = await db
+      .select({
+        percent: appSettings.cardSurchargePercent,
+        fixedUsd: appSettings.cardSurchargeFixedUsd,
+        setAt: appSettings.cardSurchargeSetAt,
+        setByName: users.name,
+      })
+      .from(appSettings)
+      .leftJoin(users, eq(users.id, appSettings.cardSurchargeSetBy))
+      .where(eq(appSettings.id, SETTINGS_ROW_ID))
+      .limit(1);
+    return row ?? { percent: null, fixedUsd: null, setAt: null, setByName: null };
+  },
+
+  /**
+   * Fija el recargo vigente y deja el cambio en el historial, en UNA transaccion,
+   * por lo mismo que la tasa: un valor vigente sin su registro de auditoria (o al
+   * reves) es justo lo que el historial existe para evitar.
+   *
+   * Las dos cifras se escriben SIEMPRE juntas: son una sola condicion comercial.
+   */
+  async setCardSurcharge(input: {
+    percent: number;
+    fixedUsd: number;
+    note: string | null;
+    userId: string;
+  }): Promise<{ previousPercent: number | null; previousFixedUsd: number | null }> {
+    return db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({
+          percent: appSettings.cardSurchargePercent,
+          fixedUsd: appSettings.cardSurchargeFixedUsd,
+        })
+        .from(appSettings)
+        .where(eq(appSettings.id, SETTINGS_ROW_ID))
+        .limit(1);
+      const previousPercent = existing?.percent ?? null;
+      const previousFixedUsd = existing?.fixedUsd ?? null;
+      const now = new Date();
+
+      await tx
+        .insert(appSettings)
+        .values({
+          id: SETTINGS_ROW_ID,
+          cardSurchargePercent: input.percent,
+          cardSurchargeFixedUsd: input.fixedUsd,
+          cardSurchargeSetBy: input.userId,
+          cardSurchargeSetAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: appSettings.id,
+          set: {
+            cardSurchargePercent: input.percent,
+            cardSurchargeFixedUsd: input.fixedUsd,
+            cardSurchargeSetBy: input.userId,
+            cardSurchargeSetAt: now,
+            updatedAt: now,
+          },
+        });
+
+      await tx.insert(cardSurchargeHistory).values({
+        percent: input.percent,
+        fixedUsd: input.fixedUsd,
+        previousPercent,
+        previousFixedUsd,
+        note: input.note,
+        setBy: input.userId,
+        setAt: now,
+      });
+
+      return { previousPercent, previousFixedUsd };
+    });
+  },
+
+  /** Historial del recargo, del mas reciente al mas viejo. */
+  async cardSurchargeHistory(limit: number) {
+    return db
+      .select({
+        id: cardSurchargeHistory.id,
+        percent: cardSurchargeHistory.percent,
+        fixedUsd: cardSurchargeHistory.fixedUsd,
+        previousPercent: cardSurchargeHistory.previousPercent,
+        previousFixedUsd: cardSurchargeHistory.previousFixedUsd,
+        note: cardSurchargeHistory.note,
+        setAt: cardSurchargeHistory.setAt,
+        setByName: users.name,
+      })
+      .from(cardSurchargeHistory)
+      .leftJoin(users, eq(users.id, cardSurchargeHistory.setBy))
+      .orderBy(desc(cardSurchargeHistory.setAt))
+      .limit(limit);
   },
 
   /** Historial de cambios, del mas reciente al mas viejo. */

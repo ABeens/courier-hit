@@ -14,7 +14,15 @@ import {
   UserStatus,
   principalForRole,
 } from '@courier/shared';
-import type { AcceptInviteInput, LoginInput, RegisterInput, Session, VerifyInput } from '@courier/shared';
+import type {
+  AcceptInviteInput,
+  ForgotPasswordInput,
+  LoginInput,
+  RegisterInput,
+  ResetPasswordInput,
+  Session,
+  VerifyInput,
+} from '@courier/shared';
 import { config, isProd } from '../../core/config';
 import { AuthErrors } from '../../core/errors';
 import { mailer } from '../../core/mailer';
@@ -329,16 +337,80 @@ export const authService = {
     return isProd ? null : link;
   },
 
-  /** Fija la contrasena desde un token de invitacion/reset y deja la cuenta lista. */
-  async acceptInvite(input: AcceptInviteInput): Promise<{ ok: true }> {
+  /**
+   * Emite un token de restablecimiento para el flujo "olvide mi contrasena".
+   *
+   * No devuelve NADA que distinga un correo registrado de uno que no lo esta, y
+   * tampoco lanza: quien pregunta no esta autenticado, y responder distinto
+   * convertiria este endpoint en un detector de clientes de la casa. Por lo
+   * mismo callan los dos casos en los que no se manda correo: cuenta inexistente
+   * y cuenta deshabilitada.
+   *
+   * Un usuario deshabilitado no recibe enlace a proposito: `login` lo rechaza de
+   * todas formas (`userInactive`), asi que darselo solo serviria para que fije
+   * una contrasena con la que sigue sin poder entrar.
+   */
+  async requestPasswordReset(input: ForgotPasswordInput): Promise<{ ok: true }> {
+    const user = await authRepo.findUserByEmail(input.email);
+    if (!user || user.status !== UserStatus.Activo) return { ok: true };
+
+    const token = newToken();
+    const expiresAt = new Date(Date.now() + config.RESET_TTL_MINUTES * 60_000);
+    // Solo el ultimo enlace enviado sirve: pedirlo de nuevo anula el anterior.
+    await authRepo.invalidatePasswordResets(user.id, 'reset');
+    await authRepo.insertPasswordReset({ userId: user.id, tokenHash: sha256(token), purpose: 'reset', expiresAt });
+
+    const link = `${config.WEB_ORIGIN}/restablecer?token=${token}`;
+    await mailer.send({
+      to: user.email,
+      subject: 'Restablece tu contraseña — HS Global Services',
+      body: [
+        `Hola ${user.name},`,
+        '',
+        'Recibimos una solicitud para restablecer la contraseña de tu cuenta.',
+        'Define una nueva en el siguiente enlace:',
+        link,
+        '',
+        `El enlace vence en ${config.RESET_TTL_MINUTES} minutos y solo se puede usar una vez.`,
+        'Si no fuiste tú, ignora este mensaje: tu contraseña actual sigue funcionando.',
+        '',
+        'Saludos cordiales,',
+        'Equipo HS Global',
+      ].join('\n'),
+    });
+
+    // El enlace NO se devuelve ni en desarrollo, a diferencia del codigo de
+    // registro o de la invitacion de staff: aquellos llegan a quien ya es dueño
+    // del flujo (se acaba de registrar, o es el admin que creo la cuenta), y
+    // este lo puede pedir cualquiera para el correo de cualquiera. En desarrollo
+    // el enlace sale por el log del mailer (transporte de consola).
+    return { ok: true };
+  },
+
+  /**
+   * Fija la contrasena a partir de un token de `password_resets` y deja la
+   * cuenta lista para entrar. Lo comparten la invitacion de staff y el olvido de
+   * contrasena: los dos llegan con un token del correo y terminan igual. El
+   * `purpose` de la fila queda como rastro de por que se emitio, no como una
+   * bifurcacion de comportamiento.
+   */
+  async setPasswordFromToken(input: AcceptInviteInput | ResetPasswordInput): Promise<{ ok: true }> {
     const reset = await authRepo.findValidPasswordReset(sha256(input.token));
     if (!reset) throw AuthErrors.invalidToken();
 
     const passwordHash = await hash(input.password);
     await authRepo.setPassword(reset.userId, passwordHash);
     await authRepo.markPasswordResetUsed(reset.id);
-    // Aceptar la invitacion desde el correo prueba la titularidad del email.
+    // Llegar hasta aqui con el token del correo prueba la titularidad del email.
     await authRepo.markEmailVerified(reset.userId);
+    /**
+     * Cambiar la contrasena echa a TODAS las sesiones abiertas de esa cuenta.
+     * Es la mitad util del flujo cuando el motivo del reset es que alguien mas
+     * entro: sin esto, el atacante conserva su cookie (7 dias de TTL) y cambiar
+     * la clave no lo saca. Aplica igual a la invitacion de staff, donde no hay
+     * sesiones que perder porque la cuenta es nueva.
+     */
+    await authRepo.deleteSessionsByUser(reset.userId);
     return { ok: true };
   },
 

@@ -59,8 +59,10 @@ import {
 } from '../../integrations/onvo/onvo.client';
 import type { GatewayOutcome } from '../../integrations/onvo/onvo.client';
 import { clientsRepo } from '../clients/clients.repo';
+import { costsService } from '../costs/costs.service';
 import { consolidatedService } from './consolidated.service';
 import { settingsRepo } from '../settings/settings.repo';
+import { settingsService } from '../settings/settings.service';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { paymentsRepo } from './payments.repo';
 
@@ -234,11 +236,12 @@ export const paymentsService = {
     const shipment = await loadBillableShipment(shipmentId);
     assertOwnership(session, shipment);
 
-    const [rate, paid, effectiveRate, globalRate] = await Promise.all([
+    const [rate, paid, effectiveRate, globalRate, surchargeRate] = await Promise.all([
       clientsRepo.paymentOptionsFor(shipment.clientId),
       paymentsRepo.settlementView(shipmentId),
       clientsRepo.rateFor(shipment.clientId),
       settingsRepo.currentExchangeRate(),
+      settingsService.cardSurchargeRate(),
     ]);
 
     /**
@@ -287,7 +290,7 @@ export const paymentsService = {
     const chargeRate = resolveExchangeRate(shipment, globalRate);
     const cardCharge =
       methods.includes(PaymentMethod.Tarjeta) && chargeRate != null
-        ? cardChargeFor(due, basis.currency, chargeRate)
+        ? cardChargeFor(due, basis.currency, chargeRate, surchargeRate)
         : null;
 
     return {
@@ -449,7 +452,11 @@ export const paymentsService = {
      * importe en la otra moneda mañana sin que la cifra cambie sola, y lo que
      * deja al reporte financiero sumar los dos tipos de tramite.
      */
-    const globalRate = await settingsRepo.currentExchangeRate();
+    const [globalRate, surchargeRate] = await Promise.all([
+      settingsRepo.currentExchangeRate(),
+      /** El recargo VIGENTE (Configuración), o el de fabrica si nadie lo fijo. */
+      settingsService.cardSurchargeRate(),
+    ]);
     const exchangeRate = invoiceExchangeRate(shipment, globalRate);
     const amount = outstandingFor(settledAmount(paid, basis.currency), basis);
 
@@ -461,11 +468,19 @@ export const paymentsService = {
      * de aceptar y se le cobra el total (`cardChargeFor`). El deposito no genera
      * comision y no lleva recargo.
      *
-     * El abono sigue siendo el SALDO y no el total: lo que cancela la factura es
-     * lo facturado. El recargo va en su propia columna, con la misma moneda y la
-     * misma tasa de esta fila.
+     * EL ABONO ES EL TOTAL, recargo incluido, y no solo el saldo. Va en pareja con
+     * lo que pasa al confirmarse el cobro: la comision se asienta como linea de
+     * costo y la factura congelada sube por ese mismo importe
+     * (`costsService.postCardSurcharge`). Las dos cifras suben juntas, asi que el
+     * tramite queda saldado al centimo; guardar aqui solo el saldo lo dejaria
+     * debiendo exactamente la comision, con el paquete retenido por ella.
+     *
+     * `surchargeAmount` no es un abono aparte: es el DESGLOSE de este, la parte
+     * que no cancela flete ni servicios sino el costo de cobrar.
      */
-    const charge = isCard ? cardChargeFor(amount, basis.currency, exchangeRate) : null;
+    const charge = isCard
+      ? cardChargeFor(amount, basis.currency, exchangeRate, surchargeRate)
+      : null;
 
     /**
      * Antes de abrir otro formulario de tarjeta se tiran los que quedaron
@@ -490,7 +505,7 @@ export const paymentsService = {
        * `Pendiente` cuando el cargo sale de verdad (`markCardSubmitted`).
        */
       status: isCard ? PaymentStatus.Iniciado : PaymentStatus.Pendiente,
-      amount,
+      amount: charge?.total ?? amount,
       surchargeAmount: charge?.surcharge ?? 0,
       currency: basis.currency,
       exchangeRate,
@@ -512,9 +527,9 @@ export const paymentsService = {
       try {
         intent = await onvoClient.createPaymentIntent({
           /**
-           * A la pasarela va el TOTAL: saldo mas recargo. Es la unica cifra de
-           * todo el flujo que incluye el recargo, y es la que el cliente va a ver
-           * en el estado de cuenta de su tarjeta.
+           * A la pasarela va el MISMO total que se guardo en el abono: saldo mas
+           * recargo. Es la cifra que el cliente va a ver en el estado de cuenta
+           * de su tarjeta.
            */
           amount: charge?.total ?? amount,
           currency: basis.currency,
@@ -750,6 +765,14 @@ export const paymentsService = {
       confirmedAt: new Date(),
     });
 
+    /**
+     * Mismo asiento que en el webhook, por el otro camino: un cobro con tarjeta
+     * que se queda colgado y lo resuelve el staff a mano tiene que dejar la
+     * factura igual que si lo hubiera resuelto la pasarela. En un deposito no
+     * hace nada: no lleva recargo.
+     */
+    if (input.confirm) await costsService.postCardSurcharge(payment);
+
     const updated = await paymentsRepo.findById(paymentId);
     if (!updated) throw PaymentErrors.notFound();
     return toDto(updated);
@@ -852,6 +875,18 @@ export const paymentsService = {
     });
 
     if (!updated) return { applied: false, reason: 'already_resolved' };
+
+    /**
+     * Cobro aprobado: la comision que se le cargo de mas al cliente se asienta
+     * como costo trasladado y sube la factura del tramite. Va DESPUES de
+     * `resolveIfPending` y solo si esa llamada movio la fila, que es lo que evita
+     * cargarla dos veces cuando la pasarela reintenta el webhook (el unico sobre
+     * `payment_id` lo vuelve a evitar en la BD).
+     *
+     * En un cobro RECHAZADO no se asienta nada: no hubo comision que pagar.
+     */
+    if (outcome.approved) await costsService.postCardSurcharge(payment);
+
     return { applied: true, reason: 'ok' };
   },
 

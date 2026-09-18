@@ -11,6 +11,7 @@ export * from './auth/dto';
 export * from './money/exchange-rate';
 export * from './settings/exchange-rate-dto';
 export * from './settings/freight-rate-dto';
+export * from './settings/card-surcharge-dto';
 export * from './users/dto';
 export * from './tariffs/dto';
 export * from './costs/cost-service';

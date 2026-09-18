@@ -199,6 +199,15 @@ export enum Permission {
    * abrirlo a otro rol sin regalarle tambien la tasa.
    */
   FreightRateWrite = 'freight_rate.write',
+  /**
+   * Fijar el RECARGO POR PAGO CON TARJETA: la comision que cobra la pasarela y
+   * que se le traslada al cliente.
+   *
+   * Permiso propio por lo mismo que la tarifa de flete: es un valor general del
+   * sistema y quien lo cambia esta cambiando lo que se le cobra a TODOS los
+   * clientes que paguen con tarjeta, no un dato de un tramite.
+   */
+  CardSurchargeWrite = 'card_surcharge.write',
   CostServicesManage = 'cost_services.manage',
   /**
    * Registrar un deposito ya recibido contra un tramite ("Informacion de Pago"
@@ -340,6 +349,7 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   // que es donde se decide el valor general. La pantalla de costos solo lo usa.
   [Permission.ExchangeRateWrite]: { resource: Resource.Settings, action: Action.Write, scope: Scope.All },
   [Permission.FreightRateWrite]: { resource: Resource.Settings, action: Action.Write, scope: Scope.All },
+  [Permission.CardSurchargeWrite]: { resource: Resource.Settings, action: Action.Write, scope: Scope.All },
   [Permission.CostServicesManage]: { resource: Resource.CostServices, action: Action.Manage, scope: Scope.All },
   // Action.Create y no Validate: registrar es dar de alta el abono, no resolverlo.
   [Permission.PaymentsRecord]: { resource: Resource.Payments, action: Action.Create, scope: Scope.All },
@@ -382,6 +392,7 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   // Solo admin: son valores generales del sistema, no datos del tramite.
   Permission.ExchangeRateWrite,
   Permission.FreightRateWrite,
+  Permission.CardSurchargeWrite,
   Permission.CostServicesManage,
   Permission.PaymentsRecord,
   // Solo admin: aprobar el deposito es dar el dinero por recibido.

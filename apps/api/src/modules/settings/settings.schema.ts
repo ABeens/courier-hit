@@ -50,6 +50,28 @@ export const appSettings = pgTable(
     }),
     freightRateSetAt: timestamp('freight_rate_set_at', { withTimezone: true }),
 
+    /**
+     * RECARGO POR PAGO CON TARJETA: lo que cobra la pasarela por cada cobro y que
+     * se le traslada al cliente. Porcentaje del total (0 a 100) mas un fijo por
+     * transaccion en dolares.
+     *
+     * Nullables, pero NO por la razon de la tasa: aqui si hay un defecto honesto
+     * (`DEFAULT_CARD_SURCHARGE`, la tarifa publicada de Onvo) y el sistema cobra
+     * con el mientras nadie fije otro. Null significa "nadie lo ha tocado", que
+     * es lo que la pantalla necesita decir para no presentar un valor de fabrica
+     * como una decision del negocio.
+     *
+     * Las DOS cifras se guardan juntas: son una sola condicion comercial con dos
+     * partes, y una mezcla de la tarifa nueva con la vieja no es la de ningun
+     * contrato.
+     */
+    cardSurchargePercent: doublePrecision('card_surcharge_percent'),
+    cardSurchargeFixedUsd: doublePrecision('card_surcharge_fixed_usd'),
+    cardSurchargeSetBy: uuid('card_surcharge_set_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    cardSurchargeSetAt: timestamp('card_surcharge_set_at', { withTimezone: true }),
+
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -60,6 +82,19 @@ export const appSettings = pgTable(
     check(
       'app_settings_freight_rate_positive',
       sql`${t.freightRateUsdPerLb} IS NULL OR ${t.freightRateUsdPerLb} > 0`,
+    ),
+    /**
+     * Rango del porcentaje (regla M3), con el mismo techo que el esquema Zod. El
+     * 100 no entra: con esa comision el despeje del total no existe
+     * (`cardChargeFor`) y el cobro se iria a infinito.
+     */
+    check(
+      'app_settings_card_surcharge_percent_range',
+      sql`${t.cardSurchargePercent} IS NULL OR (${t.cardSurchargePercent} >= 0 AND ${t.cardSurchargePercent} < 100)`,
+    ),
+    check(
+      'app_settings_card_surcharge_fixed_nonneg',
+      sql`${t.cardSurchargeFixedUsd} IS NULL OR ${t.cardSurchargeFixedUsd} >= 0`,
     ),
   ],
 );
@@ -106,6 +141,37 @@ export const freightRateHistory = pgTable(
   ],
 );
 
+/**
+ * Historial del recargo por pago con tarjeta. Mismo papel que los otros dos
+ * historiales y por el mismo motivo: este numero decide lo que se le cobra de mas
+ * a TODOS los clientes que paguen con tarjeta, y un cambio sin rastro deja un
+ * salto en la facturacion que nadie puede explicar despues.
+ *
+ * Guarda las dos cifras juntas, vigentes y anteriores: la tarifa es el par, y un
+ * historial que solo contara el porcentaje no dejaria reconstruir con que se
+ * cobro.
+ */
+export const cardSurchargeHistory = pgTable(
+  'card_surcharge_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    percent: doublePrecision('percent').notNull(),
+    fixedUsd: doublePrecision('fixed_usd').notNull(),
+    /** Los que estaban antes; null en el primer registro (regian los de fabrica). */
+    previousPercent: doublePrecision('previous_percent'),
+    previousFixedUsd: doublePrecision('previous_fixed_usd'),
+    note: text('note'),
+    setBy: uuid('set_by').references(() => users.id, { onDelete: 'set null' }),
+    setAt: timestamp('set_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('card_surcharge_history_set_at_idx').on(t.setAt),
+    check('card_surcharge_history_percent_range', sql`${t.percent} >= 0 AND ${t.percent} < 100`),
+    check('card_surcharge_history_fixed_nonneg', sql`${t.fixedUsd} >= 0`),
+  ],
+);
+
 export type AppSettingsRow = typeof appSettings.$inferSelect;
 export type ExchangeRateHistoryRow = typeof exchangeRateHistory.$inferSelect;
 export type FreightRateHistoryRow = typeof freightRateHistory.$inferSelect;
+export type CardSurchargeHistoryRow = typeof cardSurchargeHistory.$inferSelect;

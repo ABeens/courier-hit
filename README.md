@@ -87,6 +87,7 @@ Los valores por defecto ya funcionan en local; ajusta `DATABASE_URL` si tu Postg
 | `EMAIL_CODE_TTL_MINUTES` | `15` | Vigencia del código de verificación por email. |
 | `EMAIL_CODE_MAX_ATTEMPTS` | `5` | Intentos permitidos para ese código. |
 | `INVITE_TTL_HOURS` | `72` | Vigencia del token de invitación de staff. |
+| `RESET_TTL_MINUTES` | `60` | Vigencia del enlace de "olvidé mi contraseña". |
 
 **La web no necesita `.env` en local.** `PUBLIC_API_BASE` cae por defecto a `http://localhost:3001` (ver `apps/web/src/portal/lib/api.ts`), que es justo donde corre la API. Solo defínela si mueves la API de puerto o la apuntas a un entorno remoto.
 

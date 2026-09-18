@@ -47,6 +47,7 @@ import {
   outstanding,
   outstandingCrc,
   outstandingFor,
+  splitAmount,
   paymentGroupStatus,
   pendingAmount,
   recordedPaymentStatus,
@@ -72,7 +73,9 @@ import {
   onvoClient,
 } from '../../integrations/onvo/onvo.client';
 import type { GatewayOutcome } from '../../integrations/onvo/onvo.client';
+import { costsService } from '../costs/costs.service';
 import { settingsRepo } from '../settings/settings.repo';
+import { settingsService } from '../settings/settings.service';
 import { consolidatedRepo } from './consolidated.repo';
 import type { ConsolidatedCandidate } from './consolidated.repo';
 import { paymentsRepo } from './payments.repo';
@@ -325,9 +328,10 @@ export const consolidatedService = {
       };
     }
 
-    const [account, globalRate] = await Promise.all([
+    const [account, globalRate, surchargeRate] = await Promise.all([
       resolveAccount(clientId),
       settingsRepo.currentExchangeRate(),
+      settingsService.cardSurchargeRate(),
     ]);
     const totals = totalsOf(account.items);
 
@@ -369,7 +373,7 @@ export const consolidatedService = {
     const chargeRate = groupExchangeRate(totals, globalRate);
     const cardCharge =
       methods.includes(PaymentMethod.Tarjeta) && chargeRate != null
-        ? cardChargeFor(due, basis.currency, chargeRate)
+        ? cardChargeFor(due, basis.currency, chargeRate, surchargeRate)
         : null;
 
     return {
@@ -460,7 +464,11 @@ export const consolidatedService = {
     const isCard = input.method === PaymentMethod.Tarjeta;
     if (isCard) await discardOpenCardGroups(account.clientId);
 
-    const globalRate = await settingsRepo.currentExchangeRate();
+    const [globalRate, surchargeRate] = await Promise.all([
+      settingsRepo.currentExchangeRate(),
+      /** El recargo VIGENTE (Configuración), o el de fabrica si nadie lo fijo. */
+      settingsService.cardSurchargeRate(),
+    ]);
 
     /**
      * EL RECARGO DE LA TARJETA, sobre el total del grupo. La comision de la
@@ -478,14 +486,31 @@ export const consolidatedService = {
             outstandingFor(inCharge(totals.settledUsd, totals.settledCrc), basis),
             basis.currency,
             groupRate,
+            surchargeRate,
           )
         : null;
+
+    /**
+     * EL REPARTO DE LA COMISION. La comision es una sola (un cargo por la
+     * tarjeta), pero la factura que sube al confirmarse es la de CADA paquete, y
+     * cada paquete se da por pagado comparando SU abono contra SU factura. Por eso
+     * el recargo se reparte en proporcion al saldo de cada uno, sin perder ni
+     * inventar un centimo (`splitAmount`): un centimo mal repartido es un paquete
+     * retenido por un centimo.
+     */
+    const shares = charge
+      ? splitAmount(charge.surcharge, account.items.map(dueOf), basis.currency)
+      : [];
+    const surchargeByShipment = new Map(
+      account.items.map((row, i) => [row.id, shares[i] ?? 0] as const),
+    );
 
     const groupId = await this.createGroup({
       account,
       method: input.method,
       globalRate,
       surchargeAmount: charge?.surcharge ?? 0,
+      surchargeByShipment,
       /**
        * El deposito nace PENDIENTE (hay un comprobante que revisar) y la tarjeta
        * INICIADA (todavia no se ha intentado cobrar nada). Es la misma regla del
@@ -593,6 +618,11 @@ export const consolidatedService = {
      * que ya vio el cliente en la cotizacion.
      */
     surchargeAmount?: number;
+    /**
+     * La parte del recargo que le toca a cada paquete, ya repartida por `start`
+     * (`splitAmount`). Suma exactamente `surchargeAmount`. Vacio en el deposito.
+     */
+    surchargeByShipment?: ReadonlyMap<string, number>;
     status: PaymentStatus;
     bankAccount?: BankAccount | null;
     receiptNumber?: string | null;
@@ -622,7 +652,11 @@ export const consolidatedService = {
         clientId: args.account.clientId,
         clientRateId: args.account.rateId,
         method: args.method,
-        amount: groupAmount,
+        /**
+         * El TOTAL que pasa por la tarjeta: el saldo del grupo mas el recargo. Es
+         * la suma exacta de los abonos que van debajo, que tambien lo llevan.
+         */
+        amount: roundMoney(groupAmount + (args.surchargeAmount ?? 0), CHARGE_CURRENCY),
         surchargeAmount: args.surchargeAmount ?? 0,
         currency: CHARGE_CURRENCY,
         exchangeRate: groupRate,
@@ -634,7 +668,12 @@ export const consolidatedService = {
           groupId,
           method: args.method,
           status: args.status,
-          amount: dueOf(row),
+          /**
+           * El saldo del paquete MAS su parte del recargo: al confirmarse, la
+           * factura de este paquete sube por esa misma parte y el abono la cubre.
+           */
+          amount: roundMoney(dueOf(row) + (args.surchargeByShipment?.get(row.id) ?? 0), CHARGE_CURRENCY),
+          surchargeAmount: args.surchargeByShipment?.get(row.id) ?? 0,
           currency: CHARGE_CURRENCY,
           exchangeRate: args.forcedRate ?? rateFor(row, args.globalRate),
           bankAccount: args.bankAccount ?? null,
@@ -736,7 +775,15 @@ export const consolidatedService = {
         note,
         confirmedAt: new Date(),
       });
-      if (updated) applied = true;
+      if (!updated) continue;
+      applied = true;
+
+      /**
+       * La parte de la comision que le toca a este paquete se asienta como costo
+       * y sube su factura. Solo si `resolveIfPending` movio la fila, para que el
+       * reintento del webhook no la cargue dos veces.
+       */
+      if (outcome.approved) await costsService.postCardSurcharge(line);
     }
 
     return applied ? { applied: true, reason: 'ok' } : { applied: false, reason: 'already_resolved' };

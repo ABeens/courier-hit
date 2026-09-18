@@ -661,15 +661,14 @@ export function PaymentModal({ shipment, role, onClose, onPaid, onProcessing }: 
               )}
             </strong>
             {/*
-              EL RECARGO DEL COBRO, dicho aparte del abono. El historial cuenta lo
-              que cancela la factura; lo que pasó por la tarjeta fue esta cifra de
-              más, y sin decirla el cliente no cuadra el importe con el estado de
-              cuenta de su tarjeta.
+              QUÉ PARTE DEL ABONO FUE COMISIÓN. El importe de arriba ya la
+              incluye (es lo que pasó por la tarjeta); esto dice cuánto de esa
+              cifra no fue flete ni servicios sino el costo de cobrar.
             */}
             {payment.surchargeAmount > 0 && (
               <span className="muted">
                 {' '}
-                + {formatMoney(
+                incluye {formatMoney(
                   convertMoney(
                     payment.surchargeAmount,
                     payment.currency,

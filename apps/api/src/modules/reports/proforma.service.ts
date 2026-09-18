@@ -12,7 +12,7 @@
  * 2. SOLO SOBRE TRAMITES FACTURADOS. Sin costos aprobados no hay total que
  *    imprimir; se responde 409 y no una proforma en blanco.
  * 3. EL NUMERO SI SE GUARDA, Y ES PROPIO. Del documento no se persiste nada
- *    salvo su numero, que sale de la serie de proformas (`HSP000001000`) y no del
+ *    salvo su numero, que sale de la serie de proformas (1000, 1001...) y no del
  *    consecutivo del tramite ni del id del cobro. Se pide al EMITIR, despues de
  *    comprobar que hay algo que imprimir: numerar un documento que va a responder
  *    409 dejaria huecos en la serie sin ninguna factura detras. Y una vez

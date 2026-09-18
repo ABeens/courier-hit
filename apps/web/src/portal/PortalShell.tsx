@@ -459,6 +459,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
             <SettingsScreen
               canEdit={can(me.role, Permission.ExchangeRateWrite)}
               canEditFreight={can(me.role, Permission.FreightRateWrite)}
+              canEditSurcharge={can(me.role, Permission.CardSurchargeWrite)}
             />
           ) : current === Resource.Routes ? (
             <RoutesScreen />

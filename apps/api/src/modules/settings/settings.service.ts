@@ -1,8 +1,8 @@
 /**
- * Ajustes generales del sistema: la tasa de cambio y la tarifa de transporte
- * internacional. Comparten pantalla, tabla y patron (valor vigente + historial)
- * porque son la misma clase de dato: numeros que el sistema aplica IGUAL a todos
- * los tramites, no datos de uno.
+ * Ajustes generales del sistema: la tasa de cambio, la tarifa de transporte
+ * internacional y el recargo por pago con tarjeta. Comparten pantalla, tabla y
+ * patron (valor vigente + historial) porque son la misma clase de dato: numeros
+ * que el sistema aplica IGUAL a todos los tramites, no datos de uno.
  *
  * Dos valores que NO son lo mismo y por eso viajan separados hasta la pantalla:
  *   - `rate`: la tasa VIGENTE del sistema, la que se usa para convertir. La fija
@@ -14,11 +14,16 @@
  * Quien puede fijarla lo decide el PERMISO, no el rol: la barrera esta en las
  * rutas (`requirePermission`), asi que sumar el permiso a otro rol basta.
  */
+import { DEFAULT_CARD_SURCHARGE } from '@courier/shared';
 import type {
+  CardSurchargeHistoryEntryDto,
+  CardSurchargeSettingDto,
+  CardSurchargeRate,
   ExchangeRateHistoryEntryDto,
   ExchangeRateSettingDto,
   FreightRateSettingDto,
   Session,
+  SetCardSurchargeInput,
   SetExchangeRateInput,
   SetFreightRateInput,
 } from '@courier/shared';
@@ -109,5 +114,78 @@ export const settingsService = {
       userId: session.userId,
     });
     return settingsService.freightRate();
+  },
+
+  /**
+   * EL RECARGO CON EL QUE SE COBRA HOY una tarjeta: el que fijo el administrador
+   * o, mientras nadie lo haya fijado, el defecto del sistema
+   * (`DEFAULT_CARD_SURCHARGE`, la tarifa publicada de Onvo).
+   *
+   * Punto UNICO de esa caida al defecto. Lo consultan la cotizacion que ve el
+   * cliente y el cobro que despues se le manda a la pasarela: si una respondiera
+   * el defecto y la otra el valor fijado, el cliente aceptaria un importe y se le
+   * cobraria otro.
+   *
+   * Las dos cifras se piden juntas porque son una sola condicion: media tarifa
+   * fijada y media de fabrica no es la de ningun contrato. Por eso solo cuenta
+   * como fijada cuando estan las dos.
+   */
+  async cardSurchargeRate(): Promise<CardSurchargeRate> {
+    const current = await settingsRepo.currentCardSurcharge();
+    if (current.percent == null || current.fixedUsd == null) return DEFAULT_CARD_SURCHARGE;
+    return { percent: current.percent, fixedUsd: current.fixedUsd };
+  },
+
+  /** El recargo vigente con su sello, para la pantalla de Configuración. */
+  async cardSurcharge(): Promise<CardSurchargeSettingDto> {
+    const setting = await settingsRepo.cardSurchargeSetting();
+    const isDefault = setting.percent == null || setting.fixedUsd == null;
+
+    return {
+      percent: setting.percent ?? DEFAULT_CARD_SURCHARGE.percent,
+      fixedUsd: setting.fixedUsd ?? DEFAULT_CARD_SURCHARGE.fixedUsd,
+      /**
+       * Se dice que es el DEFECTO en vez de presentarlo como una decision del
+       * negocio: quien abre la pantalla tiene que poder distinguir "esto lo
+       * fijamos nosotros" de "esto viene de fabrica y nadie lo ha revisado".
+       */
+      isDefault,
+      updatedAt: isDefault ? null : (setting.setAt?.toISOString() ?? null),
+      updatedByName: isDefault ? null : setting.setByName,
+    };
+  },
+
+  /**
+   * Fija el recargo vigente. Solo afecta a los cobros que se INICIEN a partir de
+   * ahora: el recargo ya cobrado quedo congelado en su abono
+   * (`payments.surcharge_amount`) y en la linea de costo que subio esa factura,
+   * justamente para que este cambio no reescriba lo que ya se le cobro a nadie.
+   */
+  async setCardSurcharge(
+    session: Session,
+    input: SetCardSurchargeInput,
+  ): Promise<CardSurchargeSettingDto> {
+    await settingsRepo.setCardSurcharge({
+      percent: input.percent,
+      fixedUsd: input.fixedUsd,
+      note: input.note?.trim() || null,
+      userId: session.userId,
+    });
+    return settingsService.cardSurcharge();
+  },
+
+  /** Historial de cambios del recargo (auditoria), del mas reciente al mas viejo. */
+  async cardSurchargeHistory(): Promise<CardSurchargeHistoryEntryDto[]> {
+    const rows = await settingsRepo.cardSurchargeHistory(HISTORY_LIMIT);
+    return rows.map((row) => ({
+      id: row.id,
+      percent: row.percent,
+      fixedUsd: row.fixedUsd,
+      previousPercent: row.previousPercent,
+      previousFixedUsd: row.previousFixedUsd,
+      note: row.note,
+      setAt: row.setAt.toISOString(),
+      setByName: row.setByName,
+    }));
   },
 };

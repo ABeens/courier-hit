@@ -11,9 +11,11 @@
  *   - APROBAR CONGELA. Guarda, fija el monto de factura y avanza el tramite a
  *     "En bodega - Pendiente pago". Desde ahi ya no se edita.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { IconButton } from '../components/IconButton';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { OptionPicker } from '../components/OptionPicker';
+import type { PickerOption } from '../components/OptionPicker';
 import {
   CURRENCY_LABELS,
   CostLineSource,
@@ -104,6 +106,15 @@ function fromSuggestion(s: SuggestedCostLine): DraftLine {
 export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props) {
   const [data, setData] = useState<ShipmentCostsDto | null>(null);
   const [lines, setLines] = useState<DraftLine[]>([]);
+  /**
+   * Clave de la ultima fila agregada a mano. La tabla crece hacia abajo y el
+   * cuerpo del modal tiene su propio scroll, asi que una fila nueva puede nacer
+   * fuera de la vista: con esto se baja el scroll hasta el fondo y se le da un
+   * destello a la fila.
+   */
+  const [lastAdded, setLastAdded] = useState<string | null>(null);
+  /** El cuerpo del modal es el elemento que scrollea (`.modal-body`). */
+  const bodyRef = useRef<HTMLDivElement>(null);
   const [rate, setRate] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -144,6 +155,8 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
             .filter((s) => s.auto && !savedLines.some((l) => l.source === s.source))
             .map(fromSuggestion);
       setLines([...autoLines, ...savedLines]);
+      // Recargar no es agregar: nada que resaltar ni a donde saltar.
+      setLastAdded(null);
       // La tasa guardada manda sobre la vigente del sistema: si el tramite ya se
       // cargo con una tasa, cambiarla en silencio movería una factura ya cotizada.
       // Solo en la primera carga se toma la global (nunca la publicada, que es
@@ -159,6 +172,19 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * Tras agregar una fila, el cuerpo del modal baja hasta el fondo. La fila nueva
+   * es lo ultimo de la tabla, asi que el final del scroll la deja a la vista
+   * junto al boton de agregar y el total. Se pide `scrollHeight`, que pasa del
+   * maximo: el navegador lo recorta al tope real, que es justo lo que se quiere.
+   */
+  useEffect(() => {
+    if (lastAdded === null) return;
+    const el = bodyRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [lastAdded]);
 
   const approved = data?.approved ?? false;
   /**
@@ -181,6 +207,34 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
 
   /** Solo lo que el operador elige: el flete ya viene aplicado como linea. */
   const catalog = (data?.suggestions ?? []).filter((s) => !s.auto);
+  /**
+   * Opciones del desplegable de concepto: el catalogo tal cual, mas el concepto
+   * suelto al final. El picker filtra por escritura sobre esta lista.
+   */
+  const conceptOptions: PickerOption[] = [
+    ...catalog.map((s) => ({
+      value: s.costServiceId ?? CUSTOM_PICK,
+      label: s.label,
+      detail: s.detail,
+    })),
+    { value: CUSTOM_PICK, label: 'Otro concepto…' },
+  ];
+
+  /**
+   * Las opciones que ve una fila concreta. Un servicio que ya no esta habilitado
+   * se lista desde la propia linea (y se dice que salio del catalogo) para que
+   * una factura vieja no pierda el nombre de lo que cobro.
+   */
+  function optionsFor(line: DraftLine): PickerOption[] {
+    if (line.costServiceId === null || catalog.some((s) => s.costServiceId === line.costServiceId)) {
+      return conceptOptions;
+    }
+    return [
+      { value: line.costServiceId, label: line.label, detail: 'Fuera del catálogo' },
+      ...conceptOptions,
+    ];
+  }
+
   /** Moneda con la que arranca una fila nueva: la que propone el catalogo. */
   const defaultCurrency = data?.suggestions[0]?.currency ?? Currency.USD;
   /** De donde sale el flete ("3 kg × 13.45 USD/kg"), para mostrarlo bajo su nombre. */
@@ -221,10 +275,12 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
    * (dolares en Paqueteria, colones en Transporte/Agenciamiento).
    */
   function addLine() {
+    const key = nextKey();
+    setLastAdded(key);
     setLines((prev) => [
       ...prev,
       {
-        key: nextKey(),
+        key,
         costServiceId: null,
         label: '',
         source: CostLineSource.Service,
@@ -244,6 +300,9 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
    * concepto suelto deja el nombre en blanco para que el operador lo escriba.
    */
   function pickService(key: string, value: string) {
+    // Volver a elegir lo mismo no rehace la fila: borraria el nombre que el
+    // operador ya escribio en un concepto suelto.
+    if (lines.find((l) => l.key === key)?.pick === value) return;
     if (value === CUSTOM_PICK) {
       // Se limpia tambien el monto: el valor por defecto era del servicio que se
       // acaba de soltar, y arrastrarlo a otro concepto es un monto heredado sin dueño.
@@ -254,6 +313,9 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
         source: CostLineSource.Service,
         percentage: '',
         amount: '',
+        // La moneda vuelve a la que propone el catalogo del tramite: la que habia
+        // era del servicio que se acaba de soltar, y aqui ya no significa nada.
+        currency: defaultCurrency,
         // Un concepto suelto no esta en el catalogo: el importe lo pone quien lo escribe.
         valueType: ServiceValueType.Manual,
       });
@@ -391,7 +453,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
           </p>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" ref={bodyRef}>
           {error && <div className="banner err">{error}</div>}
           {notice && <div className="banner ok">{notice}</div>}
 
@@ -446,7 +508,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
               </thead>
               <tbody>
                 {lines.map((line) => (
-                  <tr key={line.key}>
+                  <tr key={line.key} className={line.key === lastAdded ? 'is-new' : undefined}>
                     <td>
                       {/* El flete se nombra desde la tarifa del casillero: se muestra, no se digita. */}
                       {line.source === CostLineSource.Freight ? (
@@ -456,26 +518,16 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
                         </>
                       ) : (
                         <>
-                          <select
-                            className="input" value={line.pick} disabled={approved}
-                            onChange={(e) => pickService(line.key, e.target.value)}
-                            aria-label="Concepto de la línea"
-                          >
-                            {line.pick === '' && <option value="">Elige un concepto…</option>}
-                            {catalog.map((s) => (
-                              <option key={s.costServiceId} value={s.costServiceId ?? CUSTOM_PICK}>
-                                {s.label}
-                                {s.detail ? ` (${s.detail})` : ''}
-                              </option>
-                            ))}
-                            {/* Servicio ya guardado que salio del catalogo: se lista
-                                desde la propia linea para no perder su nombre. */}
-                            {line.costServiceId !== null &&
-                              !catalog.some((s) => s.costServiceId === line.costServiceId) && (
-                                <option value={line.costServiceId}>{line.label}</option>
-                              )}
-                            <option value={CUSTOM_PICK}>Otro concepto…</option>
-                          </select>
+                          <OptionPicker
+                            value={line.pick}
+                            options={optionsFor(line)}
+                            disabled={approved}
+                            ariaLabel="Concepto de la línea"
+                            placeholder="Elige el concepto"
+                            searchPlaceholder="Escribe para filtrar…"
+                            emptyNote="Ningún concepto del catálogo coincide."
+                            onChange={(v) => pickService(line.key, v)}
+                          />
                           {/* Concepto suelto: el nombre lo escribe el operador. */}
                           {line.pick === CUSTOM_PICK && (
                             <input

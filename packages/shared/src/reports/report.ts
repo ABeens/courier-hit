@@ -134,7 +134,7 @@ const PAQUETERIA_COLUMNS: readonly ReportColumn[] = [
   { key: 'state', label: 'ESTATUS' }, //                           11
   { key: 'deliveredAt', label: 'FECHA ENTREGA' }, //               12  derivado del historial
   { key: 'month', label: 'MES' }, //                               13  derivado de 12
-  { key: 'proforma', label: 'PROFORMA' }, //                       14  serie propia HSP
+  { key: 'proforma', label: 'PROFORMA' }, //                       14  consecutivo propio
   { key: 'invoiceTotalUsd', label: 'MONTO FACTURA' }, //           15
   // --- A partir de aqui, solo el reporte FULL (admin) ---
   { key: 'collectionStatus', label: 'ESTATUS COBRO' }, //          16  derivado de los pagos
@@ -169,7 +169,7 @@ const AGENCIAMIENTO_COLUMNS: readonly ReportColumn[] = [
   { key: 'state', label: 'ESTATUS' }, //                            8
   { key: 'invoicedAt', label: 'FECHA FACTURACIÓN' }, //             9
   { key: 'month', label: 'MES' }, //                               10  derivado de 9
-  { key: 'proforma', label: 'PROFORMA' }, //                       11  serie propia HSP
+  { key: 'proforma', label: 'PROFORMA' }, //                       11  consecutivo propio
   { key: 'invoiceTotalUsd', label: 'MONTO FACTURA' }, //           12
   { key: 'collectionStatus', label: 'ESTATUS COBRO' }, //          13  derivado de los pagos
   { key: 'bankAccount', label: 'CUENTA' }, //                      14

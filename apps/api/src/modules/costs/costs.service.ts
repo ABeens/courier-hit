@@ -22,6 +22,8 @@
  *    lineas ya no se editan.
  */
 import {
+  CARD_SURCHARGE_LABEL,
+  CostCategory,
   CostLineSource,
   Currency,
   Flow,
@@ -35,6 +37,7 @@ import {
   canTransition,
   categoryForLine,
   computeTotals,
+  convertMoney,
   costLineExchangeRateSchema,
   flowForType,
   formatMoney,
@@ -330,6 +333,69 @@ export const costsService = {
       globalExchangeRate: globalRate,
       referenceExchangeRate: reference?.rate ?? null,
     };
+  },
+
+  /**
+   * ASIENTA EL RECARGO DE UN COBRO CON TARJETA como una linea de costo mas.
+   *
+   * Es la contrapartida del recargo que se le cobro al cliente (`cardChargeFor`):
+   * la comision se le paga a un tercero (la pasarela) y se le traslada al
+   * cliente, que es exactamente `CostCategory.Otros`. Por eso entra en la factura
+   * y sube el total congelado: el abono que acaba de entrar tambien incluye el
+   * recargo, asi que factura y abono suben juntos y el tramite sigue saldado.
+   *
+   * SOLO EL SISTEMA LO LLAMA, y solo cuando un cobro pasa a CONFIRMADO. No es una
+   * edicion de costos: la factura ya esta congelada, y aqui no se pregunta por el
+   * estado ni por el permiso porque el hecho que lo justifica es un cargo que la
+   * pasarela ya aprobo.
+   *
+   * Sin recargo (deposito, o tarjeta con comision cero) no hay nada que asentar.
+   * Repetirlo es inofensivo: el unico sobre `payment_id` lo hace idempotente.
+   */
+  async postCardSurcharge(payment: {
+    id: string;
+    shipmentId: string;
+    surchargeAmount: number;
+    currency: Currency;
+    exchangeRate: number;
+  }): Promise<void> {
+    if (!(payment.surchargeAmount > 0)) return;
+
+    await costsRepo.postSurchargeLine({
+      shipmentId: payment.shipmentId,
+      paymentId: payment.id,
+      label: CARD_SURCHARGE_LABEL,
+      amount: payment.surchargeAmount,
+      currency: payment.currency,
+      exchangeRate: payment.exchangeRate,
+      /** Se le paga a un tercero y se traslada al cliente: "Otros / Compras". */
+      category: CostCategory.Otros,
+      /**
+       * `Service` y no un origen propio: para la factura es un concepto suelto de
+       * importe fijo, igual que los que el operador carga a mano. Lo que la
+       * distingue es su `payment_id`, no una etiqueta de origen nueva.
+       */
+      source: CostLineSource.Service,
+      /**
+       * La factura sube en LAS DOS monedas, cada una convertida con la tasa
+       * congelada del abono (regla M5): es la misma tasa con la que se cobro, asi
+       * que el total en la moneda de cobro cuadra al centimo con lo abonado.
+       */
+      invoiceDelta: {
+        usd: convertMoney(
+          payment.surchargeAmount,
+          payment.currency,
+          Currency.USD,
+          payment.exchangeRate,
+        ),
+        crc: convertMoney(
+          payment.surchargeAmount,
+          payment.currency,
+          Currency.CRC,
+          payment.exchangeRate,
+        ),
+      },
+    });
   },
 
   /** Reemplaza el juego de lineas. Bloqueado una vez aprobado. */

@@ -1,9 +1,11 @@
 # Aplica las migraciones pendientes a la base de datos LOCAL.
 #
 # Cuando hace falta: despues de traerse un cambio que agrega ficheros en
-# apps/api/drizzle/. La ultima es 0035_card_surcharge.sql, que agrega
-# `surcharge_amount` a `payments` y a `payment_groups` (el recargo por la
-# comision de la pasarela al pagar con tarjeta).
+# apps/api/drizzle/. Las ultimas tres son del recargo por la comision de la
+# pasarela al pagar con tarjeta: 0035_card_surcharge.sql (`surcharge_amount` en
+# `payments` y `payment_groups`), 0036_cost_line_payment.sql (`payment_id` en
+# `shipment_costs`) y 0037_card_surcharge_setting.sql (el porcentaje y el fijo en
+# `app_settings`, con su historial).
 #
 # Que hace: corre drizzle-kit migrate contra la DATABASE_URL de apps/api/.env.
 # Es incremental e idempotente: aplica solo lo que falta y no toca lo ya

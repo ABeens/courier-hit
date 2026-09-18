@@ -179,6 +179,7 @@ export const consolidatedRepo = {
         shipmentId: payments.shipmentId,
         status: payments.status,
         amount: payments.amount,
+        surchargeAmount: payments.surchargeAmount,
         currency: payments.currency,
         exchangeRate: payments.exchangeRate,
         confirmedAt: payments.confirmedAt,

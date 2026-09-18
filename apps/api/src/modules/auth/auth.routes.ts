@@ -1,12 +1,21 @@
 /**
  * Rutas del modulo auth. Nucleo (customer): register, verify, login, logout, me.
+ * Mas los dos caminos que fijan contrasena desde un enlace del correo:
+ * accept-invite (alta de staff) y forgot-password + reset-password (olvido).
  * Contrato en docs/04 §5. Toda entrada se valida con Zod (@courier/shared).
  */
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { zValidator } from '../../core/validator';
 import { deleteCookie, setCookie } from 'hono/cookie';
-import { acceptInviteSchema, loginSchema, registerSchema, verifySchema } from '@courier/shared';
+import {
+  acceptInviteSchema,
+  forgotPasswordSchema,
+  loginSchema,
+  registerSchema,
+  resetPasswordSchema,
+  verifySchema,
+} from '@courier/shared';
 import { authRateWindowMs, config, isProd, miamiLinkEnabled } from '../../core/config';
 import type { AppEnv } from '../../core/http';
 import { requireSession } from '../../core/middleware/requireSession';
@@ -21,9 +30,12 @@ export const authRoutes = new Hono<AppEnv>();
  * nadie autenticado; el razonamiento de por que no por correo esta en
  * `AUTH_RATE_LIMIT`.
  *
- * Cubre `/login`, `/register`, `/verify` y `/accept-invite`. Los dos ultimos no
- * son un descuido: verificar es adivinar un codigo de seis digitos, y aceptar
- * una invitacion es adivinar un token; los dos se rompen probando.
+ * Cubre `/login`, `/register`, `/verify`, `/accept-invite`, `/forgot-password` y
+ * `/reset-password`. Los cuatro ultimos no son un descuido: verificar es
+ * adivinar un codigo de seis digitos, y aceptar una invitacion o restablecer es
+ * adivinar un token; los tres se rompen probando. `/forgot-password` entra
+ * ademas por otro motivo: sin freno es una maquina de mandar correos a cuenta
+ * ajena, y quemar la reputacion del remitente.
  *
  * NO cubre `/logout` ni `/me`: no hay nada que adivinar ahi, y limitarlos
  * significaria echar de su sesion a un cliente que solo estaba navegando.
@@ -57,7 +69,28 @@ authRoutes.post('/verify', limitCredentials, zValidator('json', verifySchema), a
 
 // Aceptar invitacion de staff: fija la contrasena desde el token del correo (publico).
 authRoutes.post('/accept-invite', limitCredentials, zValidator('json', acceptInviteSchema), async (c) => {
-  const result = await authService.acceptInvite(c.req.valid('json'));
+  const result = await authService.setPasswordFromToken(c.req.valid('json'));
+  return c.json(result);
+});
+
+/**
+ * "Olvide mi contrasena": manda el enlace de restablecimiento al correo.
+ *
+ * Responde SIEMPRE `{ ok: true }`, exista o no la cuenta. Es deliberado y es la
+ * regla de este endpoint: cualquier otra respuesta (un 404, un mensaje distinto,
+ * incluso tardar mas) lo convierte en un oraculo para averiguar que correos
+ * tienen casillero en HS Global. El usuario legitimo no pierde nada: si el
+ * correo era el suyo, le llega.
+ */
+authRoutes.post('/forgot-password', limitCredentials, zValidator('json', forgotPasswordSchema), async (c) => {
+  const result = await authService.requestPasswordReset(c.req.valid('json'));
+  return c.json(result);
+});
+
+// Fija la contrasena nueva desde el token del correo (publico). Al hacerlo se
+// revocan todas las sesiones abiertas de esa cuenta (ver `setPasswordFromToken`).
+authRoutes.post('/reset-password', limitCredentials, zValidator('json', resetPasswordSchema), async (c) => {
+  const result = await authService.setPasswordFromToken(c.req.valid('json'));
   return c.json(result);
 });
 

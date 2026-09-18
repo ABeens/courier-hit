@@ -1,0 +1,3 @@
+ALTER TABLE "shipment_costs" ADD COLUMN "payment_id" uuid;--> statement-breakpoint
+ALTER TABLE "shipment_costs" ADD CONSTRAINT "shipment_costs_payment_id_payments_id_fk" FOREIGN KEY ("payment_id") REFERENCES "public"."payments"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "shipment_costs_payment_idx" ON "shipment_costs" USING btree ("payment_id") WHERE "shipment_costs"."payment_id" is not null;

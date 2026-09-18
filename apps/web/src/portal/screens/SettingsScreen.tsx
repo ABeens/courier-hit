@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CURRENCY_SYMBOLS, Currency, formatMoney } from '@courier/shared';
 import type {
+  CardSurchargeSettingDto,
   ExchangeRateHistoryEntryDto,
   ExchangeRateSettingDto,
   FreightRateSettingDto,
@@ -55,12 +56,23 @@ function formatFreight(usdPerLb: number): string {
   return `${formatMoney(usdPerLb, Currency.USD)} por libra`;
 }
 
+/**
+ * El recargo son dos cifras que no se pueden leer por separado: un porcentaje
+ * del cobro MÁS un fijo por transacción. Se dicen juntas en todas partes
+ * (encabezado, aviso de guardado, historial) porque son una sola tarifa.
+ */
+function formatSurcharge(percent: number, fixedUsd: number): string {
+  return `${percent}% + ${formatMoney(fixedUsd, Currency.USD)}`;
+}
+
 export function SettingsScreen({
   canEdit,
   canEditFreight,
+  canEditSurcharge,
 }: {
   canEdit: boolean;
   canEditFreight: boolean;
+  canEditSurcharge: boolean;
 }) {
   const [setting, setSetting] = useState<ExchangeRateSettingDto | null>(null);
   const [history, setHistory] = useState<ExchangeRateHistoryEntryDto[]>([]);
@@ -70,6 +82,11 @@ export function SettingsScreen({
   const [freightRate, setFreightRate] = useState('');
   const [freightNote, setFreightNote] = useState('');
   const [savingFreight, setSavingFreight] = useState(false);
+  const [surcharge, setSurcharge] = useState<CardSurchargeSettingDto | null>(null);
+  const [surchargePercent, setSurchargePercent] = useState('');
+  const [surchargeFixed, setSurchargeFixed] = useState('');
+  const [surchargeNote, setSurchargeNote] = useState('');
+  const [savingSurcharge, setSavingSurcharge] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -93,6 +110,13 @@ export function SettingsScreen({
       const freightDto = await api.get<FreightRateSettingDto>('/settings/freight-rate');
       setFreight(freightDto);
       setFreightRate(freightDto.usdPerLb != null ? String(freightDto.usdPerLb) : '');
+
+      const surchargeDto = await api.get<CardSurchargeSettingDto>('/settings/card-surcharge');
+      setSurcharge(surchargeDto);
+      // Los campos arrancan con lo vigente (aunque sea el valor de fábrica): lo
+      // normal es corregirlo, no digitar los dos números de cero.
+      setSurchargePercent(String(surchargeDto.percent));
+      setSurchargeFixed(String(surchargeDto.fixedUsd));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cargar la configuración.');
     }
@@ -155,6 +179,54 @@ export function SettingsScreen({
       setError(err instanceof ApiError ? err.message : 'No se pudo guardar la tarifa.');
     } finally {
       setSavingFreight(false);
+    }
+  }
+
+  const parsedPercent = Number(surchargePercent);
+  const parsedFixed = Number(surchargeFixed);
+  const surchargeOk =
+    surchargePercent.trim() !== '' &&
+    surchargeFixed.trim() !== '' &&
+    Number.isFinite(parsedPercent) &&
+    Number.isFinite(parsedFixed) &&
+    parsedPercent >= 0 &&
+    parsedPercent < 100 &&
+    parsedFixed >= 0;
+  /**
+   * Con el valor de FÁBRICA vigente el botón sigue activo aunque los números no
+   * cambien: guardar es justamente el acto de hacer propia esa tarifa, y deja el
+   * rastro de quién la revisó. Una vez fijada, repetir lo mismo no hace nada.
+   */
+  const surchargeUnchanged =
+    surcharge != null &&
+    !surcharge.isDefault &&
+    parsedPercent === surcharge.percent &&
+    parsedFixed === surcharge.fixedUsd;
+
+  async function saveSurcharge(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setNotice(null);
+    if (!surchargeOk) {
+      setError('Digita el porcentaje de comisión y el cargo fijo en dólares.');
+      return;
+    }
+    setSavingSurcharge(true);
+    try {
+      await api.put<CardSurchargeSettingDto>('/settings/card-surcharge', {
+        percent: parsedPercent,
+        fixedUsd: parsedFixed,
+        ...(surchargeNote.trim() ? { note: surchargeNote.trim() } : {}),
+      });
+      setSurchargeNote('');
+      setNotice(
+        `Recargo por pago con tarjeta actualizado: ${formatSurcharge(parsedPercent, parsedFixed)}.`,
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo guardar el recargo.');
+    } finally {
+      setSavingSurcharge(false);
     }
   }
 
@@ -325,6 +397,85 @@ export function SettingsScreen({
           <div className="field-hint">
             La tarifa de transporte internacional es un valor general del sistema: solo un
             administrador puede modificarla.
+          </div>
+        )}
+      </div>
+
+      {/* Recargo por pago con tarjeta: el tercer valor general. A diferencia de
+          los otros dos, este SÍ se le cobra al cliente, y por eso el bloque dice
+          con todas las letras qué le va a llegar de más. */}
+      <div className="card form-stack" style={{ marginTop: 18 }}>
+        <div>
+          <div className="field-label" style={{ marginBottom: 6 }}>
+            Recargo por pago con tarjeta
+          </div>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 26, color: 'var(--ink)' }}>
+            {surcharge ? formatSurcharge(surcharge.percent, surcharge.fixedUsd) : '—'}
+          </div>
+          <div className="field-hint">
+            {surcharge == null
+              ? 'Cargando…'
+              : surcharge.isDefault
+                ? 'Valor de fábrica: la tarifa publicada por Onvo Pay. Nadie lo ha revisado todavía.'
+                : `Fijado por ${surcharge.updatedByName ?? 'un administrador'}${
+                    surcharge.updatedAt ? ` el ${formatDateTime(surcharge.updatedAt)}` : ''
+                  }.`}
+          </div>
+        </div>
+
+        {canEditSurcharge ? (
+          <form className="form-stack" onSubmit={saveSurcharge}>
+            <div className="field-pair">
+              <div>
+                <label className="field-label" htmlFor="s-surcharge-percent">
+                  Comisión (% del cobro)
+                </label>
+                <input
+                  id="s-surcharge-percent" className="input" type="number" min="0" max="99" step="0.01"
+                  value={surchargePercent} placeholder="3.9" disabled={savingSurcharge}
+                  onChange={(e) => setSurchargePercent(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="s-surcharge-fixed">
+                  Cargo fijo por transacción (dólares)
+                </label>
+                <input
+                  id="s-surcharge-fixed" className="input" type="number" min="0" step="0.01"
+                  value={surchargeFixed} placeholder="0.35" disabled={savingSurcharge}
+                  onChange={(e) => setSurchargeFixed(e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="field-label" htmlFor="s-surcharge-note">
+                Nota (opcional)
+              </label>
+              <input
+                id="s-surcharge-note" className="input" type="text" maxLength={200}
+                value={surchargeNote} placeholder="Por qué se cambia" disabled={savingSurcharge}
+                onChange={(e) => setSurchargeNote(e.target.value)}
+              />
+            </div>
+            <div className="field-hint">
+              Es lo que la pasarela cobra por cada cobro con tarjeta y se le traslada al cliente:
+              se le suma al saldo, se le muestra antes de pagar y queda en su factura como una
+              línea de costo. Quien paga por depósito bancario no lo ve. Los cobros ya hechos
+              conservan el recargo con el que se cobraron.
+            </div>
+            <div>
+              <button
+                className="btn btn-primary" type="submit"
+                disabled={savingSurcharge || !surchargeOk || surchargeUnchanged}
+              >
+                {savingSurcharge ? 'Guardando…' : 'Guardar recargo'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="field-hint">
+            El recargo por pago con tarjeta es un valor general del sistema: solo un administrador
+            puede modificarlo.
           </div>
         )}
       </div>

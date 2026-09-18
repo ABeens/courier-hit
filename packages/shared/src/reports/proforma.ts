@@ -15,9 +15,9 @@
  *    ademas evita entregar dos documentos por el mismo dinero.
  * 2. SOLO SOBRE TRAMITES YA FACTURADOS. Sin costos aprobados no hay lineas ni
  *    total que imprimir; pedirla antes es un 409, no una proforma vacia.
- * 3. SU NUMERO ES PROPIO. Las proformas llevan su propia serie (`HSP000001000`,
- *    ver `formatProformaNumber`) y no el consecutivo del tramite ni el id del
- *    cobro. Heredar el numero de otro tramite hacia que dos documentos distintos
+ * 3. SU NUMERO ES PROPIO. Las proformas llevan su propia serie, un consecutivo
+ *    pelado que arranca en 1000 (ver `formatProformaNumber`), y no el consecutivo
+ *    del tramite ni el id del cobro. Heredarlo hacia que dos documentos distintos
  *    (la proforma suelta y la consolidada que la contiene) se identificaran con
  *    numeros de series ajenas, y que el cliente no pudiera citar "su proforma"
  *    sin citar de paso el consecutivo interno de otra cosa. La serie es UNICA
@@ -100,8 +100,8 @@ export interface ProformaShipmentDetail {
 export interface ProformaDto {
   shipmentId: string;
   /**
-   * NUMERO DE PROFORMA (`HSP000001000`). Serie propia, asignada la primera vez
-   * que se emite el documento y estable desde entonces (regla 3 de arriba).
+   * NUMERO DE PROFORMA: el consecutivo de su propia serie (1000, 1001...),
+   * asignado la primera vez que se emite y estable desde entonces (regla 3).
    */
   number: string;
   /**
@@ -206,7 +206,7 @@ export interface ConsolidatedProformaItem {
 export interface ConsolidatedProformaDto {
   paymentGroupId: string;
   /**
-   * NUMERO DE PROFORMA (`HSP000001000`), de la MISMA serie que la suelta. Antes
+   * NUMERO DE PROFORMA, de la MISMA serie que la suelta. Antes
    * era el id corto del grupo (`HSC-XXXXXXXX`), que es un identificador tecnico,
    * no un consecutivo: no se podia citar por telefono ni ordenar, y convivia con
    * el consecutivo del tramite en el otro documento como si fueran lo mismo.
@@ -263,22 +263,23 @@ export interface ConsolidatedProformaListItem {
   paidStatus: PaymentStatus;
 }
 
-/** Prefijo de la serie de proformas. `HSX` es el tramite; `HSP`, la proforma. */
-export const PROFORMA_CODE_PREFIX = 'HSP';
-
 /**
- * Formato del numero de proforma: `HSP` + 9 digitos (ejemplo HSP000001000).
+ * Numero de proforma: el CONSECUTIVO PELADO, sin prefijo y sin ceros delante
+ * (1000, 1001, 1002...). Asi lo pide el negocio y asi estan numeradas las
+ * proformas del material de referencia ("Factura proforma #951").
  *
- * Mismo molde que el consecutivo del tramite (`formatShipmentCode`) para que los
- * dos numeros se lean igual de largo en el documento, con otro prefijo para que
- * no se confundan. Punto UNICO del formato: lo imprime el documento, lo guarda
- * la base y lo muestra el reporte; dos formas de escribir el mismo numero es como
- * el cliente acaba sin poder buscar el suyo.
+ * No lleva el molde del consecutivo del tramite (`HSX` + 9 digitos) justamente
+ * para que no se lea como uno: este numero es de la proforma, no del tramite, y
+ * disfrazarlo de codigo interno invita a confundirlos otra vez.
+ *
+ * Sigue siendo el punto UNICO del formato aunque hoy solo convierta a texto: lo
+ * imprime el documento y lo muestra el reporte, y el dia que el negocio quiera
+ * un ancho fijo o una serie por año se cambia aqui y no en tres sitios.
  *
  * Acepta `string` porque la secuencia de Postgres es un bigint y el driver lo
- * entrega como cadena: convertirlo a `number` para volver a formatearlo solo
- * sirve para perder digitos el dia que la serie crezca.
+ * entrega como cadena: convertirlo a `number` solo sirve para perder digitos el
+ * dia que la serie crezca.
  */
 export function formatProformaNumber(sequence: number | string): string {
-  return `${PROFORMA_CODE_PREFIX}${String(sequence).padStart(9, '0')}`;
+  return String(sequence);
 }

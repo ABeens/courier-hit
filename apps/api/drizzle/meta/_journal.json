@@ -253,6 +253,20 @@
       "when": 1789630989379,
       "tag": "0035_card_surcharge",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1789702232842,
+      "tag": "0036_cost_line_payment",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1789703603929,
+      "tag": "0037_card_surcharge_setting",
+      "breakpoints": true
     }
   ]
 }

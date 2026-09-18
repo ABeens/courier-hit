@@ -514,14 +514,14 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
                         {formatDate(payment.depositedAt ?? payment.createdAt)} ·{' '}
                         {PAYMENT_METHOD_LABELS[payment.method]}
                         {payment.bankAccount && <> · {BANK_ACCOUNT_LABELS[payment.bankAccount]}</>}
-                        {/* El recargo que se le cobró de más al cliente por la
-                            comisión de la pasarela. No abona nada contra la
-                            factura; se dice aquí porque es la diferencia entre
-                            este abono y lo que muestra el panel de Onvo. */}
+                        {/* Qué parte del abono fue la comisión de la pasarela.
+                            El importe ya la incluye: se cobró junto con el saldo
+                            y quedó asentada como línea de costo en la factura. */}
                         {payment.surchargeAmount > 0 && (
                           <>
                             {' '}
-                            · + {formatMoney(payment.surchargeAmount, payment.currency)} de comisión
+                            · incluye {formatMoney(payment.surchargeAmount, payment.currency)} de
+                            comisión
                           </>
                         )}
                       </div>
