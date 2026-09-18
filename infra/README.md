@@ -436,10 +436,12 @@ en un solo despliegue.
    powershell -ExecutionPolicy Bypass -File .\infra\scripts\domain.ps1 deploy
    ```
 3. **DNS del sitio** en Squarespace, sin tocar los MX ni el SPF:
-   - `www` → CNAME al dominio de la distribución.
-   - apex → **reenvío** (Forwarding) a `https://www.hsglobal-services.com`, con
+   - ✅ `www` → CNAME al dominio de la distribución. Ya existe:
+     `https://www.hsglobal-services.com` responde 200 con su certificado.
+   - ⬜ apex → **reenvío** (Forwarding) a `https://www.hsglobal-services.com`, con
      HTTPS activado. No es un registro DNS: está en la sección de reenvío del
-     dominio, no en la de registros.
+     dominio, no en la de registros. **Todavía falta**: hoy el apex no resuelve,
+     así que quien escriba `hsglobal-services.com` a secas no llega a ninguna parte.
 4. **Registro A** `api.hsglobal-services.com` apuntando a la Elastic IP, para el
    origen de la API.
 5. **Origen de `/api/*` a HTTPS** con ese nombre, en vez del HTTP actual. Ojo: el
@@ -453,9 +455,20 @@ en un solo despliegue.
    Workspace; si hace falta, va sobre un subdominio (`mail.`).
 7. **URL del webhook de Onvo** al host canónico (§E).
 
-`WEB_ORIGIN` y el `site` de `apps/web/astro.config.mjs` ya no son pasos sueltos:
-el primero lo calcula el stack a partir del certificado, y el segundo ya apunta a
-`www.hsglobal-services.com`.
+`WEB_ORIGIN` y el `site` de `apps/web/astro.config.mjs` no son pasos sueltos: los
+dos siguen a **`DOMAIN_LIVE`** en `lib/config.ts` (no al certificado; tener
+certificado no significa que el nombre resuelva). El primero lo calcula el stack
+a partir de esa constante, el segundo se cambia a la par.
+
+**Cambiar `DOMAIN_LIVE` no basta.** `WEB_ORIGIN` vive en Parameter Store y solo se
+reescribe al desplegar, y el proceso de la API no relee SSM por su cuenta: hasta
+que no se despliegue y se recargue el env, los enlaces de los correos (invitación
+de staff y restablecer contraseña) siguen saliendo con la URL de CloudFront. Los
+tres pasos, en orden y con comprobación previa de que `www` responde:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\infra\scripts\dominio-propio.ps1
+```
 
 Y una decisión de negocio: el correo de servicio al cliente
 (`servicioalcliente@hsglobal-services.com`) **es también la credencial contra

@@ -874,14 +874,32 @@ export const paymentsService = {
       confirmedAt: new Date(),
     });
 
-    if (!updated) return { applied: false, reason: 'already_resolved' };
+    /**
+     * EL RECARGO SE ASIENTA TAMBIEN EN EL REINTENTO. El cobro ya estaba resuelto,
+     * pero el asiento pudo haberse quedado sin hacer: un fallo de BD justo
+     * despues de confirmar, o —lo que ya paso una vez— un cobro confirmado por
+     * una version anterior que todavia no sabia asentarlo.
+     *
+     * Sin esto, el primer intento fallido era definitivo: la segunda entrega del
+     * webhook salia por `already_resolved` y la comision se quedaba fuera de la
+     * factura para siempre. Reintentarlo es gratis porque el asiento es
+     * idempotente (unico sobre `payment_id`).
+     *
+     * OJO con los cobros anteriores a este mecanismo: los que se confirmaron
+     * cuando el abono guardaba solo el saldo (sin el recargo dentro) quedarian
+     * con la factura 0,78 por encima de lo abonado. Esos se arreglan corrigiendo
+     * el abono, no aqui.
+     */
+    if (!updated) {
+      if (outcome.approved && payment.status === PaymentStatus.Confirmado) {
+        await costsService.postCardSurcharge(payment);
+      }
+      return { applied: false, reason: 'already_resolved' };
+    }
 
     /**
      * Cobro aprobado: la comision que se le cargo de mas al cliente se asienta
-     * como costo trasladado y sube la factura del tramite. Va DESPUES de
-     * `resolveIfPending` y solo si esa llamada movio la fila, que es lo que evita
-     * cargarla dos veces cuando la pasarela reintenta el webhook (el unico sobre
-     * `payment_id` lo vuelve a evitar en la BD).
+     * como costo trasladado y sube la factura del tramite.
      *
      * En un cobro RECHAZADO no se asienta nada: no hubo comision que pagar.
      */

@@ -775,15 +775,20 @@ export const consolidatedService = {
         note,
         confirmedAt: new Date(),
       });
-      if (!updated) continue;
-      applied = true;
-
       /**
        * La parte de la comision que le toca a este paquete se asienta como costo
-       * y sube su factura. Solo si `resolveIfPending` movio la fila, para que el
-       * reintento del webhook no la cargue dos veces.
+       * y sube su factura.
+       *
+       * Se intenta TAMBIEN cuando la fila ya estaba resuelta, por lo mismo que en
+       * el pago suelto: el asiento pudo quedarse sin hacer (un fallo, o una
+       * version anterior que no lo conocia) y el reintento del webhook era la
+       * unica oportunidad de recuperarlo. Es idempotente.
        */
-      if (outcome.approved) await costsService.postCardSurcharge(line);
+      if (outcome.approved && (updated || line.status === PaymentStatus.Confirmado)) {
+        await costsService.postCardSurcharge(line);
+      }
+      if (!updated) continue;
+      applied = true;
     }
 
     return applied ? { applied: true, reason: 'ok' } : { applied: false, reason: 'already_resolved' };

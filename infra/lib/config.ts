@@ -135,16 +135,23 @@ export const SITE_DOMAINS = [SITE_DOMAIN, SITE_HOST];
 /**
  * Si el dominio RESUELVE de verdad, que es distinto de tener certificado.
  *
- * Son dos cosas separadas a proposito. El certificado y los alias ya estan
- * puestos, pero mientras no exista el CNAME de `www` en Squarespace nadie llega
- * por ese nombre, y apuntar ahi `WEB_ORIGIN` significaria mandar a los clientes
- * enlaces a un host que no existe. Con `false`, todo lo que mira al sitio usa la
- * URL de CloudFront, que si funciona.
+ * Son dos cosas separadas a proposito. El certificado y los alias se pusieron
+ * antes, pero mientras no existio el CNAME de `www` en Squarespace nadie llegaba
+ * por ese nombre, y apuntar ahi `WEB_ORIGIN` habria significado mandar a los
+ * clientes enlaces a un host inexistente. Con `false`, todo lo que mira al sitio
+ * usaba la URL de CloudFront.
  *
- * Se pone en `true` el dia que exista el registro, y basta con desplegar y
- * reiniciar: no hay nada mas que tocar.
+ * En `true` desde sep-2026: el CNAME existe y `https://www.hsglobal-services.com`
+ * sirve el sitio con su certificado. A partir de aqui los enlaces que salen por
+ * correo (invitacion de staff y restablecer contrasena) llevan el dominio propio,
+ * y `WEB_ORIGIN`, que es la lista blanca de CORS del portal, tambien.
+ *
+ * Cambiar esta constante NO basta: el parametro solo se reescribe al desplegar,
+ * asi que hay que `cdk deploy` del stack de app y recargar el env de la API.
+ * Y va de la mano de `site` en `apps/web/astro.config.mjs`, que alimenta el
+ * canonical y las og:image.
  */
-export const DOMAIN_LIVE = false;
+export const DOMAIN_LIVE = true;
 
 export const CERTIFICATE_ARN =
   'arn:aws:acm:us-east-1:632914961265:certificate/bb6d00ed-fce7-440b-a00c-1d671c820026';
