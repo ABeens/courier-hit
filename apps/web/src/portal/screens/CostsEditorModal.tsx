@@ -11,7 +11,7 @@
  *   - APROBAR CONGELA. Guarda, fija el monto de factura y avanza el tramite a
  *     "En bodega - Pendiente pago". Desde ahi ya no se edita.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { IconButton } from '../components/IconButton';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { OptionPicker } from '../components/OptionPicker';
@@ -106,15 +106,8 @@ function fromSuggestion(s: SuggestedCostLine): DraftLine {
 export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props) {
   const [data, setData] = useState<ShipmentCostsDto | null>(null);
   const [lines, setLines] = useState<DraftLine[]>([]);
-  /**
-   * Clave de la ultima fila agregada a mano. La tabla crece hacia abajo y el
-   * cuerpo del modal tiene su propio scroll, asi que una fila nueva puede nacer
-   * fuera de la vista: con esto se baja el scroll hasta el fondo y se le da un
-   * destello a la fila.
-   */
+  /** Clave de la ultima fila agregada a mano: es la que lleva el destello. */
   const [lastAdded, setLastAdded] = useState<string | null>(null);
-  /** El cuerpo del modal es el elemento que scrollea (`.modal-body`). */
-  const bodyRef = useRef<HTMLDivElement>(null);
   const [rate, setRate] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -173,19 +166,6 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
     void load();
   }, [load]);
 
-  /**
-   * Tras agregar una fila, el cuerpo del modal baja hasta el fondo. La fila nueva
-   * es lo ultimo de la tabla, asi que el final del scroll la deja a la vista
-   * junto al boton de agregar y el total. Se pide `scrollHeight`, que pasa del
-   * maximo: el navegador lo recorta al tope real, que es justo lo que se quiere.
-   */
-  useEffect(() => {
-    if (lastAdded === null) return;
-    const el = bodyRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-  }, [lastAdded]);
-
   const approved = data?.approved ?? false;
   /**
    * Reversar exige lo mismo que la API: factura congelada, tramite todavia en
@@ -234,6 +214,18 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
       ...conceptOptions,
     ];
   }
+
+  /**
+   * Las lineas se GUARDAN en el orden del negocio (el flete primero, y luego cada
+   * concepto en el orden en que se agrego) pero se PINTAN al reves: lo ultimo
+   * agregado va arriba, pegado al boton de agregar. Asi una fila nueva nace a la
+   * vista y no hay que ir a buscarla al final de una tabla larga.
+   *
+   * La inversion vive SOLO aqui, en la pintada. El estado y el cuerpo que se
+   * manda a la API conservan su orden: darle la vuelta tambien al guardado
+   * voltearia la factura en cada guardado.
+   */
+  const shownLines = [...lines].reverse();
 
   /** Moneda con la que arranca una fila nueva: la que propone el catalogo. */
   const defaultCurrency = data?.suggestions[0]?.currency ?? Currency.USD;
@@ -453,7 +445,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
           </p>
         </div>
 
-        <div className="modal-body" ref={bodyRef}>
+        <div className="modal-body">
           {error && <div className="banner err">{error}</div>}
           {notice && <div className="banner ok">{notice}</div>}
 
@@ -496,6 +488,17 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
             </div>
           </div>
 
+          {/* El boton va ARRIBA porque la fila nueva aparece arriba: el gesto y
+              su resultado quedan juntos. El concepto se elige dentro de la fila,
+              asi que aqui afuera no hay catalogo que mostrar. */}
+          {!approved && (
+            <div className="actions">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={addLine}>
+                + Agregar línea
+              </button>
+            </div>
+          )}
+
           <div className="table-wrap">
             <table className="table">
               <thead>
@@ -507,7 +510,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line) => (
+                {shownLines.map((line) => (
                   <tr key={line.key} className={line.key === lastAdded ? 'is-new' : undefined}>
                     <td>
                       {/* El flete se nombra desde la tarifa del casillero: se muestra, no se digita. */}
@@ -602,16 +605,6 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
           </div>
 
           {lines.length === 0 && <div className="empty">Aún no hay líneas de costo.</div>}
-
-          {/* Se agrega la FILA vacia y el concepto se elige dentro de ella: el
-              catalogo vive en el desplegable de cada linea, no aqui afuera. */}
-          {!approved && (
-            <div className="actions">
-              <button type="button" className="btn btn-ghost btn-sm" onClick={addLine}>
-                + Agregar línea
-              </button>
-            </div>
-          )}
 
           <div className="banner ok" style={{ background: 'var(--paper-2)', color: 'var(--ink)' }}>
             {preview ? (
