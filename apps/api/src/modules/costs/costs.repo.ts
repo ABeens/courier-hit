@@ -144,7 +144,18 @@ export const costsRepo = {
           currency: input.currency,
           exchangeRate: input.exchangeRate,
         })
-        .onConflictDoNothing({ target: shipmentCosts.paymentId })
+        /**
+         * EL PREDICADO DEL INDICE VA AQUI, no es decorativo: el unico sobre
+         * `payment_id` es PARCIAL (solo las filas que lo llevan), y Postgres no
+         * puede emparejar un `on conflict (payment_id)` a secas con un indice
+         * parcial. Sin el `where`, el insert no entra en conflicto: falla, con
+         * "no hay restriccion unica que coincida con la especificacion ON
+         * CONFLICT", y la comision se queda sin asentar SIEMPRE.
+         */
+        .onConflictDoNothing({
+          target: shipmentCosts.paymentId,
+          where: sql`${shipmentCosts.paymentId} is not null`,
+        })
         .returning({ id: shipmentCosts.id });
 
       if (inserted.length === 0) return false;
