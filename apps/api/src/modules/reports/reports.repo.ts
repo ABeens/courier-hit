@@ -25,8 +25,16 @@ import {
   sql,
 } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
-import { ClientRateKind, State } from '@courier/shared';
+import { ClientRateKind, State, terminalStates } from '@courier/shared';
 import type { ProformaQuery, ReportQuery } from '@courier/shared';
+
+/**
+ * Los estados que cierran un tramite. Paqueteria termina en Entregado y los
+ * otros dos en Tramite Finalizado, asi que la fecha de cierre se busca contra el
+ * conjunto: con el literal de antes, los reportes dejaban de contar Transporte y
+ * Agenciamiento sin dar ningun error.
+ */
+const CLOSING_STATES = [...terminalStates()];
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { cantonRoutes } from '../routes/canton-route.schema';
@@ -289,7 +297,7 @@ export const reportsRepo = {
         .where(
           and(
             inArray(shipmentEvents.shipmentId, ids),
-            inArray(shipmentEvents.state, [State.RecibidoBodegaMiami, State.Entregado]),
+            inArray(shipmentEvents.state, [State.RecibidoBodegaMiami, ...CLOSING_STATES]),
           ),
         )
         .groupBy(shipmentEvents.shipmentId, shipmentEvents.state),
@@ -379,7 +387,7 @@ export const reportsRepo = {
         .where(
           and(
             eq(shipmentEvents.shipmentId, shipmentId),
-            eq(shipmentEvents.state, State.Entregado),
+            inArray(shipmentEvents.state, CLOSING_STATES),
           ),
         ),
     ]);

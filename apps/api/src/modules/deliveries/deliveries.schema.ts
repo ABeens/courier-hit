@@ -8,6 +8,7 @@
  *
  * Fuente: "Requerimientos Parte 5 - Portal Entregas" y docs/14-modulo-entregas.md.
  */
+import { sql } from 'drizzle-orm';
 import { index, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { DELIVERY_OUTCOME_VALUES } from '@courier/shared';
 import { users } from '../auth/auth.schema';
@@ -24,11 +25,21 @@ export const deliveryAttempts = pgTable(
       .references(() => shipments.id, { onDelete: 'cascade' }),
     outcome: deliveryOutcomeEnum('outcome').notNull(),
     /**
-     * Foto del paquete entregado, en el almacen de archivos (core/storage).
-     * Obligatoria cuando outcome = entregado; la exige el servicio, no la BD,
-     * porque la regla es condicional al desenlace (`proofRequirementFor`).
+     * Fotos del paquete entregado, en el almacen de archivos (core/storage), en
+     * el orden en que las subio el mensajero. Al menos una cuando outcome =
+     * entregado y como mucho `MAX_DELIVERY_PHOTOS`; las dos reglas las exige el
+     * servicio y no la BD, porque son condicionales al desenlace
+     * (`proofRequirementFor`).
+     *
+     * Van en un array y no en una tabla aparte porque no son una entidad: no se
+     * consultan por su cuenta, no tienen atributos propios y nacen y mueren con
+     * el intento, que es append-only. Una tabla hija solo añadiria un join a
+     * cada lectura del historial.
      */
-    photoFileKey: text('photo_file_key'),
+    photoFileKeys: text('photo_file_keys')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     /** Razon de la devolucion. Obligatoria cuando outcome = devuelto_bodega. */
     note: text('note'),
     /** Mensajero que hizo la visita. */

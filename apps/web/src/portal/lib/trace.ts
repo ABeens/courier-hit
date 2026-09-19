@@ -16,7 +16,7 @@
  * una compra que todavia no llega a Miami, y en Agenciamiento un tramite que
  * acaba de entrar. Un solo texto para los dos mentiria en uno de ellos.
  */
-import { Flow, State } from '@courier/shared';
+import { Flow, State, isCollectible } from '@courier/shared';
 import type { ShipmentDto } from '@courier/shared';
 import { awaitingValidation } from '../components/PayFlag';
 
@@ -44,13 +44,17 @@ const BASE: Record<State, string> = {
   [State.EnTransitoDestino]: 'En ruta internacional',
   [State.ArriboDestino]: 'Arribó a Costa Rica',
   [State.ProcesoAduanas]: 'Proceso aduanero',
+  [State.LiberadoAduanas]: 'Liberado por aduana',
+  [State.EntregadoPendientePago]: 'Entregado, pendiente de facturar',
+  [State.TramiteFinalizado]: 'Trámite cerrado',
 
   // Agenciamiento.
   [State.RevisionDocumentos]: 'Verificando la documentación aduanal',
   [State.ExamenPrevio]: 'Inspección previa de la mercancía',
   [State.InspeccionDekra]: 'Inspección técnica (Dekra)',
   [State.PreparandoBorradorDua]: 'Elaborando el DUA',
-  [State.PendienteAdelantoImpuestos]: 'A la espera del adelanto de impuestos',
+  [State.ProformaPendientePago]: 'Proforma emitida, a la espera del pago',
+  [State.Aforando]: 'Aduana revisando y valorando la mercancía',
 
   // Paquetería.
   [State.RecibidoBodegaMiami]: 'Bodega Miami, FL (USA)',
@@ -72,14 +76,18 @@ const BY_FLOW: Partial<Record<Flow, Partial<Record<State, string>>>> = {
 };
 
 /**
- * Que esta pasando AHORA con un tramite parado en «En bodega - Pendiente pago».
+ * Que esta pasando AHORA con un tramite parado en su estado de COBRO.
  *
  * Es el unico estado cuyo texto no se puede escribir de una vez, porque el estado
  * NO se mueve al pagar: el pago solo levanta la guarda
  * (Condition.RequiresConfirmedPayment) y el tramite se queda ahi hasta que la
- * operacion lo carga a una ruta. Con un texto fijo, el cliente que acaba de pagar
- * seguiria leyendo «pago requerido» durante horas o dias, que es exactamente lo
- * que le hace pagar dos veces.
+ * operacion lo empuja. Con un texto fijo, el cliente que acaba de pagar seguiria
+ * leyendo «pago requerido» durante horas o dias, que es exactamente lo que le
+ * hace pagar dos veces.
+ *
+ * Cual es ese estado depende del flujo (Paqueteria en bodega, Transporte en
+ * facturacion, Agenciamiento en la proforma), asi que se pregunta con `isPayable`
+ * en vez de compararlo con un literal.
  *
  * El estado interno no cambia: lo que cambia es lo que se le cuenta al cliente.
  * La respuesta a «¿ya pagó?» sale de `awaitingValidation`, la misma funcion que
@@ -102,6 +110,8 @@ function paymentPlace(row: ShipmentDto): string {
  * dejo atras hace semanas seria describir el presente en el lugar del pasado.
  */
 export function tracePlace(row: ShipmentDto, state: State, isCurrent: boolean): string {
-  if (isCurrent && state === State.EnBodegaPendientePago) return paymentPlace(row);
+  if (isCurrent && isCollectible(row.flow, { state, invoiceTotalCrc: row.invoiceTotalCrc })) {
+    return paymentPlace(row);
+  }
   return BY_FLOW[row.flow]?.[state] ?? BASE[state];
 }

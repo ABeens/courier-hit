@@ -33,6 +33,8 @@ import {
   billingCurrencyFor,
   can,
   clientFullLabel,
+  isCollectible,
+  isPayable,
   formatMoney,
   statesOf,
   usesPackageFields,
@@ -328,18 +330,24 @@ export function ShipmentsScreen({
       return [...new Set([...statesOf(Flow.Transporte), ...statesOf(Flow.Agenciamiento)])];
     }
     /**
-     * Las vistas del cliente ofrecen los estados de SU flujo. En las dos se cae
-     * "En bodega - Pendiente pago", por lo mismo que no se pinta su píldora en la
-     * ficha: ofrecerla en el filtro seria enseñarle por la puerta de atras la
-     * etiqueta que se le oculta.
+     * Las vistas del cliente ofrecen los estados de SU flujo, menos el de COBRO,
+     * por lo mismo que no se pinta su píldora en la ficha: ofrecerla en el filtro
+     * seria enseñarle por la puerta de atras la etiqueta que se le oculta.
+     *
+     * Cuál es el de cobro depende del flujo, así que se pregunta con `isPayable`.
+     * En Trámites son dos distintos (Transporte cobra en facturación y
+     * Agenciamiento en la proforma) y se cae el de cada uno.
      */
     if (view === 'propios') {
-      return statesOf(Flow.Paqueteria).filter((s) => s !== State.EnBodegaPendientePago);
+      return statesOf(Flow.Paqueteria).filter((s) => !isPayable(Flow.Paqueteria, s));
     }
     if (view === 'propios-tramites') {
-      return [...new Set([...statesOf(Flow.Transporte), ...statesOf(Flow.Agenciamiento)])].filter(
-        (s) => s !== State.EnBodegaPendientePago,
-      );
+      return [
+        ...new Set([
+          ...statesOf(Flow.Transporte).filter((s) => !isPayable(Flow.Transporte, s)),
+          ...statesOf(Flow.Agenciamiento).filter((s) => !isPayable(Flow.Agenciamiento, s)),
+        ]),
+      ];
     }
     return Object.values(State);
   }, [view]);
@@ -642,7 +650,7 @@ export function ShipmentsScreen({
                   amounts={amounts}
                 />
                 {/*
-                  Al cliente NO se le muestra "En bodega - Pendiente pago". Es la
+                  Al cliente NO se le muestra "En bodega preparando". Es la
                   etiqueta operativa de que la factura ya está aprobada y el
                   paquete espera en bodega; junto al botón "Pagar" le dice dos
                   veces lo mismo, y sigue diciéndolo después de pagar —el pago no
@@ -650,7 +658,7 @@ export function ShipmentsScreen({
                   pago entró. Lo que le importa de ese momento ya se lo cuenta la
                   bandera de cobro: saldo, en validación o pagado.
                 */}
-                {!(isOwn && row.state === State.EnBodegaPendientePago) && (
+                {!(isOwn && isCollectible(row.flow, row)) && (
                   <span className="spill"><span className="dot" />{STATE_LABELS[row.state]}</span>
                 )}
                 {/* Historial del trámite, en TODAS las fichas de Paquetería y
@@ -716,10 +724,10 @@ export function ShipmentsScreen({
                 )}
                 {/*
                   El cobro solo tiene sentido con la factura ya aprobada, que es
-                  justo lo que significa "En bodega - Pendiente pago".
+                  justo lo que significa "En bodega preparando".
 
                   Pero el estado NO alcanza como condición: el pago no mueve el
-                  trámite, así que uno ya cobrado se queda en "Pendiente pago"
+                  trámite, así que uno ya cobrado se queda en "En bodega preparando"
                   hasta que la operación lo despacha. Con solo el estado, el
                   cliente seguía viendo "Pagar" después de pagar.
 
@@ -727,7 +735,7 @@ export function ShipmentsScreen({
                   revisión se ofrece "Ver pago", que abre el mismo modal para
                   consultar sin empujar a pagar de nuevo.
                 */}
-                {canPay && row.state === State.EnBodegaPendientePago && !row.settled && (
+                {canPay && isCollectible(row.flow, row) && !row.settled && (
                   /*
                     Cuenta CONSOLIDADA: no se paga paquete por paquete. El botón de
                     pagar no se ofrece —la API lo rechazaría igual— y en su lugar

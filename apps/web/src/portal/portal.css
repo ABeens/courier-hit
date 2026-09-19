@@ -1574,11 +1574,42 @@ select.input { cursor: pointer; padding-right: 30px; }
 .pkg-photo:hover .pkg-photo-zoom,
 .pkg-photo:focus-visible .pkg-photo-zoom { opacity: 1; }
 
-/* La foto de la entrega vive dentro de su asiento del historial: una sola
-   miniatura, del mismo tamano que las de bodega, debajo de la nota del tramo y
-   encima de la hora. `display: block` para que no se alinee como texto en linea
-   con lo que la rodea. */
-.trace-photo { display: block; width: 92px; margin-top: 8px; }
+/* Las fotos de la entrega viven dentro de su asiento del historial: hasta tres
+   miniaturas en fila, del mismo tamano que las de bodega, debajo de la nota del
+   tramo y encima de la hora. `flex` con `wrap` y no la rejilla de bodega: aqui
+   son dos o tres y tienen que quedarse juntas a la izquierda, no repartirse el
+   ancho del modal. */
+.trace-photos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+
+.trace-photo { display: block; width: 92px; }
+
+/* --- Las fotos mientras se suben (modal del mensajero) -----------------------
+   Las miniaturas de la vista previa son mas grandes que las del historial: aqui
+   se esta decidiendo si la foto sirve, y en 92px una caja movida se ve igual que
+   una nitida. Cada una lleva su aspa para descartarla y repetir la toma. */
+.delivery-photos {
+  display: grid; gap: 8px; margin-top: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+}
+
+.delivery-photo {
+  position: relative; overflow: hidden;
+  aspect-ratio: 1; border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--line-2);
+}
+
+.delivery-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+/* Siempre visible, no solo al pasar por encima: esto se usa con el dedo y en la
+   calle, donde no hay hover que descubra el boton. */
+.delivery-photo-remove {
+  position: absolute; top: 5px; right: 5px;
+  display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
+  border: 0; border-radius: 50%; cursor: pointer;
+  background: rgba(20,24,40,.66); color: #fff;
+}
+.delivery-photo-remove svg { width: 13px; height: 13px; }
+.delivery-photo-remove:hover { background: rgba(20,24,40,.86); }
 
 /* --- La foto ampliada -------------------------------------------------------
    No es un `.modal`: no lleva ni cabecera ni pie, porque el contenido es la foto

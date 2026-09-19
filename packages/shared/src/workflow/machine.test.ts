@@ -13,7 +13,16 @@ import assert from 'node:assert/strict';
 import { Flow } from './shipment-type';
 import { State } from './states';
 import { ShipmentField } from '../shipments/shipment';
-import { canEditField, editableFieldsAt, nextStates, statesOf } from './machine';
+import {
+  canEditField,
+  editableFieldsAt,
+  isCollectible,
+  isPayable,
+  nextStates,
+  payableStateOf,
+  statesOf,
+  terminalStates,
+} from './machine';
 
 /**
  * Campos exclusivos de cada familia de tramite (coherencia tipo <-> campo).
@@ -145,6 +154,55 @@ test('editableFieldsAt es vacio para un estado ajeno al flow', () => {
  * -> En ruta de entrega). No es un retroceso por error sino una rama del dominio
  * (el mensajero vuelve a salir), y por eso se nombra aqui en vez de relajar la regla.
  */
+
+/**
+ * EL COBRO. Cada flow cobra en UN estado y solo en uno, y cual es se deduce de la
+ * guarda (`payableStateOf`): el que precede a un estado que exige el pago
+ * confirmado. Si alguien mueve el bloque de facturacion de sitio, estos dos tests
+ * son los que avisan antes de que el cobro se quede sin puerta o con dos.
+ */
+test('Invariante: cada flow cobra en exactamente un estado', () => {
+  for (const flow of Object.values(Flow)) {
+    const payable = payableStateOf(flow);
+    assert.ok(payable, `${flow} no tiene estado de cobro`);
+    const marked = statesOf(flow).filter((s) => isPayable(flow, s));
+    assert.deepEqual(marked, [payable], `${flow}: ${marked.length} estados de cobro`);
+  }
+});
+
+/**
+ * Transporte entra a su estado de cobro ANTES de tener factura (se factura y se
+ * cobra en el mismo estado). Estar en el estado no basta para cobrar: sin monto
+ * no se ofrece pagar ni se describe un cobro.
+ */
+test('Transporte en facturacion sin factura NO es cobrable; con factura si', () => {
+  const state = State.FacturacionEnProceso;
+  assert.ok(isPayable(Flow.Transporte, state));
+  assert.equal(isCollectible(Flow.Transporte, { state, invoiceTotalCrc: null }), false);
+  assert.equal(isCollectible(Flow.Transporte, { state, invoiceTotalCrc: 125000 }), true);
+});
+
+test('El cobro vive donde lo puso el rediseño de estados', () => {
+  // Paqueteria cobra antes de repartir; Transporte factura y cobra en el mismo
+  // estado (se entrega antes de cobrar); Agenciamiento cobra la proforma antes
+  // de entrar a aduana.
+  assert.equal(payableStateOf(Flow.Paqueteria), State.EnBodegaPendientePago);
+  assert.equal(payableStateOf(Flow.Transporte), State.FacturacionEnProceso);
+  assert.equal(payableStateOf(Flow.Agenciamiento), State.ProformaPendientePago);
+});
+
+/**
+ * EL CIERRE. `shipments_active_tracking` (apps/api, shipments.schema.ts) es un
+ * indice parcial de Postgres y por eso lleva los estados terminales ESCRITOS A
+ * MANO: un indice no puede llamar a `terminalStates()`. Este test es el unico
+ * vinculo entre las dos copias. Si cae, hay que tocar el indice con una
+ * migracion, o un tracking de un tramite ya cerrado quedara reservado para
+ * siempre y nadie podra volver a usar esa guia.
+ */
+test('Invariante: los estados de cierre son los que el indice de tracking da por terminados', () => {
+  assert.deepEqual([...terminalStates()].sort(), [State.Entregado, State.TramiteFinalizado].sort());
+});
+
 test('Invariante: ningun flow permite retroceder por la maquina de estados', () => {
   const retryDelivery = `${Flow.Paqueteria}:${State.DevueltoBodega}->${State.EnRutaEntrega}`;
 

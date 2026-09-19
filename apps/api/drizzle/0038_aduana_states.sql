@@ -1,0 +1,2 @@
+ALTER TYPE "public"."shipment_state" ADD VALUE 'liberado_aduanas' BEFORE 'revision_documentos';--> statement-breakpoint
+ALTER TYPE "public"."shipment_state" ADD VALUE 'aforando' BEFORE 'recibido_bodega_miami';

@@ -1,10 +1,12 @@
 /**
  * Esquemas Zod del modulo de entregas (permiso delivery.manage).
  *
- * El registro del intento llega como multipart (lleva la foto), asi que estos
- * esquemas validan los CAMPOS DE TEXTO del formulario; el archivo lo valida la
- * capa de almacenamiento de la API. Por eso `photoFileKey` no esta aqui: no lo
- * elige el cliente, lo devuelve el almacen al guardar el archivo.
+ * El registro del intento llega como multipart (lleva las fotos, hasta
+ * `MAX_DELIVERY_PHOTOS`), asi que estos esquemas validan los CAMPOS DE TEXTO del
+ * formulario; los archivos los validan la capa de almacenamiento de la API (tipo
+ * y tamaño) y el servicio de entregas (cuantos). Por eso `photoFileKeys` no esta
+ * aqui: no las elige el cliente, las devuelve el almacen al guardar cada
+ * archivo.
  */
 import { z } from 'zod';
 import { paginationQuerySchema } from '../http/pagination';
@@ -12,9 +14,10 @@ import { DeliveryOutcome } from './delivery';
 import { proofRequirementFor } from './delivery';
 
 /**
- * Registro de un intento de entrega. La foto se valida en la API (es un archivo,
- * no un campo); aqui se exige la nota cuando el desenlace es una devolucion,
- * que es la mitad de la regla que SI se puede comprobar sobre el texto.
+ * Registro de un intento de entrega. Las fotos se validan en la API (son
+ * archivos, no campos); aqui se exige la nota cuando el desenlace es una
+ * devolucion, que es la mitad de la regla que SI se puede comprobar sobre el
+ * texto.
  */
 export const recordDeliveryAttemptSchema = z
   .object({

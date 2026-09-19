@@ -34,6 +34,8 @@ import {
   cardChargeFor,
   chargeBasisFor,
   exchangeRateSchema,
+  flowForType,
+  isCollectible,
   isSettled,
   outstandingCrc,
   outstandingFor,
@@ -347,7 +349,7 @@ export const paymentsService = {
        * dominio compartido, no un dato de este tramite.
        */
       availableBankAccounts: bankAccountsFor(shipment.shipmentType),
-      payableState: shipment.state === State.EnBodegaPendientePago,
+      payableState: isCollectible(flowForType(shipment.shipmentType), shipment),
     };
   },
 
@@ -379,7 +381,16 @@ export const paymentsService = {
     const shipment = await loadBillableShipment(input.shipmentId);
     assertOwnership(session, shipment);
 
-    if (shipment.state !== State.EnBodegaPendientePago) throw PaymentErrors.notPayableState();
+    /**
+     * Cada flujo cobra en un estado distinto (Paqueteria en bodega, Transporte en
+     * facturacion, Agenciamiento en la proforma), asi que la pregunta se le hace
+     * a la maquina y no a un literal. Es la MISMA respuesta que viaja en
+     * `payableState` hacia la pantalla, para que la web no pueda ofrecer un boton
+     * que esta guarda vaya a rechazar.
+     */
+    if (!isCollectible(flowForType(shipment.shipmentType), shipment)) {
+      throw PaymentErrors.notPayableState();
+    }
 
     // Cuenta consolidada: se paga el grupo entero, nunca un paquete suelto.
     await assertNotConsolidated(shipment.clientId);

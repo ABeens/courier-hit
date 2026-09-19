@@ -8,7 +8,7 @@
  *     adicionales y apruebe. Es el camino manual de siempre.
  *   - `requiresBillingReview = false` (todas las tarifas de hoy) -> no hay costos
  *     adicionales que agregarle: el sistema le cotiza el flete, congela la factura
- *     y el tramite sigue solo hasta "En bodega - Pendiente pago".
+ *     y el tramite sigue solo hasta "En bodega preparando".
  *
  * Vive aparte de `costs.service` a proposito. Esto NO es una accion de usuario
  * sobre la pantalla de costos, es un efecto de que el paquete entre a facturacion,

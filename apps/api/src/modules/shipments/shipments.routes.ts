@@ -13,6 +13,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '../../core/validator';
 import {
+  MAX_DELIVERY_PHOTOS,
   Permission,
   assignShipmentOwnerSchema,
   correctStateSchema,
@@ -194,16 +195,22 @@ shipmentsRoutes.get('/:id/photos', canRead, async (c) => {
 });
 
 /**
- * Foto del paquete entregado (la prueba que subio el mensajero). El historial
- * (`/:id/events`) dice en que asiento va y con que ruta; esta ruta la sirve.
- * Cuelga del tramite y con `canRead`, no del modulo de entregas: quien la mira
+ * Una de las fotos del paquete entregado (la prueba que subio el mensajero, hasta
+ * `MAX_DELIVERY_PHOTOS` por visita). El historial (`/:id/events`) dice en que
+ * asiento van y con que rutas; esta las sirve, una a una por su posicion.
+ * Cuelga del tramite y con `canRead`, no del modulo de entregas: quien las mira
  * es quien puede ver el historial, no solo el mensajero.
  */
-shipmentsRoutes.get('/:id/delivery-photos/:attemptId', canRead, async (c) => {
+shipmentsRoutes.get('/:id/delivery-photos/:attemptId/:index', canRead, async (c) => {
+  const index = Number(c.req.param('index'));
+  if (!Number.isInteger(index) || index < 0 || index >= MAX_DELIVERY_PHOTOS) {
+    return c.notFound();
+  }
   const { body, contentType } = await shipmentsService.deliveryPhotoFile(
     c.get('session'),
     c.req.param('id'),
     c.req.param('attemptId'),
+    index,
   );
   return c.body(body, 200, { 'content-type': contentType });
 });

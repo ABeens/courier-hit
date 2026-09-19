@@ -16,6 +16,7 @@
 import {
   Currency,
   DeliveryOutcome,
+  MAX_DELIVERY_PHOTOS,
   State,
   chargeBasisFor,
   collectionStatus,
@@ -35,7 +36,7 @@ import type {
   Session,
 } from '@courier/shared';
 import { DeliveryErrors, ShipmentErrors } from '../../core/errors';
-import { storage } from '../../core/storage';
+import { StorageErrors, storage } from '../../core/storage';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { transitionsService } from '../shipments/transitions.service';
 import { deliveriesRepo } from './deliveries.repo';
@@ -58,7 +59,7 @@ function toDto(row: Awaited<ReturnType<typeof deliveriesRepo.listByShipment>>[nu
     id: row.id,
     shipmentId: row.shipmentId,
     outcome: row.outcome,
-    photoFileKey: row.photoFileKey,
+    photoFileKeys: row.photoFileKeys,
     note: row.note,
     courierName: row.courierName,
     createdAt: row.createdAt.toISOString(),
@@ -162,17 +163,21 @@ export const deliveriesService = {
   /**
    * Registra el desenlace de una visita y mueve el tramite en consecuencia.
    *
-   * El orden importa: primero se guarda el archivo, luego se escribe el intento y
-   * al final se avanza el estado. Si el avance falla (una guarda de la maquina no
-   * se cumple) queda el intento con su prueba y el tramite sin mover, que es el
-   * estado del que un operador puede salir. Al reves habriamos avanzado un
-   * tramite del que no queda constancia de por que.
+   * El orden importa: primero se guardan los archivos, luego se escribe el
+   * intento y al final se avanza el estado. Si el avance falla (una guarda de la
+   * maquina no se cumple) queda el intento con su prueba y el tramite sin mover,
+   * que es el estado del que un operador puede salir. Al reves habriamos avanzado
+   * un tramite del que no queda constancia de por que.
+   *
+   * Las fotos son hasta `MAX_DELIVERY_PHOTOS` y se suben en SERIE, no en
+   * paralelo: quien registra esto esta en la calle con datos moviles, y tres
+   * subidas a la vez se estorban entre ellas mas de lo que se adelantan.
    */
   async record(
     session: Session,
     shipmentId: string,
     input: RecordDeliveryAttemptInput,
-    photo: File | null,
+    photos: File[],
   ) {
     const shipment = await shipmentsRepo.findById(shipmentId);
     if (!shipment) throw ShipmentErrors.notFound();
@@ -182,14 +187,22 @@ export const deliveriesService = {
     if (shipment.state !== State.EnRutaEntrega) throw DeliveryErrors.notInRoute();
 
     const required = proofRequirementFor(input.outcome);
-    if (required.photo && !photo) throw DeliveryErrors.photoRequired();
+    if (required.photo && photos.length === 0) throw DeliveryErrors.photoRequired();
+    // El tope se comprueba SIEMPRE, no solo cuando la prueba es obligatoria: un
+    // desenlace que no exige foto tampoco es sitio para subir veinte.
+    if (photos.length > MAX_DELIVERY_PHOTOS) {
+      throw DeliveryErrors.tooManyPhotos(MAX_DELIVERY_PHOTOS);
+    }
 
-    const photoFileKey = photo ? await storage.put('deliveries', photo) : null;
+    const photoFileKeys: string[] = [];
+    for (const photo of photos) {
+      photoFileKeys.push(await storage.put('deliveries', photo));
+    }
 
     await deliveriesRepo.insert({
       shipmentId,
       outcome: input.outcome,
-      photoFileKey,
+      photoFileKeys,
       note: input.note ?? null,
       courierId: session.userId,
     });
@@ -202,7 +215,9 @@ export const deliveriesService = {
     const note =
       input.outcome === DeliveryOutcome.DevueltoBodega
         ? input.note
-        : 'Entrega confirmada con foto.';
+        : photos.length > 1
+          ? `Entrega confirmada con ${photos.length} fotos.`
+          : 'Entrega confirmada con foto.';
 
     return transitionsService.transition(
       session,
@@ -212,10 +227,18 @@ export const deliveriesService = {
     );
   },
 
-  /** Foto de un intento. */
-  async photoFile(attemptId: string) {
+  /**
+   * Una foto de un intento, por su POSICION en el array. El indice es el
+   * identificador porque las fotos no son entidades: no tienen id propio, y el
+   * orden en que se subieron es estable (el intento es append-only y nunca se
+   * edita).
+   */
+  async photoFile(attemptId: string, index: number) {
     const attempt = await deliveriesRepo.findById(attemptId);
-    if (!attempt?.photoFileKey) throw DeliveryErrors.photoRequired();
-    return storage.get(attempt.photoFileKey);
+    const key = attempt?.photoFileKeys[index];
+    // 404 y no "falta la foto": pedir la tercera foto de un intento que subio dos
+    // es pedir un archivo que no existe, no incumplir la regla de la prueba.
+    if (!key) throw StorageErrors.notFound();
+    return storage.get(key);
   },
 };

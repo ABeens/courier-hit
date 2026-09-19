@@ -6,8 +6,8 @@
  * el listado al que lleva cada cifra tambien los esconde. Contarlos aqui hacia
  * que el cuadro dijera una cifra y la pantalla destino otra.
  */
-import { and, count, countDistinct, desc, eq, isNull } from 'drizzle-orm';
-import { PaymentStatus } from '@courier/shared';
+import { and, count, countDistinct, desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { PaymentStatus, State } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { payments } from '../payments/payments.schema';
@@ -21,6 +21,28 @@ export const dashboardRepo = {
       .from(shipments)
       .where(isNull(shipments.discardedAt))
       .groupBy(shipments.state);
+  },
+
+  /**
+   * Tramites parados en "Facturacion en proceso" que YA tienen factura.
+   *
+   * Solo Transporte llega aqui: es el unico flujo que factura y cobra en el mismo
+   * estado, asi que al aprobar los costos no se mueve. Se descuentan del cuadro
+   * "Por facturar" porque ahi ya no hay nada que facturar, y porque si no la
+   * cifra del cuadro no cuadraba con la cola a la que lleva.
+   */
+  async billedInBillingCount() {
+    const [row] = await db
+      .select({ total: count() })
+      .from(shipments)
+      .where(
+        and(
+          eq(shipments.state, State.FacturacionEnProceso),
+          isNotNull(shipments.invoiceTotalCrc),
+          isNull(shipments.discardedAt),
+        ),
+      );
+    return row?.total ?? 0;
   },
 
   async countByType() {

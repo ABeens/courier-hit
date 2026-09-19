@@ -9,7 +9,7 @@
  *   - Las lineas de PORCENTAJE no llevan monto: el importe lo calcula la API
  *     sobre el subtotal de las demas. Aqui solo se muestra la estimacion.
  *   - APROBAR CONGELA. Guarda, fija el monto de factura y avanza el tramite a
- *     "En bodega - Pendiente pago". Desde ahi ya no se edita.
+ *     "En bodega preparando". Desde ahi ya no se edita.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { IconButton } from '../components/IconButton';
@@ -28,9 +28,11 @@ import {
   canSetExchangeRate,
   clientFullLabel,
   computeTotals,
+  payableStateOf,
   formatMoney,
 } from '@courier/shared';
 import type { Role, ShipmentCostsDto, ShipmentDto, SuggestedCostLine } from '@courier/shared';
+import { awaitingValidation } from '../components/PayFlag';
 import { ApiError, api } from '../lib/api';
 import { formatDate } from '../lib/datetime';
 
@@ -173,9 +175,16 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
    * camino es corregir primero el estado desde la sala de control, que es donde
    * vive esa puerta.
    */
+  /**
+   * Sin pagos encima. Es la misma pregunta que hace la API al reversar, y se hace
+   * aqui para no ofrecer un boton que va a volver con un error: el trámite pagado
+   * (o con un comprobante esperando validacion) no se puede desfacturar.
+   */
+  const noMoneyOnTop = !shipment.settled && !awaitingValidation(shipment);
   const canReverse =
     approved &&
     shipment.state === State.FacturacionEnProceso &&
+    noMoneyOnTop &&
     can(role, Permission.ShipmentCorrect);
   const parsedRate = Number(rate);
   const rateOk = Number.isFinite(parsedRate) && parsedRate > 0;
@@ -389,9 +398,20 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
       setError('Agrega al menos una línea de costo antes de aprobar.');
       return;
     }
+    /**
+     * A dónde va el trámite al aprobar: su estado de COBRO. En Transporte ese
+     * estado es el de facturación, o sea el que ya tiene, así que ahí no se mueve
+     * y el aviso tiene que decir otra cosa: prometer un cambio de estado que no
+     * ocurre es la clase de mentira que hace desconfiar del botón.
+     */
+    const payable = payableStateOf(shipment.flow);
+    const destination =
+      payable && payable !== shipment.state
+        ? `el trámite ${shipment.code} pasa a "${STATE_LABELS[payable]}"`
+        : `el trámite ${shipment.code} queda cobrable en "${STATE_LABELS[shipment.state]}"`;
     const confirmed = window.confirm(
-      `Al aprobar se congela el monto de factura y el trámite ${shipment.code} pasa a ` +
-        `"${STATE_LABELS[State.EnBodegaPendientePago]}". Después ya no se puede editar. ¿Continuar?`,
+      `Al aprobar se congela el monto de factura y ${destination}. ` +
+        'Después ya no se puede editar. ¿Continuar?',
     );
     if (!confirmed) return;
 

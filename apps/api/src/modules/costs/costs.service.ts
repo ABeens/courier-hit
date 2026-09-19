@@ -17,7 +17,7 @@
  *    solo. Lo que queda en la BD sigue siendo un snapshot por linea (regla M5);
  *    lo que cambia es quien elige ese numero y donde.
  * 4. APROBAR CONGELA Y AVANZA. Al aprobar se totaliza en ambas monedas, se fija
- *    el monto de factura en el tramite y este pasa a "En bodega - Pendiente pago"
+ *    el monto de factura en el tramite y este pasa a "En bodega preparando"
  *    (que es justo lo que exige Condition.RequiresInvoiceAmount). Desde ahi las
  *    lineas ya no se editan.
  */
@@ -41,6 +41,8 @@ import {
   costLineExchangeRateSchema,
   flowForType,
   formatMoney,
+  isCollectible,
+  payableStateOf,
   percentageBase,
   permissionFor,
   roundMoney,
@@ -470,7 +472,19 @@ export const costsService = {
 
     const flow = flowForType(shipment.shipmentType);
     if (shipment.state !== State.FacturacionEnProceso) throw CostErrors.notBillableState();
-    if (!canTransition(flow, shipment.state, State.EnBodegaPendientePago)) {
+
+    /**
+     * Donde queda el tramite con la factura ya congelada: su estado COBRABLE.
+     *
+     * En Paqueteria y Agenciamiento es el siguiente estado (bodega / proforma) y
+     * aprobar avanza. En Transporte es ESTE MISMO, porque ahi se factura y se
+     * cobra en el mismo estado (ver la cabecera del flow): aprobar congela el
+     * total y el tramite se queda quieto esperando el pago. Por eso el avance es
+     * condicional y no un paso fijo del procedimiento.
+     */
+    const payable = payableStateOf(flow);
+    if (!payable) throw CostErrors.notBillableState();
+    if (payable !== shipment.state && !canTransition(flow, shipment.state, payable)) {
       throw CostErrors.notBillableState();
     }
 
@@ -497,13 +511,19 @@ export const costsService = {
      * `skipPermission`: avanzar es la consecuencia de aprobar, y para aprobar ya
      * se exigio el permiso de costos arriba. Volver a pedir el del estado destino
      * dejaria a Operativo aprobando una factura que no puede cerrar.
+     *
+     * En Transporte no hay avance que hacer: el estado cobrable es el de
+     * facturacion, asi que el tramite ya esta donde tiene que estar y moverlo
+     * seria sacarlo del cobro que acaba de abrirse.
      */
-    await transitionsService.transition(
-      session,
-      shipmentId,
-      { state: State.EnBodegaPendientePago, note: 'Costos aprobados.' },
-      { skipPermission: true },
-    );
+    if (payable !== shipment.state) {
+      await transitionsService.transition(
+        session,
+        shipmentId,
+        { state: payable, note: 'Costos aprobados.' },
+        { skipPermission: true },
+      );
+    }
 
     return this.get(session, shipmentId);
   },
@@ -528,6 +548,14 @@ export const costsService = {
    *   DINERO — con un pago confirmado, borrar la factura dejaria un abono contra
    *     algo que no existe. Los pendientes o rechazados no bloquean: aun no son
    *     dinero.
+   *   DINERO EN CURSO — y una tercera, que nacio con el rediseno de estados. La
+   *     guarda de ESTADO daba por hecho que un tramite reversable todavia no se
+   *     le habia enseñado al cliente como cobrable; en Transporte eso dejo de ser
+   *     cierto, porque factura y cobro viven en el MISMO estado y aprobar no lo
+   *     mueve. Ahi el freno de "corrige antes el estado" no existe, asi que lo
+   *     pone el dinero: con el tramite ya cobrable, un deposito pendiente de
+   *     validar tambien bloquea. El cliente ya pago contra esa factura aunque
+   *     nadie la haya mirado todavia.
    */
   async reverse(session: Session, shipmentId: string): Promise<ShipmentCostsDto> {
     const shipment = await this.loadShipment(session, shipmentId);
@@ -539,6 +567,12 @@ export const costsService = {
     const payments = await paymentsRepo.settlementView(shipmentId);
     if (payments.some((p) => p.status === PaymentStatus.Confirmado)) {
       throw CostErrors.settledCannotReverse();
+    }
+    if (
+      isCollectible(flowForType(shipment.shipmentType), shipment) &&
+      payments.some((p) => p.status === PaymentStatus.Pendiente)
+    ) {
+      throw CostErrors.collectibleCannotReverse();
     }
 
     await costsRepo.releaseInvoice(shipmentId);

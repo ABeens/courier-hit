@@ -591,6 +591,23 @@ export const listShipmentsQuerySchema = z.object({
     .transform((v) => (v ? v.split(',').filter(Boolean) : undefined))
     .pipe(z.array(z.nativeEnum(ShipmentType)).nonempty().optional()),
   state: z.nativeEnum(State).optional(),
+  /**
+   * Con factura congelada (`true`) o todavia sin ella (`false`); omitido, no
+   * filtra.
+   *
+   * Existe porque el ESTADO dejo de responder esa pregunta. En Transporte se
+   * factura y se cobra en el mismo estado, asi que "Facturacion en proceso"
+   * contiene a la vez lo que hay que facturar y lo que ya se facturo y espera el
+   * pago. Sin este filtro, la cola de trabajo mezclaba las dos cosas y ofrecia
+   * reversar una factura que el cliente ya estaba pagando.
+   *
+   * Se mira `invoiceTotalCrc` porque es la columna que nace al congelar la
+   * factura (`approve`) y muere al reversarla: es el hecho, no un derivado.
+   */
+  billed: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
   clientId: z.string().uuid().optional(),
   /**
    * Solo los tramites con al menos un deposito subido por el cliente y aun sin

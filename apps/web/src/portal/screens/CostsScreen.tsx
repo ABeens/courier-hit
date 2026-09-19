@@ -32,13 +32,29 @@ import { usePagedList } from '../lib/usePagedList';
 import { formatDate } from '../lib/datetime';
 import { CostsEditorModal } from './CostsEditorModal';
 
-/** Que cola se esta mirando. */
-export type CostsView = 'pendientes' | 'facturados';
+/**
+ * Que cola se esta mirando. Una de trabajo y tres de cobro, una por flujo.
+ *
+ * Son cuatro porque el cobro dejo de vivir en un solo estado: Paqueteria cobra en
+ * bodega, Agenciamiento en la proforma y Transporte en la propia facturacion. El
+ * listado filtra por UN estado (`state` del endpoint es un enum, no una lista),
+ * asi que cada uno necesita su cola.
+ *
+ * Y por eso `billed` ademas del estado: en Transporte "Facturacion en proceso"
+ * contiene las dos cosas, lo que hay que facturar y lo que ya se facturo. El
+ * estado solo ya no las separa, la factura si.
+ */
+export type CostsView = 'pendientes' | 'facturados' | 'transporte' | 'proformas';
 
-const VIEW_STATE: Record<CostsView, State> = {
-  pendientes: State.FacturacionEnProceso,
-  facturados: State.EnBodegaPendientePago,
+const VIEW_FILTER: Record<CostsView, { state: State; billed: 'true' | 'false' }> = {
+  pendientes: { state: State.FacturacionEnProceso, billed: 'false' },
+  facturados: { state: State.EnBodegaPendientePago, billed: 'true' },
+  transporte: { state: State.FacturacionEnProceso, billed: 'true' },
+  proformas: { state: State.ProformaPendientePago, billed: 'true' },
 };
+
+/** Colas de lo YA facturado: llevan monto, bandera de cobro y proforma. */
+const BILLED_VIEWS: readonly CostsView[] = ['facturados', 'transporte', 'proformas'];
 
 /**
  * Abre la proforma de un tramite en otra pestaña. Navegacion normal y no `fetch`:
@@ -75,14 +91,17 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
   /** La cola, paginada. La cola y la busqueda son filtros de SQL, no de pantalla. */
   const list = usePagedList<ShipmentDto>(
     '/shipments',
-    { state: VIEW_STATE[view], q: q.trim() || undefined },
+    { ...VIEW_FILTER[view], q: q.trim() || undefined },
     { errorMessage: 'No se pudo cargar la cola.' },
   );
   const { error, setError, reload: load } = list;
 
+  /** True en las colas de lo ya facturado (ver BILLED_VIEWS). */
+  const billed = BILLED_VIEWS.includes(view);
+
   /** Columnas de la tabla; el esqueleto necesita cuadrar con ellas. */
-  const columnCount = view === 'facturados' ? 9 : 8;
-  const noun = view === 'pendientes' ? 'trámites por facturar' : 'trámites facturados';
+  const columnCount = billed ? 9 : 8;
+  const noun = billed ? 'trámites facturados' : 'trámites por facturar';
 
   return (
     <div className="fadeIn">
@@ -117,6 +136,8 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
           >
             <option value="pendientes">Por facturar</option>
             <option value="facturados">Ya facturados</option>
+            <option value="transporte">Transporte por cobrar</option>
+            <option value="proformas">Proformas por cobrar</option>
           </select>
         </div>
       </FilterBar>
@@ -135,7 +156,7 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
               {/* Solo tiene sentido sobre lo ya facturado: en la cola de "por
                   facturar" todavía no hay monto que cobrar y la columna saldría
                   vacía en todas las filas. */}
-              {view === 'facturados' && <th>Pago</th>}
+              {billed && <th>Pago</th>}
               <th>Fecha ingreso</th>
               <th style={{ textAlign: 'right' }}>Acciones</th>
             </tr>
@@ -157,7 +178,7 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
                   <span className="spill"><span className="dot" />{STATE_LABELS[row.state]}</span>
                 </td>
                 <td>{invoiceLabel(row)}</td>
-                {view === 'facturados' && (
+                {billed && (
                   <td>
                     <PayFlag
                       shipmentType={row.shipmentType}
@@ -175,14 +196,14 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
                 <td>
                   <div className="actions">
                     <IconButton
-                      label={view === 'pendientes' ? 'Cargar costos' : 'Ver factura'}
-                      icon={view === 'pendientes' ? 'dollar' : 'receipt'}
+                      label={billed ? 'Ver factura' : 'Cargar costos'}
+                      icon={billed ? 'receipt' : 'dollar'}
                       onClick={() => setEditing(row)}
                     />
                     {/* Proforma de UN trámite: es la descarga "de una en una" del
                         requerimiento, y va aquí porque es donde se trabaja un
                         trámite concreto. El lote vive en Reportes, sobre el filtro. */}
-                    {canProforma && view === 'facturados' && (
+                    {canProforma && billed && (
                       <IconButton label="Descargar proforma" icon="file" onClick={() => openProforma(row.id)} />
                     )}
                   </div>
@@ -207,7 +228,11 @@ export function CostsScreen({ role, initialView = 'pendientes' }: { role: Role; 
       <EmptyList loading={list.loading} empty={list.items.length === 0}>
         {view === 'pendientes'
           ? 'No hay trámites esperando facturación.'
-          : 'Aún no hay trámites facturados.'}
+          : view === 'proformas'
+            ? 'No hay proformas esperando pago.'
+            : view === 'transporte'
+              ? 'No hay trámites de transporte facturados esperando pago.'
+              : 'Aún no hay trámites facturados.'}
       </EmptyList>
 
       {editing && (

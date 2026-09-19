@@ -133,6 +133,12 @@ export const CostErrors = {
    * Reversar con dinero ya recibido dejaria al cliente pagando contra una factura
    * que dejo de existir. Primero se resuelve el pago, despues se desarma el cobro.
    */
+  collectibleCannotReverse: () =>
+    new AppError(
+      'COSTS_COLLECTIBLE_CANNOT_REVERSE',
+      'El cliente ya subió un pago contra esta factura. Resuélvelo antes de reversarla.',
+      409,
+    ),
   settledCannotReverse: () =>
     new AppError(
       'COSTS_SETTLED_CANNOT_REVERSE',
@@ -451,7 +457,7 @@ export const PaymentErrors = {
   notPayableState: () =>
     new AppError(
       'PAYMENT_NOT_PAYABLE_STATE',
-      'Solo se puede pagar un trámite en "En bodega - Pendiente pago".',
+      'Solo se puede pagar un trámite en "En bodega preparando".',
       409,
     ),
   noInvoice: () =>
@@ -591,6 +597,12 @@ export const DeliveryErrors = {
     ),
   photoRequired: () =>
     new AppError('DELIVERY_PHOTO_REQUIRED', 'Adjunta la foto del paquete entregado.', 400),
+  tooManyPhotos: (max: number) =>
+    new AppError(
+      'DELIVERY_TOO_MANY_PHOTOS',
+      `Puedes adjuntar como máximo ${max} fotos del paquete entregado.`,
+      400,
+    ),
 };
 
 /** Errores de la recepcion en bodega (Parte 4, "Recepción de Paquete"). */

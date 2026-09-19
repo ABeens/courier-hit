@@ -168,7 +168,7 @@ export const shipments = pgTable(
      * moneda). Se derivan de las lineas de `shipment_costs` con `computeTotals`,
      * cada una con su propia tasa; aqui quedan como el monto de factura que
      * exige la guarda Condition.RequiresInvoiceAmount para pasar a
-     * "En bodega - Pendiente pago". Null mientras no se haya aprobado.
+     * "En bodega preparando". Null mientras no se haya aprobado.
      */
     invoiceTotalUsd: doublePrecision('invoice_total_usd'),
     invoiceTotalCrc: doublePrecision('invoice_total_crc'),
@@ -302,6 +302,12 @@ export const shipments = pgTable(
      * historicamente (los transportistas reciclan numeros de guia). Por eso el
      * indice unico es PARCIAL: solo aplica a los tramites que aun no terminaron.
      *
+     * "Terminado" son DOS estados desde el rediseno: Entregado cierra Paqueteria
+     * y Tramite Finalizado cierra Transporte y Agenciamiento (`terminalStates()`
+     * en la maquina). Van escritos a mano porque un indice parcial de Postgres
+     * necesita una expresion constante, no una lista calculada en TypeScript; el
+     * test de la maquina es el que vigila que esos dos sigan siendo los cierres.
+     *
      * Los DESCARTADOS tampoco cuentan. Un paquete desconocido que se registro con
      * una guia mal leida y luego se descarto no puede bloquear el alta del
      * paquete legitimo que traiga esa guia: quedaria un error de bodega
@@ -310,7 +316,9 @@ export const shipments = pgTable(
      */
     uniqueIndex('shipments_active_tracking')
       .on(t.tracking)
-      .where(sql`${t.state} <> 'entregado' and ${t.discardedAt} is null`),
+      .where(
+        sql`${t.state} not in ('entregado', 'tramite_finalizado') and ${t.discardedAt} is null`,
+      ),
     /**
      * Cola de la sala de control: los paquetes vivos que todavia no tienen dueño.
      * Parcial porque son un puñado frente a la tabla entera, y es la unica

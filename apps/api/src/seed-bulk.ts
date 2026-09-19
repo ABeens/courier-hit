@@ -63,6 +63,8 @@ import {
   formatShipmentCode,
   chargeBasisFor,
   isSettled,
+  isTerminal,
+  payableStateOf,
   percentageBase,
   roundMoney,
   statesOf,
@@ -302,7 +304,9 @@ const STATE_MIX = new Map<Flow, { states: readonly State[]; weights: number[] }>
   Object.values(Flow).map((flow) => {
     const states = statesOf(flow);
     const weights = states.map((state, i) => {
-      if (state === State.Entregado) return 250;
+      // El grueso de la base son tramites CERRADOS, y cada flow cierra en el
+      // suyo: Entregado en Paqueteria, Tramite Finalizado en los otros dos.
+      if (isTerminal(flow, state)) return 250;
       if (state === State.DevueltoBodega) return 6;
       return 4 + i * 3;
     });
@@ -949,12 +953,16 @@ function buildShipment(args: BuildArgs): void {
   }
 
   // --- 2) Aprobacion: congela el total de la factura en AMBAS monedas ---
-  const approvedAt = at(State.EnBodegaPendientePago);
+  // Desde que el tramite llego a su estado de COBRO, que depende del flow
+  // (Paqueteria en bodega, Transporte en facturacion, Agenciamiento en proforma).
+  const payable = payableStateOf(flow)!;
+  const settledState = statesOf(flow)[statesOf(flow).indexOf(payable) + 1];
+  const approvedAt = at(payable);
   const totals = lines.length > 0 ? computeTotals(lines.map((l) => ({ amount: l.amount, currency: l.currency, exchangeRate }))) : null;
   const approved = approvedAt !== null && totals !== null;
 
   const cargo = rng.pick(CARGO_ITEMS);
-  const delivered = finalState === State.Entregado;
+  const delivered = isTerminal(flow, finalState);
   const discarded = unassigned && rng.chance(0.25);
   /**
    * Replicacion de la prealerta ante el proveedor: el paquete que ya llego a
@@ -1076,8 +1084,10 @@ function buildShipment(args: BuildArgs): void {
   if (approved) {
     const basis = chargeBasisFor(type, { invoiceTotalUsd: totals!.usd, invoiceTotalCrc: totals!.crc });
     const due = basis.invoiceTotal!;
-    const settledRequired = reached(State.EnRutaEntrega);
-    const paidAt = firstAt(State.EnRutaEntrega) ?? new Date(Math.min(NOW.getTime(), approvedAt!.getTime() + DAY));
+    const settledRequired = settledState !== undefined && reached(settledState);
+    const paidAt =
+      (settledState ? firstAt(settledState) : null) ??
+      new Date(Math.min(NOW.getTime(), approvedAt!.getTime() + DAY));
     const account = (): BankAccount => rng.pick(bankAccountsFor(type));
 
     const deposit = (amount: number, status: PaymentStatus, note: string | null = null): typeof payments.$inferInsert => ({
@@ -1131,7 +1141,7 @@ function buildShipment(args: BuildArgs): void {
         mine.push(deposit(first, PaymentStatus.Confirmado, 'Primer abono.'));
         mine.push(card(roundMoney(due - first, basis.currency), 1));
       }
-    } else if (finalState === State.EnBodegaPendientePago) {
+    } else if (finalState === payable) {
       // La cola de cobro: sin abonar, esperando confirmacion, rechazado o a medias.
       const roll = rng.next();
       if (roll < 0.4) {
@@ -1152,14 +1162,14 @@ function buildShipment(args: BuildArgs): void {
         status: p.status ?? PaymentStatus.Pendiente,
       }));
       if (!isSettled(settleable, basis)) {
-        throw new Error(`[seed-bulk] ${code} salió a ruta sin pago suficiente.`);
+        throw new Error(`[seed-bulk] ${code} avanzó del cobro sin pago suficiente.`);
       }
     }
     out.paymentRows.push(...mine);
-  } else if (reached(State.EnRutaEntrega)) {
-    // Sin factura congelada no se puede salir a ruta: si esto pasa, el generador
-    // esta produciendo datos que la API rechazaria.
-    throw new Error(`[seed-bulk] ${code} salió a ruta sin factura aprobada.`);
+  } else if (settledState !== undefined && reached(settledState)) {
+    // Sin factura congelada no se puede pasar del cobro: si esto pasa, el
+    // generador esta produciendo datos que la API rechazaria.
+    throw new Error(`[seed-bulk] ${code} avanzó del cobro sin factura aprobada.`);
   }
 
   // --- 6) Intentos de entrega (uno por visita del mensajero) ---
@@ -1177,7 +1187,8 @@ function buildShipment(args: BuildArgs): void {
     out.attemptRows.push({
       shipmentId,
       outcome,
-      photoFileKey: outcome === DeliveryOutcome.Entregado ? `deliveries/bulk-${code}.jpg` : null,
+      photoFileKeys:
+        outcome === DeliveryOutcome.Entregado ? [`deliveries/bulk-${code}.jpg`] : [],
       note:
         outcome === DeliveryOutcome.DevueltoBodega
           ? 'Nadie atendió en la dirección. Se deja aviso y se reprograma.'

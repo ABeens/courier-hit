@@ -147,7 +147,7 @@ export const deliveriesRepo = {
         id: deliveryAttempts.id,
         shipmentId: deliveryAttempts.shipmentId,
         outcome: deliveryAttempts.outcome,
-        photoFileKey: deliveryAttempts.photoFileKey,
+        photoFileKeys: deliveryAttempts.photoFileKeys,
         note: deliveryAttempts.note,
         createdAt: deliveryAttempts.createdAt,
         courierName: users.name,

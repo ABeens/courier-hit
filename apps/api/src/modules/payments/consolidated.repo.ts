@@ -14,8 +14,17 @@
  * con la tasa de cada abono (M5) y el redondeo por moneda (M4).
  */
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
-import { PaymentStatus, State } from '@courier/shared';
+import { Flow, PaymentStatus, payableStateOf } from '@courier/shared';
 import type { Currency } from '@courier/shared';
+
+/**
+ * El estado en que Paqueteria cobra. El cobro agrupado es de CASILLEROS, que es
+ * lo mismo que decir de Paqueteria: la tarifa consolidada y las cuentas en
+ * dolares son suyas. Un trámite de Transporte o de Agenciamiento cobra en su
+ * propio estado y nunca cae en este filtro, que es exactamente lo que se quiere:
+ * meterlo en el grupo mezclaria dos monedas en un solo documento.
+ */
+const PACKAGE_PAYABLE_STATE = payableStateOf(Flow.Paqueteria)!;
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { shipments } from '../shipments/shipments.schema';
@@ -80,7 +89,7 @@ export const consolidatedRepo = {
       .where(
         and(
           eq(shipments.clientId, clientId),
-          eq(shipments.state, State.EnBodegaPendientePago),
+          eq(shipments.state, PACKAGE_PAYABLE_STATE),
           isNotNull(shipments.invoiceTotalCrc),
           isNotNull(shipments.invoiceTotalUsd),
           isNull(shipments.discardedAt),

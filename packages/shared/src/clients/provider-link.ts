@@ -38,9 +38,9 @@ export const PROVIDER_LINK_SOURCE_LABELS: Record<ProviderLinkSource, string> = {
  * Etiqueta visible del estado del enlace.
  *
  * El pendiente se llama "En proceso" y no "Pendiente" a proposito: en este
- * producto "pendiente" ya significa dinero ("En bodega - Pendiente pago", "pago
- * pendiente de validacion"), asi que un casillero "pendiente" se leia como un
- * cliente que debe plata. Aqui lo unico que falta es que el robot lo enlace.
+ * producto "pendiente" ya significa dinero ("pago pendiente de validacion",
+ * "saldo pendiente"), asi que un casillero "pendiente" se leia como un cliente
+ * que debe plata. Aqui lo unico que falta es que el robot lo enlace.
  */
 export const HELGA_SYNC_STATUS_LABELS: Record<HelgaSyncStatus, string> = {
   [HelgaSyncStatus.Pending]: 'En proceso',

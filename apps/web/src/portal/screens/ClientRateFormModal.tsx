@@ -208,7 +208,7 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
             <div className="field-hint">
               {requiresBillingReview
                 ? 'Al recibir el paquete queda en «Facturación en proceso» esperando que un operativo o un administrador le cargue los costos y apruebe.'
-                : 'Al recibir el paquete el sistema le aplica el flete y lo pasa directo a «En bodega - Pendiente pago», sin revisión.'}
+                : 'Al recibir el paquete el sistema le aplica el flete y lo pasa directo a «En bodega preparando», sin revisión.'}
             </div>
           </div>
 

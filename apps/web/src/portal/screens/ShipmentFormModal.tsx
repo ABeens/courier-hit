@@ -116,7 +116,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
    * "Congelado" = ya no se puede tocar ningun DATO del tramite. Se mide contra la
    * ventana sin el consecutivo de FE: ese campo sigue abierto justamente en los
    * estados congelados (llega despues de emitir la factura), asi que contarlo
-   * dejaria el aviso sin salir nunca a partir de "En bodega - Pendiente pago".
+   * dejaria el aviso sin salir nunca a partir de "En bodega preparando".
    */
   const allFrozen =
     editable !== null &&

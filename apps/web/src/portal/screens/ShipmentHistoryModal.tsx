@@ -15,7 +15,7 @@
  * instantes UTC y la conversion ocurre solo aqui (CLAUDE.md).
  *
  * La linea se pinta ENTERA, sin saltarse tramos. El unico estado que incomodaba
- * ensenarle al cliente era «En bodega - Pendiente pago», que se le sigue
+ * ensenarle al cliente era «En bodega preparando», que se le sigue
  * pidiendo despues de haber pagado porque el pago no mueve el tramite; eso se
  * resuelve en `tracePlace` contando lo que el cobro dice de verdad, no borrando
  * el tramo. Para la operacion el estado sigue siendo el mismo: lo que cambia es
@@ -57,12 +57,12 @@ interface ZoomedPhoto {
 }
 
 /**
- * Foto de entrega -> url absoluta. La API manda la ruta relativa a su origen
- * (`/api/...`) y aqui se le antepone el mismo origen que al documento adjunto:
+ * Fotos de entrega -> urls absolutas. La API manda rutas relativas a su origen
+ * (`/api/...`) y aqui se les antepone el mismo origen que al documento adjunto:
  * en desarrollo la API vive en otro puerto y un `src` relativo iria a la web.
  */
-function deliveryPhotoSrc(photoUrl: string): string {
-  return `${API_BASE}${photoUrl}`;
+function deliveryPhotoSrcs(photoUrls: string[]): string[] {
+  return photoUrls.map((url) => `${API_BASE}${url}`);
 }
 
 /** Marca del asiento actual: el paquete esta AQUI. */
@@ -235,7 +235,7 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
                   /* El primero de la lista es el ultimo que ocurrio: es DONDE esta
                      el tramite ahora, y por eso se resalta. El resto ya se cumplio. */
                   const isCurrent = i === 0;
-                  const photoSrc = event.photoUrl ? deliveryPhotoSrc(event.photoUrl) : null;
+                  const photoSrcs = deliveryPhotoSrcs(event.photoUrls);
                   return (
                     <li
                       key={event.id}
@@ -265,29 +265,42 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
                           <p className="trace-note">Registrado por {event.createdByName}</p>
                         )}
 
-                        {/* La prueba del asiento (la foto del paquete entregado)
+                        {/* La prueba del asiento (las fotos del paquete entregado)
                             va DENTRO del tramo y no arriba con las de bodega:
                             no es "mi paquete", es "asi quedo entregado", y se
-                            lee junto a la hora y el lugar de esa entrega. */}
-                        {photoSrc && (
-                          <button
-                            type="button"
-                            className="pkg-photo trace-photo"
-                            onClick={() =>
-                              setZoomed({
-                                url: photoSrc,
-                                alt: `Paquete ${row.code} entregado`,
-                                takenAt: event.createdAt,
-                                takenLabel: 'Entregado el',
-                              })
-                            }
-                            aria-label="Ampliar la foto de la entrega"
-                          >
-                            <img src={photoSrc} alt={`Paquete ${row.code} entregado`} loading="lazy" />
-                            <span className="pkg-photo-zoom" aria-hidden="true">
-                              <ZoomIcon />
-                            </span>
-                          </button>
+                            lee junto a la hora y el lugar de esa entrega. Son
+                            varias miniaturas en fila porque el mensajero puede
+                            subir hasta tres angulos de la misma visita. */}
+                        {photoSrcs.length > 0 && (
+                          <div className="trace-photos">
+                            {photoSrcs.map((src, n) => {
+                              const alt =
+                                photoSrcs.length === 1
+                                  ? `Paquete ${row.code} entregado`
+                                  : `Paquete ${row.code} entregado, foto ${n + 1} de ${photoSrcs.length}`;
+                              return (
+                                <button
+                                  key={src}
+                                  type="button"
+                                  className="pkg-photo trace-photo"
+                                  onClick={() =>
+                                    setZoomed({
+                                      url: src,
+                                      alt,
+                                      takenAt: event.createdAt,
+                                      takenLabel: 'Entregado el',
+                                    })
+                                  }
+                                  aria-label={`Ampliar la ${alt.toLowerCase()}`}
+                                >
+                                  <img src={src} alt={alt} loading="lazy" />
+                                  <span className="pkg-photo-zoom" aria-hidden="true">
+                                    <ZoomIcon />
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
                         )}
 
                         <time className="trace-when" dateTime={event.createdAt}>

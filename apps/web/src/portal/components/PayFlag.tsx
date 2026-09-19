@@ -3,7 +3,7 @@
  *
  * Vive aparte de la pildora de estado a proposito. El estado y el pago son dos
  * dimensiones distintas y se cruzan de todas las formas posibles: un tramite en
- * "En bodega - Pendiente pago" puede estar YA cobrado (el cliente pago pero la
+ * "En bodega preparando" puede estar YA cobrado (el cliente pago pero la
  * operacion todavia no lo cargo al camion) y uno "En ruta de entrega" puede
  * llevar saldo si alguien lo adelanto a mano. Teñir la pildora de estado segun el
  * pago habria mezclado las dos cosas en un solo color.

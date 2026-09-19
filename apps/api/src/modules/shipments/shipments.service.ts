@@ -130,17 +130,18 @@ function ownerVisibleNote(flow: Flow, state: State, note: string | null): string
 }
 
 /**
- * Ruta de la API por la que se sirve la foto de un intento de entrega. La arma la
- * API y no la web para que el contrato del historial sea "aqui esta la foto" y
- * no "aqui esta un id, ya sabes donde pedirla".
+ * Ruta de la API por la que se sirve UNA foto de un intento de entrega (por su
+ * posicion en el intento). La arma la API y no la web para que el contrato del
+ * historial sea "aqui estan las fotos" y no "aqui hay un id y un numero, ya sabes
+ * donde pedirlas".
  */
-function deliveryPhotoPath(shipmentId: string, attemptId: string): string {
-  return `/api/shipments/${shipmentId}/delivery-photos/${attemptId}`;
+function deliveryPhotoPath(shipmentId: string, attemptId: string, index: number): string {
+  return `/api/shipments/${shipmentId}/delivery-photos/${attemptId}/${index}`;
 }
 
 /**
- * Asiento del historial -> ruta de la foto que lo prueba, para los asientos que
- * salieron de un intento de entrega con foto (hoy, solo «Entregado»).
+ * Asiento del historial -> rutas de las fotos que lo prueban, para los asientos
+ * que salieron de un intento de entrega con fotos (hoy, solo «Entregado»).
  *
  * El intento y el asiento no se apuntan entre si en la BD: el mensajero registra
  * la visita y el servicio de entregas avanza el tramite JUSTO despues, en la
@@ -154,24 +155,32 @@ function deliveryPhotoPath(shipmentId: string, attemptId: string): string {
 function deliveryPhotosByEvent(
   shipmentId: string,
   events: { id: string; state: State; createdAt: Date }[],
-  attempts: { id: string; outcome: DeliveryOutcome; photoFileKey: string | null; createdAt: Date }[],
-): Map<string, string> {
-  const photoByEvent = new Map<string, string>();
+  attempts: { id: string; outcome: DeliveryOutcome; photoFileKeys: string[]; createdAt: Date }[],
+): Map<string, string[]> {
+  const photosByEvent = new Map<string, string[]>();
   const claimed = new Set<string>();
 
   // Los dos vienen del mas antiguo al mas reciente; el emparejamiento depende de eso.
   for (const attempt of attempts) {
-    if (!attempt.photoFileKey) continue;
+    if (attempt.photoFileKeys.length === 0) continue;
     const target = stateForOutcome(attempt.outcome);
     const event = events.find(
       (e) => !claimed.has(e.id) && e.state === target && e.createdAt >= attempt.createdAt,
     );
     if (!event) continue;
     claimed.add(event.id);
-    photoByEvent.set(event.id, deliveryPhotoPath(shipmentId, attempt.id));
+    /**
+     * El indice, y no la clave del almacen: la web no tiene por que conocer la
+     * ruta interna del archivo, y el orden del array es el orden en que el
+     * mensajero disparo las fotos.
+     */
+    photosByEvent.set(
+      event.id,
+      attempt.photoFileKeys.map((_, i) => deliveryPhotoPath(shipmentId, attempt.id, i)),
+    );
   }
 
-  return photoByEvent;
+  return photosByEvent;
 }
 
 /**
@@ -377,7 +386,7 @@ export const shipmentsService = {
       shipmentsRepo.listEvents(id),
       deliveriesRepo.listByShipment(id),
     ]);
-    const photoByEvent = deliveryPhotosByEvent(id, rows, attempts);
+    const photosByEvent = deliveryPhotosByEvent(id, rows, attempts);
 
     return {
       items: rows.map((e) => ({
@@ -386,17 +395,18 @@ export const shipmentsService = {
         note: forOwner ? ownerVisibleNote(shipment.flow, e.state, e.note) : e.note,
         createdByName: forOwner ? null : e.createdByName,
         createdAt: e.createdAt.toISOString(),
-        photoUrl: photoByEvent.get(e.id) ?? null,
+        photoUrls: photosByEvent.get(e.id) ?? [],
       })),
     };
   },
 
   /**
-   * Foto de un intento de entrega, para pintarla en el historial. Entra por el
-   * tramite y no por el modulo de entregas a proposito: ese modulo entero exige
-   * `delivery.manage` (es la puerta del mensajero), y quien mira el historial es
-   * la operacion o el propio titular. La barrera correcta es la del historial,
-   * "puede ver este tramite", que resuelve `get` con su 404 cuando no es suyo.
+   * Una foto de un intento de entrega (por su posicion), para pintarla en el
+   * historial. Entra por el tramite y no por el modulo de entregas a proposito:
+   * ese modulo entero exige `delivery.manage` (es la puerta del mensajero), y
+   * quien mira el historial es la operacion o el propio titular. La barrera
+   * correcta es la del historial, "puede ver este tramite", que resuelve `get`
+   * con su 404 cuando no es suyo.
    *
    * El intento tiene que ser DE ESTE tramite: con solo el id del intento, un
    * cliente podria pasear por las fotos de entrega de los paquetes ajenos
@@ -406,13 +416,13 @@ export const shipmentsService = {
     session: Session,
     id: string,
     attemptId: string,
+    index: number,
   ): Promise<{ body: ArrayBuffer; contentType: string }> {
     await this.get(session, id);
     const attempt = await deliveriesRepo.findById(attemptId);
-    if (!attempt || attempt.shipmentId !== id || !attempt.photoFileKey) {
-      throw StorageErrors.notFound();
-    }
-    return storage.get(attempt.photoFileKey);
+    const key = attempt?.shipmentId === id ? attempt.photoFileKeys[index] : undefined;
+    if (!key) throw StorageErrors.notFound();
+    return storage.get(key);
   },
 
   /**

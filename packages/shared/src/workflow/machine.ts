@@ -90,6 +90,16 @@ const TR_OPERATIONAL = [F.Description, F.Warehouse, F.Dua, F.BillingNotes]; // t
 const TR_BILLING = [F.Description, F.BillingNotes, F.ElectronicInvoiceNumber];
 
 /**
+ * Agenciamiento DESPUES de facturar. Es el unico flujo que factura a mitad de
+ * camino: cobra la proforma y solo entonces entra a aduana. El congelamiento de
+ * factura cierra todo lo que alimenta el monto, pero el DUA y el almacen no lo
+ * alimentan y el tramite aduanero todavia los esta produciendo (el DUA se
+ * numera en aduana, no antes). Cerrarlos aqui obligaria a corregir el estado
+ * para anotar un dato que nace mas tarde por definicion.
+ */
+const AG_CUSTOMS = [F.Warehouse, F.Dua, F.ElectronicInvoiceNumber];
+
+/**
  * Post-factura o entrega: el tramite ya no acepta cambios de datos... salvo UNO.
  *
  * El consecutivo de la factura electronica lo emite un sistema externo DESPUES de
@@ -137,7 +147,16 @@ export const FLOWS: Record<Flow, FlowDef> = {
     ],
   },
 
-  // --- Transporte: aereo y maritimo (docs/flujo.md L38-48). Resumen diario. ---
+  /**
+   * Transporte: aereo y maritimo. Resumen diario en cada estado activo.
+   *
+   * SE ENTREGA ANTES DE COBRAR, al reves que Paqueteria: la mercaderia sale en
+   * cuanto aduana la libera y el dinero se mueve despues. Por eso no hay estado
+   * de bodega ni de ruta (no se reparte con mensajeria, se entrega y ya), y por
+   * eso "Facturacion en proceso" hace doble oficio: es donde se aprueban los
+   * costos Y donde el cliente paga. El tramite no sale de ahi sin el pago
+   * confirmado, que es la guarda de entrada a TramiteFinalizado.
+   */
   [Flow.Transporte]: {
     steps: [
       { state: State.Prealertado, permission: Permission.PackageWrite, triggers: active(), conditions: [], restrictions: [], editable: TR_PREALERT },
@@ -146,15 +165,22 @@ export const FLOWS: Record<Flow, FlowDef> = {
       { state: State.EnTransitoDestino, permission: Permission.PackageWrite, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_OPERATIONAL },
       { state: State.ArriboDestino, permission: Permission.PackageWrite, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_OPERATIONAL },
       { state: State.ProcesoAduanas, permission: Permission.PackageWrite, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_OPERATIONAL },
+      { state: State.LiberadoAduanas, permission: Permission.PackageWrite, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_OPERATIONAL },
+      { state: State.EntregadoPendientePago, permission: Permission.PackageWrite, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_OPERATIONAL },
       { state: State.FacturacionEnProceso, permission: Permission.CostsManage, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_BILLING },
-      { state: State.EnBodegaPendientePago, permission: Permission.PackageWrite, triggers: active(), conditions: [Condition.RequiresInvoiceAmount], restrictions: LINEAR_ADVANCE, editable: FE_ONLY },
-      { state: State.EnRutaEntrega, permission: Permission.DeliveryManage, triggers: active(), conditions: [Condition.RequiresConfirmedPayment], restrictions: LINEAR_ADVANCE, editable: FE_ONLY },
-      { state: State.Entregado, permission: Permission.DeliveryManage, triggers: [], conditions: [], restrictions: [Restriction.Terminal], editable: FE_ONLY },
+      { state: State.TramiteFinalizado, permission: Permission.PackageWrite, triggers: [], conditions: [Condition.RequiresConfirmedPayment], restrictions: [Restriction.Terminal], editable: FE_ONLY },
     ],
     extra: [],
   },
 
-  // --- Agenciamiento (docs/flujo.md L49-60). Resumen diario. ---
+  /**
+   * Agenciamiento: tramite aduanal completo. Resumen diario.
+   *
+   * SE COBRA ANTES DE ADUANA: la proforma se factura y se cobra, y solo con el
+   * pago confirmado el tramite entra a ProcesoAduanas. Por eso el bloque de
+   * facturacion vive en mitad del flujo y no al final, y el cierre no pasa por
+   * bodega ni por ruta: en Agenciamiento no hay mercaderia que repartir.
+   */
   [Flow.Agenciamiento]: {
     steps: [
       { state: State.Prealertado, permission: Permission.PackageWrite, triggers: active(), conditions: [], restrictions: [], editable: TR_PREALERT },
@@ -162,12 +188,12 @@ export const FLOWS: Record<Flow, FlowDef> = {
       { state: State.ExamenPrevio, permission: Permission.TramiteManage, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_OPERATIONAL },
       { state: State.InspeccionDekra, permission: Permission.TramiteManage, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_OPERATIONAL },
       { state: State.PreparandoBorradorDua, permission: Permission.TramiteManage, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_OPERATIONAL },
-      { state: State.PendienteAdelantoImpuestos, permission: Permission.TramiteManage, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_OPERATIONAL },
-      { state: State.ProcesoAduanas, permission: Permission.TramiteManage, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_OPERATIONAL },
       { state: State.FacturacionEnProceso, permission: Permission.CostsTramiteManage, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_BILLING },
-      { state: State.EnBodegaPendientePago, permission: Permission.TramiteManage, triggers: active(), conditions: [Condition.RequiresInvoiceAmount], restrictions: LINEAR_ADVANCE, editable: FE_ONLY },
-      { state: State.EnRutaEntrega, permission: Permission.DeliveryManage, triggers: active(), conditions: [Condition.RequiresConfirmedPayment], restrictions: LINEAR_ADVANCE, editable: FE_ONLY },
-      { state: State.Entregado, permission: Permission.DeliveryManage, triggers: [], conditions: [], restrictions: [Restriction.Terminal], editable: FE_ONLY },
+      { state: State.ProformaPendientePago, permission: Permission.TramiteManage, triggers: active(), conditions: [Condition.RequiresInvoiceAmount], restrictions: LINEAR_ADVANCE, editable: AG_CUSTOMS },
+      { state: State.ProcesoAduanas, permission: Permission.TramiteManage, triggers: active(), conditions: [Condition.RequiresConfirmedPayment], restrictions: LINEAR_ADVANCE, editable: AG_CUSTOMS },
+      { state: State.Aforando, permission: Permission.TramiteManage, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: AG_CUSTOMS },
+      { state: State.LiberadoAduanas, permission: Permission.TramiteManage, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: AG_CUSTOMS },
+      { state: State.TramiteFinalizado, permission: Permission.TramiteManage, triggers: [], conditions: [], restrictions: [Restriction.Terminal], editable: FE_ONLY },
     ],
     extra: [],
   },
@@ -176,6 +202,77 @@ export const FLOWS: Record<Flow, FlowDef> = {
 // ---------------------------------------------------------------------------
 // Helpers (derivan todo de FLOWS; ninguna regla se recalcula a mano).
 // ---------------------------------------------------------------------------
+
+/**
+ * El estado en que se cobra un flow, o undefined si no cobra.
+ *
+ * No se declara: se DEDUCE de la guarda. El estado cobrable es aquel del que no
+ * se puede salir sin el pago confirmado, o sea el que precede en la ruta
+ * principal a un estado con `Condition.RequiresConfirmedPayment`. Escribirlo a
+ * mano seria un segundo sitio donde decir lo mismo, y el dia que el cobro se
+ * mueva de estado (que es justo lo que acaba de pasar en los tres flows) una de
+ * las dos copias se quedaria vieja sin que nada lo delate.
+ *
+ * Hoy da: Paqueteria -> En bodega preparando, Transporte -> Facturacion en
+ * proceso (ahi se factura y se cobra, ver la cabecera del flow), Agenciamiento
+ * -> Proforma pendiente de pago.
+ *
+ * Solo mira la ruta principal a proposito. Por una arista `extra` se puede
+ * volver a entrar a un estado que exige pago (el reintento de entrega de
+ * Paqueteria, Devuelto a bodega -> En ruta), y eso no convierte al origen en un
+ * estado de cobro: ese tramite ya pago para salir a ruta la primera vez.
+ */
+export function payableStateOf(flow: Flow): State | undefined {
+  const steps = stepsOf(flow);
+  for (const [i, step] of steps.entries()) {
+    if (step.restrictions.includes(Restriction.Terminal)) continue;
+    const next = steps[i + 1];
+    if (next?.conditions.includes(Condition.RequiresConfirmedPayment)) return step.state;
+  }
+  return undefined;
+}
+
+/** True si el tramite se cobra estando en ese estado de ese flow. */
+export function isPayable(flow: Flow, state: State): boolean {
+  return payableStateOf(flow) === state;
+}
+
+/**
+ * True si el tramite se puede cobrar AHORA MISMO: esta en su estado de cobro Y
+ * ya tiene factura.
+ *
+ * La segunda mitad no es redundante. En Paqueteria y Agenciamiento al estado de
+ * cobro no se entra sin factura (Condition.RequiresInvoiceAmount lo impide), pero
+ * en Transporte el estado de cobro es el de facturacion, y ahi se entra ANTES de
+ * aprobar los costos: durante ese tramo `isPayable` ya dice que si y todavia no
+ * hay nada que pagar. Preguntar solo por el estado hacia que la web ofreciera
+ * "Pagar" y la linea de tiempo dijera "pago requerido" sobre una factura que no
+ * existia. Todo lo que ofrezca, pida o describa un cobro pregunta aqui.
+ */
+export function isCollectible(
+  flow: Flow,
+  data: { state: State; invoiceTotalCrc: number | null },
+): boolean {
+  return isPayable(flow, data.state) && data.invoiceTotalCrc != null;
+}
+
+/**
+ * Estados que CIERRAN un tramite, en cualquier flow (Restriction.Terminal).
+ *
+ * Existe porque el cierre dejo de ser un solo estado: Paqueteria termina en
+ * Entregado y los otros dos en Tramite Finalizado. Todo lo que mide "cuando
+ * termino" (reportes, el indice de tracking activo) tiene que preguntar por el
+ * conjunto y no por un literal, o deja de contar dos flows en silencio.
+ */
+export function terminalStates(): readonly State[] {
+  const out = new Set<State>();
+  for (const flow of Object.values(Flow)) {
+    for (const step of stepsOf(flow)) {
+      if (step.restrictions.includes(Restriction.Terminal)) out.add(step.state);
+    }
+  }
+  return [...out];
+}
 
 /** Steps ordenados de un flow. */
 export function stepsOf(flow: Flow): readonly Step[] {
@@ -253,7 +350,7 @@ export interface GuardData {
  * puede ejecutarse ya.
  *
  * Existe para que la UI pueda dejar de ofrecer un avance imposible ANTES de
- * enviarlo: sin esto, "En bodega - Pendiente pago" ofrecia salir a ruta con la
+ * enviarlo: sin esto, "En bodega preparando" ofrecia salir a ruta con la
  * factura sin cobrar y el operador se enteraba por un error del servidor.
  *
  * `RequiresComment` nunca sale aqui, y no es un olvido: no es un dato del

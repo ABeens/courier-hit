@@ -280,16 +280,17 @@ export interface ShipmentEventDto {
   /** Instante en UTC, ISO 8601. La hora local se arma en la presentacion. */
   createdAt: string;
   /**
-   * Foto que PRUEBA el asiento, o null si no la lleva. Hoy solo la trae
-   * «Entregado»: es la foto del paquete entregado que subio el mensajero al
-   * confirmar la visita (Parte 5), y sin la cual la entrega no se acepta.
+   * Fotos que PRUEBAN el asiento, vacio si no lleva ninguna. Hoy solo las trae
+   * «Entregado»: son las del paquete entregado que subio el mensajero al
+   * confirmar la visita (Parte 5, hasta `MAX_DELIVERY_PHOTOS`), y sin al menos
+   * una la entrega no se acepta.
    *
-   * Es una RUTA de la API (`/api/...`), no una url absoluta: la sirve nuestro
+   * Son RUTAS de la API (`/api/...`), no urls absolutas: las sirve nuestro
    * almacenamiento a traves del tramite, con la misma barrera de acceso que el
-   * historial. La web le antepone el origen de la API, igual que al documento
-   * adjunto. Se pinta con un <img>.
+   * historial. La web les antepone el origen de la API, igual que al documento
+   * adjunto. Se pintan con un <img> cada una, en el orden en que se subieron.
    */
-  photoUrl: string | null;
+  photoUrls: string[];
 }
 
 export interface ShipmentEventsResponse {

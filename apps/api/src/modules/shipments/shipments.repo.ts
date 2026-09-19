@@ -130,6 +130,11 @@ function buildConditions(
   if (ownerClientId) conds.push(eq(shipments.clientId, ownerClientId));
   if (query.clientId) conds.push(eq(shipments.clientId, query.clientId));
   if (query.state) conds.push(eq(shipments.state, query.state));
+  if (query.billed !== undefined) {
+    conds.push(
+      query.billed ? isNotNull(shipments.invoiceTotalCrc) : isNull(shipments.invoiceTotalCrc),
+    );
+  }
   if (query.shipmentType) conds.push(inArray(shipments.shipmentType, query.shipmentType));
 
   /**

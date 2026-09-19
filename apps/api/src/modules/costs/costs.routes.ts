@@ -40,7 +40,7 @@ costsRoutes.put('/:shipmentId', zValidator('json', saveShipmentCostsSchema), asy
   );
 });
 
-/** Aprobar: congela el total y avanza a "En bodega - Pendiente pago". */
+/** Aprobar: congela el total y avanza a "En bodega preparando". */
 costsRoutes.post('/:shipmentId/approve', async (c) => {
   return c.json(await costsService.approve(c.get('session'), c.req.param('shipmentId')));
 });

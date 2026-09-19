@@ -453,10 +453,11 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   // (`costs.tramite.manage`, los servicios manuales que negocia el admin), la
   // entrega (`delivery.manage`, que es Mensajeria) y la APROBACION de esos
   // depositos (`payments.validate`). Un tramite de Agenciamiento avanza con este
-  // rol hasta "Proceso de Aduanas"; facturarlo es la puerta donde pasa a manos
-  // del administrador, igual que Paqueteria le pasa el paquete al mensajero en
-  // "En bodega - Pendiente pago" y el deposito le pasa al administrador en
-  // "Pagado - en validacion".
+  // rol hasta "Preparando Borrador de DUA"; facturarlo es la puerta donde pasa a
+  // manos del administrador, y con la proforma emitida vuelve a este rol, que la
+  // cobra y lo lleva a aduana. Igual que Paqueteria le pasa el paquete al
+  // mensajero en "En bodega preparando" y el deposito le pasa al administrador
+  // en "Pagado - en validacion".
   [Role.Operativo]: [
     Permission.DashboardRead,
     Permission.PackageReceive,

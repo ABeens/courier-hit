@@ -14,11 +14,21 @@
  *    lo pide explicito: "Esto implica que suba una foto del paquete entregado");
  *    devuelto sin razon no es devolucion (Condition.RequiresComment del step
  *    Devuelto a bodega). `proofRequirementFor` es el punto unico de esa regla.
+ *    La foto es UNA COMO MINIMO y hasta `MAX_DELIVERY_PHOTOS`: en la puerta hace
+ *    falta a veces mas de un angulo (la caja, la fachada, quien recibe), y un
+ *    reclamo se gana con el conjunto, no con la primera que salio movida.
  * 2. EL DESENLACE MAPEA A UN ESTADO. `stateForOutcome` traduce el intento al
  *    estado destino, y la maquina de estados valida si esa transicion es legal.
  *    Aqui no se decide legalidad, solo equivalencia.
  */
 import { State } from '../workflow/states';
+
+/**
+ * Cuantas fotos admite un intento. El tope no es un capricho de almacenamiento:
+ * el mensajero sube esto de pie y con datos moviles, y pasadas tres fotos la
+ * subida empieza a costar mas que la prueba que aporta.
+ */
+export const MAX_DELIVERY_PHOTOS = 3;
 
 /** Como termino la visita del mensajero. */
 export enum DeliveryOutcome {
@@ -38,7 +48,12 @@ export function stateForOutcome(outcome: DeliveryOutcome): State {
 
 /** Prueba obligatoria segun el desenlace. */
 export interface ProofRequirement {
-  /** La entrega exige foto del paquete entregado. */
+  /**
+   * La entrega exige foto del paquete entregado: al menos una, hasta
+   * `MAX_DELIVERY_PHOTOS`. Es un booleano y no un numero porque la regla es
+   * "¿hace falta prueba grafica?"; el tope lo pone la constante, igual para
+   * todos los desenlaces que la pidan.
+   */
   photo: boolean;
   /** La devolucion exige la razon por escrito. */
   note: boolean;
@@ -60,8 +75,12 @@ export interface DeliveryAttemptDto {
   id: string;
   shipmentId: string;
   outcome: DeliveryOutcome;
-  /** Clave de la foto en el almacen de archivos. Obligatoria si `outcome` es Entregado. */
-  photoFileKey: string | null;
+  /**
+   * Claves de las fotos en el almacen de archivos, en el orden en que se
+   * subieron. Vacio si el desenlace no llevaba foto; al menos una y como mucho
+   * `MAX_DELIVERY_PHOTOS` si `outcome` es Entregado.
+   */
+  photoFileKeys: string[];
   /** Razon de la devolucion. Obligatoria si `outcome` es DevueltoBodega. */
   note: string | null;
   /** Mensajero que registro el intento. */

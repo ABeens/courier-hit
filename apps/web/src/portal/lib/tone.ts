@@ -31,15 +31,22 @@ export const STATE_TONE: Record<State, Tone> = {
   [State.ExamenPrevio]: 'info',
   [State.InspeccionDekra]: 'info',
   [State.PreparandoBorradorDua]: 'info',
+  [State.LiberadoAduanas]: 'info',
   [State.EnRutaEntrega]: 'info',
 
   // Retenido o a la espera de alguien: aduana, facturación o pago del cliente.
   [State.EnAduanas]: 'warn',
   [State.ProcesoAduanas]: 'warn',
+  [State.Aforando]: 'warn',
   [State.FacturacionEnProceso]: 'warn',
   [State.EnBodegaPendientePago]: 'warn',
-  [State.PendienteAdelantoImpuestos]: 'warn',
+  [State.ProformaPendientePago]: 'warn',
+  /* Entregado sin facturar: la mercadería salió y el dinero sigue sin
+     documentarse. Espera una acción NUESTRA, no del cliente, pero espera. */
+  [State.EntregadoPendientePago]: 'warn',
 
+  // Cerrados: Entregado cierra Paquetería y Trámite Finalizado los otros dos.
   [State.Entregado]: 'ok',
+  [State.TramiteFinalizado]: 'ok',
   [State.DevueltoBodega]: 'danger',
 };

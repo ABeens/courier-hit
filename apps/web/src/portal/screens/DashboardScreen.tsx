@@ -108,10 +108,31 @@ const QUEUE_META: Partial<Record<State, { hint: string; icon: ReactElement; targ
       boardFor(State.FacturacionEnProceso),
     ],
   },
+  /* Solo Transporte: se entrega antes de cobrar, así que este cuadro es la
+     mercadería que ya salió y nadie ha facturado. Lleva a la cola de costos
+     porque lo que falta es justo eso, cargarle los costos. */
+  [State.EntregadoPendientePago]: {
+    hint: 'Ya entregados: falta cargarles los costos y cobrar',
+    icon: <path d="M20 6L9 17l-5-5" />,
+    targets: [
+      { resource: Resource.Costs, name: 'Costos', intent: { costsView: 'pendientes' } },
+      boardFor(State.EntregadoPendientePago),
+    ],
+  },
   [State.EnBodegaPendientePago]: {
     hint: 'Facturados y en bodega: no salen a ruta sin el cobro',
     icon: <path d="M21 4H3a2 2 0 00-2 2v12a2 2 0 002 2h18a2 2 0 002-2V6a2 2 0 00-2-2zM1 10h22" />,
     targets: [boardFor(State.EnBodegaPendientePago)],
+  },
+  /* Solo Agenciamiento: la proforma ya emitida esperando el pago. Sin ese pago
+     el trámite no entra a aduana, así que la cola bloquea el expediente entero. */
+  [State.ProformaPendientePago]: {
+    hint: 'Proforma emitida: sin el pago no entra a aduana',
+    icon: <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8" />,
+    targets: [
+      { resource: Resource.Costs, name: 'Costos', intent: { costsView: 'proformas' } },
+      boardFor(State.ProformaPendientePago),
+    ],
   },
   [State.EnRutaEntrega]: {
     hint: 'En manos del mensajero, pendientes de confirmar',

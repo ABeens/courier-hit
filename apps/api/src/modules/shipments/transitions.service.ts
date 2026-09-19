@@ -32,6 +32,7 @@ import {
   flowForType,
   chargeBasisFor,
   isSettled,
+  payableStateOf,
   permissionFor,
   statesOf,
 } from '@courier/shared';
@@ -154,12 +155,15 @@ export const transitionsService = {
      * sistema, no un acto que se le pueda exigir a quien escaneo el bulto.
      */
     if (to === State.FacturacionEnProceso && (await autoBillingService.tryAutoInvoice(session, row))) {
-      return this.transition(
-        session,
-        id,
-        { state: State.EnBodegaPendientePago, note: 'Costos aplicados automáticamente (tarifa sin revisión).' },
-        { skipPermission: true },
-      );
+      const payable = payableStateOf(flowForType(row.shipmentType));
+      if (payable && payable !== to) {
+        return this.transition(
+          session,
+          id,
+          { state: payable, note: 'Costos aplicados automáticamente (tarifa sin revisión).' },
+          { skipPermission: true },
+        );
+      }
     }
 
     const updated = await shipmentsRepo.findById(id);

@@ -16,7 +16,7 @@
 export enum Trigger {
   /**
    * Correo inmediato al dueño del paquete avisando el cambio de estado.
-   * Solo Paqueteria y solo en: En Aduanas, En bodega - Pendiente pago,
+   * Solo Paqueteria y solo en: En Aduanas, En bodega preparando,
    * En ruta de entrega (docs/flujo.md L177).
    */
   NotifyStateChange = 'notify_state_change',

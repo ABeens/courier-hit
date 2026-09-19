@@ -59,6 +59,7 @@ import {
   formatShipmentCode,
   chargeBasisFor,
   isSettled,
+  payableStateOf,
   percentageBase,
   roundMoney,
   statesOf,
@@ -504,6 +505,23 @@ interface Scenario {
 const UNPAID_PLANS: readonly PaymentPlan[] = ['none', 'pending', 'rejected', 'partial'];
 const PAID_PLANS: readonly PaymentPlan[] = ['full-deposit', 'full-card', 'split'];
 
+/**
+ * Los dos hitos de dinero de un flow: donde se cobra y el estado siguiente, al
+ * que no se llega sin haber pagado (Condition.RequiresConfirmedPayment).
+ *
+ * Se preguntan a la maquina en vez de escribirlos porque cada flow cobra en un
+ * estado distinto: Paqueteria en bodega, Transporte en facturacion (ahi factura y
+ * cobra), Agenciamiento en la proforma. Con literales, el seed se quedaba viejo
+ * en cuanto el cobro cambiaba de sitio, y lo que producia era una demo que
+ * contradecia a la API.
+ */
+function payMilestones(flow: Flow): { payable: State; settledAt: State | undefined } {
+  const payable = payableStateOf(flow);
+  if (!payable) throw new Error(`[seed-demo] ${flow} no tiene estado de cobro.`);
+  const order = statesOf(flow);
+  return { payable, settledAt: order[order.indexOf(payable) + 1] };
+}
+
 function buildScenarios(): Scenario[] {
   const out: Scenario[] = [];
   let n = 0;
@@ -512,10 +530,15 @@ function buildScenarios(): Scenario[] {
     const flow = flowForType(type);
     assertPath(flow, path);
     const last = path[path.length - 1]!;
-    const paid = last === State.EnRutaEntrega || last === State.Entregado || last === State.DevueltoBodega;
+    const { payable } = payMilestones(flow);
+    /**
+     * Pago cubierto si el tramite PASO del estado de cobro (para salir de ahi hay
+     * que pagar); a medias si se quedo justo en el; sin plan si ni siquiera llego.
+     */
+    const paid = path.includes(payable) && last !== payable;
     const payment: PaymentPlan = paid
       ? PAID_PLANS[n % PAID_PLANS.length]!
-      : last === State.EnBodegaPendientePago
+      : last === payable
         ? UNPAID_PLANS[n % UNPAID_PLANS.length]!
         : 'none';
     out.push({
@@ -554,23 +577,24 @@ function buildScenarios(): Scenario[] {
     [DeliveryOutcome.DevueltoBodega, DeliveryOutcome.Entregado],
   );
 
-  // --- Transporte: los 10 estados repartidos entre los tres tipos ---
+  // --- Transporte: los 11 estados repartidos entre los tres tipos ---
   const transportStates = statesOf(Flow.Transporte);
   const transportTypes = [ShipmentType.Aereo, ShipmentType.MaritimoFCL, ShipmentType.MaritimoLCL];
+  // Sin intentos de entrega: Transporte no pasa por el modulo de mensajeria (se
+  // entrega y se anota el estado, no hay ruta ni foto).
   transportStates.forEach((state, i) => {
-    const type = transportTypes[i % transportTypes.length]!;
-    const attempts = state === State.Entregado ? [DeliveryOutcome.Entregado] : [];
-    add(type, pathTo(Flow.Transporte, state), attempts);
+    add(transportTypes[i % transportTypes.length]!, pathTo(Flow.Transporte, state));
   });
   // Uno mas por tipo en pleno proceso, para que ninguno quede con un solo caso.
   add(ShipmentType.Aereo, pathTo(Flow.Transporte, State.FacturacionEnProceso));
   add(ShipmentType.MaritimoFCL, pathTo(Flow.Transporte, State.EnTransitoDestino));
-  add(ShipmentType.MaritimoLCL, pathTo(Flow.Transporte, State.EnBodegaPendientePago));
+  add(ShipmentType.MaritimoLCL, pathTo(Flow.Transporte, State.EntregadoPendientePago));
 
-  // --- Agenciamiento: un tramite en cada uno de sus 11 estados ---
+  // --- Agenciamiento: un tramite en cada uno de sus 13 estados ---
+  // Tampoco lleva intentos de entrega: en Agenciamiento no hay mercaderia propia
+  // que repartir, el tramite cierra en aduana.
   for (const state of statesOf(Flow.Agenciamiento)) {
-    const attempts = state === State.Entregado ? [DeliveryOutcome.Entregado] : [];
-    add(ShipmentType.Agenciamiento, pathTo(Flow.Agenciamiento, state), attempts);
+    add(ShipmentType.Agenciamiento, pathTo(Flow.Agenciamiento, state));
   }
 
   // Invariante de cobertura: ningun estado del dominio se queda sin un tramite
@@ -983,9 +1007,11 @@ async function seed(tx: Tx): Promise<void> {
       }
     }
 
-    // 2) Aprobacion: congela el total de la factura en AMBAS monedas. Solo cuando
-    //    el tramite ya paso a "En bodega - Pendiente pago" (Condition.RequiresInvoiceAmount).
-    const approvedAt = at(State.EnBodegaPendientePago);
+    // 2) Aprobacion: congela el total de la factura en AMBAS monedas. Solo desde
+    //    que el tramite llego a su estado de COBRO, que es donde el monto ya tiene
+    //    que existir (Condition.RequiresInvoiceAmount).
+    const { payable, settledAt: settledState } = payMilestones(flowForType(sc.type));
+    const approvedAt = at(payable);
     const totals = lines.length > 0 ? computeTotals(lines.map((l) => ({ amount: l.amount, currency: l.currency, exchangeRate }))) : null;
     const approved = approvedAt !== null && totals !== null;
 
@@ -1097,7 +1123,9 @@ async function seed(tx: Tx): Promise<void> {
         invoiceTotalCrc: totals!.crc,
       });
       const due = basis.invoiceTotal!;
-      const paidAt = at(State.EnRutaEntrega) ?? new Date(Math.min(NOW.getTime(), approvedAt!.getTime() + DAY));
+      const paidAt =
+        (settledState ? at(settledState) : null) ??
+        new Date(Math.min(NOW.getTime(), approvedAt!.getTime() + DAY));
       const receipt = `${1_240_000 + i * 13}`;
 
       const deposit = (amount: number, status: PaymentStatus, note: string | null = null): PaymentRow => ({
@@ -1168,10 +1196,10 @@ async function seed(tx: Tx): Promise<void> {
         }
       }
 
-      // Invariante: si el tramite salio a ruta, el pago DEBE estar cubierto
-      // (Condition.RequiresConfirmedPayment). Se verifica con la misma funcion
-      // que usa la API, no con una cuenta aparte.
-      const needsSettled = reached(State.EnRutaEntrega);
+      // Invariante: si el tramite PASO del estado de cobro, el pago DEBE estar
+      // cubierto (Condition.RequiresConfirmedPayment). Se verifica con la misma
+      // funcion que usa la API, no con una cuenta aparte.
+      const needsSettled = settledState !== undefined && reached(settledState);
       const settleable = mine.map((p) => ({
         amount: p.amount,
         currency: p.currency,
@@ -1179,7 +1207,7 @@ async function seed(tx: Tx): Promise<void> {
         status: p.status ?? PaymentStatus.Pendiente,
       }));
       if (needsSettled && !isSettled(settleable, basis)) {
-        throw new Error(`[seed-demo] ${shipment!.code} salió a ruta sin pago suficiente.`);
+        throw new Error(`[seed-demo] ${shipment!.code} avanzó del cobro sin pago suficiente.`);
       }
       paymentRows.push(...mine);
     }
@@ -1191,7 +1219,10 @@ async function seed(tx: Tx): Promise<void> {
       attemptRows.push({
         shipmentId,
         outcome,
-        photoFileKey: outcome === DeliveryOutcome.Entregado ? `deliveries/demo-${shipment!.code}.jpg` : null,
+        photoFileKeys:
+          outcome === DeliveryOutcome.Entregado
+            ? [`deliveries/demo-${shipment!.code}.jpg`]
+            : [],
         note:
           outcome === DeliveryOutcome.DevueltoBodega
             ? 'Nadie atendió en la dirección. Se deja aviso y se reprograma.'

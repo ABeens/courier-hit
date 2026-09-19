@@ -108,7 +108,7 @@ export interface ClientRate {
    * el paquete se queda en "Facturacion en proceso" esperando que un operativo o
    * un administrador le cargue los costos adicionales y apruebe. Sin ella (el
    * caso de todas las demas tarifas) el sistema factura solo el flete al recibir
-   * el paquete en bodega y lo avanza a "En bodega - Pendiente pago".
+   * el paquete en bodega y lo avanza a "En bodega preparando".
    */
   requiresBillingReview: boolean;
   /** Cuantos casilleros usan esta tarifa (para el aviso al eliminar). */
