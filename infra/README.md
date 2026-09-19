@@ -372,18 +372,20 @@ Necesita una URL pública y estable para el webhook, así que va después del
 despliegue y preferiblemente después del dominio.
 
 1. En el dashboard de Onvo (Developers), registrar la URL de callback:
-   `https://EL-DOMINIO/api/payments/webhook`
+   `https://EL-DOMINIO/api/payments/webhook/onvo`
 2. Copiar el `webhook_secret` que dan ahí.
 
-```bash
-put ONVO_BASE_URL       'https://api.onvopay.com/v1'
-put ONVO_PUBLIC_KEY     '...'
-put ONVO_SECRET_KEY     '...'
-put ONVO_WEBHOOK_SECRET '...'
+Las llaves y el encendido van en un script, que además reinicia la API al final
+(sin reinicio el proceso sigue con las llaves viejas):
 
-aws ssm put-parameter --name /courier/prod/ONVO_MODE --value on --type String --overwrite
-# reiniciar
+```powershell
+# -DesdeEnv las lee de apps/api/.env; sin el switch las pide por consola.
+powershell -ExecutionPolicy Bypass -File .\infra\scripts\onvo-enable.ps1 -DryRun
+powershell -ExecutionPolicy Bypass -File .\infra\scripts\onvo-enable.ps1 -DesdeEnv
 ```
+
+Para **rotar** las llaves sin arriesgarse a encender la pasarela, el mismo script
+con `-SoloCredenciales`: carga las tres y no toca `ONVO_MODE`.
 
 Qué entorno se toca lo decide **el prefijo de la llave**, no el modo ni la URL:
 las `onvo_test_*` no tocan la red bancaria real.

@@ -38,15 +38,21 @@ export type RecordDeliveryAttemptInput = z.infer<typeof recordDeliveryAttemptSch
  * Filtros del dashboard del mensajero (Parte 5: "puede filtrar, por nombre, por
  * ruta y por número de tracking"). `q` cubre nombre y tracking en un solo campo;
  * la ruta va aparte porque es un numero exacto, no una busqueda por texto.
+ *
+ * Van SIN paginacion y aparte del esquema del listado porque los consumen dos
+ * cosas distintas: la cola paginada de la pantalla y la hoja de ruta imprimible,
+ * que no tiene paginas porque es un documento. Compartir el filtro es lo que
+ * garantiza que el papel diga exactamente lo que el mensajero esta viendo.
  */
-export const listDeliveryQueueQuerySchema = z
-  .object({
-    q: z.string().trim().optional(),
-    routeNumber: z.coerce
-      .number()
-      .int('La ruta es un número entero.')
-      .positive('La ruta debe ser mayor que cero.')
-      .optional(),
-  })
-  .merge(paginationQuerySchema);
+export const deliveryQueueFilterSchema = z.object({
+  q: z.string().trim().optional(),
+  routeNumber: z.coerce
+    .number()
+    .int('La ruta es un número entero.')
+    .positive('La ruta debe ser mayor que cero.')
+    .optional(),
+});
+export type DeliveryQueueFilter = z.infer<typeof deliveryQueueFilterSchema>;
+
+export const listDeliveryQueueQuerySchema = deliveryQueueFilterSchema.merge(paginationQuerySchema);
 export type ListDeliveryQueueQuery = z.infer<typeof listDeliveryQueueQuerySchema>;

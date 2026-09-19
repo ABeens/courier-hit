@@ -6,7 +6,7 @@
 import { and, asc, count, eq, ilike, or } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { State, toSlice } from '@courier/shared';
-import type { ListDeliveryQueueQuery } from '@courier/shared';
+import type { DeliveryQueueFilter, ListDeliveryQueueQuery } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { settlementColumn } from '../payments/settlement';
@@ -22,7 +22,7 @@ import { deliveryAttempts } from './deliveries.schema';
  * dos (ruta y busqueda) son los del manual, y se aplican aqui y no sobre lo ya
  * cargado porque el listado viene paginado.
  */
-function queueConditions(query: ListDeliveryQueueQuery): SQL[] {
+function queueConditions(query: DeliveryQueueFilter): SQL[] {
   const conds: SQL[] = [eq(shipments.state, State.EnRutaEntrega)];
 
   if (query.routeNumber !== undefined) {
@@ -41,6 +41,64 @@ function queueConditions(query: ListDeliveryQueueQuery): SQL[] {
   return conds;
 }
 
+/**
+ * La consulta de la cola, sin recorte. La comparten la pagina que lee el
+ * mensajero en el telefono y la hoja de ruta que se imprime: mismas columnas,
+ * mismos filtros y mismo orden, y lo unico que cada una decide es cuantas filas
+ * se lleva. Si se hubiera escrito dos veces, el papel y la pantalla podrian
+ * discrepar en lo que es el mismo recorrido.
+ */
+function queueQuery(query: DeliveryQueueFilter) {
+  return db
+    .select({
+      id: shipments.id,
+      code: shipments.code,
+      tracking: shipments.tracking,
+      /**
+       * HAWB (LES): el identificador que le pone la bodega de Miami y el que va
+       * IMPRESO en la etiqueta de la caja. Va junto al tracking y nunca en su
+       * lugar: el mensajero tiene delante la etiqueta, no el numero de la tienda.
+       */
+      hawb: shipments.hawb,
+      description: shipments.description,
+      shipmentType: shipments.shipmentType,
+      clientName: users.name,
+      clientPhone: users.phone,
+      provinceCode: clients.provinceCode,
+      cantonCode: clients.cantonCode,
+      districtCode: clients.districtCode,
+      addressLine: clients.addressLine,
+      routeNumber: effectiveRouteNumber,
+      /**
+       * Los DOS totales congelados. El de dolares no se pinta en la cola: hace
+       * falta para saber si el paquete esta pagado, porque la Paqueteria se
+       * cobra y se salda en dolares (`chargeBasisFor`).
+       */
+      invoiceTotalUsd: shipments.invoiceTotalUsd,
+      invoiceTotalCrc: shipments.invoiceTotalCrc,
+      /**
+       * Abonos del tramite: el mensajero tiene que ver si sale con un paquete
+       * sin cobrar. Crudos, como en el listado de tramites; la suma la hace el
+       * servicio con @courier/shared (ver `payments/settlement.ts`).
+       */
+      settlement: settlementColumn,
+      updatedAt: shipments.updatedAt,
+    })
+    .from(shipments)
+    .innerJoin(clients, eq(shipments.clientId, clients.id))
+    .innerJoin(users, eq(clients.userId, users.id))
+    .leftJoin(districtRoutes, districtRouteJoin)
+    .leftJoin(cantonRoutes, cantonRouteJoin)
+    .where(and(...queueConditions(query)))
+    /**
+     * Por ruta y luego por antiguedad: es el orden en que se arma un recorrido.
+     * El `id` cierra la clave porque los otros dos empatan con facilidad (media
+     * ruta puede pasar a "en ruta" en la misma operacion, con el mismo
+     * `updated_at`), y con orden ambiguo la paginacion repite filas.
+     */
+    .orderBy(asc(effectiveRouteNumber), asc(shipments.updatedAt), asc(shipments.id));
+}
+
 export const deliveriesRepo = {
   /**
    * Cola del mensajero: los tramites "En ruta de entrega". El estado NO es un
@@ -50,51 +108,19 @@ export const deliveriesRepo = {
    */
   async queue(query: ListDeliveryQueueQuery) {
     const { limit, offset } = toSlice(query);
+    return queueQuery(query).limit(limit).offset(offset);
+  },
 
-    return db
-      .select({
-        id: shipments.id,
-        code: shipments.code,
-        tracking: shipments.tracking,
-        description: shipments.description,
-        shipmentType: shipments.shipmentType,
-        clientName: users.name,
-        clientPhone: users.phone,
-        provinceCode: clients.provinceCode,
-        cantonCode: clients.cantonCode,
-        districtCode: clients.districtCode,
-        addressLine: clients.addressLine,
-        routeNumber: effectiveRouteNumber,
-        /**
-         * Los DOS totales congelados. El de dolares no se pinta en la cola: hace
-         * falta para saber si el paquete esta pagado, porque la Paqueteria se
-         * cobra y se salda en dolares (`chargeBasisFor`).
-         */
-        invoiceTotalUsd: shipments.invoiceTotalUsd,
-        invoiceTotalCrc: shipments.invoiceTotalCrc,
-        /**
-         * Abonos del tramite: el mensajero tiene que ver si sale con un paquete
-         * sin cobrar. Crudos, como en el listado de tramites; la suma la hace el
-         * servicio con @courier/shared (ver `payments/settlement.ts`).
-         */
-        settlement: settlementColumn,
-        updatedAt: shipments.updatedAt,
-      })
-      .from(shipments)
-      .innerJoin(clients, eq(shipments.clientId, clients.id))
-      .innerJoin(users, eq(clients.userId, users.id))
-      .leftJoin(districtRoutes, districtRouteJoin)
-      .leftJoin(cantonRoutes, cantonRouteJoin)
-      .where(and(...queueConditions(query)))
-      /**
-       * Por ruta y luego por antiguedad: es el orden en que se arma un recorrido.
-       * El `id` cierra la clave porque los otros dos empatan con facilidad (media
-       * ruta puede pasar a "en ruta" en la misma operacion, con el mismo
-       * `updated_at`), y con orden ambiguo la paginacion repite filas.
-       */
-      .orderBy(asc(effectiveRouteNumber), asc(shipments.updatedAt), asc(shipments.id))
-      .limit(limit)
-      .offset(offset);
+  /**
+   * La cola ENTERA del filtro, para la hoja de ruta imprimible. No se pagina
+   * porque un documento que dice "ruta 4" y trae las primeras 50 de 130 paradas
+   * es peor que no tenerlo: el mensajero sale a la calle creyendo que termino.
+   *
+   * El tope existe igual, como freno de un filtro demasiado abierto; quien lo
+   * llama compara contra el total y avisa impreso lo que se quedo fuera.
+   */
+  async queueAll(query: DeliveryQueueFilter, limit: number) {
+    return queueQuery(query).limit(limit);
   },
 
   /**
@@ -102,7 +128,7 @@ export const deliveriesRepo = {
    * porque `routeNumber` filtra sobre la ruta EFECTIVA, que sale de ellos; deja
    * fuera `settlementColumn`, que es una subconsulta correlacionada por fila.
    */
-  async countQueue(query: ListDeliveryQueueQuery) {
+  async countQueue(query: DeliveryQueueFilter) {
     const [row] = await db
       .select({ n: count() })
       .from(shipments)

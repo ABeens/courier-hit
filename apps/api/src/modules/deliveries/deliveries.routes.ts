@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 import { zValidator } from '../../core/validator';
 import {
   Permission,
+  deliveryQueueFilterSchema,
   listDeliveryQueueQuerySchema,
   recordDeliveryAttemptSchema,
 } from '@courier/shared';
@@ -18,6 +19,7 @@ import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
 import { toDto } from '../shipments/shipments.service';
 import { deliveriesService } from './deliveries.service';
+import { renderDeliveryReport } from './delivery-report.render';
 
 export const deliveriesRoutes = new Hono<AppEnv>();
 
@@ -26,6 +28,18 @@ deliveriesRoutes.use('*', requireSession(), requirePermission(Permission.Deliver
 /** Cola del mensajero: los tramites en ruta, filtrables por nombre, tracking y ruta. */
 deliveriesRoutes.get('/queue', zValidator('query', listDeliveryQueueQuerySchema), async (c) => {
   return c.json(await deliveriesService.queue(c.req.valid('query')));
+});
+
+/**
+ * La cola del filtro como DOCUMENTO imprimible (la hoja de ruta que el mensajero
+ * se lleva en el bolsillo). Se responde HTML y no JSON a proposito: es papel, no
+ * una tabla que la pantalla vaya a pintar. Ver `delivery-report.render.ts`.
+ *
+ * Toma los MISMOS filtros del listado menos la paginacion: la hoja sale de una
+ * ruta o de todas, pero nunca de "la primera pagina de una ruta".
+ */
+deliveriesRoutes.get('/queue/report', zValidator('query', deliveryQueueFilterSchema), async (c) => {
+  return c.html(renderDeliveryReport(await deliveriesService.report(c.req.valid('query'))));
 });
 
 deliveriesRoutes.get('/shipment/:shipmentId', async (c) => {

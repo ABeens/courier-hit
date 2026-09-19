@@ -18,7 +18,9 @@ import {
   DeliveryOutcome,
   State,
   chargeBasisFor,
+  collectionStatus,
   isSettled,
+  outstandingFor,
   paged,
   pendingAmount,
   proofRequirementFor,
@@ -27,6 +29,7 @@ import {
 } from '@courier/shared';
 import type {
   DeliveryAttemptDto,
+  DeliveryQueueFilter,
   ListDeliveryQueueQuery,
   RecordDeliveryAttemptInput,
   Session,
@@ -36,6 +39,18 @@ import { storage } from '../../core/storage';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { transitionsService } from '../shipments/transitions.service';
 import { deliveriesRepo } from './deliveries.repo';
+import type {
+  DeliveryReportDoc,
+  DeliveryReportRoute,
+  DeliveryReportRow,
+} from './delivery-report.render';
+
+/**
+ * Tope de paradas de la hoja de ruta imprimible. No es un limite de paginacion:
+ * es el freno de "todas las rutas" en un dia grande, para no armar un documento
+ * de trescientas hojas que nadie imprime. Lo que deja fuera se anuncia.
+ */
+const REPORT_LIMIT = 500;
 
 /** Fila de BD -> DTO de la API (fechas en ISO/UTC). */
 function toDto(row: Awaited<ReturnType<typeof deliveriesRepo.listByShipment>>[number]): DeliveryAttemptDto {
@@ -79,6 +94,63 @@ export const deliveriesService = {
       updatedAt: row.updatedAt.toISOString(),
     }));
     return paged(items, total, query);
+  },
+
+  /**
+   * La hoja de ruta imprimible de la cola: el MISMO filtro de la pantalla
+   * (`DeliveryQueueFilter`) sobre el mismo orden, agrupado por ruta.
+   *
+   * Aqui no se pagina: el papel con el que sale el mensajero tiene que traer su
+   * recorrido entero. El tope de `REPORT_LIMIT` es el freno de un filtro
+   * demasiado abierto, y lo que deja fuera se compara contra el total y se
+   * imprime en el documento.
+   */
+  async report(filter: DeliveryQueueFilter): Promise<DeliveryReportDoc> {
+    const [rows, total] = await Promise.all([
+      deliveriesRepo.queueAll(filter, REPORT_LIMIT),
+      deliveriesRepo.countQueue(filter),
+    ]);
+
+    const routes: DeliveryReportRoute[] = [];
+    for (const { settlement, ...row } of rows) {
+      /**
+       * El cobro se resuelve EN LA MONEDA EN QUE SE COBRA el trámite
+       * (`chargeBasisFor`), no en colones por defecto: la Paqueteria se salda en
+       * dolares, y un saldo de 40 impreso con el simbolo equivocado es el
+       * mensajero cobrando cuarenta colones en la puerta.
+       *
+       * El estatus sale de `collectionStatus`, el mismo punto unico que usa el
+       * reporte del administrador: el papel y la pantalla no pueden discrepar en
+       * si un paquete esta pagado.
+       */
+      const basis = chargeBasisFor(row.shipmentType, row);
+      const settled = settledAmount(settlement, basis.currency);
+
+      const item: DeliveryReportRow = {
+        ...row,
+        collection: collectionStatus(settlement, basis),
+        due: outstandingFor(settled, basis),
+        dueCurrency: basis.currency,
+      };
+
+      /**
+       * Las filas ya vienen ordenadas por ruta, asi que agrupar es mirar la
+       * anterior. Se respeta ese orden en vez de reordenar por numero: es el
+       * orden en que se arma el recorrido, y es el que el mensajero sigue.
+       */
+      const last = routes[routes.length - 1];
+      if (last && last.routeNumber === item.routeNumber) last.rows.push(item);
+      else routes.push({ routeNumber: item.routeNumber, rows: [item] });
+    }
+
+    return {
+      // En UTC; el documento lo pasa a hora de Costa Rica al imprimirlo.
+      generatedAt: new Date().toISOString(),
+      filter,
+      routes,
+      total,
+      omitted: Math.max(0, total - rows.length),
+    };
   },
 
   /** Historial de intentos de un tramite. */

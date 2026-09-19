@@ -23,6 +23,7 @@ import {
   findCanton,
   findDistrict,
   findProvince,
+  usesPackageFields,
 } from '@courier/shared';
 import type { ShipmentType } from '@courier/shared';
 import { IconButton } from '../components/IconButton';
@@ -30,6 +31,7 @@ import { FilterBar } from '../components/FilterBar';
 import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
 import { Pagination } from '../components/Pagination';
 import { PayFlag } from '../components/PayFlag';
+import { API_BASE } from '../lib/api';
 import { usePagedList } from '../lib/usePagedList';
 import { DeliveryConfirmModal } from './DeliveryConfirmModal';
 
@@ -37,6 +39,13 @@ export interface DeliveryQueueRow {
   id: string;
   code: string;
   tracking: string;
+  /**
+   * HAWB (LES): el identificador que la bodega de Miami imprime en la etiqueta de
+   * la caja. Aqui no es un dato de oficina: es el numero que el mensajero lee en
+   * el paquete que tiene en la mano, y con el que casa la tarjeta con el bulto.
+   * Null mientras el paquete no ha pasado por Miami.
+   */
+  hawb: string | null;
   description: string;
   shipmentType: ShipmentType;
   clientName: string;
@@ -105,6 +114,20 @@ export function DeliveriesScreen() {
   );
   const { error, setError, reload: load } = list;
 
+  /**
+   * La hoja de ruta imprimible, con el MISMO filtro que se esta viendo: si hay
+   * una ruta puesta sale la de esa ruta, y si no, la del dia entero. Se abre en
+   * otra pestaña y no con `fetch`: es un documento HTML para imprimir o guardar
+   * como PDF, y la cookie de sesion viaja igual por ser el mismo origen (mismo
+   * criterio que las proformas y la descarga del CSV).
+   */
+  function openReport() {
+    const params = new URLSearchParams();
+    if (q.trim()) params.set('q', q.trim());
+    if (route.trim()) params.set('routeNumber', route.trim());
+    window.open(`${API_BASE}/api/deliveries/queue/report?${params.toString()}`, '_blank');
+  }
+
   return (
     <div className="fadeIn">
       <div className="head-row">
@@ -113,6 +136,22 @@ export function DeliveriesScreen() {
           {list.data && (
             <div className="count">{list.total.toLocaleString('es-CR')} paquetes en ruta</div>
           )}
+        </div>
+        <div className="actions">
+          {/* Deshabilitado mientras no haya nada que imprimir: una hoja de ruta
+              en blanco se confunde con "no hay entregas hoy". */}
+          <button
+            className="btn btn-ghost"
+            onClick={openReport}
+            disabled={list.loading || list.total === 0}
+            title={
+              route
+                ? `Hoja de ruta de la ruta ${route}, para imprimir o guardar como PDF`
+                : 'Hoja de ruta de todas las rutas, para imprimir o guardar como PDF'
+            }
+          >
+            Descargar reporte
+          </button>
         </div>
       </div>
 
@@ -187,6 +226,17 @@ export function DeliveriesScreen() {
                     value={row.clientPhone ? <a href={`tel:${row.clientPhone}`}>{row.clientPhone}</a> : null}
                     mono
                   />
+                  {/*
+                    Va con los datos de la parada y no en el encabezado: el
+                    encabezado responde "de quien es este paquete" y esto
+                    responde "cual de los que llevo es". Solo en los tipos que
+                    tienen HAWB; cuando aplica y esta vacio, la raya ES el dato
+                    (el paquete todavia no pasó por Miami), el mismo criterio de
+                    la ficha de Trámites.
+                  */}
+                  {usesPackageFields(row.shipmentType) && (
+                    <Field label="HAWB (LES)" value={row.hawb} mono />
+                  )}
                   <Field label="Descripción" value={row.description} />
                 </dl>
               </section>
