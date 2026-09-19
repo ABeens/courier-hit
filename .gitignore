@@ -43,3 +43,7 @@ CLAUDE.md
 
 # Credenciales de proveedor (nunca al repo)
 /credenciales*.txt
+
+# Scripts operativos ad-hoc (locales, no van al repo)
+/scripts/
+infra/scripts/domain.ps1
