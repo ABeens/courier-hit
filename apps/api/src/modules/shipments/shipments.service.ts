@@ -56,7 +56,7 @@ import type {
   ShipmentPhotosResponse,
   UpdateShipmentInput,
 } from '@courier/shared';
-import { AuthErrors, ShipmentErrors } from '../../core/errors';
+import { AuthErrors, ShipmentErrors, isProviderRateLimited } from '../../core/errors';
 import { formatShipmentCode } from '@courier/shared';
 import {
   createHelgaPrealert,
@@ -88,6 +88,57 @@ interface PrealertReconcileReport {
  * llamadas al proveedor) de cada pasada; el resto se drena en las siguientes.
  */
 const PREALERT_RECONCILE_BATCH = 50;
+
+/**
+ * Cuanto vale una respuesta de fotos antes de volver a preguntarle al proveedor.
+ *
+ * Las fotos se piden AL VUELO en cada apertura del detalle (ver `photos`), o sea
+ * una llamada al proveedor por clic, y son el unico consumo de su limite de
+ * peticiones que crece con el trafico de personas en vez de con el del robot.
+ * Un minuto no envejece nada (las fotos de un paquete no cambian mientras esta
+ * en bodega) y convierte una pantalla que alguien abre y cierra varias veces en
+ * una sola peticion.
+ *
+ * Es CORTA a proposito: las urls vienen firmadas y no sabemos cuanto dura la
+ * firma, asi que guardarlas mas tiempo arriesga mostrar imagenes rotas, que es
+ * justo lo que `photos` evita no persistiendolas.
+ */
+const PHOTOS_CACHE_TTL_MS = 60_000;
+
+/** Tope de entradas de la cache de fotos, para que no crezca con el historico. */
+const PHOTOS_CACHE_MAX = 500;
+
+/**
+ * Cache en memoria del proceso, igual que el resto de contadores de esta API
+ * (hoy es UNA instancia, docs/12). Se pierde en cada despliegue y no pasa nada:
+ * lo peor que ocurre es una consulta de mas al proveedor.
+ */
+const photosCache = new Map<string, { expiresAt: number; value: ShipmentPhotosResponse }>();
+
+/** Lee de la cache, descartando lo vencido. */
+function cachedPhotos(key: string): ShipmentPhotosResponse | null {
+  const hit = photosCache.get(key);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    photosCache.delete(key);
+    return null;
+  }
+  return hit.value;
+}
+
+/** Guarda en la cache, barriendo lo vencido cuando el mapa se hace grande. */
+function cachePhotos(key: string, value: ShipmentPhotosResponse): void {
+  if (photosCache.size >= PHOTOS_CACHE_MAX) {
+    const now = Date.now();
+    for (const [k, v] of photosCache) {
+      if (v.expiresAt <= now) photosCache.delete(k);
+    }
+    // Sigue llena aunque se haya barrido lo vencido: se vacia entera. Es una
+    // cache de un minuto, reconstruirla cuesta lo que costaba antes de tenerla.
+    if (photosCache.size >= PHOTOS_CACHE_MAX) photosCache.clear();
+  }
+  photosCache.set(key, { expiresAt: Date.now() + PHOTOS_CACHE_TTL_MS, value });
+}
 
 /**
  * Permiso necesario para dar de alta o editar un tramite de ese tipo. Paqueteria
@@ -469,6 +520,15 @@ export const shipmentsService = {
       if (!account) return unavailable;
     }
 
+    /**
+     * La clave lleva la cuenta ademas del tracking: el mismo tracking consultado
+     * con tokens distintos puede devolver cosas distintas (cada cuenta ve solo lo
+     * suyo), y servir una respuesta por otra mostraria las fotos equivocadas.
+     */
+    const cacheKey = `${shipment.providerAccountCode ?? 'principal'}:${tracking}`;
+    const cached = cachedPhotos(cacheKey);
+    if (cached) return cached;
+
     try {
       const pkg = await fetchHelgaPackageState(tracking, account);
       // 404: el paquete aun no existe del lado del proveedor (prealerta sin
@@ -478,7 +538,13 @@ export const shipmentsService = {
       const items = (pkg.fotos ?? [])
         .map(toPhotoDto)
         .filter((photo): photo is ShipmentPhotoDto => photo !== null);
-      return { items, available: true };
+      const response: ShipmentPhotosResponse = { items, available: true };
+      // Solo se cachea la respuesta BUENA. Un `unavailable` puede venir de un
+      // tropiezo pasajero del proveedor, y recordarlo un minuto convertiria un
+      // fallo de una peticion en una pantalla sin fotos para todos los que
+      // entren despues.
+      cachePhotos(cacheKey, response);
+      return response;
     } catch (err) {
       console.error(`[helga] fallo pidiendo las fotos de ${shipment.code} (${tracking}):`, err);
       return unavailable;
@@ -653,9 +719,18 @@ export const shipmentsService = {
       status = HelgaSyncStatus.Synced;
       error = null;
     } catch (err) {
-      status = HelgaSyncStatus.Failed;
-      error = err instanceof Error ? err.message : String(err);
-      console.error(`[helga] no se pudo prealertar ${shipment.tracking}:`, err);
+      if (isProviderRateLimited(err)) {
+        // No es que el proveedor rechazara la prealerta: es que no le cupo. Queda
+        // 'pending' y sin intento gastado, que es exactamente lo que levanta la
+        // reconciliacion; sellarla 'failed' pondria un motivo falso en la ficha.
+        status = HelgaSyncStatus.Pending;
+        error = null;
+        console.warn(`[helga] límite de peticiones: la prealerta de ${shipment.tracking} queda pendiente.`);
+      } else {
+        status = HelgaSyncStatus.Failed;
+        error = err instanceof Error ? err.message : String(err);
+        console.error(`[helga] no se pudo prealertar ${shipment.tracking}:`, err);
+      }
     }
 
     // Sella el estado sin volver a lanzar: la bandera es informativa para la
@@ -663,7 +738,9 @@ export const shipmentsService = {
     try {
       await shipmentsRepo.update(shipment.id, {
         helgaPrealertStatus: status,
-        helgaPrealertAttempts: 1,
+        // Un limite de peticiones no cuenta como intento: el paquete ni siquiera
+        // llego a manos del proveedor.
+        helgaPrealertAttempts: status === HelgaSyncStatus.Pending ? 0 : 1,
         helgaPrealertError: error,
         helgaPrealertId: prealertId,
       });
@@ -703,11 +780,25 @@ export const shipmentsService = {
           insuredValue: s.insuredValueUsd,
           tariffPosition: s.tariffPosition,
           retain: s.retain,
+          priority: 'robot',
         });
         status = HelgaSyncStatus.Synced;
         error = null;
         report.synced += 1;
       } catch (err) {
+        /**
+         * Con el limite alcanzado se corta la corrida SIN sellar nada: el estado
+         * de esta prealerta sigue siendo el que era y el contador de intentos no
+         * se toca. Las que faltan se recogen en la proxima corrida, que es lo
+         * mismo que habria pasado si el lote hubiera sido mas corto.
+         */
+        if (isProviderRateLimited(err)) {
+          report.checked -= 1;
+          console.warn(
+            `[helga] límite de peticiones: la reconciliación de prealertas se corta y sigue en la próxima corrida.`,
+          );
+          break;
+        }
         status = HelgaSyncStatus.Failed;
         error = err instanceof Error ? err.message : String(err);
         report.failed += 1;

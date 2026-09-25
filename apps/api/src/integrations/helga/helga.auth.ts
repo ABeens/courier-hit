@@ -14,6 +14,7 @@
  */
 import { type HelgaAccount, config, helgaPrincipalAccount } from '../../core/config';
 import { ProviderErrors } from '../../core/errors';
+import { DEFAULT_RETRY_AFTER_MS, acquireHelgaSlot, pauseHelgaCalls, retryAfterMs } from './helga.throttle';
 import type { HelgaTokenResponse } from './helga.types';
 
 interface CachedToken {
@@ -51,6 +52,14 @@ async function requestToken(account: HelgaAccount): Promise<string> {
   const clientId = account.oauthClientId ?? config.HELGA_CLIENT_ID;
   const clientSecret = account.oauthClientSecret ?? config.HELGA_CLIENT_SECRET;
 
+  /**
+   * El token tambien es una peticion al proveedor y tambien cuenta para su
+   * limite, asi que pasa por el mismo regulador que las demas. Va con prioridad
+   * `interactive` aunque la pida el robot: es una llamada por cuenta y por hora,
+   * y quien la espera tiene su propia llamada detenida hasta que llegue.
+   */
+  await acquireHelgaSlot('interactive');
+
   const response = await fetch(`${config.HELGA_BASE_URL}/oauth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -64,6 +73,19 @@ async function requestToken(account: HelgaAccount): Promise<string> {
     }),
     signal: AbortSignal.timeout(config.HELGA_TIMEOUT_MS),
   });
+
+  if (response.status === 429) {
+    // El limite nos alcanzo en la emision del token. Se frena TODA la salida el
+    // tiempo que pida el proveedor y se propaga como lo que es (limite, no
+    // credenciales malas): un 'unauthenticated' aqui haria pensar en una
+    // contraseña caducada.
+    const waitMs = retryAfterMs(response) ?? DEFAULT_RETRY_AFTER_MS;
+    pauseHelgaCalls(waitMs);
+    console.warn(
+      `[helga] /oauth/token de ${account.code} respondió 429; se pausa la salida ${Math.ceil(waitMs / 1000)}s.`,
+    );
+    throw ProviderErrors.rateLimited();
+  }
 
   if (!response.ok) {
     // Nunca logueamos el cuerpo: lleva credenciales. El codigo de casillero si,

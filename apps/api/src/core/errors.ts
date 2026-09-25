@@ -212,7 +212,32 @@ export const ProviderErrors = {
     new AppError('PROVIDER_FORBIDDEN', 'El operador en Miami rechazó la conexión (lista blanca).', 502),
   unauthenticated: () =>
     new AppError('PROVIDER_UNAUTHENTICATED', 'No pudimos autenticarnos con el operador en Miami.', 502),
+  /**
+   * El proveedor nos limito por exceso de peticiones (429). Es 503 y no 429: el
+   * que se paso del limite fue nuestro sistema, no quien esta usando la API, y
+   * devolverle 429 al cliente le diria que se modere cuando no hizo nada.
+   *
+   * Se distingue del resto con `isProviderRateLimited` porque NO es un fallo del
+   * dato: las tareas del robot no deben sellarlo como "casillero roto" ni gastar
+   * un intento por el.
+   */
+  rateLimited: () =>
+    new AppError(
+      'PROVIDER_RATE_LIMITED',
+      'El operador en Miami está recibiendo demasiadas peticiones nuestras. Se reintenta en unos minutos.',
+      503,
+    ),
 };
+
+/**
+ * True si el error es el limite de peticiones del proveedor. Lo miran las tareas
+ * del robot para NO sellar el resultado: un 429 no dice nada del casillero ni de
+ * la prealerta, asi que marcarlos 'failed' (y sumarles un intento) convertiria un
+ * problema de ritmo nuestro en un diagnostico falso sobre el dato.
+ */
+export function isProviderRateLimited(err: unknown): boolean {
+  return err instanceof AppError && err.code === 'PROVIDER_RATE_LIMITED';
+}
 
 /**
  * Errores de la correccion MANUAL del enlace de un casillero (panel de

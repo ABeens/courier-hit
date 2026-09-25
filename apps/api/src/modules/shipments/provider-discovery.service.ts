@@ -69,6 +69,7 @@ import {
 } from '../../integrations/helga/helga.client';
 import type { HelgaAvailablePackage } from '../../integrations/helga/helga.types';
 import type { HelgaAccount } from '../../core/config';
+import { isProviderRateLimited } from '../../core/errors';
 import { clientsRepo } from '../clients/clients.repo';
 import { providerAccountsRepo } from '../provider-accounts/provider-accounts.repo';
 import { providerAccountsService } from '../provider-accounts/provider-accounts.service';
@@ -294,8 +295,20 @@ export const providerDiscoveryService = {
       rows = await fetchHelgaAvailablePackages({
         pageSize: DISCOVERY_PAGE_SIZE,
         ...(target.account ? { account: target.account } : {}),
+        priority: 'robot',
       });
     } catch (err) {
+      /**
+       * El limite de peticiones NO se sella en la fila de la cuenta. Esa marca es
+       * lo que el panel muestra como motivo de que no lleguen paquetes, y un
+       * problema de ritmo nuestro leido alli mandaria a revisar unas credenciales
+       * que estan bien. Se avisa y se sigue con la siguiente cuenta: el regulador
+       * ya la hara esperar el castigo.
+       */
+      if (isProviderRateLimited(err)) {
+        console.warn(`[helga] límite de peticiones alcanzado listando ${label}; se reintenta en la próxima corrida.`);
+        return report;
+      }
       // Sin listado no hay nada que descubrir. Se registra y se reintenta en la
       // proxima corrida; no tiene sentido propagar y tumbar la tarea del robot.
       console.error(`[helga] fallo consultando los paquetes disponibles (op. E) de ${label}:`, err);

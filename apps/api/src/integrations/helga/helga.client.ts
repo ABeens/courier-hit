@@ -20,7 +20,7 @@
 import { Currency, roundMoney } from '@courier/shared';
 import type { HelgaAccount } from '../../core/config';
 import { config, helgaMode, helgaPrincipalAccount } from '../../core/config';
-import { ProviderErrors } from '../../core/errors';
+import { ProviderErrors, isProviderRateLimited } from '../../core/errors';
 import { getAccessToken, invalidateToken } from './helga.auth';
 import {
   HELGA_ACCOUNT_CLIENT_ID,
@@ -43,6 +43,15 @@ import type {
 } from './helga.types';
 import { normalizeEnvelope } from './helga.types';
 import { mockHelgaRequest } from './helga.mock';
+import {
+  DEFAULT_RETRY_AFTER_MS,
+  acquireHelgaSlot,
+  pauseHelgaCalls,
+  retryAfterMs,
+} from './helga.throttle';
+import type { HelgaCallPriority } from './helga.throttle';
+
+export type { HelgaCallPriority } from './helga.throttle';
 
 /**
  * True si el sistema debe hablar con el proveedor, de verdad o simulado. Es lo que
@@ -63,6 +72,7 @@ export function isHelgaSimulated(): boolean {
 function providerError(status: number, message: string | undefined): Error {
   if (status === 403) return ProviderErrors.forbidden();
   if (status === 401) return ProviderErrors.unauthenticated();
+  if (status === 429) return ProviderErrors.rateLimited();
   if (status === 400 || status === 422) return ProviderErrors.validation(message);
   return ProviderErrors.unavailable();
 }
@@ -77,6 +87,11 @@ function providerError(status: number, message: string | undefined): Error {
  * devuelve `undefined` en vez de lanzar, y el llamador lo interpreta como "sin
  * estado por ahora".
  *
+ * `priority`: donde entra la llamada en la cola del regulador de ritmo
+ * (`helga.throttle`). `interactive` es el default porque es lo que nace de una
+ * persona esperando en pantalla; las tareas del robot pasan `robot` para no
+ * adelantarsele con sus cientos de llamadas en fila.
+ *
  * `account`: CONTRA QUE CUENTA del proveedor se hace la llamada. Ausente = la
  * principal, que es el comportamiento de siempre. No es un detalle de transporte:
  * cada cuenta emite su propio token y VE SOLO SUS PAQUETES, asi que preguntar por
@@ -87,9 +102,10 @@ async function request<T>(
   method: 'POST' | 'DELETE',
   path: string,
   body: unknown,
-  opts: { allowNotFound?: boolean; account?: HelgaAccount } = {},
+  opts: { allowNotFound?: boolean; account?: HelgaAccount; priority?: HelgaCallPriority } = {},
 ): Promise<T | undefined> {
   const account = opts.account;
+  const priority = opts.priority ?? 'interactive';
   // El `app_id` de la cuenta manda sobre el del despliegue. Se resuelve fuera del
   // objeto de cabeceras a proposito: un spread condicional ahi dentro le quita a
   // TypeScript la forma de `HeadersInit`.
@@ -120,21 +136,57 @@ async function request<T>(
   // El codigo de casillero va en el log: con varias cuentas, un fallo sin decir
   // CUAL no se puede diagnosticar.
   const tag = `${isHelgaSimulated() ? '[helga:sim]' : '[helga]'}${account ? ` ${account.code}` : ''}`;
+  /**
+   * Una peticion al proveedor, respetando su limite: el token se resuelve ANTES
+   * de pedir cupo (esperar con una ficha en la mano la desperdicia) y el cupo se
+   * pide justo antes de salir a la red.
+   */
+  const sendThrottled = async (): Promise<Response> => {
+    const token = await getAccessToken(account);
+    await acquireHelgaSlot(priority);
+    return send(token);
+  };
+
   let response: Response;
   try {
     if (isHelgaSimulated()) {
       // El simulador devuelve un `Response` real: de aqui hacia abajo no hay
       // ninguna diferencia con el proveedor. Tampoco pide token, porque en este
-      // modo no hay credenciales que pedir.
+      // modo no hay credenciales que pedir. Tampoco pasa por el regulador: no
+      // sale nada a la red y hacerlo esperar solo haria las pruebas mas lentas.
       response = await mockHelgaRequest(method, path, body);
     } else {
-      response = await send(await getAccessToken(account));
+      response = await sendThrottled();
       if (response.status === 401) {
         invalidateToken(account);
-        response = await send(await getAccessToken(account));
+        response = await sendThrottled();
+      }
+      if (response.status === 429) {
+        /**
+         * El regulador deberia evitar llegar aqui; si llegamos, nuestra cuenta
+         * del limite esta mal (o alguien mas consume el mismo cupo). Se frena
+         * TODA la salida el tiempo que pida el proveedor y se reintenta UNA vez:
+         * el propio `acquireHelgaSlot` del reintento espera a que pase el
+         * castigo, asi que no hace falta dormir aqui.
+         */
+        const waitMs = retryAfterMs(response) ?? DEFAULT_RETRY_AFTER_MS;
+        pauseHelgaCalls(waitMs);
+        console.warn(
+          `${tag} ${method} ${path} -> 429: se pausa la salida ${Math.ceil(waitMs / 1000)}s y se reintenta.`,
+        );
+        response = await sendThrottled();
       }
     }
   } catch (err) {
+    /**
+     * El limite del proveedor YA es el error correcto y viene de dos sitios que
+     * caen aqui dentro: la emision del token (un 429 en `/oauth/token`) y el
+     * regulador, cuando una llamada interactiva se cansa de esperar cupo.
+     * Traducirlo a "no disponible" perderia justo lo que distingue un problema de
+     * ritmo nuestro de una caida del proveedor, que es lo que las tareas del
+     * robot miran para no sellar un fallo falso.
+     */
+    if (isProviderRateLimited(err)) throw err;
     // Timeout o fallo de red. El detalle va al log, no al cliente.
     console.error(`${tag} ${method} ${path} falló tras ${Date.now() - startedAt}ms:`, err);
     throw ProviderErrors.unavailable();
@@ -153,7 +205,7 @@ async function request<T>(
 function post<T>(
   path: string,
   body: unknown,
-  opts: { allowNotFound?: boolean; account?: HelgaAccount } = {},
+  opts: { allowNotFound?: boolean; account?: HelgaAccount; priority?: HelgaCallPriority } = {},
 ): Promise<T | undefined> {
   return request<T>('POST', path, body, opts);
 }
@@ -188,6 +240,8 @@ export async function createHelgaRecipient(params: {
   fullName: string;
   idNumber: string;
   realEmail: string;
+  /** Ausente = interactiva (el alta de un cliente que esta registrandose). */
+  priority?: HelgaCallPriority;
 }): Promise<HelgaRecipient> {
   // El `cliente_id` es de la CUENTA bajo la que cuelga el destinatario, asi que
   // sale de la cuenta principal y no de una constante suelta. La constante queda
@@ -219,7 +273,9 @@ export async function createHelgaRecipient(params: {
     email: helgaEmailFor(params.realEmail),
   };
 
-  const data = await post<HelgaRecipientResponse>('/api/casillero/destinatarios', body);
+  const data = await post<HelgaRecipientResponse>('/api/casillero/destinatarios', body, {
+    ...(params.priority ? { priority: params.priority } : {}),
+  });
   return { id: extractRecipientId(data), subLocker: data?.sub_casillero ?? null };
 }
 
@@ -269,6 +325,8 @@ export async function createHelgaPrealert(params: {
   tariffPosition?: string | null;
   /** Retener en bodega del proveedor. Ausente/null -> false. */
   retain?: boolean | null;
+  /** Ausente = interactiva (la prealerta que alguien acaba de guardar). */
+  priority?: HelgaCallPriority;
 }): Promise<string | null> {
   const body: HelgaCreatePrealertRequest = {
     tracking: params.tracking,
@@ -285,7 +343,9 @@ export async function createHelgaPrealert(params: {
     posicion_arancelaria: params.tariffPosition?.trim() || HELGA_DEFAULT_TARIFF_POSITION,
   };
 
-  const data = await post<HelgaPrealertResponse>('/api/v2/prealertas', body);
+  const data = await post<HelgaPrealertResponse>('/api/v2/prealertas', body, {
+    ...(params.priority ? { priority: params.priority } : {}),
+  });
   const raw = data?.Id ?? data?.id ?? data?.prealerta_id;
   return raw === undefined || raw === null ? null : String(raw);
 }
@@ -326,11 +386,13 @@ export async function deleteHelgaPrealert(prealertId: string): Promise<boolean> 
 export async function fetchHelgaPackageState(
   search: string,
   account?: HelgaAccount,
+  /** Ausente = interactiva; la sincronizacion del robot pasa `robot`. */
+  priority?: HelgaCallPriority,
 ): Promise<HelgaPackageStatus | null> {
   const data = await post<HelgaPackageStatus>(
     `/api/casillero/consulta-estado/${encodeURIComponent(search)}`,
     undefined,
-    { allowNotFound: true, ...(account ? { account } : {}) },
+    { allowNotFound: true, ...(account ? { account } : {}), ...(priority ? { priority } : {}) },
   );
   return data ?? null;
 }
@@ -351,6 +413,8 @@ export async function fetchHelgaAvailablePackages(params: {
   search?: string;
   /** Cuenta cuyo listado se pide. Ausente = la principal (comportamiento de siempre). */
   account?: HelgaAccount;
+  /** Ausente = interactiva; el descubrimiento (su unico llamador) pasa `robot`. */
+  priority?: HelgaCallPriority;
 } = {}): Promise<HelgaAvailablePackage[]> {
   const pageSize = params.pageSize ?? 100;
   const all: HelgaAvailablePackage[] = [];
@@ -365,7 +429,10 @@ export async function fetchHelgaAvailablePackages(params: {
     const data = await post<HelgaPaginator<HelgaAvailablePackage>>(
       `/api/casillero/despachos/preliquidaciones/paqsdisponibles?page=${page}`,
       body,
-      params.account ? { account: params.account } : {},
+      {
+        ...(params.account ? { account: params.account } : {}),
+        ...(params.priority ? { priority: params.priority } : {}),
+      },
     );
     if (Array.isArray(data?.data)) all.push(...data.data);
     lastPage = data?.last_page ?? page;

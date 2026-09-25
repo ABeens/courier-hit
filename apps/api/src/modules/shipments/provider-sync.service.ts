@@ -38,6 +38,7 @@ import {
   mapProviderState,
 } from '@courier/shared';
 import type { Session } from '@courier/shared';
+import { isProviderRateLimited } from '../../core/errors';
 import type { HelgaPackageStatus } from '../../integrations/helga/helga.types';
 import {
   isHelgaEnabled,
@@ -232,8 +233,21 @@ export const providerSyncService = {
 
       let pkg;
       try {
-        pkg = await fetchHelgaPackageState(shipment.tracking, target?.account);
+        // `robot`: esta pasada encola hasta SYNC_BATCH llamadas de golpe, y no
+        // puede ponerse por delante de lo que una persona esta esperando.
+        pkg = await fetchHelgaPackageState(shipment.tracking, target?.account, 'robot');
       } catch (err) {
+        // El limite del proveedor no dice nada de ESTE paquete: se corta la
+        // pasada y se sigue en la proxima. Insistir con los demas solo alargaria
+        // la corrida (el regulador ya los tendria esperando el castigo) con el
+        // advisory lock tomado todo ese rato.
+        if (isProviderRateLimited(err)) {
+          console.warn(
+            `[helga] límite de peticiones alcanzado; se corta la sincronización tras ` +
+              `${report.checked} paquete(s) y se retoma en la próxima corrida.`,
+          );
+          break;
+        }
         console.error(`[helga] fallo consultando ${shipment.code} (${shipment.tracking}):`, err);
         continue;
       }

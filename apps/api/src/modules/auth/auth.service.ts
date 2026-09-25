@@ -24,9 +24,9 @@ import type {
   VerifyInput,
 } from '@courier/shared';
 import { config, isProd } from '../../core/config';
-import { AuthErrors } from '../../core/errors';
+import { AuthErrors, isProviderRateLimited } from '../../core/errors';
 import { mailer } from '../../core/mailer';
-import type { HelgaRecipient } from '../../integrations/helga/helga.client';
+import type { HelgaCallPriority, HelgaRecipient } from '../../integrations/helga/helga.client';
 import { createHelgaRecipient, isHelgaEnabled } from '../../integrations/helga/helga.client';
 // La bitacora del enlace la declara el modulo de casilleros (es donde vive el
 // panel que la consulta); aqui solo se ESCRIBE desde los caminos automaticos.
@@ -164,16 +164,23 @@ export const authService = {
    *   reconciliacion cuando Helga este disponible).
    * - Exito: `synced`.
    * - El proveedor rechaza o no responde: `failed`, con el mensaje del error.
+   * - El proveedor nos limita por ritmo (429): `pending`, 0 intentos y
+   *   `rateLimited`. No dice nada del casillero, asi que no se sella como fallo;
+   *   la bandera es para que la reconciliacion CORTE la corrida en vez de gastar
+   *   el resto del lote contra un limite que ya alcanzo.
    */
   async linkWithProvider(input: {
     name: string;
     idNumber: string;
     email: string;
+    /** Ausente = interactiva (el registro de un cliente). */
+    priority?: HelgaCallPriority;
   }): Promise<{
     recipient: HelgaRecipient | null;
     status: HelgaSyncStatus;
     attempts: number;
     error: string | null;
+    rateLimited?: boolean;
   }> {
     const { email } = input;
     if (!isHelgaEnabled()) {
@@ -188,9 +195,14 @@ export const authService = {
         fullName: input.name,
         idNumber: input.idNumber,
         realEmail: email,
+        ...(input.priority ? { priority: input.priority } : {}),
       });
       return { recipient, status: HelgaSyncStatus.Synced, attempts: 1, error: null };
     } catch (err) {
+      if (isProviderRateLimited(err)) {
+        console.warn(`[auth] límite de peticiones del proveedor: el casillero de ${email} queda pendiente.`);
+        return { recipient: null, status: HelgaSyncStatus.Pending, attempts: 0, error: null, rateLimited: true };
+      }
       // No aborta el registro: se guarda el motivo y la reconciliacion reintenta.
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[auth] Helga rechazó el alta de ${email}:`, err);
@@ -220,7 +232,19 @@ export const authService = {
         name: client.name,
         idNumber: client.idNumber,
         email: client.email,
+        priority: 'robot',
       });
+
+      /**
+       * Limite alcanzado: se corta la corrida sin escribir nada de este cliente.
+       * Su casillero sigue como estaba y no gasta intento, asi que la proxima
+       * corrida lo vuelve a levantar igual que si el lote hubiera sido mas corto.
+       */
+      if (link.rateLimited) {
+        report.checked -= 1;
+        console.warn('[auth] la reconciliación de casilleros se corta por el límite del proveedor.');
+        break;
+      }
 
       await authRepo.updateClientHelgaSync(client.id, {
         // En fallo `recipient` es null: dejamos los campos de enlace como estaban

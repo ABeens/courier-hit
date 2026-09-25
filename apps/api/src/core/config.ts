@@ -321,6 +321,25 @@ const EnvSchema = z.object({
   HELGA_ORIGIN: optionalEnv(),
   HELGA_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   /**
+   * Tope de peticiones por minuto que el sistema se permite hacia Helga
+   * (`integrations/helga/helga.throttle`). Es el limite del PROVEEDOR, no uno
+   * nuestro: su cuenta admite 60 por minuto.
+   *
+   * El default es 55 y no 60 a proposito. Tres razones: el reloj del proveedor no
+   * es el nuestro (una peticion que sale en el segundo 59 puede contarle al
+   * minuto siguiente), no sabemos si el token de `/oauth/token` cuenta dentro del
+   * mismo cupo, y quedarse corto solo alarga una corrida del robot mientras
+   * pasarse nos bloquea.
+   *
+   * Es global y no por cuenta: mientras no este confirmado si el proveedor cuenta
+   * por token o por IP, el reparto seguro es uno solo para toda la salida.
+   *
+   * Es un TECHO para cualquier minuto, no una media: el regulador reparte el
+   * valor entre una rafaga acumulable y un ritmo sostenido, de modo que ninguna
+   * ventana de 60 segundos lo supere (ver `helga.throttle`).
+   */
+  HELGA_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(55),
+  /**
    * Solo aplica con `HELGA_MODE=simulated`: cuanto tarda el paquete de mentira en
    * pasar de un estado del proveedor al siguiente. Son 8 pasos hasta el final del
    * tramo, asi que con "2m" el recorrido completo dura 16 minutos.
