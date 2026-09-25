@@ -99,52 +99,12 @@ export const CostErrors = {
   alreadyApproved: () =>
     new AppError(
       'COSTS_ALREADY_APPROVED',
-      'Los costos de este trámite ya fueron aprobados y no se pueden modificar.',
-      409,
-    ),
-  noLines: () =>
-    new AppError('COSTS_NO_LINES', 'Agrega al menos una línea de costo antes de aprobar.', 400),
-  notBillableState: () =>
-    new AppError(
-      'COSTS_NOT_BILLABLE_STATE',
-      'Solo se pueden aprobar costos de un trámite en "Facturación en proceso".',
+      'La proforma de este trámite ya fue aprobada: sus costos no se pueden modificar.',
       409,
     ),
   /** El flow no tiene paso de facturacion: es un fallo de configuracion, no del usuario. */
   notBillable: () =>
     new AppError('COSTS_FLOW_NOT_BILLABLE', 'Este tipo de trámite no admite carga de costos.', 500),
-  notApproved: () =>
-    new AppError(
-      'COSTS_NOT_APPROVED',
-      'Los costos de este trámite no están aprobados: no hay nada que reversar.',
-      409,
-    ),
-  /**
-   * Espejo de `notBillableState`. Reversar mas adelante dejaria al cliente con el
-   * boton de pagar sobre una factura recien borrada: primero se corrige el estado.
-   */
-  notReversibleState: () =>
-    new AppError(
-      'COSTS_NOT_REVERSIBLE_STATE',
-      'Solo se puede reversar la factura de un trámite en "Facturación en proceso". Corrige antes el estado del trámite.',
-      409,
-    ),
-  /**
-   * Reversar con dinero ya recibido dejaria al cliente pagando contra una factura
-   * que dejo de existir. Primero se resuelve el pago, despues se desarma el cobro.
-   */
-  collectibleCannotReverse: () =>
-    new AppError(
-      'COSTS_COLLECTIBLE_CANNOT_REVERSE',
-      'El cliente ya subió un pago contra esta factura. Resuélvelo antes de reversarla.',
-      409,
-    ),
-  settledCannotReverse: () =>
-    new AppError(
-      'COSTS_SETTLED_CANNOT_REVERSE',
-      'El trámite ya tiene pagos confirmados. Resuelve los pagos antes de reversar la factura.',
-      409,
-    ),
   /**
    * La tasa es un valor general que solo fija el administrador (en Configuración),
    * y no hay ninguna vigente: ni guardada en el trámite ni fijada en el sistema.
@@ -155,6 +115,67 @@ export const CostErrors = {
     new AppError(
       'COSTS_NO_EXCHANGE_RATE',
       'No hay tasa de cambio vigente. Pide a un administrador que registre la tasa del día antes de cargar costos.',
+      409,
+    ),
+};
+
+/** Errores del modulo de proformas (docs/proformas-cambios.html). */
+export const ProformaErrors = {
+  notFound: () => new AppError('PROFORMA_NOT_FOUND', 'Proforma no encontrada.', 404),
+  notDraft: () =>
+    new AppError(
+      'PROFORMA_NOT_DRAFT',
+      'La proforma ya no está en borrador: no se puede modificar.',
+      409,
+    ),
+  empty: () => new AppError('PROFORMA_EMPTY', 'La proforma no tiene trámites.', 409),
+  shipmentNotInProforma: () =>
+    new AppError('PROFORMA_SHIPMENT_NOT_FOUND', 'El trámite no está en esta proforma.', 404),
+  /** Aprobar mueve el tramite a cobro, y eso solo es legal desde facturacion. */
+  shipmentNotBillable: (code: string) =>
+    new AppError(
+      'PROFORMA_SHIPMENT_NOT_BILLABLE',
+      `El trámite ${code} no está en "Facturación en proceso".`,
+      409,
+    ),
+  /** Sin lineas no hay monto que cobrarle a ese tramite (en Paqueteria: le falta el peso). */
+  shipmentWithoutCosts: (code: string) =>
+    new AppError(
+      'PROFORMA_SHIPMENT_WITHOUT_COSTS',
+      `El trámite ${code} no tiene costos cargados. Revisa su peso o agrégale los costos.`,
+      409,
+    ),
+  /**
+   * Otra persona la aprobo (o la movio) entre que se comprobo y se escribio. Se
+   * rechaza en vez de aprobar sobre un contenido que ya no es el que se reviso.
+   */
+  changed: () =>
+    new AppError(
+      'PROFORMA_CHANGED',
+      'La proforma cambió mientras la procesabas. Vuelve a abrirla e inténtalo de nuevo.',
+      409,
+    ),
+  notCorrectable: () =>
+    new AppError(
+      'PROFORMA_NOT_CORRECTABLE',
+      'Solo se puede corregir una proforma aprobada que todavía no se ha pagado.',
+      409,
+    ),
+  /** Con dinero recibido o en validacion, corregir dejaria un pago contra un monto que ya no existe. */
+  hasPayments: () =>
+    new AppError(
+      'PROFORMA_HAS_PAYMENTS',
+      'La proforma tiene pagos confirmados o en validación. Resuélvelos antes de corregirla.',
+      409,
+    ),
+  joinBlocked: (message: string) => new AppError('PROFORMA_JOIN_BLOCKED', message, 409),
+  sameProforma: () =>
+    new AppError('PROFORMA_SAME', 'El trámite ya está en esa proforma.', 409),
+  /** Bajar el contador por debajo de lo emitido repetiria numeros ya entregados. */
+  counterBelowIssued: (lastIssued: number) =>
+    new AppError(
+      'PROFORMA_COUNTER_BELOW_ISSUED',
+      `El siguiente número debe ser mayor que ${lastIssued}, la última proforma emitida.`,
       409,
     ),
 };
@@ -175,8 +196,8 @@ export const ClientRateErrors = {
     new AppError('CLIENT_RATE_PAYMENT_REQUIRED', 'La tarifa debe permitir al menos un medio de pago.', 400),
   /**
    * La default es a la que caen los casilleros nuevos y el respaldo cuando uno se
-   * queda sin tarifa: consolidada por defecto pondria a todo el mundo en cobro
-   * agrupado sin que nadie lo decidiera.
+   * queda sin tarifa: consolidada por defecto pondria a todo el mundo a cobrar
+   * por peso sin redondear sin que nadie lo decidiera.
    */
   consolidatedCannotBeDefault: () =>
     new AppError(
@@ -377,7 +398,7 @@ export const ShipmentErrors = {
   weightLockedAfterInvoice: () =>
     new AppError(
       'SHIPMENT_WEIGHT_LOCKED',
-      'El peso no se puede cambiar: la factura ya fue aprobada. Reversa los costos del trámite para corregirlo.',
+      'El peso no se puede cambiar: la proforma ya fue aprobada. Corrige la proforma para cambiarlo.',
       409,
     ),
   /** Se pidio el documento de un tramite que no tiene ninguno adjunto. */
@@ -411,7 +432,7 @@ export const ShipmentErrors = {
   ownerLockedAfterInvoice: () =>
     new AppError(
       'SHIPMENT_OWNER_LOCKED',
-      'No se puede cambiar el dueño: la factura ya fue aprobada. Reversa los costos del trámite primero.',
+      'No se puede cambiar el dueño: la proforma ya fue aprobada. Corrige la proforma primero.',
       409,
     ),
   /** Hay abonos registrados a nombre del dueño actual; cambiarlo dejaria pagos huerfanos. */
@@ -502,38 +523,29 @@ export const PaymentErrors = {
     ),
   alreadyResolved: () =>
     new AppError('PAYMENT_ALREADY_RESOLVED', 'Este pago ya fue confirmado o rechazado.', 409),
-  /**
-   * El casillero no tiene tarifa CONSOLIDADA, asi que no hay cuenta agrupada que
-   * saldar: sus paquetes se pagan uno a uno. 409 y no 403 porque no es un permiso
-   * que falte, es que la cuenta no funciona asi.
-   */
-  notConsolidated: () =>
+  /** El cobro mezcla proformas de dolares y de colones: cada cobro va en una sola moneda. */
+  mixedCurrencies: () =>
     new AppError(
-      'PAYMENT_NOT_CONSOLIDATED',
-      'Esta cuenta no tiene tarifa consolidada: sus paquetes se pagan por separado.',
+      'PAYMENT_MIXED_CURRENCIES',
+      'Las proformas elegidas se cobran en monedas distintas. Págalas por separado.',
       409,
     ),
-  /**
-   * Al reves que la anterior: se intento pagar SUELTO un paquete de una cuenta
-   * consolidada. El requisito es explicito en que el pago incluye obligatoriamente
-   * todos los paquetes listos y no se puede excluir ninguno, asi que el pago
-   * individual no es una alternativa que se ofrezca.
-   */
-  consolidatedRequired: () =>
+  /** Solo se cobra una proforma aprobada: un borrador no es un cobro y una pagada ya se saldo. */
+  proformaNotPayable: (number: string | null) =>
     new AppError(
-      'PAYMENT_CONSOLIDATED_REQUIRED',
-      'Esta cuenta es consolidada: los paquetes se pagan todos juntos, no por separado.',
+      'PAYMENT_PROFORMA_NOT_PAYABLE',
+      number ? `La proforma ${number} no está pendiente de pago.` : 'La proforma no está pendiente de pago.',
       409,
     ),
-  /** No hay ningun paquete listo para facturar en la cuenta consolidada. */
+  /** Las proformas elegidas no tienen saldo por cobrar. */
   nothingToSettle: () =>
     new AppError(
       'PAYMENT_NOTHING_TO_SETTLE',
-      'No hay paquetes listos para pagar en esta cuenta.',
+      'Las proformas elegidas no tienen saldo pendiente.',
       409,
     ),
   groupNotFound: () =>
-    new AppError('PAYMENT_GROUP_NOT_FOUND', 'Cobro agrupado no encontrado.', 404),
+    new AppError('PAYMENT_GROUP_NOT_FOUND', 'Cobro no encontrado.', 404),
   /**
    * Hay un cobro con tarjeta anterior que la pasarela NO deja cancelar, o sea que
    * ese cargo va en camino. Abrir otro formulario cobraria dos veces el mismo
@@ -625,8 +637,25 @@ export const DeliveryErrors = {
   tooManyPhotos: (max: number) =>
     new AppError(
       'DELIVERY_TOO_MANY_PHOTOS',
-      `Puedes adjuntar como máximo ${max} fotos del paquete entregado.`,
+      `Puedes adjuntar como máximo ${max} fotos de la entrega.`,
       400,
+    ),
+  /** Solo Paqueteria reparte (decision D4): Transporte y Agenciamiento se cierran en Tramite finalizado. */
+  notDeliverableFlow: () =>
+    new AppError(
+      'DELIVERY_NOT_DELIVERABLE_FLOW',
+      'Solo las proformas de Paquetería se entregan con el mensajero.',
+      409,
+    ),
+  /** Un paquete marcado no es de esta proforma. */
+  shipmentNotInProforma: () =>
+    new AppError('DELIVERY_SHIPMENT_NOT_IN_PROFORMA', 'Uno de los paquetes no es de esta proforma.', 409),
+  /** El paquete ya no esta en ruta (ya se entrego o se devolvio). */
+  shipmentNotInRoute: (code: string) =>
+    new AppError(
+      'DELIVERY_SHIPMENT_NOT_IN_ROUTE',
+      `El paquete ${code} no está en "En ruta de entrega".`,
+      409,
     ),
 };
 

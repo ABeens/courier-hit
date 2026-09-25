@@ -1,15 +1,14 @@
 /**
- * Reglas del cobro AGRUPADO que no dependen de la base de datos.
+ * Reglas del cobro de proformas que no dependen de la base de datos.
  *
  * `paymentGroupStatus` se prueba aparte porque es la unica respuesta a "¿este
- * cobro consolidado ya entro?": la consultan el documento (para no imprimir
- * "pagado" sobre un pendiente), la espera del cobro con tarjeta y la bandeja del
+ * cobro ya entro?": la consultan la espera del cobro con tarjeta y la bandeja del
  * staff. Un caso mal resuelto aqui es un cobro que se anuncia cobrado sin serlo.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { PaymentStatus } from './payment';
-import { paymentGroupStatus } from './consolidated';
+import { paymentGroupStatus } from './group';
 
 test('un grupo con todos sus abonos confirmados esta confirmado', () => {
   assert.equal(

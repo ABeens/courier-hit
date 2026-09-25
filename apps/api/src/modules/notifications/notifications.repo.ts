@@ -1,56 +1,74 @@
 /**
- * Lecturas que necesitan las automatizaciones de correo. Solo consulta: este
- * modulo no es dueño de ninguna tabla, se apoya en `shipments`, `clients` y
- * `users` para saber a quien escribirle.
+ * Lecturas que necesitan los CORREOS DIARIOS al cliente. Solo consulta: este
+ * modulo no es dueño de ninguna tabla, se apoya en los tramites y en las cuentas
+ * de los clientes para saber que contar y a quien.
  */
-import { eq, inArray } from 'drizzle-orm';
-import { Flow, ShipmentType, flowForType } from '@courier/shared';
+import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { Flow, ShipmentType, State, flowForType } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { shipments } from '../shipments/shipments.schema';
 
 /**
- * Tipos cuyos tramites entran al resumen diario: los de Transporte y
- * Agenciamiento. Se DERIVAN del flow en vez de listarse a mano, para que agregar
- * un tipo nuevo no obligue a acordarse de este archivo.
+ * Tipos de cada correo, DERIVADOS del flow para que agregar un tipo nuevo no
+ * obligue a acordarse de este archivo: Paqueteria va en el de paquetes, el resto
+ * (Transporte y Agenciamiento) en el de tramites.
  */
-const SUMMARY_TYPES = Object.values(ShipmentType).filter(
+const PACKAGE_TYPES = Object.values(ShipmentType).filter(
+  (t) => flowForType(t) === Flow.Paqueteria,
+) as [ShipmentType, ...ShipmentType[]];
+const TRAMITE_TYPES = Object.values(ShipmentType).filter(
   (t) => flowForType(t) !== Flow.Paqueteria,
 ) as [ShipmentType, ...ShipmentType[]];
 
+/** Columnas comunes: el tramite y a quien se le escribe. */
+const columns = {
+  code: shipments.code,
+  shipmentType: shipments.shipmentType,
+  state: shipments.state,
+  description: shipments.description,
+  hawb: shipments.hawb,
+  tracking: shipments.tracking,
+  clientId: clients.id,
+  name: users.name,
+  email: users.email,
+};
+
 export const notificationsRepo = {
-  /** Dueño del tramite (nombre y correo), para el aviso de cambio de estado. */
-  async ownerOf(shipmentId: string) {
-    const [row] = await db
-      .select({ name: users.name, email: users.email })
+  /**
+   * Tramites de Transporte y Agenciamiento con su dueño. El filtro de "en curso"
+   * NO se hace aqui por estado: lo decide el trigger de cada step
+   * (`DailyActiveSummary`), que el servicio consulta fila por fila.
+   */
+  async tramites() {
+    return db
+      .select(columns)
       .from(shipments)
       .innerJoin(clients, eq(shipments.clientId, clients.id))
       .innerJoin(users, eq(clients.userId, users.id))
-      .where(eq(shipments.id, shipmentId))
-      .limit(1);
-    return row ?? null;
+      .where(and(inArray(shipments.shipmentType, TRAMITE_TYPES), isNull(shipments.discardedAt)))
+      .orderBy(asc(users.email), asc(shipments.code));
   },
 
   /**
-   * Tramites de Transporte y Agenciamiento con su dueño. El filtro de "activo"
-   * NO se hace aqui por estado: lo decide el trigger de cada step
-   * (`DailyActiveSummary`), que el servicio consulta fila por fila. Asi la
-   * definicion de "activo" vive solo en la maquina de estados.
+   * Paquetes EN PROCESO (todo lo que no se ha entregado) con su dueño. A quien
+   * se le escribe lo decide el servicio con el trigger `DailyPackageReport`; aqui
+   * se traen todos porque el correo lista todos los paquetes en proceso del
+   * cliente, no solo los que estan en un estado que avisa.
    */
-  async activeTransportShipments() {
+  async packagesInProcess() {
     return db
-      .select({
-        code: shipments.code,
-        shipmentType: shipments.shipmentType,
-        state: shipments.state,
-        description: shipments.description,
-        name: users.name,
-        email: users.email,
-      })
+      .select(columns)
       .from(shipments)
       .innerJoin(clients, eq(shipments.clientId, clients.id))
       .innerJoin(users, eq(clients.userId, users.id))
-      .where(inArray(shipments.shipmentType, SUMMARY_TYPES))
-      .orderBy(users.email, shipments.code);
+      .where(
+        and(
+          inArray(shipments.shipmentType, PACKAGE_TYPES),
+          ne(shipments.state, State.Entregado),
+          isNull(shipments.discardedAt),
+        ),
+      )
+      .orderBy(asc(users.email), asc(shipments.code));
   },
 };

@@ -13,14 +13,15 @@
  * 2. PERMISO      — `permissionFor`: el rol puede llevar el tramite a ese estado.
  * 3. CONDICIONES  — las guardas de datos del step destino (comentario, monto de
  *                   factura, pago confirmado).
- * 4. EFECTOS      — se escribe el evento y se disparan los triggers (correo).
+ * 4. EFECTOS      — se escribe el evento (el cliente lo recibe en su correo diario).
  *
  * Las tres primeras salen de @courier/shared. Aqui no se decide ninguna regla: se
  * traduce cada guarda a la consulta que la responde.
  *
  * Sobre las cuatro va un paso 5, que no es una barrera sino un ENCADENAMIENTO: al
- * entrar a "Facturación en proceso" con una tarifa que no ocupa revisión, el
- * tramite se factura solo y sigue hasta cobro (OPS-003, ver `autoBillingService`).
+ * entrar a "Facturación en proceso" el tramite cae en su borrador de proforma
+ * (ver `proformaDraftsService`). Solo se arma el borrador: aprobar es siempre un
+ * acto de una persona.
  */
 import {
   Condition,
@@ -32,15 +33,13 @@ import {
   flowForType,
   chargeBasisFor,
   isSettled,
-  payableStateOf,
   permissionFor,
   statesOf,
 } from '@courier/shared';
 import type { CorrectStateInput, Session, TransitionShipmentInput } from '@courier/shared';
 import { AuthErrors, ShipmentErrors, TransitionErrors } from '../../core/errors';
-import { autoBillingService } from '../costs/auto-billing.service';
-import { notificationsService } from '../notifications/notifications.service';
 import { paymentsRepo } from '../payments/payments.repo';
+import { proformaDraftsService } from '../proformas/proforma-drafts.service';
 import { shipmentsRepo } from './shipments.repo';
 
 /** Fila del tramite tal como la devuelve el repo. */
@@ -135,35 +134,23 @@ export const transitionsService = {
     // 3. Guardas de datos del step destino.
     await assertConditions(row, to, input.note);
 
-    // 4. Efectos: el evento y las automatizaciones del estado.
+    // 4. Efectos: el evento. No hay correo inmediato: el cambio sale en el correo
+    // diario del cliente, que lee el historial (decision P16).
     await shipmentsRepo.transition(id, to, session.userId, input.note);
-    await notificationsService.onStateChange(row, to);
 
     /**
-     * 5. FACTURACION AUTOMATICA (OPS-003). Entrar a "Facturacion en proceso" con
-     * una tarifa que NO ocupa revision no deja el paquete esperando a nadie: el
-     * sistema le cotiza el flete, congela la factura y lo sigue hasta cobro.
+     * 5. BORRADOR DE PROFORMA. Entrar a "Facturacion en proceso" pone el tramite
+     * en su borrador (Paqueteria: el que acumula del cliente, con el flete ya
+     * calculado; Transporte y Agenciamiento: uno propio). No se aprueba ni se
+     * avanza nada: la facturacion automatica que habia aqui se retiro con el
+     * modulo de proformas, porque toda proforma la aprueba una persona.
      *
      * Cuelga de aqui y no de la recepcion porque este es el punto UNICO de cambio
-     * de estado: da igual si el paquete entro a facturacion por el escaner de
-     * bodega o por el avance manual del panel, la tarifa manda igual.
-     *
-     * El segundo tramo se hace con `transition` (no tocando el repo) para que la
-     * guarda Condition.RequiresInvoiceAmount se compruebe de verdad contra el
-     * total recien congelado y salga el correo de "Pendiente pago".
-     * `skipPermission`: avanzar es consecuencia de una factura que armo el
-     * sistema, no un acto que se le pueda exigir a quien escaneo el bulto.
+     * de estado: da igual si el tramite entro a facturacion por el escaner de
+     * bodega o por el avance manual del panel.
      */
-    if (to === State.FacturacionEnProceso && (await autoBillingService.tryAutoInvoice(session, row))) {
-      const payable = payableStateOf(flowForType(row.shipmentType));
-      if (payable && payable !== to) {
-        return this.transition(
-          session,
-          id,
-          { state: payable, note: 'Costos aplicados automáticamente (tarifa sin revisión).' },
-          { skipPermission: true },
-        );
-      }
+    if (to === State.FacturacionEnProceso) {
+      await proformaDraftsService.onEnterBilling(session, row);
     }
 
     const updated = await shipmentsRepo.findById(id);

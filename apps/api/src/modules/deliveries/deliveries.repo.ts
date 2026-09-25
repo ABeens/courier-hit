@@ -3,7 +3,7 @@
  * `shipments` + `clients` + `users` + la definicion de rutas para armar la cola
  * del mensajero (que necesita saber a nombre de quien va y por que ruta).
  */
-import { and, asc, count, eq, ilike, or } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { State, toSlice } from '@courier/shared';
 import type { DeliveryQueueFilter, ListDeliveryQueueQuery } from '@courier/shared';
@@ -82,6 +82,14 @@ function queueQuery(query: DeliveryQueueFilter) {
        * servicio con @courier/shared (ver `payments/settlement.ts`).
        */
       settlement: settlementColumn,
+      /**
+       * La proforma del paquete: la cola se agrupa por proforma porque el
+       * mensajero entrega proformas, no paquetes sueltos. Subconsulta y no JOIN:
+       * esta consulta ya lleva cuatro joins y Drizzle deja de inferir la fila a
+       * partir de ahi.
+       */
+      proformaId: sql<string | null>`(select ps.proforma_id from proforma_shipments ps where ps.shipment_id = ${shipments.id})`,
+      proformaNumber: sql<number | null>`(select p.number from proforma_shipments ps join proformas p on p.id = ps.proforma_id where ps.shipment_id = ${shipments.id})`,
       updatedAt: shipments.updatedAt,
     })
     .from(shipments)
@@ -96,7 +104,14 @@ function queueQuery(query: DeliveryQueueFilter) {
      * ruta puede pasar a "en ruta" en la misma operacion, con el mismo
      * `updated_at`), y con orden ambiguo la paginacion repite filas.
      */
-    .orderBy(asc(effectiveRouteNumber), asc(shipments.updatedAt), asc(shipments.id));
+    .orderBy(
+      asc(effectiveRouteNumber),
+      // Dentro de la ruta, los paquetes de una misma proforma juntos: se entregan
+      // en la misma visita.
+      sql`(select p.number from proforma_shipments ps join proformas p on p.id = ps.proforma_id where ps.shipment_id = ${shipments.id}) asc nulls last`,
+      asc(shipments.updatedAt),
+      asc(shipments.id),
+    );
 }
 
 export const deliveriesRepo = {

@@ -34,6 +34,7 @@ import { PayFlag } from '../components/PayFlag';
 import { API_BASE } from '../lib/api';
 import { usePagedList } from '../lib/usePagedList';
 import { DeliveryConfirmModal } from './DeliveryConfirmModal';
+import { ProformaDeliveryModal } from './ProformaDeliveryModal';
 
 export interface DeliveryQueueRow {
   id: string;
@@ -71,6 +72,9 @@ export interface DeliveryQueueRow {
   settled: boolean;
   pendingUsd: number;
   pendingCrc: number;
+  /** Proforma del paquete: el mensajero entrega proformas, no paquetes sueltos. */
+  proformaId: string | null;
+  proformaNumber: number | null;
   updatedAt: string;
 }
 
@@ -101,6 +105,8 @@ export function DeliveriesScreen() {
   const [route, setRoute] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
+  /** Proforma cuya entrega se esta registrando (visita completa o parcial). */
+  const [delivering, setDelivering] = useState<string | null>(null);
 
   /**
    * La cola del dia, paginada. Los dos filtros del manual (nombre/tracking y
@@ -189,6 +195,7 @@ export function DeliveriesScreen() {
                 <div className="card-item-title">{row.clientName}</div>
                 <div className="card-item-sub">
                   {SHIPMENT_TYPE_LABELS[row.shipmentType]} · {row.tracking}
+                  {row.proformaNumber != null && <> · Proforma {row.proformaNumber}</>}
                 </div>
               </div>
               <div className="card-item-aside">
@@ -245,10 +252,20 @@ export function DeliveriesScreen() {
             {/* Ambas abren un modal que pide confirmacion con texto: aqui el
                 icono elige el camino, no cierra la entrega. */}
             <div className="actions">
+              {/* La entrega normal es la de la proforma entera (decision D4): una
+                  visita marca todos sus paquetes. Los botones de al lado quedan
+                  para confirmar despues un paquete que siguio en ruta. */}
+              {row.proformaId && (
+                <IconButton
+                  label={`Entregar proforma ${row.proformaNumber ?? ''}`}
+                  icon="clipboard"
+                  tone="primary"
+                  onClick={() => setDelivering(row.proformaId)}
+                />
+              )}
               <IconButton
                 label="Confirmar entrega"
                 icon="checkCircle"
-                tone="primary"
                 onClick={() => setModal({ row, outcome: DeliveryOutcome.Entregado })}
               />
               <IconButton
@@ -275,6 +292,19 @@ export function DeliveriesScreen() {
       <EmptyList loading={list.loading} empty={list.items.length === 0}>
         No hay paquetes en ruta que coincidan.
       </EmptyList>
+
+      {delivering && (
+        <ProformaDeliveryModal
+          proformaId={delivering}
+          onClose={() => setDelivering(null)}
+          onSaved={(message) => {
+            setNotice(message);
+            setError(null);
+            setDelivering(null);
+            void load();
+          }}
+        />
+      )}
 
       {modal && (
         <DeliveryConfirmModal

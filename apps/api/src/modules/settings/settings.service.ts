@@ -14,16 +14,18 @@
  * Quien puede fijarla lo decide el PERMISO, no el rol: la barrera esta en las
  * rutas (`requirePermission`), asi que sumar el permiso a otro rol basta.
  */
-import { DEFAULT_CARD_SURCHARGE } from '@courier/shared';
+import { BUSINESS_TIME_ZONE, DEFAULT_CARD_SURCHARGE, DEFAULT_DAILY_DIGEST_HOUR } from '@courier/shared';
 import type {
   CardSurchargeHistoryEntryDto,
   CardSurchargeSettingDto,
   CardSurchargeRate,
+  DailyDigestSettingDto,
   ExchangeRateHistoryEntryDto,
   ExchangeRateSettingDto,
   FreightRateSettingDto,
   Session,
   SetCardSurchargeInput,
+  SetDailyDigestInput,
   SetExchangeRateInput,
   SetFreightRateInput,
 } from '@courier/shared';
@@ -34,6 +36,22 @@ import { settingsRepo } from './settings.repo';
 const HISTORY_LIMIT = 50;
 
 export const settingsService = {
+  /** Hora del correo diario y cuando salio el ultimo. */
+  async dailyDigest(): Promise<DailyDigestSettingDto> {
+    const row = await settingsRepo.dailyDigest();
+    return {
+      hour: row.hour ?? DEFAULT_DAILY_DIGEST_HOUR,
+      timeZone: BUSINESS_TIME_ZONE,
+      isDefault: row.hour === null,
+      lastRunAt: row.lastRunAt?.toISOString() ?? null,
+    };
+  },
+
+  async setDailyDigest(session: Session, input: SetDailyDigestInput): Promise<DailyDigestSettingDto> {
+    await settingsRepo.setDailyDigestHour(input.hour, session.userId);
+    return this.dailyDigest();
+  },
+
   /** Tasa vigente + referencia del dia. */
   async exchangeRate(): Promise<ExchangeRateSettingDto> {
     // En paralelo: la referencia sale de un servicio externo y no debe sumar su

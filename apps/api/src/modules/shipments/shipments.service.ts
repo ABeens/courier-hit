@@ -57,7 +57,7 @@ import type {
   UpdateShipmentInput,
 } from '@courier/shared';
 import { AuthErrors, ShipmentErrors, isProviderRateLimited } from '../../core/errors';
-import { formatShipmentCode } from '@courier/shared';
+import { formatProformaNumber, formatShipmentCode } from '@courier/shared';
 import {
   createHelgaPrealert,
   deleteHelgaPrealert,
@@ -69,6 +69,7 @@ import type { HelgaPackagePhoto } from '../../integrations/helga/helga.types';
 import { StorageErrors, storage } from '../../core/storage';
 import { clientsRepo } from '../clients/clients.repo';
 import { deliveriesRepo } from '../deliveries/deliveries.repo';
+import { proformaDraftsService } from '../proformas/proforma-drafts.service';
 import { providerAccountsRepo } from '../provider-accounts/provider-accounts.repo';
 import { providerAccountsService } from '../provider-accounts/provider-accounts.service';
 import { shipmentsRepo } from './shipments.repo';
@@ -321,6 +322,14 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     invoiceTotalUsd: row.invoiceTotalUsd,
     invoiceTotalCrc: row.invoiceTotalCrc,
     electronicInvoiceNumber: row.electronicInvoiceNumber,
+    proforma:
+      row.proformaId === null || row.proformaStatus === null
+        ? null
+        : {
+            id: row.proformaId,
+            number: row.proformaNumber === null ? null : formatProformaNumber(row.proformaNumber),
+            status: row.proformaStatus,
+          },
     /**
      * Bandera de cobro, derivada aqui en cada lectura a partir de los abonos que
      * trajo la consulta. Las dos cifras salen de las funciones compartidas, las
@@ -977,6 +986,14 @@ export const shipmentsService = {
 
     const updated = await shipmentsRepo.findById(id);
     if (!updated) throw ShipmentErrors.notFound();
+
+    // El peso mueve el flete: mientras el paquete este en un borrador de
+    // proforma, su linea de flete se recalcula con el peso nuevo. Con la factura
+    // congelada no llega aqui (el candado de arriba ya rechazo el cambio).
+    if (patch.weightKg !== undefined && patch.weightKg !== current.weightKg) {
+      await proformaDraftsService.refreshFreight(session, updated);
+    }
+
     const dto = toDto(updated);
 
     // El tracking es la LLAVE con la que el proveedor identifica el paquete: si
@@ -1170,6 +1187,19 @@ export const shipmentsService = {
 
     const updated = await shipmentsRepo.findById(id);
     if (!updated) throw ShipmentErrors.notFound();
+
+    /**
+     * La proforma sigue al dueño. Sale del borrador del cliente anterior (que se
+     * borra si quedo vacio) y, si esta en facturacion, entra al del nuevo con el
+     * flete de SU tarifa. El paquete desconocido entra aqui a su primer borrador:
+     * nacio en facturacion, pero sin dueño no tenia a quien facturarle.
+     */
+    await proformaDraftsService.onOwnerChanged(
+      session,
+      updated,
+      updated.state === State.FacturacionEnProceso,
+    );
+
     const dto = toDto(updated);
 
     /**

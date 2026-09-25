@@ -16,6 +16,7 @@
  * información para decidirla. La API revalida cada acción.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { ProformaSettings } from './ProformaSettings';
 import { CURRENCY_SYMBOLS, Currency, formatMoney } from '@courier/shared';
 import type {
   CardSurchargeSettingDto,
@@ -69,10 +70,13 @@ export function SettingsScreen({
   canEdit,
   canEditFreight,
   canEditSurcharge,
+  canManageConfig = false,
 }: {
   canEdit: boolean;
   canEditFreight: boolean;
   canEditSurcharge: boolean;
+  /** Ajustes del modulo de proformas (correo diario y numeracion). */
+  canManageConfig?: boolean;
 }) {
   const [setting, setSetting] = useState<ExchangeRateSettingDto | null>(null);
   const [history, setHistory] = useState<ExchangeRateHistoryEntryDto[]>([]);
@@ -479,6 +483,8 @@ export function SettingsScreen({
           </div>
         )}
       </div>
+
+      {canManageConfig && <ProformaSettings />}
 
       {canEdit && (
         <>

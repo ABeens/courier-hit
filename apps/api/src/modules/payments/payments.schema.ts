@@ -1,6 +1,6 @@
 /**
- * Tablas Drizzle del cobro: los abonos de un tramite (`payments`) y el cobro
- * agrupado de una cuenta consolidada (`payment_groups`, al final del archivo).
+ * Tablas Drizzle del cobro: los abonos de un tramite (`payments`) y el cobro de
+ * una o varias proformas (`payment_groups`, al final del archivo).
  *
  * Van juntas porque se referencian entre si (`payments.group_id`) y separarlas en
  * dos modulos habria hecho un ciclo de imports por el enum del medio de pago.
@@ -97,8 +97,9 @@ export const payments = pgTable(
     gatewayReference: text('gateway_reference'),
 
     /**
-     * COBRO AGRUPADO al que pertenece este abono (cuentas consolidadas). Null en
-     * el pago suelto, que es el caso corriente.
+     * COBRO al que pertenece este abono: el pago de una o varias proformas crea
+     * un grupo y un abono por cada tramite. Null solo en abonos anteriores al
+     * modulo de proformas (pago tramite por tramite).
      *
      * El abono sigue siendo del TRAMITE, no del grupo: eso es lo que deja intacto
      * a `isSettled` y a todo lo que pregunta si un paquete esta pagado. El grupo
@@ -117,7 +118,7 @@ export const payments = pgTable(
     index('payments_shipment_idx').on(t.shipmentId, t.createdAt),
     /** Bandeja de validacion del staff: "los depositos pendientes". */
     index('payments_status_idx').on(t.status),
-    /** Los abonos de un cobro agrupado: los pide el webhook y la proforma consolidada. */
+    /** Los abonos de un cobro de proformas: los pide el webhook y la validacion del cobro. */
     index('payments_group_idx').on(t.groupId),
     /**
      * Referencia de la pasarela: es la unica llave que trae el webhook de Onvo
@@ -147,24 +148,23 @@ export type PaymentRow = typeof payments.$inferSelect;
 export type NewPaymentRow = typeof payments.$inferInsert;
 
 /**
- * Tabla Drizzle del COBRO AGRUPADO de una cuenta consolidada (`payment_groups`).
+ * Tabla Drizzle del COBRO DE PROFORMAS (`payment_groups`).
  *
- * Una fila = un pago que salda de una vez todos los paquetes listos de un
- * casillero con tarifa Consolidada. Los abonos siguen estando en `payments`, uno
- * por paquete, apuntando aqui con `group_id`.
+ * Una fila = un pago (tarjeta o deposito) que salda una o varias proformas
+ * completas de un casillero. Los abonos siguen estando en `payments`, uno por
+ * tramite, apuntando aqui con `group_id`.
  *
  * POR QUE UNA TABLA Y NO SOLO UN `group_id` SUELTO EN `payments`. Por dos datos
  * que son del grupo y de ningun abono en particular:
  *
  *   1. LA REFERENCIA DE LA PASARELA. El cobro con tarjeta es UNO por el total, no
- *      uno por paquete. `payments.gateway_reference` tiene un unico parcial —una
+ *      uno por tramite. `payments.gateway_reference` tiene un unico parcial —una
  *      referencia identifica un abono, y de eso depende la idempotencia del
  *      webhook—, asi que repetirla en las cinco filas del grupo era imposible y
  *      quitarle el unico habria aflojado justo la garantia que evita aplicar dos
  *      veces un cobro reintentado.
- *   2. EL DOCUMENTO. La proforma consolidada se emite contra el grupo, y un grupo
- *      sin fila propia solo existe mientras existan sus abonos: rechazar uno
- *      borraria el documento entero.
+ *   2. EL TOTAL Y LA COMISION DEL COBRO. Son del pago entero (la tarjeta cobra
+ *      una sola comision), no de ninguno de sus abonos.
  *
  * La SITUACION del grupo no se guarda: se deriva de sus abonos
  * (`paymentGroupStatus`), por la misma razon por la que "pagado" no es una
@@ -179,10 +179,8 @@ export const paymentGroups = pgTable(
       .notNull()
       .references(() => clients.id, { onDelete: 'cascade' }),
     /**
-     * Tarifa consolidada con la que se armo el cobro, congelada. El casillero
-     * puede cambiar de tarifa mañana y el documento tiene que seguir diciendo con
-     * cual se cobro. `set null` porque borrar una tarifa reasigna casilleros pero
-     * no puede borrar cobros ya hechos.
+     * HISTORICO: tarifa consolidada con la que se armaba el cobro agrupado de
+     * antes. Los cobros de proformas la dejan en null.
      */
     clientRateId: uuid('client_rate_id').references(() => clientRates.id, { onDelete: 'set null' }),
     method: paymentMethodEnum('method').notNull(),
@@ -190,7 +188,7 @@ export const paymentGroups = pgTable(
     /** Total cobrado por el grupo. Siempre >= 0 (regla M3, con CHECK abajo). */
     amount: doublePrecision('amount').notNull(),
     /**
-     * RECARGO POR TARJETA del cobro agrupado, encima del total. Vive AQUI y no
+     * RECARGO POR TARJETA del cobro, encima del total. Vive AQUI y no
      * repartido entre los abonos porque la comision es UNA, la del unico cargo
      * que pasa por la tarjeta; prorratearla entre los paquetes habria dejado
      * centimos sueltos que no cuadran con lo que cobro la pasarela.

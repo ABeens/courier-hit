@@ -8,8 +8,8 @@
  * kilaje que de verdad se cobro y no el guardado.
  *
  * Vive en su propio modulo porque lo necesitan DOS caminos que no se pueden
- * importar entre si: la carga manual de costos (`costs.service`) y la facturacion
- * automatica de las tarifas sin revision (`auto-billing.service`, que cuelga de
+ * importar entre si: la carga manual de costos (`costs.service`) y el armado del
+ * borrador de proforma (`proforma-drafts.service`, que cuelga de
  * `transitions.service`). Dejarlo en cualquiera de los dos crearia un ciclo.
  */
 import { CostCategory, CostLineSource, billableWeightKg, roundMoney } from '@courier/shared';

@@ -26,8 +26,17 @@ import { config } from './config';
 export interface MailMessage {
   to: string;
   subject: string;
-  /** Cuerpo en texto plano. Las plantillas del manual son texto, no HTML. */
+  /**
+   * Cuerpo en texto plano. Va SIEMPRE: es lo que muestran los clientes de correo
+   * que no leen HTML y lo que imprime el transporte de consola.
+   */
   body: string;
+  /**
+   * Version HTML opcional del mismo contenido. La usan los correos diarios, que
+   * piden el listado en el color de la marca y un enlace con texto. Con ella el
+   * correo sale como multiparte (texto + HTML) y cada cliente elige la que puede.
+   */
+  html?: string;
 }
 
 interface Transport {
@@ -49,6 +58,7 @@ const consoleTransport: Transport = {
         `Asunto:  ${message.subject}`,
         '',
         message.body,
+        ...(message.html ? ['', `(también lleva versión HTML: ${message.html.length} caracteres)`] : []),
         '────────────────────────',
         '',
       ].join('\n'),
@@ -85,8 +95,8 @@ function getSesClient(): SESv2Client {
 /**
  * Transporte real: Amazon SES v2.
  *
- * El cuerpo va como TEXTO PLANO, no HTML: las plantillas del manual son texto y
- * un correo de texto no puede romperse en un cliente de correo raro. `Charset`
+ * El cuerpo va siempre en TEXTO PLANO, que no puede romperse en un cliente de
+ * correo raro; si el mensaje trae `html`, va ademas la version HTML. `Charset`
  * explicito porque los avisos llevan tildes y sin el llegan corruptos.
  */
 const sesTransport: Transport = {
@@ -101,7 +111,10 @@ const sesTransport: Transport = {
         Content: {
           Simple: {
             Subject: { Data: message.subject, Charset: 'UTF-8' },
-            Body: { Text: { Data: message.body, Charset: 'UTF-8' } },
+            Body: {
+              Text: { Data: message.body, Charset: 'UTF-8' },
+              ...(message.html ? { Html: { Data: message.html, Charset: 'UTF-8' } } : {}),
+            },
           },
         },
       }),

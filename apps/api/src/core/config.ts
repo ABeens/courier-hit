@@ -437,6 +437,17 @@ const EnvSchema = z.object({
   // Los intervalos son duraciones legibles: aceptan cualquier unidad ("30m",
   // "2h", "1d", "90s", "1h30m"). El formato se valida aqui para fallar al
   // arrancar y no en la primera corrida, media hora despues.
+  /**
+   * Cada cuanto el robot pregunta si ya toca el correo diario al cliente. No es
+   * la frecuencia del correo (sale una vez al dia, a la hora de Configuración):
+   * es la precision con la que se respeta esa hora.
+   */
+  ROBOT_DAILY_DIGEST_CHECK_EVERY: z
+    .string()
+    .default('5m')
+    .refine(isValidDuration, {
+      message: 'ROBOT_DAILY_DIGEST_CHECK_EVERY debe ser una duracion valida (p. ej. "5m", "10m").',
+    }),
   /** Preguntarle a Helga el estado de cada paquete y avanzar los tramites. */
   ROBOT_PROVIDER_SYNC_EVERY: z
     .string()

@@ -28,6 +28,12 @@ export enum Resource {
   Reception = 'reception',
   Dashboard = 'dashboard',
   Costs = 'costs',
+  /**
+   * Proformas: el grupo de tramites de un cliente que se revisa, se aprueba, se
+   * cobra y se entrega como una unidad (docs/proformas-cambios.html). Modulo
+   * propio del menu: reemplaza a la cola de costos por tramite.
+   */
+  Proformas = 'proformas',
   CostServices = 'cost_services',
   Tramite = 'tramite',
   Payments = 'payments',
@@ -252,12 +258,17 @@ export enum Permission {
    */
   ReportsOperational = 'reports.operational',
   /**
-   * Generar la proforma de un tramite. Es un DOCUMENTO para el cliente, no una
-   * consulta, y ese es el motivo de que no cuelgue de ningun reporte: quien
-   * puede leer cifras no necesariamente puede emitir papel a nombre de la
-   * empresa. Administrador y Financiero.
+   * Consultar proformas y descargar su documento (PDF desde el navegador y
+   * CSV). Es la lectura: Financiero la necesita para cobrar sin poder cambiar
+   * nada, y el Operativo para trabajar su bandeja.
    */
-  ReportsProforma = 'reports.proforma',
+  ProformasRead = 'proformas.read',
+  /**
+   * Operar las proformas: ajustar borradores (costos, mover y reasignar paquetes,
+   * agrupar tramites), aprobarlas (una o en bloque) y corregir una aprobada que
+   * no se ha pagado. Administrador y Operativo (decision D12 del SOW).
+   */
+  ProformasManage = 'proformas.manage',
   ClientsRead = 'clients.read',
   ClientsWrite = 'clients.write',
   /**
@@ -360,7 +371,8 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   [Permission.ReportsFinancial]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
   [Permission.ReportsFull]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
   [Permission.ReportsOperational]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
-  [Permission.ReportsProforma]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
+  [Permission.ProformasRead]: { resource: Resource.Proformas, action: Action.Read, scope: Scope.All },
+  [Permission.ProformasManage]: { resource: Resource.Proformas, action: Action.Manage, scope: Scope.All },
   [Permission.ClientsRead]: { resource: Resource.Clients, action: Action.Read, scope: Scope.All },
   [Permission.ClientsWrite]: { resource: Resource.Clients, action: Action.Write, scope: Scope.All },
   // Action.Manage y no Write: no edita el casillero, decide si su dueño entra.
@@ -403,7 +415,8 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   Permission.ReportsFinancial,
   Permission.ReportsFull,
   Permission.ReportsOperational,
-  Permission.ReportsProforma,
+  Permission.ProformasRead,
+  Permission.ProformasManage,
   Permission.ClientsRead,
   Permission.ClientsWrite,
   // Solo admin: cerrarle la puerta a un cliente no es editar su ficha.
@@ -446,18 +459,15 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
 
   // Opera el proceso de punta a punta: recibe en bodega, mueve los estados de
   // Paqueteria y de Transporte (`package.write`) y los de Agenciamiento
-  // (`tramite.manage`), carga los costos de Paqueteria y Transporte, y asienta
-  // los depositos que el cliente le manda (`payments.record`).
+  // (`tramite.manage`), carga los costos de las tres verticales, opera las
+  // proformas (crea, ajusta, reasigna, aprueba y corrige, decision D12 del SOW
+  // de proformas) y asienta los depositos que el cliente le manda
+  // (`payments.record`).
   //
-  // Lo que NO lleva, y por eso no aparece aqui: los costos de Agenciamiento
-  // (`costs.tramite.manage`, los servicios manuales que negocia el admin), la
-  // entrega (`delivery.manage`, que es Mensajeria) y la APROBACION de esos
-  // depositos (`payments.validate`). Un tramite de Agenciamiento avanza con este
-  // rol hasta "Preparando Borrador de DUA"; facturarlo es la puerta donde pasa a
-  // manos del administrador, y con la proforma emitida vuelve a este rol, que la
-  // cobra y lo lleva a aduana. Igual que Paqueteria le pasa el paquete al
-  // mensajero en "En bodega preparando" y el deposito le pasa al administrador
-  // en "Pagado - en validacion".
+  // Lo que NO lleva, y por eso no aparece aqui: la entrega (`delivery.manage`,
+  // que es Mensajeria) y la APROBACION de esos depositos (`payments.validate`).
+  // Antes tampoco facturaba Agenciamiento (`costs.tramite.manage` era solo del
+  // administrador); con el modulo de proformas factura las tres verticales.
   [Role.Operativo]: [
     Permission.DashboardRead,
     Permission.PackageReceive,
@@ -465,21 +475,25 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.PackageWrite,
     Permission.TramiteManage,
     Permission.CostsManage,
+    Permission.CostsTramiteManage,
+    Permission.ProformasRead,
+    Permission.ProformasManage,
     Permission.PaymentsRecord,
     Permission.ReportsOperationalBasic,
     Permission.ReportsOperational,
     Permission.ClientsRead,
   ],
 
-  // Financiero emite proformas pero NO ve el reporte FULL: cobrar es su trabajo,
-  // la rentabilidad del negocio no.
+  // Financiero consulta y descarga proformas pero NO las opera ni ve el reporte
+  // FULL: cobrar es su trabajo, la rentabilidad del negocio no.
   [Role.Financiero]: [
     Permission.PackageRead,
     Permission.ReportsFinancial,
-    Permission.ReportsProforma,
+    Permission.ProformasRead,
   ],
 
-  [Role.Mensajeria]: [Permission.DeliveryManage],
+  // Entrega por proforma (decision D4) y ve la proforma con sus montos (P7).
+  [Role.Mensajeria]: [Permission.DeliveryManage, Permission.ProformasRead],
 
   /**
    * Bodega: UN solo permiso, y por eso un solo modulo en el menu (Recepcion).

@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { ReportKind, SHIPMENT_TYPE_LABELS, ShipmentType } from '@courier/shared';
-import type { ProformaBatchSummary, ReportColumn, ReportRow } from '@courier/shared';
+import type { ReportColumn, ReportRow } from '@courier/shared';
 import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
 import { API_BASE, ApiError, api } from '../lib/api';
@@ -29,48 +29,8 @@ interface ReportResponse {
   rows: ReportRow[];
 }
 
-/**
- * Texto del botón de un lote de proformas: el TOTAL del filtro, no lo que quepa
- * en el documento. Es la corrección de un error que se leía como "el filtro no
- * hace nada": el número venía recortado al tope de descarga, así que decía lo
- * mismo (200) con cualquier trámite seleccionado.
- */
-function batchLabel(
-  summary: ProformaBatchSummary | null,
-  noun: string,
-  empty: string,
-): string {
-  if (summary === null) return noun;
-  if (summary.total === 0) return empty;
-  return `${noun} (${summary.total.toLocaleString('es-CR')})`;
-}
-
-/**
- * Aviso de que el documento va a salir recortado, ANTES de abrirlo. El documento
- * ya lo dice impreso, pero enterarse después de abrir trescientas páginas no
- * ayuda a nadie a acotar el filtro.
- */
-function batchHint(summary: ProformaBatchSummary | null, base: string): string {
-  if (!summary || summary.omitted === 0) return base;
-  return `${base}. Se descargarán las ${(summary.total - summary.omitted).toLocaleString('es-CR')} más recientes; ${summary.omitted.toLocaleString('es-CR')} quedan fuera por el límite, acota el filtro.`;
-}
-
 export function ReportsScreen() {
   const [catalog, setCatalog] = useState<CatalogItem[] | null>(null);
-  /** Si el rol puede emitir proformas. Lo decide la API, no esta pantalla. */
-  const [canProforma, setCanProforma] = useState(false);
-  /**
-   * Cuántas proformas sueltas hay listas para el filtro actual, y cuántas no
-   * caben en el documento. `null` mientras no se sabe.
-   */
-  const [ready, setReady] = useState<ProformaBatchSummary | null>(null);
-  /**
-   * Lo mismo para los cobros CONSOLIDADOS. Es otro documento y otra cuenta: un
-   * casillero consolidado con cinco paquetes es UNA proforma, no cinco, y sus
-   * paquetes no salen en el otro botón (lo pide el requerimiento y lo aplica la
-   * API), así que los dos nunca cuentan lo mismo dos veces.
-   */
-  const [readyGroups, setReadyGroups] = useState<ProformaBatchSummary | null>(null);
   const [kind, setKind] = useState<ReportKind | ''>('');
   const [type, setType] = useState('');
   const [from, setFrom] = useState('');
@@ -81,10 +41,9 @@ export function ReportsScreen() {
 
   useEffect(() => {
     api
-      .get<{ items: CatalogItem[]; proforma: boolean }>('/reports/catalog')
+      .get<{ items: CatalogItem[] }>('/reports/catalog')
       .then((data) => {
         setCatalog(data.items);
-        setCanProforma(data.proforma);
         // Se preselecciona el primero al que el rol tiene acceso: la pantalla
         // abre con algo utilizable en vez de un selector vacío.
         setKind(data.items[0]?.kind ?? '');
@@ -120,88 +79,6 @@ export function ReportsScreen() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  /**
-   * Filtros de la proforma: los MISMOS del reporte menos el reporte elegido. Una
-   * proforma no depende de que reporte se esté viendo, solo del alcance.
-   */
-  const proformaParams = useCallback(() => {
-    const params = buildParams();
-    params.delete('kind');
-    return params;
-  }, [buildParams]);
-
-  /**
-   * Cuántas proformas hay listas para ese filtro. Se consulta para poder decirlo
-   * ANTES de bajarlas: "descargar todas" sin saber cuántas son es exactamente
-   * como alguien acaba abriendo un documento de trescientas páginas sin querer.
-   */
-  useEffect(() => {
-    if (!canProforma) return;
-    let cancelled = false;
-    api
-      .get<ProformaBatchSummary>(`/reports/proformas?${proformaParams().toString()}`)
-      .then((data) => {
-        if (!cancelled) setReady(data);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setReady({ total: 0, omitted: 0 });
-        /**
-         * El fallo se DICE. Tragárselo dejaba el botón apagado sin distinguir
-         * "no hay proformas listas" de "la consulta se cayó", que son dos
-         * problemas distintos y solo uno se arregla cambiando el filtro.
-         */
-        setError(
-          err instanceof ApiError ? err.message : 'No se pudieron consultar las proformas.',
-        );
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [canProforma, proformaParams]);
-
-  /** Lo mismo para los cobros CONSOLIDADOS, con el mismo filtro de alcance. */
-  useEffect(() => {
-    if (!canProforma) return;
-    let cancelled = false;
-    api
-      .get<ProformaBatchSummary>(
-        `/reports/proformas/consolidadas?${proformaParams().toString()}`,
-      )
-      .then((data) => {
-        if (!cancelled) setReadyGroups(data);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setReadyGroups({ total: 0, omitted: 0 });
-        setError(
-          err instanceof ApiError
-            ? err.message
-            : 'No se pudieron consultar las proformas consolidadas.',
-        );
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [canProforma, proformaParams]);
-
-  /**
-   * Las proformas se abren en una pestaña, no se piden con `fetch`: son un
-   * documento HTML para leer o imprimir a PDF, y la cookie de sesión viaja igual
-   * por ser el mismo origen (mismo criterio que la descarga del CSV).
-   */
-  function openProformas() {
-    window.open(`${API_BASE}/api/reports/proformas/document?${proformaParams().toString()}`, '_blank');
-  }
-
-  /** Igual, para el documento de los cobros consolidados. */
-  function openConsolidatedProformas() {
-    window.open(
-      `${API_BASE}/api/reports/proformas/consolidadas/document?${proformaParams().toString()}`,
-      '_blank',
-    );
-  }
 
   /**
    * La descarga es una navegación normal y no un `fetch`: el navegador tiene que
@@ -246,31 +123,6 @@ export function ReportsScreen() {
           {selected && <div className="count">{selected.description}</div>}
         </div>
         <div className="actions">
-          {canProforma && (
-            <button
-              className="btn btn-ghost"
-              onClick={openProformas}
-              disabled={!ready || ready.total === 0}
-              title={batchHint(ready, 'Trámites ya facturados dentro del filtro actual')}
-            >
-              {batchLabel(ready, 'Proformas', 'Sin proformas listas')}
-            </button>
-          )}
-          {/*
-            Botón propio y no una opción del anterior: son dos documentos con dos
-            contenidos distintos, y quien busca el de una cuenta consolidada
-            necesita verlo sin abrir un menú para descubrir que existe.
-          */}
-          {canProforma && (
-            <button
-              className="btn btn-ghost"
-              onClick={openConsolidatedProformas}
-              disabled={!readyGroups || readyGroups.total === 0}
-              title={batchHint(readyGroups, 'Cobros consolidados dentro del filtro actual')}
-            >
-              {batchLabel(readyGroups, 'Proformas consolidadas', 'Sin cobros consolidados')}
-            </button>
-          )}
           <button className="btn btn-primary" onClick={downloadCsv} disabled={!report || !kind}>
             Descargar CSV
           </button>

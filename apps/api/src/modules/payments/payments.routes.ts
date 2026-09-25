@@ -20,12 +20,12 @@ import { zValidator } from '../../core/validator';
 import {
   Permission,
   listPaymentsQuerySchema,
-  recordConsolidatedPaymentSchema,
-  recordPaymentSchema,
+  proformaPaymentQuoteQuerySchema,
+  recordProformaPaymentSchema,
+  resolvePaymentGroupSchema,
   resolvePaymentSchema,
   simulatePaymentSchema,
-  startConsolidatedPaymentSchema,
-  startPaymentSchema,
+  startProformaPaymentSchema,
   updateBankAccountSchema,
 } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
@@ -34,8 +34,8 @@ import { requireAnyPermission } from '../../core/middleware/requireAnyPermission
 import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
 import { onvoClient } from '../../integrations/onvo/onvo.client';
-import { consolidatedService } from './consolidated.service';
 import { paymentsService } from './payments.service';
+import { proformaPaymentsService } from './proforma-payments.service';
 
 export const paymentsRoutes = new Hono<AppEnv>();
 
@@ -90,120 +90,118 @@ const canRead = requireAnyPermission(
   Permission.PaymentsValidate,
 );
 
-/** Lo que el cliente debe por un tramite y con que lo puede pagar. */
-paymentsRoutes.get('/quote/:shipmentId', canRead, async (c) => {
-  return c.json(await paymentsService.quote(c.get('session'), c.req.param('shipmentId')));
-});
-
 paymentsRoutes.get('/shipment/:shipmentId', canRead, async (c) => {
   return c.json(await paymentsService.listByShipment(c.get('session'), c.req.param('shipmentId')));
 });
 
 // ---------------------------------------------------------------------------
-// COBRO AGRUPADO (cuentas consolidadas)
+// COBRO DE PROFORMAS
 // ---------------------------------------------------------------------------
 //
-// Van ANTES de las rutas con parametro (`/:id/...`) para que ningun `consolidated`
-// se lea como un id de pago. Los permisos son los mismos que en el cobro suelto:
-// el cliente paga lo suyo (package.pay) y el staff registra depositos
-// (payments.record); lo que cambia es la unidad del cobro, no quien puede hacerlo.
+// Todo se paga por proforma completa. Van ANTES de las rutas con parametro
+// (`/:id/...`) para que "proformas" o "groups" no se lean como un id de pago. El
+// cliente paga lo suyo (package.pay) y el staff registra depositos
+// (payments.record).
 
-/**
- * Estado de la cuenta consolidada: que paquetes entran y cuanto suman.
- *
- * El cliente pregunta por la suya (el servicio la acota a su casillero) y el
- * staff indica cual con `?clientId=`. Si la cuenta NO es consolidada responde
- * `consolidated: false` en vez de un error: la pregunta es valida y la respuesta
- * tambien.
- */
-paymentsRoutes.get('/consolidated/quote', canRead, async (c) => {
-  const clientId = c.req.query('clientId');
-  return c.json(await consolidatedService.quote(c.get('session'), clientId));
+/** Proformas aprobadas por cobrar del casillero (el staff indica cual con `?clientId=`). */
+paymentsRoutes.get('/proformas/open', canRead, async (c) => {
+  return c.json({ items: await proformaPaymentsService.open(c.get('session'), c.req.query('clientId')) });
 });
 
-/** Un cobro agrupado ya creado. */
-paymentsRoutes.get('/consolidated/group/:groupId', canRead, async (c) => {
-  const groupId = c.req.param('groupId');
-  await consolidatedService.assertOwnGroup(c.get('session'), groupId);
-  return c.json(await consolidatedService.get(groupId));
-});
+/** Cotiza el cobro de las proformas elegidas (`?ids=a,b`). */
+paymentsRoutes.get(
+  '/proformas/quote',
+  canRead,
+  zValidator('query', proformaPaymentQuoteQuerySchema),
+  async (c) => {
+    const { ids, clientId } = c.req.valid('query');
+    return c.json(await proformaPaymentsService.quote(c.get('session'), ids, clientId));
+  },
+);
 
 /**
- * El CLIENTE paga su cuenta consolidada. No lleva ni monto ni lista de paquetes:
- * los dos los pone el servidor, que es lo que hace que "entran todos" sea una
- * regla y no una casilla de la pantalla.
+ * El CLIENTE paga las proformas que eligio. No lleva monto: lo pone el servidor
+ * desde las facturas congeladas.
  */
 paymentsRoutes.post(
-  '/consolidated',
+  '/proformas',
   requirePermission(Permission.PackagePay),
-  zValidator('json', startConsolidatedPaymentSchema),
+  zValidator('json', startProformaPaymentSchema),
   async (c) => {
-    const result = await consolidatedService.start(c.get('session'), c.req.valid('json'));
+    const result = await proformaPaymentsService.start(c.get('session'), c.req.valid('json'));
     return c.json(result, 201);
   },
 );
 
-/** El cargo del cobro agrupado salio hacia la pasarela. */
+/**
+ * El STAFF registra el deposito que el cliente ya hizo por unas proformas. Con
+ * que situacion nace lo decide el servicio segun quien firma la sesion.
+ */
 paymentsRoutes.post(
-  '/consolidated/:groupId/submitted',
-  requirePermission(Permission.PackagePay),
+  '/proformas/record',
+  requirePermission(Permission.PaymentsRecord),
+  zValidator('json', recordProformaPaymentSchema),
   async (c) => {
-    return c.json(
-      await consolidatedService.markCardSubmitted(c.get('session'), c.req.param('groupId')),
-    );
+    const created = await proformaPaymentsService.record(c.get('session'), c.req.valid('json'));
+    return c.json(created, 201);
   },
 );
 
-/** El cliente cerro el formulario de tarjeta sin pagar: se suelta el cobro agrupado. */
-paymentsRoutes.post(
-  '/consolidated/:groupId/abandon',
-  requirePermission(Permission.PackagePay),
-  async (c) => {
-    return c.json(await consolidatedService.abandonCard(c.get('session'), c.req.param('groupId')));
-  },
-);
+/** Un cobro ya creado. */
+paymentsRoutes.get('/groups/:groupId', canRead, async (c) => {
+  const groupId = c.req.param('groupId');
+  await proformaPaymentsService.assertOwnGroup(c.get('session'), groupId);
+  return c.json(await proformaPaymentsService.get(groupId));
+});
 
-/** Flujo de PRUEBA: resuelve un cobro agrupado simulado sin pasar por Onvo. */
+/** El cargo del cobro salio hacia la pasarela. */
+paymentsRoutes.post('/groups/:groupId/submitted', requirePermission(Permission.PackagePay), async (c) => {
+  return c.json(await proformaPaymentsService.markCardSubmitted(c.get('session'), c.req.param('groupId')));
+});
+
+/** El cliente cerro el formulario de tarjeta sin pagar: se suelta el cobro. */
+paymentsRoutes.post('/groups/:groupId/abandon', requirePermission(Permission.PackagePay), async (c) => {
+  return c.json(await proformaPaymentsService.abandonCard(c.get('session'), c.req.param('groupId')));
+});
+
+/** Flujo de PRUEBA: resuelve un cobro simulado sin pasar por Onvo. */
 paymentsRoutes.post(
-  '/consolidated/:groupId/simulate',
+  '/groups/:groupId/simulate',
   requirePermission(Permission.PackagePay),
   zValidator('json', simulatePaymentSchema),
   async (c) => {
-    const updated = await consolidatedService.simulateGatewayOutcome(
-      c.get('session'),
-      c.req.param('groupId'),
-      c.req.valid('json').approve,
+    return c.json(
+      await proformaPaymentsService.simulateGatewayOutcome(
+        c.get('session'),
+        c.req.param('groupId'),
+        c.req.valid('json').approve,
+      ),
     );
-    return c.json(updated);
   },
 );
 
-/**
- * Comprobante del deposito AGRUPADO. Un solo archivo para todo el cobro: se
- * adjunta a los abonos de los N paquetes, porque el deposito fue uno.
- */
-paymentsRoutes.post('/consolidated/:groupId/receipt', canRead, async (c) => {
+/** Comprobante del deposito: un archivo para todo el cobro. */
+paymentsRoutes.post('/groups/:groupId/receipt', canRead, async (c) => {
   const form = await c.req.parseBody();
   const file = form['file'];
   if (!(file instanceof File)) throw StorageErrors.fileRequired('el comprobante del depósito');
-
   return c.json(
-    await consolidatedService.attachReceipt(c.get('session'), c.req.param('groupId'), file),
+    await proformaPaymentsService.attachReceipt(c.get('session'), c.req.param('groupId'), file),
   );
 });
 
 /**
- * El STAFF registra el deposito AGRUPADO que el cliente ya hizo. Basta
- * `payments.record`, igual que el registro suelto: con que situacion nace el
- * cobro lo decide el servicio segun quien firma la sesion.
+ * El ADMINISTRADOR confirma o rechaza un cobro ENTERO (todos sus abonos): un
+ * deposito por varias proformas fue un solo deposito.
  */
 paymentsRoutes.post(
-  '/consolidated/record',
-  requirePermission(Permission.PaymentsRecord),
-  zValidator('json', recordConsolidatedPaymentSchema),
+  '/groups/:groupId/resolve',
+  requirePermission(Permission.PaymentsValidate),
+  zValidator('json', resolvePaymentGroupSchema),
   async (c) => {
-    const created = await consolidatedService.record(c.get('session'), c.req.valid('json'));
-    return c.json(created, 201);
+    return c.json(
+      await proformaPaymentsService.resolveGroup(c.get('session'), c.req.param('groupId'), c.req.valid('json')),
+    );
   },
 );
 
@@ -214,17 +212,6 @@ paymentsRoutes.get(
   zValidator('query', listPaymentsQuerySchema),
   async (c) => {
     return c.json(await paymentsService.list(c.req.valid('query')));
-  },
-);
-
-/** El cliente inicia el pago de un tramite suyo. */
-paymentsRoutes.post(
-  '/',
-  requirePermission(Permission.PackagePay),
-  zValidator('json', startPaymentSchema),
-  async (c) => {
-    const result = await paymentsService.start(c.get('session'), c.req.valid('json'));
-    return c.json(result, 201);
   },
 );
 
@@ -292,24 +279,6 @@ paymentsRoutes.get('/:id/receipt', canRead, async (c) => {
   );
   return c.body(body, 200, { 'content-type': contentType });
 });
-
-/**
- * El staff registra un deposito que el cliente ya hizo ("Informacion de Pago").
- *
- * Basta `payments.record`: es asentar el comprobante que llego, no darlo por
- * cobrado. Con que situacion nace el abono lo decide el servicio segun quien
- * firma la sesion (`recordedPaymentStatus`), asi que este endpoint abierto al
- * Operativo NO es una via para confirmar pagos sin permiso.
- */
-paymentsRoutes.post(
-  '/record',
-  requirePermission(Permission.PaymentsRecord),
-  zValidator('json', recordPaymentSchema),
-  async (c) => {
-    const created = await paymentsService.record(c.get('session'), c.req.valid('json'));
-    return c.json(created, 201);
-  },
-);
 
 /**
  * El staff corrige a que cuenta entro un deposito. Va aparte de `/resolve`

@@ -100,7 +100,7 @@ export function DeliveryConfirmModal({ row, outcome, onClose, onSaved }: Props) 
     setError(null);
 
     if (required.photo && photos.length === 0) {
-      setError('Adjunta al menos una foto del paquete entregado.');
+      setError('Adjunta al menos una foto de la entrega.');
       return;
     }
     if (required.note && !note.trim()) {

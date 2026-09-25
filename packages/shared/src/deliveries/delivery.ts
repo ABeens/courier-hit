@@ -24,11 +24,12 @@
 import { State } from '../workflow/states';
 
 /**
- * Cuantas fotos admite un intento. El tope no es un capricho de almacenamiento:
- * el mensajero sube esto de pie y con datos moviles, y pasadas tres fotos la
- * subida empieza a costar mas que la prueba que aporta.
+ * Cuantas fotos admite una entrega: de 1 a 10 (decision P14 del SOW de
+ * proformas). Las fotos son de la ENTREGA, no del paquete: una visita que
+ * entrega los cinco paquetes de una proforma lleva sus fotos una sola vez, y
+ * cada entrega posterior de los que faltaban lleva las suyas.
  */
-export const MAX_DELIVERY_PHOTOS = 3;
+export const MAX_DELIVERY_PHOTOS = 10;
 
 /** Como termino la visita del mensajero. */
 export enum DeliveryOutcome {

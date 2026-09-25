@@ -15,7 +15,6 @@ import { zValidator } from '../../core/validator';
 import { Permission, saveShipmentCostsSchema } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
 import { requireAnyPermission } from '../../core/middleware/requireAnyPermission';
-import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
 import { costsService } from './costs.service';
 
@@ -40,24 +39,8 @@ costsRoutes.put('/:shipmentId', zValidator('json', saveShipmentCostsSchema), asy
   );
 });
 
-/** Aprobar: congela el total y avanza a "En bodega preparando". */
-costsRoutes.post('/:shipmentId/approve', async (c) => {
-  return c.json(await costsService.approve(c.get('session'), c.req.param('shipmentId')));
-});
-
-/**
- * Reversar: descongela la factura para poder corregir los costos. No mueve el
- * estado del tramite.
- *
- * Lleva permiso propio ENCIMA de la barrera de costos del modulo: cargar y
- * aprobar es operar; deshacer una aprobacion es enmendar, y eso solo lo hace
- * `admin`. Sin este middleware, cualquiera con `costs.manage` (Operativo, entre
- * otros) podria desarmar una factura ya emitida.
+/*
+ * Aprobar y reversar ya no viven aqui: con el modulo de proformas se aprueba la
+ * PROFORMA (que congela todos sus tramites juntos y les asigna el numero) y se
+ * corrige la proforma, no el tramite suelto. Ver `modules/proformas`.
  */
-costsRoutes.post(
-  '/:shipmentId/reverse',
-  requirePermission(Permission.ShipmentCorrect),
-  async (c) => {
-    return c.json(await costsService.reverse(c.get('session'), c.req.param('shipmentId')));
-  },
-);

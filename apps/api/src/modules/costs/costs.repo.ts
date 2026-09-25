@@ -6,10 +6,10 @@
  * con la mitad de las lineas viejas y la mitad nuevas no representaria ninguna
  * factura real.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { AnyColumn, SQL } from 'drizzle-orm';
-import { CURRENCY_DECIMALS, Currency } from '@courier/shared';
-import type { CostCategory, CostLineSource } from '@courier/shared';
+import { CURRENCY_DECIMALS, CostLineSource, Currency } from '@courier/shared';
+import type { CostCategory } from '@courier/shared';
 import { db } from '../../core/db';
 import { users } from '../auth/auth.schema';
 import { shipments } from '../shipments/shipments.schema';
@@ -65,6 +65,33 @@ export const costsRepo = {
       if (lines.length > 0) await tx.insert(shipmentCosts).values(lines);
     });
     return this.listLines(shipmentId);
+  },
+
+  /**
+   * Reemplaza SOLO la linea de flete del tramite y deja intactas las demas.
+   *
+   * Es lo que usa el armado del borrador cuando cambia algo que mueve el flete
+   * (el peso, o el dueño y con el la tarifa): recalcular no puede borrar los
+   * servicios que el operador ya cargo a mano. `null` quita el flete (el paquete
+   * se quedo sin peso y no hay nada que cotizar). En una transaccion, igual que
+   * `replaceLines`: un tramite con dos fletes o con ninguno a medias no es una
+   * factura.
+   */
+  async replaceFreightLine(
+    shipmentId: string,
+    line: (typeof shipmentCosts.$inferInsert) | null,
+  ) {
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(shipmentCosts)
+        .where(
+          and(
+            eq(shipmentCosts.shipmentId, shipmentId),
+            eq(shipmentCosts.source, CostLineSource.Freight),
+          ),
+        );
+      if (line) await tx.insert(shipmentCosts).values(line);
+    });
   },
 
   /**

@@ -2,7 +2,7 @@
  * Hoja de ruta del mensajero, en HTML imprimible.
  *
  * POR QUE HTML Y NO UN PDF GENERADO EN EL SERVIDOR. El mismo criterio de las
- * proformas (`reports/proforma.render.ts`): lo que se entrega es un DOCUMENTO
+ * proformas (`proformas/proforma.render.ts`): lo que se entrega es un DOCUMENTO
  * que se imprime o se guarda, y el navegador ya sabe paginarlo e imprimirlo a
  * PDF. Meter una libreria de PDF en la API para reproducir lo que hace el
  * "Guardar como PDF" del navegador seria una dependencia nueva a cambio de nada.

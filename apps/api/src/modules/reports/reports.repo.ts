@@ -1,9 +1,6 @@
 /**
- * Consultas de los reportes. Casi todo es lectura: cruza las tablas de tramites,
- * clientes, eventos y pagos sin ser dueño de ninguna. La UNICA excepcion es
- * `proforma_numbers`, la serie de proformas, que si es suya y si se escribe (ver
- * `issueProformaNumber`): emitir un documento numerado es un acto, no una
- * consulta, y el numero tiene que sobrevivir a la impresion que lo pidio.
+ * Consultas de los reportes. Todo es lectura: cruza las tablas de tramites,
+ * clientes, eventos, pagos y proformas sin ser dueño de ninguna.
  *
  * Los filtros son los mismos del dashboard (rango de fechas, tipo, cliente) y se
  * arman una sola vez en `conditions`: un reporte que filtrara distinto que la
@@ -26,7 +23,7 @@ import {
 } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { ClientRateKind, State, terminalStates } from '@courier/shared';
-import type { ProformaQuery, ReportQuery } from '@courier/shared';
+import type { ReportQuery } from '@courier/shared';
 
 /**
  * Los estados que cierran un tramite. Paqueteria termina en Entregado y los
@@ -36,6 +33,8 @@ import type { ProformaQuery, ReportQuery } from '@courier/shared';
  */
 const CLOSING_STATES = [...terminalStates()];
 import { db } from '../../core/db';
+import { allocatedProformaCosts } from '../proformas/proforma-allocation';
+import { proformasRepo } from '../proformas/proformas.repo';
 import { clients, users } from '../auth/auth.schema';
 import { cantonRoutes } from '../routes/canton-route.schema';
 import { districtRoutes } from '../routes/district-route.schema';
@@ -44,7 +43,6 @@ import { payments } from '../payments/payments.schema';
 import { clientRates } from '../tariffs/tariffs.schema';
 import { shipmentCosts } from '../costs/shipment-cost.schema';
 import { shipmentEvents, shipments } from '../shipments/shipments.schema';
-import { proformaNumbers } from './reports.schema';
 
 /**
  * Nombre de quien movio el estado, como SUBCONSULTA en vez de un cuarto JOIN.
@@ -77,11 +75,9 @@ const firstEventAt = sql<Date>`min(${shipmentEvents.createdAt})`.mapWith(shipmen
 
 /**
  * Filtros comunes a todos los reportes, sobre la fecha de ingreso del tramite.
- * Toma `ProformaQuery` (los campos de alcance) y no `ReportQuery` completo: el
- * `kind` no acota nada aqui, y pedirlo obligaria a inventarle uno a la descarga
- * de proformas, que no es un reporte.
+ * Toma solo los campos de alcance: el `kind` no acota nada aqui.
  */
-function conditions(query: ProformaQuery): SQL[] {
+function conditions(query: Pick<ReportQuery, 'clientId' | 'shipmentType' | 'from' | 'to'>): SQL[] {
   const conds: SQL[] = [];
   if (query.clientId) conds.push(eq(shipments.clientId, query.clientId));
   if (query.shipmentType) conds.push(inArray(shipments.shipmentType, query.shipmentType));
@@ -303,17 +299,19 @@ export const reportsRepo = {
         .groupBy(shipmentEvents.shipmentId, shipmentEvents.state),
 
       /**
-       * Numeros de proforma YA EMITIDOS. La columna PROFORMA del reporte era el
-       * consecutivo del tramite repetido; ahora dice el numero del documento que
-       * de verdad se entrego, y queda vacia en el que nunca se imprimio. Leer y
-       * no emitir es la mitad importante: un reporte de mil filas no puede gastar
-       * mil numeros de la serie de facturacion (ver `proformaNumbersByShipment`).
+       * Numero y factura electronica de la proforma APROBADA de cada tramite. Un
+       * borrador no es un documento emitido: su tramite sale con la celda vacia.
        */
-      this.proformaNumbersByShipment(ids),
+      proformasRepo.numbersByShipment(ids),
     ]);
 
     const paymentsBy = groupBy(paid, (p) => p.shipmentId);
-    const costsBy = groupBy(costs, (c) => c.shipmentId);
+    /**
+     * Las lineas del tramite MAS su parte de los servicios de la proforma: la
+     * factura congelada ya los incluye, y el desglose por categoria tiene que
+     * cuadrar con ella (ver `allocatedProformaCosts`).
+     */
+    const costsBy = groupBy([...costs, ...(await allocatedProformaCosts(ids))], (c) => c.shipmentId);
     const milestoneBy = new Map<string, { miamiArrivalAt: Date | null; deliveredAt: Date | null }>();
     for (const row of milestones) {
       const entry = milestoneBy.get(row.shipmentId) ?? { miamiArrivalAt: null, deliveredAt: null };
@@ -328,201 +326,11 @@ export const reportsRepo = {
       costs: costsBy.get(row.id) ?? [],
       miamiArrivalAt: milestoneBy.get(row.id)?.miamiArrivalAt ?? null,
       deliveredAt: milestoneBy.get(row.id)?.deliveredAt ?? null,
-      proformaSequence: proformaSeqs.get(row.id) ?? null,
+      proformaSequence: proformaSeqs.get(row.id)?.number ?? null,
+      proformaElectronicInvoiceNumber: proformaSeqs.get(row.id)?.electronicInvoiceNumber ?? null,
     }));
   },
-
-  /**
-   * Un tramite con lo necesario para su proforma. Reusa `serviceReportRows` en
-   * vez de tener su consulta propia: la proforma tiene que decir exactamente lo
-   * mismo que el reporte sobre el mismo tramite, y dos consultas paralelas es
-   * como se empiezan a separar.
-   */
-  async proformaRow(shipmentId: string) {
-    const [row] = await db
-      .select({
-        id: shipments.id,
-        code: shipments.code,
-        shipmentType: shipments.shipmentType,
-        tracking: shipments.tracking,
-        description: shipments.description,
-        hawb: shipments.hawb,
-        weightKg: shipments.weightKg,
-        electronicInvoiceNumber: shipments.electronicInvoiceNumber,
-        invoiceTotalUsd: shipments.invoiceTotalUsd,
-        costsApprovedAt: shipments.costsApprovedAt,
-        clientName: users.name,
-        clientEmail: users.email,
-        clientPhone: users.phone,
-        idNumber: clients.idNumber,
-        provinceCode: clients.provinceCode,
-        cantonCode: clients.cantonCode,
-        districtCode: clients.districtCode,
-        addressLine: clients.addressLine,
-      })
-      .from(shipments)
-      .innerJoin(clients, eq(shipments.clientId, clients.id))
-      .innerJoin(users, eq(clients.userId, users.id))
-      .where(eq(shipments.id, shipmentId))
-      .limit(1);
-    if (!row) return null;
-
-    const [lines, delivered] = await Promise.all([
-      db
-        .select({
-          label: shipmentCosts.label,
-          category: shipmentCosts.category,
-          electronicInvoiceCode: shipmentCosts.electronicInvoiceCode,
-          amount: shipmentCosts.amount,
-          currency: shipmentCosts.currency,
-          exchangeRate: shipmentCosts.exchangeRate,
-        })
-        .from(shipmentCosts)
-        .where(eq(shipmentCosts.shipmentId, shipmentId))
-        .orderBy(shipmentCosts.createdAt),
-
-      db
-        .select({ at: firstEventAt })
-        .from(shipmentEvents)
-        .where(
-          and(
-            eq(shipmentEvents.shipmentId, shipmentId),
-            inArray(shipmentEvents.state, CLOSING_STATES),
-          ),
-        ),
-    ]);
-
-    return { ...row, lines, deliveredAt: delivered[0]?.at ?? null };
-  },
-
-  /**
-   * Ids de los tramites ya facturados del filtro: los que tienen proforma lista.
-   *
-   * QUEDAN FUERA LOS DE CUENTAS CONSOLIDADAS. El requisito lo pide explicito ("la
-   * proforma de paquetes consolidados solo estara disponible para tarifas de
-   * consolidacion y no se incluira en reportes anteriores"), y ademas es lo unico
-   * consistente: esos paquetes se cobran juntos y su documento es la proforma
-   * agrupada, asi que listarlos tambien aqui entregaria dos documentos por el
-   * mismo dinero.
-   *
-   * El LEFT JOIN es deliberado: un tramite sin casillero o un casillero sin tarifa
-   * no son consolidados y tienen que seguir apareciendo, y con INNER se habrian
-   * caido del listado sin que nadie lo pidiera.
-   */
-  async billedShipmentIds(query: ProformaQuery) {
-    const rows = await db
-      .select({ id: shipments.id })
-      .from(shipments)
-      .leftJoin(clients, eq(shipments.clientId, clients.id))
-      .leftJoin(clientRates, eq(clients.clientRateId, clientRates.id))
-      .where(and(...billedConditions(query)))
-      .orderBy(desc(shipments.createdAt));
-    return rows.map((r) => r.id);
-  },
-
-  /**
-   * CUANTOS tramites facturados hay en el filtro. Lo cuenta la base de datos.
-   *
-   * Va aparte de `billedShipmentIds` porque la pantalla pregunta "cuantas
-   * proformas voy a abrir" ANTES de abrirlas, y responder eso trayendose quince
-   * mil ids (o peor, armando doscientas proformas enteras) es trabajo que nadie
-   * mira. Las dos comparten `billedConditions`, que es lo que impide que el
-   * numero que se anuncia y el lote que se descarga hablen de conjuntos distintos.
-   */
-  async countBilledShipments(query: ProformaQuery): Promise<number> {
-    const [row] = await db
-      .select({ total: count() })
-      .from(shipments)
-      .leftJoin(clients, eq(shipments.clientId, clients.id))
-      .leftJoin(clientRates, eq(clients.clientRateId, clientRates.id))
-      .where(and(...billedConditions(query)));
-    return row?.total ?? 0;
-  },
-
-  /**
-   * El numero de proforma del documento que se esta emitiendo: el que ya tenia,
-   * o uno nuevo de la serie si es la primera vez.
-   *
-   * SE ASIGNA AL EMITIR y no al aprobar los costos. La proforma se pide muchas
-   * menos veces de las que se factura (hay tramites facturados que nunca se
-   * imprimen), y numerar al aprobar llenaria la serie de numeros que no
-   * corresponden a ningun documento entregado.
-   *
-   * El "leer, insertar, releer" no es un bucle de reintento disfrazado: el
-   * `on conflict do nothing` cubre la carrera de dos impresiones simultaneas del
-   * mismo documento, y la relectura recupera el numero que gano esa carrera. La
-   * primera lectura existe para no gastar un `nextval` en el caso normal, que es
-   * el de un documento que ya tiene numero: `nextval` avanza la secuencia aunque
-   * el INSERT se descarte despues, y eso deja huecos en el consecutivo.
-   */
-  async issueProformaNumber(
-    owner: { shipmentId: string } | { paymentGroupId: string },
-  ): Promise<number> {
-    const where =
-      'shipmentId' in owner
-        ? eq(proformaNumbers.shipmentId, owner.shipmentId)
-        : eq(proformaNumbers.paymentGroupId, owner.paymentGroupId);
-
-    const read = async () => {
-      const [row] = await db
-        .select({ sequence: proformaNumbers.sequence })
-        .from(proformaNumbers)
-        .where(where)
-        .limit(1);
-      return row?.sequence ?? null;
-    };
-
-    const existing = await read();
-    if (existing !== null) return existing;
-
-    const [created] = await db
-      .insert(proformaNumbers)
-      .values({ ...owner, sequence: sql`nextval('hs_proforma_number_seq')` })
-      .onConflictDoNothing()
-      .returning({ sequence: proformaNumbers.sequence });
-    if (created) return created.sequence;
-
-    const raced = await read();
-    if (raced === null) throw new Error('No se pudo asignar el número de proforma.');
-    return raced;
-  },
-
-  /**
-   * Los numeros ya emitidos de un conjunto de tramites, para la columna PROFORMA
-   * del reporte. NO emite ninguno: un reporte es una lectura, y listar mil
-   * tramites no puede consumir mil numeros de una serie de facturacion. El que
-   * todavia no tiene proforma emitida sale con la celda vacia, que es la verdad.
-   */
-  async proformaNumbersByShipment(shipmentIds: readonly string[]): Promise<Map<string, number>> {
-    if (shipmentIds.length === 0) return new Map();
-    const rows = await db
-      .select({ shipmentId: proformaNumbers.shipmentId, sequence: proformaNumbers.sequence })
-      .from(proformaNumbers)
-      .where(inArray(proformaNumbers.shipmentId, [...shipmentIds]));
-
-    const map = new Map<string, number>();
-    for (const row of rows) if (row.shipmentId) map.set(row.shipmentId, row.sequence);
-    return map;
-  },
 };
-
-/**
- * Que es un tramite "con proforma lista": facturado (costos aprobados) y no
- * consolidado, dentro del filtro de alcance. Punto UNICO de esa definicion,
- * compartido por el listado y por el conteo; con la condicion escrita dos veces,
- * el numero que anuncia la pantalla y el documento que se descarga acabarian
- * hablando de conjuntos distintos.
- *
- * El LEFT JOIN de la consulta es deliberado: un tramite sin casillero o un
- * casillero sin tarifa no son consolidados y tienen que seguir apareciendo.
- */
-function billedConditions(query: ProformaQuery): (SQL | undefined)[] {
-  return [
-    ...conditions(query),
-    isNotNull(shipments.costsApprovedAt),
-    or(isNull(clientRates.kind), ne(clientRates.kind, ClientRateKind.Consolidada)),
-  ];
-}
 
 /** Agrupa filas por una clave. Evita repetir el mismo bucle tres veces arriba. */
 function groupBy<T>(rows: readonly T[], key: (row: T) => string): Map<string, T[]> {

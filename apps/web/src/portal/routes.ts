@@ -16,6 +16,7 @@ export const RESOURCE_SLUGS: Record<Resource, string> = {
   [Resource.Reception]: 'recepcion',
   [Resource.Dashboard]: 'resumen',
   [Resource.Costs]: 'costos',
+  [Resource.Proformas]: 'proformas',
   [Resource.CostServices]: 'servicios-costos',
   [Resource.Tramite]: 'tramites',
   [Resource.Payments]: 'pagos',

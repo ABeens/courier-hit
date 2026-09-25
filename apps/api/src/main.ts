@@ -18,6 +18,7 @@ import { providerAccountsRoutes } from './modules/provider-accounts/provider-acc
 import { shipmentsRoutes } from './modules/shipments/shipments.routes';
 import { announcementsRoutes } from './modules/announcements/announcements.routes';
 import { paymentsRoutes } from './modules/payments/payments.routes';
+import { proformasRoutes } from './modules/proformas/proformas.routes';
 import { deliveriesRoutes } from './modules/deliveries/deliveries.routes';
 import { reportsRoutes } from './modules/reports/reports.routes';
 import { dashboardRoutes } from './modules/dashboard/dashboard.routes';
@@ -36,6 +37,7 @@ app.route('/api/provider-accounts', providerAccountsRoutes);
 app.route('/api/shipments', shipmentsRoutes);
 app.route('/api/announcements', announcementsRoutes);
 app.route('/api/payments', paymentsRoutes);
+app.route('/api/proformas', proformasRoutes);
 app.route('/api/deliveries', deliveriesRoutes);
 app.route('/api/reports', reportsRoutes);
 app.route('/api/dashboard', dashboardRoutes);

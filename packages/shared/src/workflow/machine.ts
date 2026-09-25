@@ -71,8 +71,8 @@ const active = (t: readonly Trigger[] = []): readonly Trigger[] => [
 const F = ShipmentField;
 
 // Paqueteria. El tracking se congela al recibir; los descriptivos y el PESO siguen
-// editables hasta que se aprueban los costos (el peso alimenta la factura); tras el
-// congelamiento solo queda el consecutivo de factura electronica (ver FE_ONLY).
+// editables hasta que se aprueba la proforma (el peso alimenta la factura); tras el
+// congelamiento ya no se edita nada (ver FROZEN).
 // Los valores declarados para el proveedor (comercial, asegurado, arancel, retener)
 // se fijan en la prealerta y el staff los corrige hasta la recepcion; despues son
 // historicos, como la tienda y el transportista.
@@ -80,14 +80,14 @@ const PKG_DECLARED = [F.DeclaredValue, F.InsuredValue, F.TariffPosition, F.Retai
 const PKG_PREALERT = [F.Tracking, F.Description, F.Store, F.Carrier, F.Hawb, F.WeightKg, F.BillingNotes, ...PKG_DECLARED];
 const PKG_RECEIVED = [F.Description, F.Store, F.Carrier, F.Hawb, F.WeightKg, F.BillingNotes, ...PKG_DECLARED]; // tracking congelado
 const PKG_IN_TRANSIT = [F.Description, F.Hawb, F.WeightKg, F.BillingNotes]; // tienda/transportista ya son historicos
-const PKG_BILLING = [F.Description, F.WeightKg, F.BillingNotes, F.ElectronicInvoiceNumber]; // ultimo tramo para el peso (antes de aprobar costos)
+const PKG_BILLING = [F.Description, F.WeightKg, F.BillingNotes]; // ultimo tramo para el peso (antes de aprobar la proforma)
 
 // Transporte / Agenciamiento. El AWB/BL se congela al salir de la prealerta; almacen,
 // DUA y notas de facturacion se completan durante el proceso; tras aprobar costos solo
 // quedan los descriptivos que no tocan la factura.
 const TR_PREALERT = [F.Tracking, F.Description, F.Warehouse, F.Dua, F.BillingNotes];
 const TR_OPERATIONAL = [F.Description, F.Warehouse, F.Dua, F.BillingNotes]; // tracking congelado
-const TR_BILLING = [F.Description, F.BillingNotes, F.ElectronicInvoiceNumber];
+const TR_BILLING = [F.Description, F.BillingNotes];
 
 /**
  * Agenciamiento DESPUES de facturar. Es el unico flujo que factura a mitad de
@@ -97,35 +97,34 @@ const TR_BILLING = [F.Description, F.BillingNotes, F.ElectronicInvoiceNumber];
  * numera en aduana, no antes). Cerrarlos aqui obligaria a corregir el estado
  * para anotar un dato que nace mas tarde por definicion.
  */
-const AG_CUSTOMS = [F.Warehouse, F.Dua, F.ElectronicInvoiceNumber];
+const AG_CUSTOMS = [F.Warehouse, F.Dua];
 
 /**
- * Post-factura o entrega: el tramite ya no acepta cambios de datos... salvo UNO.
+ * Post-factura o entrega: el tramite ya no acepta cambios de datos.
  *
- * El consecutivo de la factura electronica lo emite un sistema externo DESPUES de
- * que la factura se congela, asi que el unico momento en que se puede escribir es
- * justo cuando todo lo demas ya esta cerrado. Dejarlo fuera obligaria a reversar
- * los costos para anotar un numero que no toca ninguna cifra.
- *
- * Sigue sin haber ventana para nada mas: la lista tiene exactamente un campo.
+ * Aqui antes quedaba UNA ventana, la del consecutivo de la factura electronica,
+ * porque ese numero llega despues de congelar la factura. Con el modulo de
+ * proformas la factura electronica es UNA POR PROFORMA (decision P2), asi que el
+ * numero se anota en la proforma y el tramite queda cerrado del todo.
  */
-const FE_ONLY: readonly ShipmentField[] = [F.ElectronicInvoiceNumber];
+const FROZEN: readonly ShipmentField[] = [];
 
 /** Matriz Flow -> maquina de estados (docs/flujo.md L38-71). */
 export const FLOWS: Record<Flow, FlowDef> = {
-  // --- Paqueteria (docs/flujo.md L61-71). Notifica al cliente en 3 estados. ---
+  // --- Paqueteria (docs/flujo.md L61-71). Recibido en Miami, En Aduanas y En ruta
+  // de entrega disparan el correo diario de paquetes (`DailyPackageReport`). ---
   [Flow.Paqueteria]: {
     steps: [
       { state: State.Prealertado, permission: Permission.PackageWrite, triggers: [], conditions: [], restrictions: [], editable: PKG_PREALERT },
-      { state: State.RecibidoBodegaMiami, permission: Permission.PackageReceive, triggers: [], conditions: [], restrictions: LINEAR_ADVANCE, editable: PKG_RECEIVED },
+      { state: State.RecibidoBodegaMiami, permission: Permission.PackageReceive, triggers: [Trigger.DailyPackageReport], conditions: [], restrictions: LINEAR_ADVANCE, editable: PKG_RECEIVED },
       { state: State.PreparandoEnvio, permission: Permission.PackageWrite, triggers: [], conditions: [], restrictions: LINEAR_ADVANCE, editable: PKG_IN_TRANSIT },
       { state: State.EnTransitoCostaRica, permission: Permission.PackageWrite, triggers: [], conditions: [], restrictions: LINEAR_ADVANCE, editable: PKG_IN_TRANSIT },
-      { state: State.EnAduanas, permission: Permission.PackageWrite, triggers: [Trigger.NotifyStateChange], conditions: [], restrictions: LINEAR_ADVANCE, editable: PKG_IN_TRANSIT },
+      { state: State.EnAduanas, permission: Permission.PackageWrite, triggers: [Trigger.DailyPackageReport], conditions: [], restrictions: LINEAR_ADVANCE, editable: PKG_IN_TRANSIT },
       { state: State.FacturacionEnProceso, permission: Permission.CostsManage, triggers: [], conditions: [], restrictions: LINEAR_ADVANCE, editable: PKG_BILLING },
-      { state: State.EnBodegaPendientePago, permission: Permission.PackageWrite, triggers: [Trigger.NotifyStateChange], conditions: [Condition.RequiresInvoiceAmount], restrictions: LINEAR_ADVANCE, editable: FE_ONLY },
-      { state: State.EnRutaEntrega, permission: Permission.DeliveryManage, triggers: [Trigger.NotifyStateChange], conditions: [Condition.RequiresConfirmedPayment], restrictions: LINEAR_ADVANCE, editable: FE_ONLY },
-      { state: State.Entregado, permission: Permission.DeliveryManage, triggers: [], conditions: [], restrictions: [Restriction.Terminal], editable: FE_ONLY },
-      { state: State.DevueltoBodega, permission: Permission.DeliveryManage, triggers: [], conditions: [Condition.RequiresComment], restrictions: [], editable: FE_ONLY },
+      { state: State.EnBodegaPendientePago, permission: Permission.PackageWrite, triggers: [], conditions: [Condition.RequiresInvoiceAmount], restrictions: LINEAR_ADVANCE, editable: FROZEN },
+      { state: State.EnRutaEntrega, permission: Permission.DeliveryManage, triggers: [Trigger.DailyPackageReport], conditions: [Condition.RequiresConfirmedPayment], restrictions: LINEAR_ADVANCE, editable: FROZEN },
+      { state: State.Entregado, permission: Permission.DeliveryManage, triggers: [], conditions: [], restrictions: [Restriction.Terminal], editable: FROZEN },
+      { state: State.DevueltoBodega, permission: Permission.DeliveryManage, triggers: [], conditions: [Condition.RequiresComment], restrictions: [], editable: FROZEN },
     ],
     extra: [
       [State.EnRutaEntrega, State.DevueltoBodega], // entrega fallida -> devuelto
@@ -168,7 +167,7 @@ export const FLOWS: Record<Flow, FlowDef> = {
       { state: State.LiberadoAduanas, permission: Permission.PackageWrite, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_OPERATIONAL },
       { state: State.EntregadoPendientePago, permission: Permission.PackageWrite, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_OPERATIONAL },
       { state: State.FacturacionEnProceso, permission: Permission.CostsManage, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: TR_BILLING },
-      { state: State.TramiteFinalizado, permission: Permission.PackageWrite, triggers: [], conditions: [Condition.RequiresConfirmedPayment], restrictions: [Restriction.Terminal], editable: FE_ONLY },
+      { state: State.TramiteFinalizado, permission: Permission.PackageWrite, triggers: [], conditions: [Condition.RequiresConfirmedPayment], restrictions: [Restriction.Terminal], editable: FROZEN },
     ],
     extra: [],
   },
@@ -193,7 +192,7 @@ export const FLOWS: Record<Flow, FlowDef> = {
       { state: State.ProcesoAduanas, permission: Permission.TramiteManage, triggers: active(), conditions: [Condition.RequiresConfirmedPayment], restrictions: LINEAR_ADVANCE, editable: AG_CUSTOMS },
       { state: State.Aforando, permission: Permission.TramiteManage, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: AG_CUSTOMS },
       { state: State.LiberadoAduanas, permission: Permission.TramiteManage, triggers: active(), conditions: [], restrictions: LINEAR_ADVANCE, editable: AG_CUSTOMS },
-      { state: State.TramiteFinalizado, permission: Permission.TramiteManage, triggers: [], conditions: [], restrictions: [Restriction.Terminal], editable: FE_ONLY },
+      { state: State.TramiteFinalizado, permission: Permission.TramiteManage, triggers: [], conditions: [], restrictions: [Restriction.Terminal], editable: FROZEN },
     ],
     extra: [],
   },

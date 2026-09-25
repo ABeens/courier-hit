@@ -10,6 +10,7 @@
  * Convencion del repo: nombres de codigo en ingles; etiquetas y valores de enum
  * de dominio en espanol. Ver CLAUDE.md.
  */
+import type { ShipmentProformaRef } from '../proformas/dto';
 import type { State } from '../workflow/states';
 import { ClientRateKind, billsActualWeight } from '../tariffs/dto';
 import { Flow, ShipmentType, flowForType } from '../workflow/shipment-type';
@@ -142,11 +143,18 @@ export interface ShipmentDto {
    * GUARDA el consecutivo para poder cruzar nuestro tramite con esa factura. Por
    * eso es texto libre y no una secuencia propia, y por eso llega a mano.
    *
-   * Va en el tramite y no en una tabla aparte porque la regla del negocio es una
-   * factura por tramite (las proformas no se agrupan). Null mientras no se haya
-   * emitido, que es el caso de todo tramite antes de facturarse.
+   * HISTORICO: con el modulo de proformas la factura electronica es UNA POR
+   * PROFORMA y el numero se anota alli (ver `ProformaDetailDto`). Este campo ya
+   * no se edita en ningun estado; queda para los tramites facturados antes.
    */
   electronicInvoiceNumber: string | null;
+
+  /**
+   * Proforma en la que esta el tramite (objetivo 11 del SOW: el detalle muestra
+   * en que proforma se facturo). Null si todavia no entro a facturacion o si no
+   * tiene dueño.
+   */
+  proforma: ShipmentProformaRef | null;
 
   /**
    * Estado del COBRO, derivado en cada lectura de los pagos confirmados del

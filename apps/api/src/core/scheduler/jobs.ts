@@ -23,6 +23,7 @@ import { db } from '../db';
 import { isHelgaEnabled } from '../../integrations/helga/helga.client';
 import { users } from '../../modules/auth/auth.schema';
 import { authService } from '../../modules/auth/auth.service';
+import { notificationsService } from '../../modules/notifications/notifications.service';
 import { providerDiscoveryService } from '../../modules/shipments/provider-discovery.service';
 import { providerSyncService } from '../../modules/shipments/provider-sync.service';
 import { shipmentsService } from '../../modules/shipments/shipments.service';
@@ -40,8 +41,7 @@ const JobLock = {
   ClientLinkReconcile: 4802,
   PrealertReconcile: 4803,
   ProviderDiscovery: 4804,
-  // Reservado para la tarea de sincronizacion pendiente de definir:
-  // Task5: 4805,
+  DailyDigest: 4805,
 } as const;
 
 /** Definicion de una tarea de sincronizacion, tal como se registra. */
@@ -185,7 +185,20 @@ export function registerJobs(scheduler: Scheduler): void {
     });
   }
 
-  // --- Falta 1 tarea de sincronizacion por definir (la indicara el usuario) ---
+  // --- Correo diario al cliente (decision P16 del SOW de proformas) ---
+  // No depende de Helga: corre siempre que el robot este encendido. Pregunta cada
+  // pocos minutos si ya toca (hora configurada alcanzada y no enviado hoy); el
+  // candado impide que dos instancias lo manden a la vez, y la constancia del
+  // envio impide que salga dos veces el mismo dia.
+  registerSyncJob(scheduler, {
+    name: 'daily-digest',
+    every: config.ROBOT_DAILY_DIGEST_CHECK_EVERY,
+    lockKey: JobLock.DailyDigest,
+    run: async () => {
+      const r = await notificationsService.runIfDue();
+      if (r) console.log(`[scheduler] daily-digest: enviados=${r.sent}`);
+    },
+  });
 }
 
 /**

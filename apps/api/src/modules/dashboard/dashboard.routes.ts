@@ -20,16 +20,15 @@ dashboardRoutes.get('/', requirePermission(Permission.DashboardRead), async (c) 
 });
 
 /**
- * Dispara el resumen diario de tramites de Transporte y Agenciamiento.
- *
- * TODO(despliegue): esto debe correr solo, una vez al dia (EventBridge -> tarea
- * programada). El endpoint queda como disparo manual para poder probar la
- * automatizacion sin esperar al planificador.
+ * Envia el CORREO DIARIO a los clientes ya, sin esperar a la hora configurada.
+ * Lo programa el robot (tarea `daily-digest`); este disparo manual queda para
+ * probarlo y para reenviar si hizo falta. Cuenta la misma ventana que contaria el
+ * robot (desde el envio anterior) y deja constancia del envio.
  */
 dashboardRoutes.post(
   '/daily-summary',
   requirePermission(Permission.ConfigManage),
   async (c) => {
-    return c.json(await notificationsService.sendDailySummary());
+    return c.json(await notificationsService.runNow());
   },
 );

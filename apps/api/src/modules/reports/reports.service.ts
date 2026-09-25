@@ -160,16 +160,18 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
       description: row.description,
       state: STATE_LABELS[row.state],
       /**
-       * PROFORMA es el numero de la proforma emitida, el consecutivo de su
-       * propia serie. Vacio mientras no se haya emitido ninguna: la columna
-       * repetia el consecutivo del tramite, asi que decia que TODO tramite tenia
-       * proforma, incluido el que nunca se facturo. El reporte no la emite, solo
-       * lee la que exista (ver `proformaNumbersByShipment`).
+       * PROFORMA es el numero de la proforma APROBADA en la que se facturo el
+       * tramite. Vacio mientras siga en borrador: un borrador no es un documento
+       * emitido.
        */
       proforma: row.proformaSequence === null ? null : formatProformaNumber(row.proformaSequence),
       invoiceTotalUsd: row.invoiceTotalUsd,
       billingNotes: row.billingNotes,
-      electronicInvoiceNumber: row.electronicInvoiceNumber,
+      /**
+       * FE: con el modulo de proformas la factura electronica es una por proforma
+       * y se anota en ella. El campo del tramite queda para lo facturado antes.
+       */
+      electronicInvoiceNumber: row.proformaElectronicInvoiceNumber ?? row.electronicInvoiceNumber,
       ...collection,
     };
 

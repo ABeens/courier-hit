@@ -23,9 +23,15 @@ interface Props {
   row: ShipmentDto;
   onClose: () => void;
   onSaved: (message: string) => void;
+  /**
+   * A donde se envia. Por defecto la sala de control; desde una proforma se usa
+   * la reasignacion de la proforma, que lleva el permiso del Operativo y mueve el
+   * paquete al borrador del cliente nuevo.
+   */
+  endpoint?: string;
 }
 
-export function AssignOwnerModal({ row, onClose, onSaved }: Props) {
+export function AssignOwnerModal({ row, onClose, onSaved, endpoint }: Props) {
   const isReassignment = row.client !== null;
   const [clientId, setClientId] = useState('');
   const [note, setNote] = useState('');
@@ -53,7 +59,7 @@ export function AssignOwnerModal({ row, onClose, onSaved }: Props) {
 
     setBusy(true);
     try {
-      const saved = await api.post<ShipmentDto>(`/shipments/${row.id}/assign`, parsed.data);
+      const saved = await api.post<ShipmentDto>(endpoint ?? `/shipments/${row.id}/assign`, parsed.data);
       onSaved(
         isReassignment
           ? `${row.code} pasó a ${clientFullLabel(saved.client)}.`

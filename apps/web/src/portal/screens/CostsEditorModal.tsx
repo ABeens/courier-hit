@@ -1,5 +1,8 @@
 /**
- * Editor de costos de un tramite (permiso costs.manage / costs.tramite.manage).
+ * Editor de costos: las lineas de UN tramite (permiso costs.manage /
+ * costs.tramite.manage) o los servicios adicionales de UNA proforma (permiso
+ * proformas.manage). Es la misma pantalla para los dos porque es el mismo
+ * trabajo: elegir conceptos del catalogo en filas, con su monto y su moneda.
  *
  * Tres reglas que se ven en pantalla:
  *   - La TASA DE CAMBIO es un valor general del sistema: se muestra siempre (es
@@ -8,8 +11,9 @@
  *     no se guarda, y quien no puede fijarla tiene que pedirsela a un admin.
  *   - Las lineas de PORCENTAJE no llevan monto: el importe lo calcula la API
  *     sobre el subtotal de las demas. Aqui solo se muestra la estimacion.
- *   - APROBAR CONGELA. Guarda, fija el monto de factura y avanza el tramite a
- *     "En bodega preparando". Desde ahi ya no se edita.
+ *   - AQUI NO SE APRUEBA. Aprobar es un acto sobre la PROFORMA (numero, factura
+ *     congelada y avance a cobro), y se hace desde su detalle. Con la proforma
+ *     aprobada este editor queda en solo lectura; para cambiarla se corrige.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { IconButton } from '../components/IconButton';
@@ -20,28 +24,35 @@ import {
   CURRENCY_LABELS,
   CostLineSource,
   Currency,
-  Permission,
-  STATE_LABELS,
   ServiceValueType,
-  State,
-  can,
   canSetExchangeRate,
   clientFullLabel,
   computeTotals,
-  payableStateOf,
   formatMoney,
 } from '@courier/shared';
 import type { Role, ShipmentCostsDto, ShipmentDto, SuggestedCostLine } from '@courier/shared';
-import { awaitingValidation } from '../components/PayFlag';
 import { ApiError, api } from '../lib/api';
 import { formatDate } from '../lib/datetime';
 
+/**
+ * Que se edita: las lineas de un tramite, o los servicios de una proforma. De
+ * esto sale la direccion de la API y el encabezado.
+ */
+export type CostsTarget =
+  | { kind: 'shipment'; shipment: ShipmentDto }
+  | { kind: 'proforma'; id: string; title: string; subtitle: string };
+
 interface Props {
-  shipment: ShipmentDto;
+  target: CostsTarget;
   role: Role;
   onClose: () => void;
-  /** Se llama tras aprobar (el tramite cambio de estado y sale de la cola). */
-  onApproved: (message: string) => void;
+  /** Tras guardar, para que quien abrio el editor refresque lo suyo. */
+  onSaved?: () => void;
+}
+
+/** Direccion de la API de cada editor (lectura y guardado van al mismo sitio). */
+function endpointOf(target: CostsTarget): string {
+  return target.kind === 'shipment' ? `/costs/${target.shipment.id}` : `/proformas/${target.id}/costs`;
 }
 
 /**
@@ -105,7 +116,8 @@ function fromSuggestion(s: SuggestedCostLine): DraftLine {
   };
 }
 
-export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props) {
+export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
+  const endpoint = endpointOf(target);
   const [data, setData] = useState<ShipmentCostsDto | null>(null);
   const [lines, setLines] = useState<DraftLine[]>([]);
   /** Clave de la ultima fila agregada a mano: es la que lleva el destello. */
@@ -117,7 +129,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
 
   const load = useCallback(async () => {
     try {
-      const dto = await api.get<ShipmentCostsDto>(`/costs/${shipment.id}`);
+      const dto = await api.get<ShipmentCostsDto>(endpoint);
       setData(dto);
       /**
        * El tipo de valor no se guarda en la linea (la linea es un snapshot de
@@ -162,30 +174,13 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudieron cargar los costos.');
     }
-  }, [shipment.id]);
+  }, [endpoint]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const approved = data?.approved ?? false;
-  /**
-   * Reversar exige lo mismo que la API: factura congelada, tramite todavia en
-   * "Facturación en proceso" y permiso de enmienda. Si el tramite ya avanzo, el
-   * camino es corregir primero el estado desde la sala de control, que es donde
-   * vive esa puerta.
-   */
-  /**
-   * Sin pagos encima. Es la misma pregunta que hace la API al reversar, y se hace
-   * aqui para no ofrecer un boton que va a volver con un error: el trámite pagado
-   * (o con un comprobante esperando validacion) no se puede desfacturar.
-   */
-  const noMoneyOnTop = !shipment.settled && !awaitingValidation(shipment);
-  const canReverse =
-    approved &&
-    shipment.state === State.FacturacionEnProceso &&
-    noMoneyOnTop &&
-    can(role, Permission.ShipmentCorrect);
   const parsedRate = Number(rate);
   const rateOk = Number.isFinite(parsedRate) && parsedRate > 0;
   /**
@@ -376,8 +371,11 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
       })),
     };
     try {
-      const dto = await api.put<ShipmentCostsDto>(`/costs/${shipment.id}`, payload);
-      setData(dto);
+      await api.put(endpoint, payload);
+      // El guardado de la proforma responde su detalle, no este sobre: se relee
+      // del mismo sitio para que los dos editores terminen igual.
+      await load();
+      onSaved?.();
       return true;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudieron guardar los costos.');
@@ -393,76 +391,23 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
   }
 
   /** Aprobar guarda primero: nunca se congela un total distinto al que se ve. */
-  async function onApprove() {
-    if (lines.length === 0) {
-      setError('Agrega al menos una línea de costo antes de aprobar.');
-      return;
-    }
-    /**
-     * A dónde va el trámite al aprobar: su estado de COBRO. En Transporte ese
-     * estado es el de facturación, o sea el que ya tiene, así que ahí no se mueve
-     * y el aviso tiene que decir otra cosa: prometer un cambio de estado que no
-     * ocurre es la clase de mentira que hace desconfiar del botón.
-     */
-    const payable = payableStateOf(shipment.flow);
-    const destination =
-      payable && payable !== shipment.state
-        ? `el trámite ${shipment.code} pasa a "${STATE_LABELS[payable]}"`
-        : `el trámite ${shipment.code} queda cobrable en "${STATE_LABELS[shipment.state]}"`;
-    const confirmed = window.confirm(
-      `Al aprobar se congela el monto de factura y ${destination}. ` +
-        'Después ya no se puede editar. ¿Continuar?',
-    );
-    if (!confirmed) return;
-
-    setBusy(true);
-    setNotice(null);
-    if (await save()) {
-      try {
-        await api.post<ShipmentCostsDto>(`/costs/${shipment.id}/approve`);
-        onApproved(`Costos de ${shipment.code} aprobados.`);
-        return;
-      } catch (err) {
-        setError(err instanceof ApiError ? err.message : 'No se pudieron aprobar los costos.');
-      }
-    }
-    setBusy(false);
-  }
-
-  /**
-   * Reversar descongela la factura para poder corregir los costos. No mueve el
-   * estado: si el tramite ya avanzo, hay que corregirlo aparte desde la sala de
-   * control. Se avisa aqui para que nadie espere que un solo boton deshaga las
-   * dos cosas.
-   */
-  async function onReverse() {
-    const confirmed = window.confirm(
-      `Se liberará la factura de ${shipment.code} y los costos volverán a ser editables. ` +
-        `El estado del trámite NO cambia: si hace falta, corrígelo desde la Sala de control. ¿Continuar?`,
-    );
-    if (!confirmed) return;
-
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      await api.post<ShipmentCostsDto>(`/costs/${shipment.id}/reverse`);
-      await load();
-      setNotice('Factura reversada. Los costos vuelven a ser editables.');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo reversar la factura.');
-    }
-    setBusy(false);
-  }
-
   return (
     <ModalOverlay onClose={onClose}>
       <div className="modal modal-wide fadeUp" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>Costos · {shipment.code}</h3>
-          <p>
-            {clientFullLabel(shipment.client)} · {shipment.description}
-          </p>
+          {target.kind === 'shipment' ? (
+            <>
+              <h3>Costos · {target.shipment.code}</h3>
+              <p>
+                {clientFullLabel(target.shipment.client)} · {target.shipment.description}
+              </p>
+            </>
+          ) : (
+            <>
+              <h3>{target.title}</h3>
+              <p>{target.subtitle}</p>
+            </>
+          )}
         </div>
 
         <div className="modal-body">
@@ -473,14 +418,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
             <div className="banner ok">
               Aprobado el {formatDate(data!.approvedAt!)}
               {data!.approvedByName ? ` por ${data!.approvedByName}` : ''}. La factura quedó congelada.
-              {approved && !canReverse && can(role, Permission.ShipmentCorrect) && (
-                <>
-                  {' '}
-                  Para corregirla, primero devuelve el trámite a «
-                  {STATE_LABELS[State.FacturacionEnProceso]}» con «Corregir estado» en la Sala
-                  de control.
-                </>
-              )}
+              Para cambiarla, corrige la proforma desde su detalle.
             </div>
           )}
 
@@ -500,7 +438,7 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
                 ? 'La tasa de cambio es un valor general del sistema: solo un administrador puede modificarla, en Configuración.'
                 : `Viene de la tasa vigente del sistema${
                     data?.globalExchangeRate != null ? ` (${data.globalExchangeRate})` : ''
-                  }; puedes ajustarla solo para este trámite.${
+                  }; puedes ajustarla solo para ${target.kind === 'shipment' ? 'este trámite' : 'esta proforma'}.${
                     data?.referenceExchangeRate != null
                       ? ` Referencia del BCCR hoy: ${data.referenceExchangeRate}.`
                       : ''
@@ -645,23 +583,10 @@ export function CostsEditorModal({ shipment, role, onClose, onApproved }: Props)
           <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
             {approved ? 'Cerrar' : 'Cancelar'}
           </button>
-          {/* Reversar solo aparece con la factura ya congelada, con el tramite
-              todavia en facturacion (misma guarda que la API) y solo para quien
-              puede enmendar: cargar y aprobar es operar, deshacer es corregir. */}
-          {canReverse && (
-            <button type="button" className="btn btn-ghost" onClick={onReverse} disabled={busy}>
-              {busy ? 'Reversando…' : 'Reversar factura'}
-            </button>
-          )}
           {!approved && (
-            <>
-              <button type="button" className="btn btn-ghost" onClick={onSave} disabled={busy}>
-                {busy ? 'Guardando…' : 'Guardar'}
-              </button>
-              <button type="button" className="btn btn-primary" onClick={onApprove} disabled={busy}>
-                Aprobar y avanzar
-              </button>
-            </>
+            <button type="button" className="btn btn-primary" onClick={onSave} disabled={busy}>
+              {busy ? 'Guardando…' : 'Guardar'}
+            </button>
           )}
         </div>
       </div>

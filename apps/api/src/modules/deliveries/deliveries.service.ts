@@ -16,6 +16,7 @@
 import {
   Currency,
   DeliveryOutcome,
+  Flow,
   MAX_DELIVERY_PHOTOS,
   State,
   chargeBasisFor,
@@ -33,10 +34,12 @@ import type {
   DeliveryQueueFilter,
   ListDeliveryQueueQuery,
   RecordDeliveryAttemptInput,
+  RecordProformaDeliveryInput,
   Session,
 } from '@courier/shared';
-import { DeliveryErrors, ShipmentErrors } from '../../core/errors';
+import { DeliveryErrors, ProformaErrors, ShipmentErrors } from '../../core/errors';
 import { StorageErrors, storage } from '../../core/storage';
+import { proformasRepo } from '../proformas/proformas.repo';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { transitionsService } from '../shipments/transitions.service';
 import { deliveriesRepo } from './deliveries.repo';
@@ -225,6 +228,83 @@ export const deliveriesService = {
       { state: stateForOutcome(input.outcome), note },
       { skipPermission: true },
     );
+  },
+
+  /**
+   * Registra la ENTREGA DE UNA PROFORMA de Paqueteria: una visita del mensajero
+   * (decisiones D4, P6 y P14).
+   *
+   *   - Los paquetes entregados pasan a Entregado; los devueltos, con su motivo, a
+   *     Devuelto a bodega. Los que no se marcan siguen "En ruta de entrega" y se
+   *     confirman despues, uno por uno (regla 13 del SOW).
+   *   - Las fotos son de la ENTREGA, no del paquete: se suben una vez (1 a 10) y
+   *     cada paquete entregado en esta visita las lleva como prueba.
+   *
+   * Todo se valida ANTES de subir fotos o mover nada: una visita a medio registrar
+   * (tres paquetes entregados y el cuarto con error) no se puede explicar despues.
+   */
+  async recordProforma(
+    session: Session,
+    proformaId: string,
+    input: RecordProformaDeliveryInput,
+    photos: File[],
+  ) {
+    const proforma = await proformasRepo.findById(proformaId);
+    if (!proforma) throw ProformaErrors.notFound();
+    if (proforma.flow !== Flow.Paqueteria) throw DeliveryErrors.notDeliverableFlow();
+
+    const shipments = await proformasRepo.shipmentsOf(proformaId);
+    const byId = new Map(shipments.map((s) => [s.id, s]));
+    const marked = [...input.delivered, ...input.returned.map((r) => r.shipmentId)];
+    for (const id of marked) {
+      const shipment = byId.get(id);
+      if (!shipment) throw DeliveryErrors.shipmentNotInProforma();
+      if (shipment.state !== State.EnRutaEntrega) throw DeliveryErrors.shipmentNotInRoute(shipment.code);
+    }
+
+    if (input.delivered.length > 0 && photos.length === 0) throw DeliveryErrors.photoRequired();
+    if (photos.length > MAX_DELIVERY_PHOTOS) throw DeliveryErrors.tooManyPhotos(MAX_DELIVERY_PHOTOS);
+
+    // En serie y no en paralelo: quien sube esto esta en la calle con datos moviles.
+    const photoFileKeys: string[] = [];
+    for (const photo of photos) photoFileKeys.push(await storage.put('deliveries', photo));
+
+    const deliveredNote =
+      photos.length > 1 ? `Entrega de la proforma con ${photos.length} fotos.` : 'Entrega de la proforma con foto.';
+
+    for (const id of input.delivered) {
+      await deliveriesRepo.insert({
+        shipmentId: id,
+        outcome: DeliveryOutcome.Entregado,
+        photoFileKeys,
+        note: null,
+        courierId: session.userId,
+      });
+      await transitionsService.transition(
+        session,
+        id,
+        { state: State.Entregado, note: deliveredNote },
+        { skipPermission: true },
+      );
+    }
+
+    for (const { shipmentId, reason } of input.returned) {
+      await deliveriesRepo.insert({
+        shipmentId,
+        outcome: DeliveryOutcome.DevueltoBodega,
+        photoFileKeys: [],
+        note: reason,
+        courierId: session.userId,
+      });
+      await transitionsService.transition(
+        session,
+        shipmentId,
+        { state: State.DevueltoBodega, note: reason },
+        { skipPermission: true },
+      );
+    }
+
+    return { proformaId, delivered: input.delivered.length, returned: input.returned.length };
   },
 
   /**

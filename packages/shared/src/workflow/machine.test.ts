@@ -80,18 +80,28 @@ test('Paqueteria: en facturacion el peso sigue editable (ultimo tramo antes de a
 });
 
 /**
- * Tras el congelamiento de factura la unica escritura que queda es el consecutivo
- * de factura electronica, que por definicion llega DESPUES de emitirla. El test se
- * afirma sobre el conjunto exacto, no sobre "esta el FE": lo que hay que proteger
- * es que no se cuele ningun otro campo por esa ventana.
+ * Tras el congelamiento de factura el tramite ya no admite ninguna escritura. El
+ * consecutivo de factura electronica, que era la unica ventana que quedaba, se
+ * anota ahora en la proforma (una factura por proforma, decision P2).
  */
-test('Estados de bodega/entrega solo admiten el consecutivo de factura electronica', () => {
+test('Estados de bodega/entrega no admiten ningun cambio de datos', () => {
   for (const state of FROZEN_PACKAGE) {
     assert.deepEqual(
       set(editableFieldsAt(Flow.Paqueteria, state)),
-      set([ShipmentField.ElectronicInvoiceNumber]),
-      `${state} deberia admitir solo el FE`,
+      set([]),
+      `${state} no deberia admitir cambios`,
     );
+  }
+});
+
+test('Ningun estado de ningun flow deja editar el FE en el tramite: vive en la proforma', () => {
+  for (const flow of Object.values(Flow)) {
+    for (const state of statesOf(flow)) {
+      assert.ok(
+        !canEditField(flow, state, ShipmentField.ElectronicInvoiceNumber),
+        `${flow}/${state} no deberia admitir el FE`,
+      );
+    }
   }
 });
 

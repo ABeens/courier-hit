@@ -14,6 +14,7 @@ import {
   deliveryQueueFilterSchema,
   listDeliveryQueueQuerySchema,
   recordDeliveryAttemptSchema,
+  recordProformaDeliverySchema,
 } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
 import { requirePermission } from '../../core/middleware/requirePermission';
@@ -74,6 +75,32 @@ deliveriesRoutes.post('/shipment/:shipmentId', async (c) => {
     photos,
   );
   return c.json(toDto(row), 201);
+});
+
+/**
+ * Entrega de una PROFORMA: una visita que marca que paquetes se entregaron y
+ * cuales se devolvieron, con las fotos de la entrega. Multipart: el campo
+ * `payload` lleva el JSON (`recordProformaDeliverySchema`) y `photo` se repite
+ * hasta `MAX_DELIVERY_PHOTOS` veces.
+ */
+deliveriesRoutes.post('/proforma/:proformaId', async (c) => {
+  const form = await c.req.parseBody({ all: true });
+  const rawPayload = form['payload'];
+  let parsed: unknown = {};
+  try {
+    parsed = typeof rawPayload === 'string' ? JSON.parse(rawPayload) : {};
+  } catch {
+    parsed = {};
+  }
+  const input = recordProformaDeliverySchema.parse(parsed);
+  const raw = form['photo'];
+  const photos = (Array.isArray(raw) ? raw : [raw]).filter(
+    (value): value is File => value instanceof File,
+  );
+  return c.json(
+    await deliveriesService.recordProforma(c.get('session'), c.req.param('proformaId'), input, photos),
+    201,
+  );
 });
 
 /**

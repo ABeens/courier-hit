@@ -15,16 +15,22 @@
 /** Efecto automatico al ENTRAR al estado. */
 export enum Trigger {
   /**
-   * Correo inmediato al dueño del paquete avisando el cambio de estado.
-   * Solo Paqueteria y solo en: En Aduanas, En bodega preparando,
-   * En ruta de entrega (docs/flujo.md L177).
-   */
-  NotifyStateChange = 'notify_state_change',
-  /**
-   * El tramite queda incluido en el resumen diario por correo de tramites
-   * activos. Solo Transporte y Agenciamiento (docs/flujo.md L197).
+   * El tramite aparece en el CORREO DIARIO del cliente como tramite en curso.
+   * Solo Transporte y Agenciamiento (docs/flujo.md L197).
+   *
+   * Aqui habia ademas un correo INMEDIATO por cambio de estado en Paqueteria. Se
+   * retiro con el modulo de proformas (decision P16): todos los cambios se
+   * avisan en un solo correo diario, que lee el historial de estados.
    */
   DailyActiveSummary = 'daily_active_summary',
+  /**
+   * Paqueteria: tener un paquete en este estado hace que el cliente reciba el
+   * CORREO DIARIO de paquetes ("Reporte de estatus paquetes"), con todos sus
+   * paquetes en proceso y el estado de cada uno. Solo Recibido en Miami, En
+   * Aduanas y En ruta de entrega: los estados en que antes salia un correo
+   * inmediato, que se reemplaza por este resumen de las 6 a. m.
+   */
+  DailyPackageReport = 'daily_package_report',
 }
 
 /** Precondicion de datos para poder ENTRAR al estado. */
@@ -49,8 +55,8 @@ export enum Restriction {
 
 /** Etiquetas de presentacion. */
 export const TRIGGER_LABELS: Record<Trigger, string> = {
-  [Trigger.NotifyStateChange]: 'Correo inmediato de cambio de estado al cliente',
-  [Trigger.DailyActiveSummary]: 'Incluido en el resumen diario de trámites activos',
+  [Trigger.DailyActiveSummary]: 'Aparece en el correo diario como trámite en curso',
+  [Trigger.DailyPackageReport]: 'El cliente recibe el correo diario de sus paquetes',
 };
 
 export const CONDITION_LABELS: Record<Condition, string> = {

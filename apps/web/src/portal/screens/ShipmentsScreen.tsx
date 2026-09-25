@@ -39,7 +39,7 @@ import {
   statesOf,
   usesPackageFields,
 } from '@courier/shared';
-import type { BillingAmounts, ConsolidatedQuoteDto, Role, ShipmentDto } from '@courier/shared';
+import type { BillingAmounts, ProformaPaymentItem, Role, ShipmentDto } from '@courier/shared';
 import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
 import { IconButton, IconLink } from '../components/IconButton';
@@ -54,8 +54,7 @@ import { ClientShipmentModal } from './ClientShipmentModal';
 import { ShipmentFormModal, allowedTypesFor } from './ShipmentFormModal';
 import { ShipmentHistoryModal } from './ShipmentHistoryModal';
 import { StateAdvanceModal, reachableStates } from './StateAdvanceModal';
-import { ConsolidatedPaymentModal } from './ConsolidatedPaymentModal';
-import { PaymentModal } from './PaymentModal';
+import { ProformaPaymentModal } from './ProformaPaymentModal';
 import { PaymentResultModal } from './PaymentResultModal';
 import type { PaymentResult } from './PaymentResultModal';
 import { ShipmentPaymentsModal } from './ShipmentPaymentsModal';
@@ -173,6 +172,8 @@ function moneySection(row: ShipmentDto, amounts: BillingAmounts): CardSection | 
     title: 'Facturación',
     money: true,
     fields: [
+      // El numero de la proforma en la que se facturo (objetivo 11 del SOW).
+      ...(row.proforma?.number ? [{ label: 'Proforma', value: row.proforma.number, mono: true }] : []),
       ...(currency === Currency.CRC
         ? [
             { label: 'Dólares', value: formatMoney(row.invoiceTotalUsd, Currency.USD) },
@@ -271,7 +272,8 @@ export function ShipmentsScreen({
   const [notice, setNotice] = useState<string | null>(null);
   const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; row: ShipmentDto } | null>(null);
   const [advancing, setAdvancing] = useState<ShipmentDto | null>(null);
-  const [paying, setPaying] = useState<ShipmentDto | null>(null);
+  /** Pago de proformas abierto (portal del cliente). */
+  const [paying, setPaying] = useState(false);
   /**
    * Desenlace del ultimo pago, pendiente de que el cliente lo cierre. Se anuncia
    * en su propia pantalla y no en el aviso de arriba: entregar dinero es el unico
@@ -281,15 +283,11 @@ export function ShipmentsScreen({
   /** Trámite cuyos abonos está mirando el staff (registrar depósito / aprobar). */
   const [collecting, setCollecting] = useState<ShipmentDto | null>(null);
   /**
-   * La cuenta del titular es CONSOLIDADA: sus paquetes no se pagan uno a uno sino
-   * todos juntos. Lo contesta la API (`consolidated`), no se deduce aquí: la
-   * misma respuesta es la que decide si el cobro agrupado se puede hacer.
-   *
-   * Null mientras no se ha preguntado o la vista no es la del titular.
+   * Cuantas proformas tiene el titular por pagar. Con el modulo de proformas el
+   * cliente paga proformas completas, no paquetes sueltos (decision D2): el boton
+   * de la cabecera las abre todas para que elija. Null mientras no se sabe.
    */
-  const [consolidated, setConsolidated] = useState<ConsolidatedQuoteDto | null>(null);
-  /** Pago agrupado abierto (cuenta consolidada del titular). */
-  const [payingGroup, setPayingGroup] = useState(false);
+  const [openProformas, setOpenProformas] = useState<number | null>(null);
   /** Trámite cuyo historial de estados se está mirando (clic sobre la ficha). */
   const [tracing, setTracing] = useState<ShipmentDto | null>(null);
   /** Alta del cliente: vive aqui dentro, no en una pantalla aparte. */
@@ -401,30 +399,23 @@ export function ShipmentsScreen({
 
   /** Como se llama lo que se lista; lo usan el contador y el pie de paginacion. */
   /**
-   * Se pregunta UNA vez por la cuenta, no por fila: la tarifa es del casillero y
-   * el cobro agrupado también, así que una consulta contesta para toda la
-   * pantalla. Solo en la vista del titular de Paquetería: es la única donde el
-   * cliente paga.
+   * Proformas por pagar del titular: una consulta para toda la pantalla, en las
+   * dos vistas del cliente (paquetes y otros tramites pagan igual, por proforma).
    */
   useEffect(() => {
-    if (!isOwnPackages || !canPay) {
-      setConsolidated(null);
+    if (!isOwn || !canPay) {
+      setOpenProformas(null);
       return;
     }
     let alive = true;
     api
-      .get<ConsolidatedQuoteDto>('/payments/consolidated/quote')
-      .then((q) => alive && setConsolidated(q))
-      // Que no se pueda saber si la cuenta es consolidada no rompe la pantalla:
-      // se queda con el cobro individual, que es el comportamiento de siempre.
-      .catch(() => alive && setConsolidated(null));
+      .get<{ items: ProformaPaymentItem[] }>('/payments/proformas/open')
+      .then((r) => alive && setOpenProformas(r.items.filter((i) => i.due > 0 && !i.inValidation).length))
+      .catch(() => alive && setOpenProformas(null));
     return () => {
       alive = false;
     };
-  }, [isOwnPackages, canPay, list.data]);
-
-  /** La cuenta se cobra agrupada: el pago por paquete deja de ofrecerse. */
-  const isConsolidatedAccount = consolidated?.consolidated === true;
+  }, [isOwn, canPay, list.data]);
 
   const noun = isOwnPackages ? 'paquetes' : 'trámites';
 
@@ -461,24 +452,23 @@ export function ShipmentsScreen({
              agenciamiento) es solo consulta: esos tramites nacen de una gestion
              que negocia el staff y los registra quien tiene `tramite.manage`, asi
              que ahi no se ofrece boton. La API aplica la misma regla. */
-          isOwnPackages && (
-            <div className="actions">
-              {/*
-                Cuenta consolidada: el cobro es de la CUENTA, no de un paquete, y
-                por eso el botón vive en la cabecera y no en cada ficha. Aparece
-                solo cuando hay algo que cobrar; con la cuenta al día no hay nada
-                que ofrecer.
-              */}
-              {isConsolidatedAccount && consolidated!.items.length > 0 && !consolidated!.settled && (
-                <button className="btn btn-primary" onClick={() => setPayingGroup(true)}>
-                  Pagar consolidado ({consolidated!.items.length})
-                </button>
-              )}
+          <div className="actions">
+            {/*
+              El cobro es de PROFORMAS, no de un paquete: el boton vive en la
+              cabecera y abre todas las pendientes para que el cliente elija.
+              Aparece solo cuando hay algo que cobrar.
+            */}
+            {canPay && (openProformas ?? 0) > 0 && (
+              <button className="btn btn-primary" onClick={() => setPaying(true)}>
+                Pagar proformas ({openProformas})
+              </button>
+            )}
+            {isOwnPackages && (
               <button className="btn btn-primary" onClick={() => setRegistering(true)}>
                 + Prealertar
               </button>
-            </div>
-          )
+            )}
+          </div>
         ) : (
           canWrite && creatableTypes.length > 0 && (
             <button className="btn btn-primary" onClick={() => setModal({ mode: 'create' })}>
@@ -743,17 +733,21 @@ export function ShipmentsScreen({
                     abonos del paquete sin que la ficha parezca rota. El cobro se
                     lanza desde la cabecera, sobre la cuenta entera.
                   */
-                  isConsolidatedAccount ? (
+                  awaitingValidation(row) ? (
                     <IconButton
-                      label="Ver los pagos del paquete"
+                      label="Pago en validación"
                       icon="receipt"
-                      hint="Tu cuenta es consolidada: los paquetes se pagan todos juntos."
-                      onClick={() => setPaying(row)}
+                      hint="Recibimos tu pago y lo estamos validando."
+                      onClick={() => setPaying(true)}
                     />
-                  ) : awaitingValidation(row) ? (
-                    <IconButton label="Ver el pago enviado" icon="receipt" onClick={() => setPaying(row)} />
                   ) : (
-                    <IconButton label="Pagar" icon="card" tone="primary" onClick={() => setPaying(row)} />
+                    <IconButton
+                      label="Pagar"
+                      icon="card"
+                      tone="primary"
+                      hint={row.proforma?.number ? `Se paga con la proforma ${row.proforma.number}` : undefined}
+                      onClick={() => setPaying(true)}
+                    />
                   )
                 )}
               </div>
@@ -806,52 +800,13 @@ export function ShipmentsScreen({
       )}
 
       {paying && (
-        <PaymentModal
-          shipment={paying}
-          role={role}
-          /*
-            Recargar tambien al cerrar: dentro del modal se puede haber rechazado
-            un cobro con tarjeta sin llegar a `onPaid`, y la ficha de atras
-            quedaria mostrando un estado de pago viejo.
-          */
+        <ProformaPaymentModal
           onClose={() => {
-            setPaying(null);
-            void load();
-          }}
-          /*
-            El desenlace lo pone el modal, no esta pantalla: solo el modal sabe si
-            fue un deposito (queda por validar) o una tarjeta aprobada (ya esta
-            cobrado). Anunciar "pendiente de validación" para los dos casos era
-            justo lo que hacia dudar al cliente de un pago que ya paso.
-          */
-          onPaid={(result) => {
-            setPaying(null);
-            setPaid(result);
-            setError(null);
-            void load();
-          }}
-          /*
-            La espera se pinta encima del modal del pago y NO lo cierra: el sondeo
-            que resuelve el cobro vive ahi dentro, asi que desmontarlo dejaria el
-            loader girando para siempre.
-          */
-          onProcessing={(result) => setPaid(result)}
-        />
-      )}
-
-      {payingGroup && (
-        <ConsolidatedPaymentModal
-          /*
-            Sin `clientId`: el titular cobra lo suyo y el casillero lo pone el
-            servidor desde la sesión. Mandarlo desde aquí sería darle a la
-            pantalla una decisión que es del servidor.
-          */
-          onClose={() => {
-            setPayingGroup(false);
+            setPaying(false);
             void load();
           }}
           onPaid={(result) => {
-            setPayingGroup(false);
+            setPaying(false);
             setPaid(result);
             setError(null);
             void load();

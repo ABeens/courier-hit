@@ -12,12 +12,7 @@ import { ReportKind } from './report';
 /** Instante en UTC (ISO 8601). Misma convencion que el resto de la API. */
 const instantSchema = z.string().datetime({ offset: true, message: 'Fecha inválida.' });
 
-/**
- * Filtros de alcance, sin el reporte pedido. Se nombran aparte porque los
- * comparten dos cosas distintas: el reporte (que ademas lleva `kind` y `format`)
- * y la descarga de proformas, que no es un reporte pero se acota igual. Repetir
- * los cuatro campos en dos esquemas es como acaban divergiendo.
- */
+/** Filtros de alcance del reporte: rango de fechas, cliente y tipo de tramite. */
 const scopeFields = {
   from: instantSchema.optional(),
   to: instantSchema.optional(),
@@ -39,9 +34,3 @@ export const reportQuerySchema = z.object({
 });
 export type ReportQuery = z.infer<typeof reportQuerySchema>;
 
-/**
- * Filtros de la descarga de proformas. Sin `kind`: una proforma no es un reporte,
- * es un documento por tramite, y el unico recorte que admite es de alcance.
- */
-export const proformaQuerySchema = z.object(scopeFields);
-export type ProformaQuery = z.infer<typeof proformaQuerySchema>;

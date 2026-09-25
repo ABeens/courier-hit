@@ -41,11 +41,13 @@ const COUNTED = [
   'delivery_attempts',
   'payments',
   'payment_groups',
-  'proforma_numbers',
+  'proformas',
+  'proforma_shipments',
+  'proforma_costs',
 ] as const;
 
 /** Consecutivos que vuelven a empezar. El de CASILLEROS no se toca. */
-const SEQUENCES = ['hs_shipment_code_seq', 'hs_proforma_number_seq'] as const;
+const SEQUENCES = ['hs_shipment_code_seq'] as const;
 
 async function countRows(table: string): Promise<number> {
   const rows = (await db.execute(
@@ -71,7 +73,10 @@ async function attachmentKeys(): Promise<string[]> {
       select receipt_file_key as key from payments where receipt_file_key is not null
     `),
   )) as Array<{ key: string }>;
-  return rows.map((r) => r.key).filter(Boolean);
+  // Sin repetidos: las fotos de la entrega de una proforma las comparten todos
+  // los paquetes entregados en esa visita, y borrar dos veces el mismo archivo
+  // contaria un fallo que no es.
+  return [...new Set(rows.map((r) => r.key).filter(Boolean))];
 }
 
 async function main() {
@@ -109,8 +114,12 @@ async function main() {
   console.log(`\nadjuntos borrados: ${removed}${failed > 0 ? ` (${failed} no se pudieron borrar)` : ''}`);
 
   await db.transaction(async (tx) => {
-    // El orden importa: `proforma_numbers` apunta a las dos tablas de abajo.
-    await tx.execute(sql.raw('delete from proforma_numbers'));
+    // Las proformas cuelgan del casillero, no del tramite, asi que se borran a
+    // mano (en cascada se llevan sus tramites asociados y sus costos). El
+    // contador de la serie se reinicia borrando su fila: la proxima aprobacion
+    // la vuelve a sembrar con el valor por defecto.
+    await tx.execute(sql.raw('delete from proformas'));
+    await tx.execute(sql.raw('delete from proforma_counter'));
     await tx.execute(sql.raw('delete from payment_groups'));
     await tx.execute(sql.raw('delete from shipments'));
     for (const seq of SEQUENCES) {
@@ -122,7 +131,7 @@ async function main() {
   for (const table of COUNTED) after[table] = await countRows(table);
   const left = Object.entries(after).filter(([, n]) => n > 0);
 
-  console.log('\ntablas vaciadas y consecutivos de trámite y proforma de vuelta en 1000.');
+  console.log('\ntablas vaciadas, consecutivo de trámite de vuelta en 1000 y contador de proformas reiniciado.');
   if (left.length > 0) {
     console.error('QUEDARON FILAS:', left.map(([t, n]) => `${t}=${n}`).join(', '));
     process.exit(1);

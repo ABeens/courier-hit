@@ -21,6 +21,7 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import {
   Flow,
+  ProformaStatus,
   Resource,
   SHIPMENT_TYPE_LABELS,
   STATE_LABELS,
@@ -101,21 +102,21 @@ const QUEUE_META: Partial<Record<State, { hint: string; icon: ReactElement; targ
     targets: [],
   },
   [State.FacturacionEnProceso]: {
-    hint: 'Esperan que alguien les cargue los costos',
+    hint: 'En su proforma en borrador: falta revisarla y aprobarla',
     icon: <path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
     targets: [
-      { resource: Resource.Costs, name: 'Costos', intent: { costsView: 'pendientes' } },
+      { resource: Resource.Proformas, name: 'Proformas', intent: { proformaStatus: ProformaStatus.Borrador } },
       boardFor(State.FacturacionEnProceso),
     ],
   },
   /* Solo Transporte: se entrega antes de cobrar, así que este cuadro es la
-     mercadería que ya salió y nadie ha facturado. Lleva a la cola de costos
-     porque lo que falta es justo eso, cargarle los costos. */
+     mercadería que ya salió y nadie ha facturado. Lleva a los borradores de
+     proforma porque lo que falta es justo eso, facturarla y aprobarla. */
   [State.EntregadoPendientePago]: {
-    hint: 'Ya entregados: falta cargarles los costos y cobrar',
+    hint: 'Ya entregados: falta facturarlos y cobrar',
     icon: <path d="M20 6L9 17l-5-5" />,
     targets: [
-      { resource: Resource.Costs, name: 'Costos', intent: { costsView: 'pendientes' } },
+      { resource: Resource.Proformas, name: 'Proformas', intent: { proformaStatus: ProformaStatus.Borrador } },
       boardFor(State.EntregadoPendientePago),
     ],
   },
@@ -130,7 +131,7 @@ const QUEUE_META: Partial<Record<State, { hint: string; icon: ReactElement; targ
     hint: 'Proforma emitida: sin el pago no entra a aduana',
     icon: <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8" />,
     targets: [
-      { resource: Resource.Costs, name: 'Costos', intent: { costsView: 'proformas' } },
+      { resource: Resource.Proformas, name: 'Proformas', intent: { proformaStatus: ProformaStatus.Aprobada } },
       boardFor(State.ProformaPendientePago),
     ],
   },

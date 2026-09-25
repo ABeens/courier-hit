@@ -288,6 +288,34 @@
       "when": 1789786171483,
       "tag": "0040_delivery_photos",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790312523446,
+      "tag": "0041_proformas",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1790313534611,
+      "tag": "0042_retire_proforma_numbers",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790315435638,
+      "tag": "0043_daily_digest",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1790317543148,
+      "tag": "0044_proforma_client_cascade",
+      "breakpoints": true
     }
   ]
 }

@@ -16,6 +16,7 @@ const confirmer = aliasedTable(users, 'payment_confirmer');
 const columns = {
   id: payments.id,
   shipmentId: payments.shipmentId,
+  groupId: payments.groupId,
   method: payments.method,
   status: payments.status,
   amount: payments.amount,

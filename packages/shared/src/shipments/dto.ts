@@ -153,7 +153,7 @@ const billingNotesSchema = z.string().trim().min(1).max(500);
  * digitos y separadores) sin imponerle un formato que el proveedor podria cambiar.
  * Se normaliza a mayusculas para que buscar por el no dependa de como se digito.
  */
-const electronicInvoiceNumberSchema = z
+export const electronicInvoiceNumberSchema = z
   .string()
   .trim()
   .toUpperCase()

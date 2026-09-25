@@ -1,81 +1,48 @@
 /**
  * Reglas de negocio de los pagos (Parte 2 "Pagos" y Parte 3 "Información de Pago").
  *
- * Cinco decisiones que viven aqui y en ningun otro lado:
+ * Con el modulo de proformas, COBRAR es un acto sobre proformas: el cliente paga
+ * y el staff registra depositos por proformas completas, en
+ * `proforma-payments.service`. Este modulo conserva lo que es de cada abono: la
+ * bandeja, la validacion del administrador, el webhook de la pasarela, la cuenta
+ * del deposito y los comprobantes.
  *
- * 1. EL MONTO LO PONE EL SERVIDOR. Cuando paga el CLIENTE, el importe sale del
- *    monto de factura congelado del tramite, nunca del cuerpo de la peticion:
- *    dejar que el pagador declare cuanto debe seria confiar en el pagador.
- * 2. LA TARIFA FILTRA EL MEDIO DE PAGO. El manual es explicito: "Si el cliente
- *    esta asociado a una tarifa que no permite pago por tarjeta de credito no
- *    debe mostrar esa opcion". Ocultarla en la UI no basta: se revalida aqui.
- * 3. EL DEPOSITO NACE PENDIENTE, LA TARJETA NACE CONFIRMADA. Subir un comprobante
- *    no es cobrar; un cargo aprobado por la pasarela si lo es. La unica excepcion
- *    es el deposito que registra quien ademas puede aprobarlo (ver `record`).
- * 4. "PAGADO" SE DERIVA, NO SE GUARDA. `isSettled` de @courier/shared responde
- *    contra los pagos confirmados. No hay un flag `pagado` que pueda mentir.
- * 5. EL PAGO NO MUEVE EL TRAMITE. Confirmar un pago cumple la guarda
+ * Tres decisiones que siguen viviendo aqui:
+ *
+ * 1. "PAGADO" SE DERIVA, NO SE GUARDA. `isSettled` de @courier/shared responde
+ *    contra los pagos confirmados. No hay un flag `pagado` en el tramite que
+ *    pueda mentir (la marca de la proforma la escribe `proformaSettlement` desde
+ *    esos mismos abonos).
+ * 2. EL PAGO NO MUEVE EL TRAMITE. Confirmar un pago cumple la guarda
  *    Condition.RequiresConfirmedPayment, pero quien saca el paquete a ruta es la
- *    operacion cuando lo carga al camion. Avanzar solo por haber cobrado pondria
- *    "En ruta de entrega" a un paquete que sigue en la estanteria.
+ *    operacion cuando lo carga al camion.
+ * 3. TODO CAMINO DE CONFIRMACION RESINCRONIZA LA PROFORMA. Webhook y validacion
+ *    llaman a `proformaSettlement`, que marca pagada la proforma cuando el ultimo
+ *    de sus tramites se salda.
  */
 import {
   BANK_ACCOUNT_LABELS,
-  Currency,
-  billsAsGroup,
   PaymentMethod,
   PaymentStatus,
   Role,
-  State,
   UNRESOLVED_PAYMENT_STATUSES,
-  awaitsValidation,
-  bankAccountsFor,
-  canSetExchangeRate,
-  cardChargeFor,
-  chargeBasisFor,
-  exchangeRateSchema,
-  flowForType,
-  isCollectible,
-  isSettled,
-  outstandingCrc,
-  outstandingFor,
-  pendingAmount,
-  recordedPaymentStatus,
-  roundMoney,
-  settledAmount,
 } from '@courier/shared';
 import type {
   PaymentDto,
-  RecordPaymentInput,
   ResolvePaymentInput,
   Session,
-  StartPaymentInput,
   UpdateBankAccountInput,
 } from '@courier/shared';
 import { PaymentErrors, ShipmentErrors } from '../../core/errors';
 import { storage } from '../../core/storage';
-import {
-  isOnvoEnabled,
-  isOnvoSimulated,
-  onvoClient,
-} from '../../integrations/onvo/onvo.client';
+import { isOnvoSimulated, onvoClient } from '../../integrations/onvo/onvo.client';
 import type { GatewayOutcome } from '../../integrations/onvo/onvo.client';
-import { clientsRepo } from '../clients/clients.repo';
 import { costsService } from '../costs/costs.service';
-import { consolidatedService } from './consolidated.service';
-import { settingsRepo } from '../settings/settings.repo';
-import { settingsService } from '../settings/settings.service';
 import { shipmentsRepo } from '../shipments/shipments.repo';
+import { proformaSettlement } from '../proformas/proforma-settlement';
 import { paymentsRepo } from './payments.repo';
+import { proformaPaymentsService } from './proforma-payments.service';
 
-/**
- * Fila del tramite sobre el que se cobra, con el casillero YA garantizado: los
- * medios de pago salen de la tarifa del dueño, asi que aqui dentro `clientId`
- * nunca es un hueco. Lo asegura `loadBillableShipment`.
- */
-type ShipmentRow = NonNullable<Awaited<ReturnType<typeof shipmentsRepo.findById>>> & {
-  clientId: string;
-};
 type PaymentRowView = Awaited<ReturnType<typeof paymentsRepo.findById>>;
 
 /** Fila de BD -> DTO de la API (fechas en ISO/UTC). */
@@ -83,6 +50,7 @@ function toDto(row: NonNullable<PaymentRowView>): PaymentDto {
   return {
     id: row.id,
     shipmentId: row.shipmentId,
+    groupId: row.groupId,
     method: row.method,
     status: row.status,
     amount: row.amount,
@@ -103,70 +71,6 @@ function toDto(row: NonNullable<PaymentRowView>): PaymentDto {
 }
 
 /**
- * Tasa a congelar en un pago del cliente (regla M5).
- *
- * La fuente PRIMARIA es la propia factura: al aprobarse quedo congelada en las
- * dos monedas, y su cociente es la tasa con la que se construyo ese total. Usarla
- * mantiene la aritmetica cuadrada —el abono en colones dividido por esta tasa da
- * exactamente la porcion en dolares de la factura— mientras que tomar la tasa de
- * hoy dejaria una diferencia de centimos entre lo facturado y lo cobrado.
- *
- * El respaldo para el caso raro de una factura sin componente en dolares
- * (cociente indefinido) es la tasa GLOBAL del sistema, la que fijo quien tiene
- * `exchange_rate.write`. No la referencia publicada: ese dato sirve para decidir la
- * global, no un valor con el que se guarde un monto. Si tampoco hay global, no
- * se inventa: se falla, porque guardar un monto sin tasa es justo lo que la
- * regla prohibe.
- *
- * Salga de donde salga, el valor pasa por el MISMO esquema que exige el cuerpo
- * (`exchangeRateSchema`): una tasa que impone el servidor no puede entrar por una
- * puerta con menos validacion que la que digita una persona. El cociente de la
- * factura no trae techo por si solo.
- */
-function invoiceExchangeRate(row: ShipmentRow, globalRate: number | null): number {
-  const rate = resolveExchangeRate(row, globalRate);
-  if (rate == null) throw PaymentErrors.exchangeRateUnavailable();
-  return rate;
-}
-
-/**
- * La misma tasa, pero SIN fallar cuando no hay ninguna: null.
- *
- * La necesita la cotizacion, que no guarda nada y por tanto no puede negarse a
- * contestar: su trabajo es decirle a la pantalla con que se puede pagar, y una
- * pantalla en blanco por una tasa sin fijar esconde tambien el deposito, que no
- * necesita tasa para nada. Quien SI guarda un monto usa la version de arriba,
- * que falla (regla M5).
- */
-function resolveExchangeRate(row: ShipmentRow, globalRate: number | null): number | null {
-  const usd = row.invoiceTotalUsd ?? 0;
-  const crc = row.invoiceTotalCrc ?? 0;
-  const rate = usd > 0 && crc > 0 ? crc / usd : globalRate;
-
-  const checked = exchangeRateSchema.safeParse(rate);
-  return checked.success ? checked.data : null;
-}
-
-/**
- * Tramite sobre el que se va a cobrar, con las dos comprobaciones que comparten
- * todas las vias de pago: que exista y que tenga factura aprobada.
- */
-async function loadBillableShipment(shipmentId: string): Promise<ShipmentRow> {
-  const row = await shipmentsRepo.findById(shipmentId);
-  if (!row) throw ShipmentErrors.notFound();
-  if (row.invoiceTotalCrc == null || row.invoiceTotalUsd == null) throw PaymentErrors.noInvoice();
-  /**
-   * Sin dueño no hay a quien cobrarle. En la practica no se llega aqui —un
-   * paquete sin casillero no puede aprobar costos, asi que nunca tiene factura y
-   * ya habria fallado arriba—, pero la comprobacion se escribe igual: es la que
-   * garantiza el tipo del resto del modulo y la que sobrevive si algun dia se
-   * factura por otra via.
-   */
-  if (row.clientId === null) throw ShipmentErrors.unassigned();
-  return { ...row, clientId: row.clientId };
-}
-
-/**
  * Un cliente solo puede pagar lo suyo (404, no 403: no revela existencia).
  *
  * Pide el casillero suelto y no un `ShipmentRow` porque tambien la llaman las
@@ -180,179 +84,7 @@ function assertOwnership(session: Session, row: { clientId: string | null }): vo
   if (row.clientId !== session.clientId) throw ShipmentErrors.notFound();
 }
 
-/**
- * UN PAQUETE DE CUENTA CONSOLIDADA NO SE PAGA SUELTO.
- *
- * Es la otra mitad de la regla del requisito ("el pago agrupado incluye
- * obligatoriamente todos los paquetes listos; debe restringirse la opcion de
- * excluir, quitar o agregar paquetes"). Sin este cerrojo la restriccion seria
- * decorativa: bastaria pagar los paquetes de uno en uno por el camino de siempre
- * para dejar fuera los que se quisiera.
- *
- * Vale para las DOS puertas de cobro, la del cliente y la del staff: un deposito
- * registrado contra un solo paquete consolidado rompe la agrupacion igual que un
- * pago con tarjeta. Quien tenga que cobrar de otra forma primero le cambia la
- * tarifa al casillero, que es una decision comercial y deja rastro.
- */
-async function assertNotConsolidated(clientId: string): Promise<void> {
-  const rate = await clientsRepo.rateFor(clientId);
-  if (rate && billsAsGroup(rate.kind)) throw PaymentErrors.consolidatedRequired();
-}
-
-/**
- * Suelta los cobros con tarjeta que quedaron ABIERTOS y sin usar en un tramite.
- *
- * `abandonCard` cubre al cliente que cierra el formulario; esto cubre al que no
- * lo cierra (se le acaba la bateria, cambia de pestaña y la olvida, se le cae la
- * red). Sin barrerlos, cada intento deja su intento vivo en Onvo.
- *
- * MISMO ORDEN QUE EN `abandonCard`, y por lo mismo: primero se le pide a la
- * pasarela que cancele y solo si acepta se borra la fila. Si Onvo se niega, ese
- * cargo va en camino y NO se abre otro formulario: cobrar dos veces el mismo
- * saldo es peor que hacer esperar unos segundos.
- */
-async function discardOpenCardAttempts(shipmentId: string): Promise<void> {
-  const open = await paymentsRepo.openCardAttempts(shipmentId);
-
-  for (const attempt of open) {
-    if (
-      attempt.gatewayReference &&
-      !(await onvoClient.cancelPaymentIntent(attempt.gatewayReference))
-    ) {
-      throw PaymentErrors.cardAttemptInFlight();
-    }
-    await paymentsRepo.remove(attempt.id);
-  }
-}
-
 export const paymentsService = {
-  /**
-   * Lo que la pantalla de pago del cliente necesita para dibujarse: cuanto debe,
-   * que medios tiene disponibles y que ya abono.
-   *
-   * Los medios salen de la TARIFA del cliente cruzada con lo que el sistema puede
-   * cobrar hoy (la tarjeta exige la pasarela lista). Que el calculo viva en la API
-   * evita que la web ofrezca un boton que el servidor va a rechazar.
-   */
-  async quote(session: Session, shipmentId: string) {
-    const shipment = await loadBillableShipment(shipmentId);
-    assertOwnership(session, shipment);
-
-    const [rate, paid, effectiveRate, globalRate, surchargeRate] = await Promise.all([
-      clientsRepo.paymentOptionsFor(shipment.clientId),
-      paymentsRepo.settlementView(shipmentId),
-      clientsRepo.rateFor(shipment.clientId),
-      settingsRepo.currentExchangeRate(),
-      settingsService.cardSurchargeRate(),
-    ]);
-
-    /**
-     * La cuenta se cobra AGRUPADA: este tramite no se paga suelto. Viaja en la
-     * cotizacion para que la pantalla lo diga en vez de ofrecer un formulario que
-     * `start` va a rechazar (`assertNotConsolidated`).
-     */
-    const consolidated = effectiveRate ? billsAsGroup(effectiveRate.kind) : false;
-
-    /**
-     * LA BASE DEL COBRO: en que moneda sale el dinero de este tramite y contra
-     * que total se cancela (`chargeCurrencyFor`). Paqueteria en dolares, el
-     * resto en colones.
-     *
-     * Todo lo que decide si queda saldo sale de aqui. Los pares de cifras en las
-     * dos monedas que van mas abajo son para que la pantalla elija columna
-     * (`billingCurrencyFor`), no para liquidar.
-     */
-    const basis = chargeBasisFor(shipment.shipmentType, shipment);
-
-    const settledCrc = settledAmount(paid, Currency.CRC);
-    const settledUsd = settledAmount(paid, Currency.USD);
-    const pendingCrc = pendingAmount(paid, Currency.CRC);
-    const pendingUsd = pendingAmount(paid, Currency.USD);
-
-    /** Las mismas dos cifras, ya en la moneda con la que se cobra y se salda. */
-    const settledInCharge = basis.currency === Currency.USD ? settledUsd : settledCrc;
-    const pendingInCharge = basis.currency === Currency.USD ? pendingUsd : pendingCrc;
-
-    const methods: PaymentMethod[] = [];
-    if (rate?.allowsCard && isOnvoEnabled()) methods.push(PaymentMethod.Tarjeta);
-    if (rate?.allowsBankDeposit ?? true) methods.push(PaymentMethod.DepositoBancario);
-
-    const due = outstandingFor(settledInCharge, basis);
-
-    /**
-     * EL COBRO CON TARJETA DESGLOSADO: saldo, recargo por la comision de la
-     * pasarela y total. Se calcula con la MISMA funcion y la MISMA tasa que usa
-     * `start`, para que lo que el cliente acepta en la pantalla sea exactamente
-     * lo que se le cobra.
-     *
-     * Null cuando no hay tarjeta que ofrecer (o no hay tasa con la que convertir
-     * el fijo en dolares): la pantalla entonces no tiene recargo que anunciar, y
-     * el deposito, que no lleva ninguno, sigue funcionando igual.
-     */
-    const chargeRate = resolveExchangeRate(shipment, globalRate);
-    const cardCharge =
-      methods.includes(PaymentMethod.Tarjeta) && chargeRate != null
-        ? cardChargeFor(due, basis.currency, chargeRate, surchargeRate)
-        : null;
-
-    return {
-      shipmentId,
-      shipmentCode: shipment.code,
-      description: shipment.description,
-      consolidated,
-      invoiceTotalUsd: shipment.invoiceTotalUsd,
-      invoiceTotalCrc: shipment.invoiceTotalCrc,
-      settledUsd,
-      settledCrc,
-      /** Abonos subidos y aun sin resolver. No es dinero recibido. */
-      pendingCrc,
-      /**
-       * El mismo par en dolares. Va SIEMPRE, no solo en Paqueteria: la moneda en
-       * que la pantalla le habla al cliente la decide `billingCurrencyFor`, y sin
-       * las dos columnas tendria que reexpresar con la tasa de hoy, que no es la
-       * que se congelo en cada abono (regla M5).
-       */
-      pendingUsd,
-      /** Saldo pendiente en colones; nunca negativo (un sobrepago no genera deuda). */
-      dueCrc: outstandingCrc(settledCrc, shipment.invoiceTotalCrc),
-      /**
-       * Moneda en la que se va a cobrar y saldo EN ESA MONEDA: el importe exacto
-       * que va a llevar el intento de la pasarela o que hay que depositar. Viaja
-       * para que la pantalla no lo deduzca por su cuenta y anuncie una cifra
-       * distinta de la que el servidor va a cobrar.
-       */
-      chargeCurrency: basis.currency,
-      due,
-      /**
-       * El desglose del cobro con tarjeta. Viaja aparte de `due` porque el
-       * recargo NO es parte del saldo: el saldo se cancela igual pagando por
-       * deposito, sin comision de por medio.
-       */
-      cardCharge,
-      settled: isSettled(paid, basis),
-      /**
-       * El saldo ya esta cubierto por un abono en validacion: la pantalla debe
-       * mostrar el comprobante en revision, no un formulario para pagar otra vez.
-       * Lo decide el servidor con la MISMA funcion que rechaza el segundo pago en
-       * `start`, para que no pueda ofrecer un boton que la API va a rechazar.
-       */
-      inValidation: awaitsValidation(settledInCharge, pendingInCharge, basis),
-      availableMethods: methods,
-      /**
-       * A que cuentas puede depositar este tramite: Paqueteria solo las de
-       * dolares, Transporte y Agenciamiento las de las dos monedas.
-       *
-       * Lo decide la API y no la web por la misma razon que `availableMethods`:
-       * `start` revalida contra esta misma lista, asi que una pantalla que
-       * ofreciera otra cosa solo produciria un rechazo. Los numeros de cuenta no
-       * viajan aqui, los pone la web desde `BANK_ACCOUNTS`: son constantes del
-       * dominio compartido, no un dato de este tramite.
-       */
-      availableBankAccounts: bankAccountsFor(shipment.shipmentType),
-      payableState: isCollectible(flowForType(shipment.shipmentType), shipment),
-    };
-  },
-
   /** Pagos de un tramite (el cliente ve los suyos; el staff, los de cualquiera). */
   async listByShipment(session: Session, shipmentId: string): Promise<{ items: PaymentDto[] }> {
     const shipment = await shipmentsRepo.findById(shipmentId);
@@ -368,195 +100,6 @@ export const paymentsService = {
     const status = Object.values(PaymentStatus).find((s) => s === filters.status);
     const rows = await paymentsRepo.list({ shipmentId: filters.shipmentId, status });
     return { items: rows.map(toDto) };
-  },
-
-  /**
-   * El cliente inicia un pago. Devuelve el pago creado y, si es con tarjeta, el
-   * intento de la pasarela para que el navegador abra el formulario.
-   */
-  async start(
-    session: Session,
-    input: StartPaymentInput,
-  ): Promise<{ payment: PaymentDto; intent: Awaited<ReturnType<typeof onvoClient.createPaymentIntent>> | null }> {
-    const shipment = await loadBillableShipment(input.shipmentId);
-    assertOwnership(session, shipment);
-
-    /**
-     * Cada flujo cobra en un estado distinto (Paqueteria en bodega, Transporte en
-     * facturacion, Agenciamiento en la proforma), asi que la pregunta se le hace
-     * a la maquina y no a un literal. Es la MISMA respuesta que viaja en
-     * `payableState` hacia la pantalla, para que la web no pueda ofrecer un boton
-     * que esta guarda vaya a rechazar.
-     */
-    if (!isCollectible(flowForType(shipment.shipmentType), shipment)) {
-      throw PaymentErrors.notPayableState();
-    }
-
-    // Cuenta consolidada: se paga el grupo entero, nunca un paquete suelto.
-    await assertNotConsolidated(shipment.clientId);
-
-    /**
-     * En que moneda se cobra este tramite y contra que total se cancela. Es la
-     * MISMA base que usa la cotizacion, y por eso lo que se cobra aqui es
-     * exactamente lo que el cliente acaba de leer en la pantalla.
-     */
-    const basis = chargeBasisFor(shipment.shipmentType, shipment);
-
-    const paid = await paymentsRepo.settlementView(input.shipmentId);
-    if (isSettled(paid, basis)) throw PaymentErrors.alreadySettled();
-
-    /**
-     * UN SOLO PAGO ABIERTO POR SALDO. Con un abono que ya cubre lo que falta y
-     * sigue sin validar, el tramite no admite otro: el segundo cobraria de nuevo
-     * el mismo saldo (el importe lo pone el servidor y el pendiente no lo baja),
-     * y quien lo valide se encontraria con dos comprobantes por una sola deuda.
-     *
-     * Que la pantalla ya esconda el boton no basta: la peticion se puede repetir
-     * desde una pestaña vieja, desde el reintento de una red lenta o a mano.
-     * Cobrar dos veces al cliente es justo el fallo que no se puede dejar a la UI.
-     *
-     * No cierra la puerta para siempre: un pago RECHAZADO deja de estar pendiente
-     * y el cliente puede volver a intentarlo enseguida.
-     */
-    if (
-      awaitsValidation(
-        settledAmount(paid, basis.currency),
-        pendingAmount(paid, basis.currency),
-        basis,
-      )
-    ) {
-      throw PaymentErrors.inValidation();
-    }
-
-    // La tarifa manda sobre el medio de pago (decision 2).
-    const rate = await clientsRepo.paymentOptionsFor(shipment.clientId);
-    if (input.method === PaymentMethod.Tarjeta && !rate?.allowsCard) {
-      throw PaymentErrors.methodNotAllowed();
-    }
-    if (input.method === PaymentMethod.DepositoBancario && rate && !rate.allowsBankDeposit) {
-      throw PaymentErrors.methodNotAllowed();
-    }
-
-    /**
-     * La cuenta tiene que ser una de las que este tramite admite (Paqueteria solo
-     * las de dolares). Se revalida aqui y no solo en el select por lo de siempre:
-     * el cuerpo de la peticion se puede escribir a mano. El esquema Zod ya exigio
-     * que venga una en los depositos; lo que no podia saber es CUALES valen, que
-     * depende del tipo de tramite.
-     */
-    if (
-      input.method === PaymentMethod.DepositoBancario &&
-      input.bankAccount &&
-      !bankAccountsFor(shipment.shipmentType).includes(input.bankAccount)
-    ) {
-      throw PaymentErrors.bankAccountNotAllowed();
-    }
-
-    /**
-     * Se cobra el SALDO pendiente, no el total: si el cliente ya abono una parte
-     * por deposito, la tarjeta solo debe llevarse lo que falta.
-     *
-     * Moneda y tasa (reglas M2 y M5): se cobra en la moneda del tramite
-     * (`chargeCurrencyFor`: Paqueteria en dolares, el resto en colones) y se
-     * congela la tasa del dia. La tasa se guarda IGUAL en los dos casos, tambien
-     * cuando el abono ya viene en dolares: es lo que permite reexpresar el
-     * importe en la otra moneda mañana sin que la cifra cambie sola, y lo que
-     * deja al reporte financiero sumar los dos tipos de tramite.
-     */
-    const [globalRate, surchargeRate] = await Promise.all([
-      settingsRepo.currentExchangeRate(),
-      /** El recargo VIGENTE (Configuración), o el de fabrica si nadie lo fijo. */
-      settingsService.cardSurchargeRate(),
-    ]);
-    const exchangeRate = invoiceExchangeRate(shipment, globalRate);
-    const amount = outstandingFor(settledAmount(paid, basis.currency), basis);
-
-    const isCard = input.method === PaymentMethod.Tarjeta;
-
-    /**
-     * EL RECARGO DE LA TARJETA. La comision de la pasarela la paga quien la
-     * provoca: el cliente que elige tarjeta ve el recargo en la cotizacion antes
-     * de aceptar y se le cobra el total (`cardChargeFor`). El deposito no genera
-     * comision y no lleva recargo.
-     *
-     * EL ABONO ES EL TOTAL, recargo incluido, y no solo el saldo. Va en pareja con
-     * lo que pasa al confirmarse el cobro: la comision se asienta como linea de
-     * costo y la factura congelada sube por ese mismo importe
-     * (`costsService.postCardSurcharge`). Las dos cifras suben juntas, asi que el
-     * tramite queda saldado al centimo; guardar aqui solo el saldo lo dejaria
-     * debiendo exactamente la comision, con el paquete retenido por ella.
-     *
-     * `surchargeAmount` no es un abono aparte: es el DESGLOSE de este, la parte
-     * que no cancela flete ni servicios sino el costo de cobrar.
-     */
-    const charge = isCard
-      ? cardChargeFor(amount, basis.currency, exchangeRate, surchargeRate)
-      : null;
-
-    /**
-     * Antes de abrir otro formulario de tarjeta se tiran los que quedaron
-     * abiertos. Un cobro INICIADO no estorba a nadie, pero acumularlos si: cada
-     * pestaña que el cliente cierra sin pagar deja su intento vivo en Onvo.
-     */
-    if (isCard) await discardOpenCardAttempts(input.shipmentId);
-
-    const id = await paymentsRepo.insert({
-      shipmentId: input.shipmentId,
-      method: input.method,
-      /**
-       * El deposito nace PENDIENTE de validacion: el comprobante ya esta subido y
-       * hay algo que revisar.
-       *
-       * La tarjeta nace INICIADA, que es un paso antes. Aqui todavia no se ha
-       * intentado cobrar nada: la pasarela obliga a crear el intento para poder
-       * pintar el formulario, asi que esta fila existe desde que el cliente abre
-       * la pantalla. Nacida como `Pendiente` anunciaba un dinero en camino por el
-       * solo hecho de mirar el formulario, bloqueaba el siguiente intento y le
-       * ponia al staff un abono por validar que nadie podia resolver. Pasa a
-       * `Pendiente` cuando el cargo sale de verdad (`markCardSubmitted`).
-       */
-      status: isCard ? PaymentStatus.Iniciado : PaymentStatus.Pendiente,
-      amount: charge?.total ?? amount,
-      surchargeAmount: charge?.surcharge ?? 0,
-      currency: basis.currency,
-      exchangeRate,
-      bankAccount: input.bankAccount ?? null,
-      receiptNumber: input.receiptNumber ?? null,
-      depositedAt: input.depositedAt ? new Date(input.depositedAt) : null,
-      createdBy: session.userId,
-    });
-
-    let intent = null;
-    if (isCard) {
-      /**
-       * Si la pasarela falla, el pago que acabamos de insertar se borra. Dejarlo
-       * seria peor que no haberlo creado: nace PENDIENTE, asi que aparecería en la
-       * bandeja de validacion del staff como un deposito por revisar que nadie
-       * puede resolver, y ademas sin comprobante. No hay rastro que perder porque
-       * ese abono nunca existio: el cobro no llego a intentarse.
-       */
-      try {
-        intent = await onvoClient.createPaymentIntent({
-          /**
-           * A la pasarela va el MISMO total que se guardo en el abono: saldo mas
-           * recargo. Es la cifra que el cliente va a ver en el estado de cuenta
-           * de su tarjeta.
-           */
-          amount: charge?.total ?? amount,
-          currency: basis.currency,
-          paymentId: id,
-          description: `${shipment.code} — ${shipment.description}`,
-        });
-      } catch (err) {
-        await paymentsRepo.remove(id);
-        throw err;
-      }
-      await paymentsRepo.update(id, { gatewayReference: intent.reference });
-    }
-
-    const row = await paymentsRepo.findById(id);
-    if (!row) throw PaymentErrors.notFound();
-    return { payment: toDto(row), intent };
   },
 
   /**
@@ -682,83 +225,6 @@ export const paymentsService = {
     return toDto(updated);
   },
 
-  /**
-   * El staff registra un deposito que el cliente ya hizo ("Informacion de Pago"
-   * del manual), tipicamente porque le mando el comprobante por fuera del portal.
-   *
-   * CON QUE SITUACION NACE LO DECIDE EL PERMISO, NO EL CUERPO
-   * (`recordedPaymentStatus`):
-   *
-   *   - el Operativo (`payments.record`) lo deja PENDIENTE. El tramite pasa a
-   *     "Pagado - en validacion": queda constancia de quien lo asento y con que
-   *     respaldo, pero el dinero no se da por recibido y
-   *     Condition.RequiresConfirmedPayment sigue sin cumplirse, asi que el
-   *     paquete no sale a ruta por haberlo digitado;
-   *   - el Administrador (`payments.validate`) lo deja CONFIRMADO, porque es el
-   *     mismo que lo coteja contra el estado de cuenta y no tiene sentido que se
-   *     resuelva a si mismo un abono en un segundo paso.
-   *
-   * QUIEN lo hizo queda en la fila (`createdBy`, y `confirmedBy` solo si ademas
-   * lo aprobo): son dos sellos distintos justamente porque son dos actos.
-   */
-  async record(session: Session, input: RecordPaymentInput): Promise<PaymentDto> {
-    const shipment = await loadBillableShipment(input.shipmentId);
-
-    // Cuenta consolidada: el deposito se registra contra el grupo, no contra un
-    // paquete (`consolidatedService.record`).
-    await assertNotConsolidated(shipment.clientId);
-
-    /**
-     * Un tramite ya pagado no admite mas depositos. La pantalla oculta el
-     * formulario, pero la barrera real es esta: un abono digitado de mas contra
-     * un saldo en cero seria un cobro doble que luego habria que devolver.
-     * Misma base y misma pregunta (`isSettled`) que usa el pago del cliente.
-     */
-    const paid = await paymentsRepo.settlementView(input.shipmentId);
-    if (isSettled(paid, chargeBasisFor(shipment.shipmentType, shipment))) {
-      throw PaymentErrors.alreadySettled();
-    }
-
-    /**
-     * La tasa es un valor general del sistema (ver `canSetExchangeRate`): quien
-     * no puede fijarla registra el deposito con la de la factura, que es ademas
-     * la que cuadra el abono con lo cobrado. Sin esta guarda, el permiso seria
-     * cosmetico: el cuerpo admite tasa y el endpoint lo alcanza el Operativo.
-     *
-     * El `??` cubre al administrador que no la digita: puede fijarla, pero si no
-     * la manda se cae a la misma fuente que el resto. En ningun camino se guarda
-     * un monto sin tasa (regla M5).
-     */
-    const exchangeRate =
-      (canSetExchangeRate(session.role) ? input.exchangeRate : undefined) ??
-      invoiceExchangeRate(shipment, await settingsRepo.currentExchangeRate());
-
-    const status = recordedPaymentStatus(session.role);
-    const confirmed = status === PaymentStatus.Confirmado;
-
-    const id = await paymentsRepo.insert({
-      shipmentId: input.shipmentId,
-      method: PaymentMethod.DepositoBancario,
-      status,
-      amount: roundMoney(input.amount, input.currency),
-      currency: input.currency,
-      exchangeRate,
-      bankAccount: input.bankAccount,
-      receiptNumber: input.receiptNumber,
-      depositedAt: new Date(input.depositedAt),
-      note: input.note ?? null,
-      createdBy: session.userId,
-      // Sin aprobacion no hay sello de aprobacion: un `confirmedBy` puesto al
-      // registrar diria que alguien valido un abono que sigue en la bandeja.
-      confirmedBy: confirmed ? session.userId : null,
-      confirmedAt: confirmed ? new Date() : null,
-    });
-
-    const row = await paymentsRepo.findById(id);
-    if (!row) throw PaymentErrors.notFound();
-    return toDto(row);
-  },
-
   /** Confirma o rechaza un deposito pendiente. */
   async resolve(
     session: Session,
@@ -782,7 +248,11 @@ export const paymentsService = {
      * factura igual que si lo hubiera resuelto la pasarela. En un deposito no
      * hace nada: no lleva recargo.
      */
-    if (input.confirm) await costsService.postCardSurcharge(payment);
+    if (input.confirm) {
+      await costsService.postCardSurcharge(payment);
+      // La proforma queda pagada cuando el ultimo de sus tramites se salda.
+      await proformaSettlement.syncForShipments([payment.shipmentId]);
+    }
 
     const updated = await paymentsRepo.findById(paymentId);
     if (!updated) throw PaymentErrors.notFound();
@@ -862,11 +332,11 @@ export const paymentsService = {
     const payment = await paymentsRepo.findByGatewayReference(outcome.reference);
     if (!payment) {
       /**
-       * Puede ser un COBRO AGRUPADO: ahi el intento de la pasarela es uno solo por
-       * el total y cuelga del grupo, no de ninguno de sus abonos. Se intenta por
+       * Es un COBRO DE PROFORMAS (el caso normal): ahi el intento de la pasarela es
+       * uno solo por el total y cuelga del grupo, no de ninguno de sus abonos. Se intenta por
        * ese lado antes de dar la referencia por ajena.
        */
-      const grouped = await consolidatedService.confirmByGateway(outcome);
+      const grouped = await proformaPaymentsService.confirmByGateway(outcome);
       if (grouped.reason !== 'unknown_reference') return grouped;
 
       // Puede ser un cobro de otra cuenta o de otro entorno apuntando al mismo
@@ -914,7 +384,10 @@ export const paymentsService = {
      *
      * En un cobro RECHAZADO no se asienta nada: no hubo comision que pagar.
      */
-    if (outcome.approved) await costsService.postCardSurcharge(payment);
+    if (outcome.approved) {
+      await costsService.postCardSurcharge(payment);
+      await proformaSettlement.syncForShipments([payment.shipmentId]);
+    }
 
     return { applied: true, reason: 'ok' };
   },

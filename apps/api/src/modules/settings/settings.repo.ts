@@ -18,6 +18,36 @@ import {
 } from './settings.schema';
 
 export const settingsRepo = {
+  /** Configuracion del correo diario: hora (null = defecto) y ultimo envio. */
+  async dailyDigest() {
+    const [row] = await db
+      .select({ hour: appSettings.dailyDigestHour, lastRunAt: appSettings.dailyDigestLastRunAt })
+      .from(appSettings)
+      .where(eq(appSettings.id, SETTINGS_ROW_ID))
+      .limit(1);
+    return row ?? { hour: null, lastRunAt: null };
+  },
+
+  /** Fija la hora del correo diario (crea la fila de ajustes si no existe). */
+  async setDailyDigestHour(hour: number, userId: string) {
+    const now = new Date();
+    await db
+      .insert(appSettings)
+      .values({ id: SETTINGS_ROW_ID, dailyDigestHour: hour, dailyDigestSetBy: userId, dailyDigestSetAt: now })
+      .onConflictDoUpdate({
+        target: appSettings.id,
+        set: { dailyDigestHour: hour, dailyDigestSetBy: userId, dailyDigestSetAt: now, updatedAt: now },
+      });
+  },
+
+  /** Deja constancia de que salio el correo diario (instante en UTC). */
+  async markDailyDigestRun(at: Date) {
+    await db
+      .insert(appSettings)
+      .values({ id: SETTINGS_ROW_ID, dailyDigestLastRunAt: at })
+      .onConflictDoUpdate({ target: appSettings.id, set: { dailyDigestLastRunAt: at, updatedAt: at } });
+  },
+
   /** Tasa vigente, o null si todavia nadie la fijo. */
   async currentExchangeRate(): Promise<number | null> {
     const [row] = await db

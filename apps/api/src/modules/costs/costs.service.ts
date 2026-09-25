@@ -16,10 +16,10 @@
  *    cambio publicado del dia viaja al lado como referencia y nunca se guarda
  *    solo. Lo que queda en la BD sigue siendo un snapshot por linea (regla M5);
  *    lo que cambia es quien elige ese numero y donde.
- * 4. APROBAR CONGELA Y AVANZA. Al aprobar se totaliza en ambas monedas, se fija
- *    el monto de factura en el tramite y este pasa a "En bodega preparando"
- *    (que es justo lo que exige Condition.RequiresInvoiceAmount). Desde ahi las
- *    lineas ya no se editan.
+ * 4. AQUI NO SE APRUEBA. Aprobar es un acto sobre la PROFORMA, que congela
+ *    todos sus tramites juntos, les asigna el numero y los avanza a cobro (ver
+ *    `proformasService.approve`). Este modulo carga las lineas de cada tramite;
+ *    con la factura congelada ya no se editan.
  */
 import {
   CARD_SURCHARGE_LABEL,
@@ -30,19 +30,15 @@ import {
   ServiceKind,
   ServiceValueType,
   State,
-  PaymentStatus,
   applyPercentage,
   can,
   canSetExchangeRate,
-  canTransition,
   categoryForLine,
   computeTotals,
   convertMoney,
   costLineExchangeRateSchema,
   flowForType,
   formatMoney,
-  isCollectible,
-  payableStateOf,
   percentageBase,
   permissionFor,
   roundMoney,
@@ -58,9 +54,7 @@ import type {
 } from '@courier/shared';
 import { AuthErrors, CostErrors, ShipmentErrors } from '../../core/errors';
 import { costServicesRepo } from '../cost-services/cost-services.repo';
-import { paymentsRepo } from '../payments/payments.repo';
 import { shipmentsRepo } from '../shipments/shipments.repo';
-import { transitionsService } from '../shipments/transitions.service';
 import { exchangeRateReference } from '../settings/exchange-rate-reference';
 import { settingsRepo } from '../settings/settings.repo';
 import { costsRepo } from './costs.repo';
@@ -149,6 +143,17 @@ async function buildSuggestions(row: ShipmentRow): Promise<SuggestedCostLine[]> 
     if (freight) suggestions.push(freight);
   }
 
+  suggestions.push(...(await catalogSuggestions(flow)));
+  return suggestions;
+}
+
+/**
+ * Los servicios habilitados del catalogo que aplican a un flujo, como
+ * sugerencias del desplegable. Los usan el editor de costos de un tramite y el
+ * de los servicios de una proforma: el catalogo es el mismo.
+ */
+export async function catalogSuggestions(flow: Flow): Promise<SuggestedCostLine[]> {
+  const suggestions: SuggestedCostLine[] = [];
   const services = await costServicesRepo.list({ kind: serviceKindFor(flow), enabled: true });
   for (const service of services) {
     const isPercentage = service.valueType === 'percentage';
@@ -251,7 +256,7 @@ async function resolveExchangeRate(
  * primero las que tienen importe propio, luego los porcentajes sobre esa base.
  * Un porcentaje NUNCA se calcula sobre otro porcentaje (ver `percentageBase`).
  */
-function resolveLines(input: CostLineInput[]): {
+export function resolveLines(input: CostLineInput[]): {
   costServiceId: string | null;
   label: string;
   source: CostLineSource;
@@ -450,132 +455,6 @@ export const costsService = {
     });
 
     await costsRepo.replaceLines(shipmentId, lines);
-    return this.get(session, shipmentId);
-  },
-
-  /**
-   * Aprueba: congela el total en ambas monedas y avanza a "En bodega - Pendiente
-   * pago". El avance es la consecuencia del acto de aprobar, asi que basta el
-   * permiso de costos; no se vuelve a exigir el del estado destino.
-   *
-   * Solo se aprueba desde "Facturacion en proceso": es el unico punto del flujo
-   * donde ese avance es legal, y aprobar sin poder avanzar dejaria el tramite con
-   * una factura congelada y el flujo detenido.
-   */
-  async approve(session: Session, shipmentId: string): Promise<ShipmentCostsDto> {
-    const shipment = await this.loadShipment(session, shipmentId);
-    const approval = await costsRepo.approval(shipmentId);
-    if (approval?.approvedAt) throw CostErrors.alreadyApproved();
-
-    const rows = await costsRepo.listLines(shipmentId);
-    if (rows.length === 0) throw CostErrors.noLines();
-
-    const flow = flowForType(shipment.shipmentType);
-    if (shipment.state !== State.FacturacionEnProceso) throw CostErrors.notBillableState();
-
-    /**
-     * Donde queda el tramite con la factura ya congelada: su estado COBRABLE.
-     *
-     * En Paqueteria y Agenciamiento es el siguiente estado (bodega / proforma) y
-     * aprobar avanza. En Transporte es ESTE MISMO, porque ahi se factura y se
-     * cobra en el mismo estado (ver la cabecera del flow): aprobar congela el
-     * total y el tramite se queda quieto esperando el pago. Por eso el avance es
-     * condicional y no un paso fijo del procedimiento.
-     */
-    const payable = payableStateOf(flow);
-    if (!payable) throw CostErrors.notBillableState();
-    if (payable !== shipment.state && !canTransition(flow, shipment.state, payable)) {
-      throw CostErrors.notBillableState();
-    }
-
-    const totals = computeTotals(rows);
-    /**
-     * La tarifa de transporte internacional se congela junto al total, y solo en
-     * Paqueteria: es el unico flujo cuyo reporte la usa (campo 21). Se lee de
-     * Configuración en este instante, que es el unico en que la factura de este
-     * paquete y esa tarifa coexisten.
-     *
-     * Que no haya tarifa fijada NO impide aprobar: la factura del cliente no
-     * depende de ella. El paquete queda sin costo de flete en el reporte, que es
-     * la verdad (nadie dijo cuanto costo) y no un cero que la disimule.
-     */
-    const freightRate =
-      flow === Flow.Paqueteria ? await settingsRepo.currentFreightRate() : null;
-    await costsRepo.freezeInvoice(shipmentId, totals, session.userId, freightRate);
-
-    /**
-     * El avance lo hace `transitionsService` y no el repo directamente: asi la
-     * guarda Condition.RequiresInvoiceAmount se comprueba de verdad (contra el
-     * total que se acaba de congelar) y el correo del step sale solo.
-     *
-     * `skipPermission`: avanzar es la consecuencia de aprobar, y para aprobar ya
-     * se exigio el permiso de costos arriba. Volver a pedir el del estado destino
-     * dejaria a Operativo aprobando una factura que no puede cerrar.
-     *
-     * En Transporte no hay avance que hacer: el estado cobrable es el de
-     * facturacion, asi que el tramite ya esta donde tiene que estar y moverlo
-     * seria sacarlo del cobro que acaba de abrirse.
-     */
-    if (payable !== shipment.state) {
-      await transitionsService.transition(
-        session,
-        shipmentId,
-        { state: payable, note: 'Costos aprobados.' },
-        { skipPermission: true },
-      );
-    }
-
-    return this.get(session, shipmentId);
-  },
-
-  /**
-   * Reversa una aprobacion: descongela la factura para que los costos se puedan
-   * corregir y volver a aprobar. Es la accion que `ShipmentErrors
-   * .weightLockedAfterInvoice` lleva pidiendo desde siempre ("Reversa los costos
-   * del trámite para corregirlo") y que hasta ahora no existia, dejando sin
-   * arreglo cualquier paquete facturado con el peso mal.
-   *
-   * NO toca el estado del tramite. Va aparte de `transitionsService.correct` a
-   * proposito: son dos errores distintos (haber avanzado mal y haber cobrado mal)
-   * y juntarlos obligaria a deshacer uno para arreglar el otro. El orden habitual
-   * es corregir el estado primero y reversar despues, pero ninguno exige al otro.
-   *
-   * Dos guardas:
-   *   ESTADO — espejo de `approve`: solo desde "Facturacion en proceso". Mas
-   *     adelante el tramite ya se le mostro al cliente como cobrable, y borrarle
-   *     la factura le dejaria el boton de pagar apuntando a nada. Volver primero
-   *     el estado (con la correccion) es lo que hace segura la reversion.
-   *   DINERO — con un pago confirmado, borrar la factura dejaria un abono contra
-   *     algo que no existe. Los pendientes o rechazados no bloquean: aun no son
-   *     dinero.
-   *   DINERO EN CURSO — y una tercera, que nacio con el rediseno de estados. La
-   *     guarda de ESTADO daba por hecho que un tramite reversable todavia no se
-   *     le habia enseñado al cliente como cobrable; en Transporte eso dejo de ser
-   *     cierto, porque factura y cobro viven en el MISMO estado y aprobar no lo
-   *     mueve. Ahi el freno de "corrige antes el estado" no existe, asi que lo
-   *     pone el dinero: con el tramite ya cobrable, un deposito pendiente de
-   *     validar tambien bloquea. El cliente ya pago contra esa factura aunque
-   *     nadie la haya mirado todavia.
-   */
-  async reverse(session: Session, shipmentId: string): Promise<ShipmentCostsDto> {
-    const shipment = await this.loadShipment(session, shipmentId);
-
-    const approval = await costsRepo.approval(shipmentId);
-    if (!approval?.approvedAt) throw CostErrors.notApproved();
-    if (shipment.state !== State.FacturacionEnProceso) throw CostErrors.notReversibleState();
-
-    const payments = await paymentsRepo.settlementView(shipmentId);
-    if (payments.some((p) => p.status === PaymentStatus.Confirmado)) {
-      throw CostErrors.settledCannotReverse();
-    }
-    if (
-      isCollectible(flowForType(shipment.shipmentType), shipment) &&
-      payments.some((p) => p.status === PaymentStatus.Pendiente)
-    ) {
-      throw CostErrors.collectibleCannotReverse();
-    }
-
-    await costsRepo.releaseInvoice(shipmentId);
     return this.get(session, shipmentId);
   },
 };

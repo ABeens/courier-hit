@@ -1,39 +1,16 @@
 /**
- * Pagos de un trámite vistos por el STAFF: registrar el depósito que el cliente
- * envió y, para quien puede, aprobarlo o rechazarlo.
+ * Pagos de un trámite vistos por el STAFF: los abonos que tiene, su comprobante
+ * y, para quien puede (`payments.validate`, solo Administrador), aprobarlos o
+ * rechazarlos.
  *
- * Es la contraparte de `PaymentModal`, que es la del cliente. Van separados
- * porque no son la misma pantalla con otro botón: el cliente elige CÓMO paga y
- * el servidor le pone el importe (nunca lo declara él), mientras que aquí se
- * asienta un depósito que YA ocurrió y el importe lo dice el comprobante.
- *
- * DOS ACTOS, DOS PERMISOS, UNA PANTALLA:
- *
- *   - REGISTRAR (`payments.record`, Operativo y Administrador): el cliente manda
- *     el comprobante por fuera del portal y el staff lo mete al sistema con el
- *     archivo de respaldo. Quién lo hizo queda en el abono.
- *   - APROBAR (`payments.validate`, solo Administrador): dar el dinero por
- *     recibido. Por eso los botones de confirmar y rechazar preguntan por ese
- *     permiso y no por el de registrar.
- *
- * Con qué situación nace el abono NO lo decide esta pantalla: lo decide el
- * servidor a partir de quién firma la sesión (`recordedPaymentStatus`). Aquí se
- * usa la misma función solo para ANUNCIARLO antes de enviar; si las dos
- * respondieran distinto, al operario se le prometería un cobro que el sistema no
- * dio por recibido.
- *
- * CUENTAS CONSOLIDADAS. Si el casillero tiene tarifa consolidada, este trámite no
- * se cobra suelto: el formulario de depósito se retira (la API lo rechazaría) y
- * en su lugar queda el registro del depósito AGRUPADO, que salda de una vez todos
- * los paquetes listos del casillero. Quién es consolidado lo contesta la API con
- * la misma consulta que arma el grupo; deducirlo aquí habría sido ofrecer un
- * formulario que acaba en un 409.
+ * Con el modulo de proformas los depositos ya NO se registran aqui: todo se
+ * cobra por proforma completa, y el registro vive en el detalle de la proforma.
+ * Un abono que es parte de un COBRO DE PROFORMAS se aprueba o rechaza con su
+ * cobro entero (fue un solo deposito por varias proformas).
  */
 import { useEffect, useState } from 'react';
 import {
-  BANK_ACCOUNTS,
   BANK_ACCOUNT_LABELS,
-  CURRENCY_LABELS,
   Currency,
   PAYMENT_METHOD_LABELS,
   PAYMENT_STATUS_LABELS,
@@ -41,31 +18,23 @@ import {
   PaymentStatus,
   Permission,
   attachmentRejection,
-  bankAccountOptionLabel,
-  bankAccountsForStaff,
   can,
-  canSetExchangeRate,
   convertMoney,
   formatMoney,
   chargeBasisFor,
   isSettled,
   outstanding,
   pendingAmount,
-  recordedPaymentStatus,
   settledAmount,
 } from '@courier/shared';
 import type {
-  BankAccount,
-  ConsolidatedQuoteDto,
   PaymentDto,
   Role,
   ShipmentDto,
 } from '@courier/shared';
-import { FileField } from '../components/FileField';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { API_BASE, ApiError, api } from '../lib/api';
-import { formatDate, formatStamp, startOfLocalDayUtc } from '../lib/datetime';
-import { ConsolidatedDepositModal } from './ConsolidatedDepositModal';
+import { formatDate, formatStamp } from '../lib/datetime';
 
 /**
  * Pildora del estado de un abono. Rechazado NO es un estado neutro: es dinero
@@ -139,7 +108,6 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
    * Cómo va a quedar el depósito que se registre aquí. Se pregunta al dominio,
    * no al rol: es la misma regla que aplica el servidor al insertarlo.
    */
-  const bornStatus = recordedPaymentStatus(role);
 
   const [payments, setPayments] = useState<PaymentDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,26 +121,8 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
   const [saving, setSaving] = useState(false);
 
   // --- Formulario de registro ---
-  const [amount, setAmount] = useState('');
-  /** El importe ya lo tocó una persona: dejar de precargarlo con el saldo. */
-  const [amountTouched, setAmountTouched] = useState(false);
-  /**
-   * La moneda ARRANCA en la de la cuenta preseleccionada, por la misma razón por
-   * la que después la sigue (`pickAccount`): un formulario que abre con la cuenta
-   * en dólares y la moneda en colones ya está proponiendo un abono incoherente
-   * antes de que nadie toque nada.
-   */
-  const [bankAccount, setBankAccount] = useState<BankAccount>(bankAccountsForStaff()[0]!);
-  const [currency, setCurrency] = useState<Currency>(
-    BANK_ACCOUNTS[bankAccountsForStaff()[0]!].currency,
-  );
-  const [exchangeRate, setExchangeRate] = useState('');
-  const [receiptNumber, setReceiptNumber] = useState('');
-  const [depositDate, setDepositDate] = useState(today());
-  const [note, setNote] = useState('');
-  const [receipt, setReceipt] = useState<File | null>(null);
+  const figures = figuresOf(payments, shipment);
 
-  /** Abono que se está rechazando: el rechazo exige motivo, y va inline. */
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
 
@@ -180,15 +130,6 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
    * La cuenta del casillero, para saber si se cobra agrupada. Null mientras no se
    * ha preguntado o el trámite no tiene dueño.
    */
-  const [account, setAccount] = useState<ConsolidatedQuoteDto | null>(null);
-  /** Registro del depósito agrupado abierto. */
-  const [recordingGroup, setRecordingGroup] = useState(false);
-
-  const figures = figuresOf(payments, shipment);
-  const invoiceTotal =
-    currency === Currency.USD ? shipment.invoiceTotalUsd : shipment.invoiceTotalCrc;
-  const due = currency === Currency.USD ? figures.dueUsd : figures.dueCrc;
-
   useEffect(() => {
     api
       .get<{ items: PaymentDto[] }>(`/payments/shipment/${shipment.id}`)
@@ -203,152 +144,12 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
    * ¿Este casillero se cobra agrupado? Se pregunta una vez al abrir, y solo si
    * quien mira puede registrar depósitos: es lo único que cambia con la respuesta.
    */
-  useEffect(() => {
-    const clientId = shipment.client?.id;
-    if (!canRecord || !clientId) return;
-    let alive = true;
-    api
-      .get<ConsolidatedQuoteDto>(`/payments/consolidated/quote?clientId=${clientId}`)
-      // No saberlo no rompe la pantalla: se queda con el registro individual, que
-      // es el comportamiento de siempre (y la API sigue siendo la barrera real).
-      .then((q) => alive && setAccount(q))
-      .catch(() => alive && setAccount(null));
-    return () => {
-      alive = false;
-    };
-  }, [shipment.client?.id, canRecord]);
-
-  /** La cuenta se cobra agrupada: el depósito por trámite deja de ofrecerse. */
-  const isConsolidatedAccount = account?.consolidated === true;
-
-  /**
-   * Precarga el importe con el saldo mientras nadie lo haya escrito. Casi todo
-   * depósito es por lo que se debe, y al cambiar de moneda hay que reexpresarlo:
-   * dejar ₡25.000 en un campo que ahora dice dólares es el error de digitación
-   * que este efecto evita.
-   */
-  useEffect(() => {
-    if (amountTouched || loading) return;
-    setAmount(due > 0 ? String(due) : '');
-  }, [due, amountTouched, loading]);
-
-  /**
-   * La moneda sigue a la CUENTA elegida: se depositó en la cuenta en dólares,
-   * el monto viene en dólares. Sigue siendo editable (un banco acepta un
-   * depósito en otra moneda y lo convierte), pero el valor por defecto deja de
-   * ser una suposición.
-   */
-  function pickAccount(account: BankAccount) {
-    setBankAccount(account);
-    setCurrency(BANK_ACCOUNTS[account].currency);
-  }
-
-  /** Mismo catálogo que aplica la API, para que el rechazo llegue al elegirlo. */
-  function pickReceipt(file: File | null) {
-    if (!file) {
-      setReceipt(null);
-      return;
-    }
-    const rejection = attachmentRejection(PROOF_ATTACHMENT, file.type, file.name);
-    if (rejection) {
-      setError(rejection);
-      setReceipt(null);
-      return;
-    }
-    setError(null);
-    setReceipt(file);
-  }
-
   async function reload(): Promise<PaymentDto[]> {
     const list = await api.get<{ items: PaymentDto[] }>(`/payments/shipment/${shipment.id}`);
     setPayments(list.items);
     return list.items;
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    // Sin permiso de registrar no hay formulario que enviar: el <form> sigue
-    // envolviendo la lista de abonos, y un Enter en cualquier campo llegaria aqui.
-    if (!canRecord || shipment.invoiceTotalCrc == null) return;
-    setError(null);
-
-    const value = Number(amount);
-    if (!amount.trim() || Number.isNaN(value) || value <= 0) {
-      setError('Indica el monto del depósito.');
-      return;
-    }
-    if (!receiptNumber.trim()) {
-      setError('Indica el número de comprobante.');
-      return;
-    }
-    if (!depositDate) {
-      setError('Indica la fecha del depósito.');
-      return;
-    }
-    /**
-     * Quien no puede aprobar TIENE que adjuntar el comprobante: registrar sin
-     * respaldo le deja al administrador un abono que no puede validar contra
-     * nada. Quien sí puede aprobar registra a veces leyendo el estado de cuenta,
-     * donde no hay archivo que subir, así que ahí es opcional.
-     */
-    if (!canValidate && !receipt) {
-      setError('Adjunta el comprobante que envió el cliente.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const created = await api.post<PaymentDto>('/payments/record', {
-        shipmentId: shipment.id,
-        amount: value,
-        currency,
-        bankAccount,
-        receiptNumber: receiptNumber.trim(),
-        // La fecha viaja como instante UTC, igual que el resto de la API.
-        depositedAt: startOfLocalDayUtc(depositDate),
-        ...(note.trim() ? { note: note.trim() } : {}),
-        /**
-         * La tasa solo la manda quien puede fijarla, y solo si la escribió. En
-         * cualquier otro caso el servidor congela la de la factura, que es la
-         * que cuadra el abono con lo cobrado (regla M5).
-         */
-        ...(canSetExchangeRate(role) && exchangeRate.trim()
-          ? { exchangeRate: Number(exchangeRate) }
-          : {}),
-      });
-
-      /**
-       * El comprobante va en una segunda petición porque es multipart. Si esta
-       * falla, el abono YA existe: no se puede deshacer en silencio, así que se
-       * dice exactamente eso y el archivo se puede volver a subir desde la lista.
-       */
-      if (receipt) {
-        try {
-          await api.upload<PaymentDto>(`/payments/${created.id}/receipt`, receipt);
-        } catch (err) {
-          await reload();
-          setError(
-            err instanceof ApiError
-              ? `El depósito quedó registrado, pero el comprobante no se adjuntó: ${err.message}`
-              : 'El depósito quedó registrado, pero el comprobante no se adjuntó.',
-          );
-          setSaving(false);
-          return;
-        }
-      }
-
-      onSaved(
-        created.status === PaymentStatus.Confirmado
-          ? `Depósito registrado y confirmado (${formatMoney(created.amount, created.currency)}).`
-          : `Depósito registrado (${formatMoney(created.amount, created.currency)}). Queda en validación por el administrador.`,
-      );
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo registrar el depósito.');
-      setSaving(false);
-    }
-  }
-
-  /** Adjunta (o reemplaza) el comprobante de un abono ya registrado. */
   async function attach(paymentId: string, file: File) {
     const rejection = attachmentRejection(PROOF_ATTACHMENT, file.type, file.name);
     if (rejection) {
@@ -379,10 +180,18 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
     setError(null);
     setSaving(true);
     try {
-      await api.post<PaymentDto>(`/payments/${paymentId}/resolve`, {
-        confirm,
-        ...(rejectNote.trim() ? { note: rejectNote.trim() } : {}),
-      });
+      /**
+       * Un abono de un COBRO DE PROFORMAS se valida con su cobro entero: fue un
+       * solo deposito por varias proformas, y aprobarlo a medias dejaria unas
+       * proformas pagadas y otras no con el mismo comprobante.
+       */
+      const payment = payments.find((p) => p.id === paymentId);
+      const body = { confirm, ...(rejectNote.trim() ? { note: rejectNote.trim() } : {}) };
+      if (payment?.groupId) {
+        await api.post(`/payments/groups/${payment.groupId}/resolve`, body);
+      } else {
+        await api.post<PaymentDto>(`/payments/${paymentId}/resolve`, body);
+      }
       const items = await reload();
       setRejecting(null);
       setRejectNote('');
@@ -410,11 +219,7 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
         ~120px donde "Abraham Beens · 28 ago 2026 · 21:51" se partia en tres
         renglones. El ancho es lo que evita ese picado.
       */}
-      <form
-        className="modal modal-wide fadeUp"
-        onMouseDown={(e) => e.stopPropagation()}
-        onSubmit={submit}
-      >
+      <div className="modal modal-wide fadeUp" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>Pagos del trámite</h3>
           <p>
@@ -434,7 +239,7 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
           {shipment.invoiceTotalCrc == null ? (
             <div className="banner warn">
               Este trámite todavía no tiene factura aprobada, así que no hay monto que cobrar.
-              Aprueba los costos primero.
+              Aprueba su proforma primero.
             </div>
           ) : (
             <div className="pay-sec is-money">
@@ -695,231 +500,15 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
           )}
 
           {/*
-            --- Cuenta CONSOLIDADA ---
-            El depósito no se registra contra este trámite sino contra la cuenta:
-            entran todos sus paquetes listos y el importe es el saldo del grupo.
-            La API rechaza el registro individual, así que aquí no se ofrece.
+            Los depositos ya no se registran contra un tramite suelto: todo se
+            cobra por proforma completa (decision D2), asi que el registro vive
+            en el detalle de la proforma.
           */}
-          {canRecord && isConsolidatedAccount && (
-            <div className="pay-sec">
-              <div className="card-sec-title">Cuenta consolidada</div>
-              <div className="banner warn">
-                {account!.clientCode} tiene tarifa <strong>{account!.rateName}</strong>: sus
-                paquetes se cobran todos juntos, no uno a uno. El depósito se registra sobre la
-                cuenta completa.
-              </div>
-              {account!.items.length > 0 ? (
-                <>
-                  <div className="pay-fields">
-                    <div className="card-item-field">
-                      <dt>Paquetes listos</dt>
-                      <dd>{account!.items.length}</dd>
-                    </div>
-                    <div className="card-item-field">
-                      <dt>Saldo de la cuenta</dt>
-                      <dd className="pay-due">{formatMoney(account!.dueCrc, Currency.CRC)}</dd>
-                    </div>
-                  </div>
-                  <div className="pay-sec-actions">
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => setRecordingGroup(true)}
-                    >
-                      Registrar depósito consolidado
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="cell-sub">No hay paquetes listos para cobrar en esta cuenta.</div>
-              )}
-            </div>
-          )}
-
-          {/* --- Registro de un depósito nuevo ---
-              Con el trámite pagado no hay nada que registrar: el formulario
-              desaparece (y la API lo rechaza igual). Mientras cargan los abonos
-              tampoco se muestra, porque sin ellos todo trámite parece sin pagar. */}
-          {canRecord &&
-            !loading &&
-            !figures.settled &&
-            !isConsolidatedAccount &&
-            shipment.invoiceTotalCrc != null && (
-            <div className="pay-sec">
-              <div className="card-sec-title">Registrar depósito recibido</div>
-
-              <div className="banner">
-                {bornStatus === PaymentStatus.Confirmado ? (
-                  <>
-                    El depósito quedará <strong>confirmado</strong>: registrarlo y aprobarlo son el
-                    mismo acto cuando quien lo digita es quien lo valida contra el estado de cuenta.
-                  </>
-                ) : (
-                  <>
-                    El depósito quedará en <strong>“Pagado - en validación”</strong>. El trámite
-                    conserva su saldo hasta que el administrador apruebe el comprobante, así que el
-                    paquete no sale a ruta por registrarlo.
-                  </>
-                )}
-              </div>
-
-              <div className="field-pair">
-                <div>
-                  <label className="field-label" htmlFor="sp-account">
-                    Cuenta donde entró
-                  </label>
-                  <select
-                    id="sp-account"
-                    className="input"
-                    value={bankAccount}
-                    disabled={saving}
-                    onChange={(e) => pickAccount(e.target.value as BankAccount)}
-                  >
-                    {/*
-                      TODAS las cuentas, sin el filtro por tipo de trámite que se
-                      le aplica al cliente: aquí se registra dónde dice el banco
-                      que entró el dinero, y ahí el sistema no tiene nada que
-                      opinar (`bankAccountsForStaff`).
-                    */}
-                    {bankAccountsForStaff().map((account) => (
-                      <option key={account} value={account}>
-                        {bankAccountOptionLabel(account)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="field-label" htmlFor="sp-date">
-                    Fecha del depósito
-                  </label>
-                  <input
-                    id="sp-date"
-                    className="input"
-                    type="date"
-                    value={depositDate}
-                    disabled={saving}
-                    onChange={(e) => setDepositDate(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="field-pair">
-                <div>
-                  <label className="field-label" htmlFor="sp-amount">
-                    Monto depositado
-                  </label>
-                  <input
-                    id="sp-amount"
-                    className="input"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={amount}
-                    disabled={saving}
-                    onChange={(e) => {
-                      setAmountTouched(true);
-                      setAmount(e.target.value);
-                    }}
-                  />
-                  <p className="field-hint">
-                    Saldo del trámite: {formatMoney(due, currency)}
-                    {invoiceTotal != null && <> de {formatMoney(invoiceTotal, currency)}</>}. Un
-                    abono parcial es válido: el trámite conserva el resto.
-                  </p>
-                </div>
-                <div>
-                  <label className="field-label" htmlFor="sp-currency">
-                    Moneda
-                  </label>
-                  <select
-                    id="sp-currency"
-                    className="input"
-                    value={currency}
-                    disabled={saving}
-                    onChange={(e) => setCurrency(e.target.value as Currency)}
-                  >
-                    {Object.values(Currency).map((c) => (
-                      <option key={c} value={c}>
-                        {CURRENCY_LABELS[c]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/*
-                La tasa solo la digita quien puede fijarla. Para el resto la pone
-                el servidor con la de la factura, así que un campo aquí sería un
-                número que se escribe y se descarta.
-              */}
-              {/*
-                De dos en dos, como los campos de arriba: en un modal ancho un
-                campo por fila se estira a mil pixeles para escribir un numero de
-                comprobante, y el formulario se lee como una lista de renglones
-                vacios en vez de como una ficha.
-              */}
-              <div className="field-pair">
-                {canSetExchangeRate(role) && (
-                  <div>
-                    <label className="field-label" htmlFor="sp-rate">
-                      Tasa de cambio (opcional)
-                    </label>
-                    <input
-                      id="sp-rate"
-                      className="input"
-                      type="number"
-                      min="0"
-                      step="any"
-                      placeholder="La de la factura"
-                      value={exchangeRate}
-                      disabled={saving}
-                      onChange={(e) => setExchangeRate(e.target.value)}
-                    />
-                    <p className="field-hint">
-                      Colones por 1 USD. En blanco se congela la tasa de la factura, que es la que
-                      cuadra el abono con lo cobrado.
-                    </p>
-                  </div>
-                )}
-
-                <div>
-                  <label className="field-label" htmlFor="sp-receipt-no">
-                    Número de comprobante
-                  </label>
-                  <input
-                    id="sp-receipt-no"
-                    className="input mono"
-                    value={receiptNumber}
-                    disabled={saving}
-                    onChange={(e) => setReceiptNumber(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="field-pair">
-                <FileField
-                  id="sp-receipt"
-                  label={canValidate ? 'Comprobante (opcional)' : 'Comprobante'}
-                  accept={PROOF_ATTACHMENT.accept}
-                  file={receipt}
-                  onPick={pickReceipt}
-                  disabled={saving}
-                  hint={`El respaldo que envió el cliente. Se aceptan ${PROOF_ATTACHMENT.label}.`}
-                />
-
-                <div>
-                  <label className="field-label" htmlFor="sp-note">
-                    Nota (opcional)
-                  </label>
-                  <input
-                    id="sp-note"
-                    className="input"
-                    value={note}
-                    disabled={saving}
-                    onChange={(e) => setNote(e.target.value)}
-                  />
-                </div>
-              </div>
+          {canRecord && !figures.settled && shipment.invoiceTotalCrc != null && (
+            <div className="banner">
+              Los depósitos se registran por proforma completa.
+              {shipment.proforma?.number && <> Este trámite está en la proforma <strong>{shipment.proforma.number}</strong>.</>}{' '}
+              Regístralo desde su detalle en <strong>Proformas</strong>.
             </div>
           )}
         </div>
@@ -928,25 +517,9 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cerrar
           </button>
-          {canRecord && !isConsolidatedAccount && shipment.invoiceTotalCrc != null && (
-            <button type="submit" className="btn btn-primary" disabled={saving || loading}>
-              {saving ? 'Registrando…' : 'Registrar depósito'}
-            </button>
-          )}
         </div>
-      </form>
+      </div>
 
-      {recordingGroup && account && (
-        <ConsolidatedDepositModal
-          quote={account}
-          role={role}
-          onClose={() => setRecordingGroup(false)}
-          onSaved={(message) => {
-            setRecordingGroup(false);
-            onSaved(message);
-          }}
-        />
-      )}
     </ModalOverlay>
   );
 }

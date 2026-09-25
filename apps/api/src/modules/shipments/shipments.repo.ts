@@ -14,6 +14,7 @@ import type { ListShipmentsQuery, State } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { payments } from '../payments/payments.schema';
+import { proformaShipments, proformas } from '../proformas/proformas.schema';
 import { settlementColumn } from '../payments/settlement';
 import { cantonRoutes } from '../routes/canton-route.schema';
 import { districtRoutes } from '../routes/district-route.schema';
@@ -69,6 +70,11 @@ const columns = {
   clientCode: clients.code,
   clientName: users.name,
   routeNumber: effectiveRouteNumber,
+  // Proforma en la que esta el tramite (objetivo 11 del SOW). LEFT JOIN: el que
+  // todavia no entro a facturacion no esta en ninguna.
+  proformaId: proformas.id,
+  proformaNumber: proformas.number,
+  proformaStatus: proformas.status,
 };
 
 /**
@@ -88,7 +94,9 @@ function baseQuery() {
     .leftJoin(clients, eq(shipments.clientId, clients.id))
     .leftJoin(users, eq(clients.userId, users.id))
     .leftJoin(districtRoutes, districtRouteJoin)
-    .leftJoin(cantonRoutes, cantonRouteJoin);
+    .leftJoin(cantonRoutes, cantonRouteJoin)
+    .leftJoin(proformaShipments, eq(proformaShipments.shipmentId, shipments.id))
+    .leftJoin(proformas, eq(proformas.id, proformaShipments.proformaId));
 }
 
 /**

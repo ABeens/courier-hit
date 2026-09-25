@@ -13,7 +13,7 @@
  * a depender del orden de las filas.
  */
 import { sql } from 'drizzle-orm';
-import { check, doublePrecision, index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { check, doublePrecision, index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { users } from '../auth/auth.schema';
 
 /** Clave de la unica fila de `app_settings`. */
@@ -72,6 +72,23 @@ export const appSettings = pgTable(
     }),
     cardSurchargeSetAt: timestamp('card_surcharge_set_at', { withTimezone: true }),
 
+    /**
+     * HORA DEL CORREO DIARIO al cliente (decision P16), de 0 a 23 en la hora del
+     * negocio (Costa Rica). Null = nadie la fijo y vale el defecto
+     * (`DEFAULT_DAILY_DIGEST_HOUR`, las 6:00).
+     */
+    dailyDigestHour: integer('daily_digest_hour'),
+    dailyDigestSetBy: uuid('daily_digest_set_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    dailyDigestSetAt: timestamp('daily_digest_set_at', { withTimezone: true }),
+    /**
+     * Cuando salio el ultimo correo diario, en UTC. Es a la vez el candado de "ya
+     * se envio hoy" y el inicio de la ventana de cambios del proximo correo: el
+     * siguiente cuenta los cambios desde aqui.
+     */
+    dailyDigestLastRunAt: timestamp('daily_digest_last_run_at', { withTimezone: true }),
+
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -95,6 +112,10 @@ export const appSettings = pgTable(
     check(
       'app_settings_card_surcharge_fixed_nonneg',
       sql`${t.cardSurchargeFixedUsd} IS NULL OR ${t.cardSurchargeFixedUsd} >= 0`,
+    ),
+    check(
+      'app_settings_daily_digest_hour_range',
+      sql`${t.dailyDigestHour} IS NULL OR (${t.dailyDigestHour} >= 0 AND ${t.dailyDigestHour} <= 23)`,
     ),
   ],
 );

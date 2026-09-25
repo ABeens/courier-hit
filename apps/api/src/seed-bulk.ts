@@ -84,6 +84,7 @@ import {
   freightRateHistory,
 } from './modules/settings/settings.schema';
 import { shipmentEvents, shipments } from './modules/shipments/shipments.schema';
+import { backfillProformas } from './modules/proformas/proforma-backfill';
 import { clientRates } from './modules/tariffs/tariffs.schema';
 import {
   COST_SERVICES,
@@ -1200,6 +1201,10 @@ function buildShipment(args: BuildArgs): void {
 }
 
 db.transaction((tx) => seed(tx))
+  // Los tramites facturados de la siembra entran a proformas (se facturan por
+  // fuera del modulo): sin esto no se verian en la bandeja ni se podrian pagar.
+  .then(() => backfillProformas())
+  .then((r) => console.log(`[proformas] ${r.approved} proformas aprobadas y ${r.drafts} trámites en borrador.`))
   .then(() => process.exit(0))
   .catch((err) => {
     console.error('[seed-bulk] error:', err);

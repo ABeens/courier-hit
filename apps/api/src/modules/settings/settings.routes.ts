@@ -11,6 +11,7 @@ import { zValidator } from '../../core/validator';
 import {
   Permission,
   setCardSurchargeSchema,
+  setDailyDigestSchema,
   setExchangeRateSchema,
   setFreightRateSchema,
 } from '@courier/shared';
@@ -23,6 +24,18 @@ import { settingsService } from './settings.service';
 export const settingsRoutes = new Hono<AppEnv>();
 
 settingsRoutes.use('*', requireSession());
+
+/** Hora del correo diario al cliente (decision P16). Es configuracion del sistema. */
+settingsRoutes.get('/daily-digest', requirePermission(Permission.ConfigManage), async (c) => {
+  return c.json(await settingsService.dailyDigest());
+});
+
+settingsRoutes.put(
+  '/daily-digest',
+  requirePermission(Permission.ConfigManage),
+  zValidator('json', setDailyDigestSchema),
+  async (c) => c.json(await settingsService.setDailyDigest(c.get('session'), c.req.valid('json'))),
+);
 
 /** Tasa vigente + referencia del dia. La lee quien opera con montos. */
 settingsRoutes.get(

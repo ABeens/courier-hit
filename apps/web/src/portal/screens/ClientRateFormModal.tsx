@@ -36,8 +36,6 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
   const lockCurrency = CLIENT_RATE_CURRENCIES.length === 1;
   const [allowsCard, setAllowsCard] = useState(row?.allowsCard ?? true);
   const [allowsBankDeposit, setAllowsBankDeposit] = useState(row?.allowsBankDeposit ?? true);
-  // Sin marcar, el paquete se factura solo al recibirlo en bodega (OPS-003).
-  const [requiresBillingReview, setRequiresBillingReview] = useState(row?.requiresBillingReview ?? false);
   // Una tarifa por defecto no se puede "desmarcar" desde aqui: solo se promueve otra.
   const [isDefault, setIsDefault] = useState(row?.isDefault ?? false);
   const lockDefault = mode === 'edit' && (row?.isDefault ?? false);
@@ -58,7 +56,6 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
           currency,
           allowsCard,
           allowsBankDeposit,
-          requiresBillingReview,
           // Consolidada nunca es la por defecto (la API lo rechaza igual).
           isDefault: kind === ClientRateKind.Consolidada ? false : isDefault,
         });
@@ -78,9 +75,6 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
         if (currency !== row.currency) patch.currency = currency;
         if (allowsCard !== row.allowsCard) patch.allowsCard = allowsCard;
         if (allowsBankDeposit !== row.allowsBankDeposit) patch.allowsBankDeposit = allowsBankDeposit;
-        if (requiresBillingReview !== row.requiresBillingReview) {
-          patch.requiresBillingReview = requiresBillingReview;
-        }
         if (!row.isDefault && isDefault && kind !== ClientRateKind.Consolidada) {
           patch.isDefault = true;
         }
@@ -194,22 +188,6 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
               />
               Depósito bancario
             </label>
-          </div>
-
-          <div>
-            <span className="field-label">Facturación</span>
-            <label className="check-row">
-              <input
-                type="checkbox" checked={requiresBillingReview}
-                onChange={(e) => setRequiresBillingReview(e.target.checked)}
-              />
-              Ocupa revisión antes de facturar
-            </label>
-            <div className="field-hint">
-              {requiresBillingReview
-                ? 'Al recibir el paquete queda en «Facturación en proceso» esperando que un operativo o un administrador le cargue los costos y apruebe.'
-                : 'Al recibir el paquete el sistema le aplica el flete y lo pasa directo a «En bodega preparando», sin revisión.'}
-            </div>
           </div>
 
           <div>

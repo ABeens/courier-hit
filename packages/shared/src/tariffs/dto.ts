@@ -25,20 +25,18 @@ import { Currency } from '../money/currency';
 
 /**
  * TIPO de tarifa. No es una categoria comercial mas (eso es el `name`): decide
- * COMO se cobra el kilo y COMO se salda la deuda, que son dos reglas del sistema
- * y no un dato del catalogo.
+ * COMO se cobra el kilo, que es una regla del sistema y no un dato del catalogo.
  *
  *   - `Estandar`: todas las tarifas de siempre (Basica, Premium, VIP...). El kilo
- *     se cobra REDONDEADO HACIA ARRIBA (`roundWeightKg`, flujo.md L115) y cada
- *     paquete se paga por su cuenta.
- *   - `Consolidada`: el kilo se cobra por el PESO REAL de bascula, sin redondear,
- *     y el cliente salda de una sola vez TODOS sus paquetes listos para facturar
- *     (pago agrupado). No se puede elegir cuales entran: entran todos.
+ *     se cobra REDONDEADO HACIA ARRIBA (`roundWeightKg`, flujo.md L115).
+ *   - `Consolidada`: el kilo se cobra por el PESO REAL de bascula, sin redondear.
  *
- * Es un enum y no un booleano `esConsolidada` porque el requisito lo nombra como
- * un tipo ("creacion del tipo de tarifa Consolidada") y porque las dos reglas que
- * cuelgan de el ya son dos: sumar una tercera modalidad no obliga a inventar un
- * segundo booleano que contradiga al primero.
+ * Antes la Consolidada ademas cobraba agrupado (todos los paquetes en un solo
+ * pago, sin elegir). Con el modulo de proformas todos los clientes pagan por
+ * proforma y eligen cuales (decisiones D3 y P8): del tipo solo queda el peso.
+ *
+ * Es un enum y no un booleano porque el requisito lo nombra como un tipo
+ * ("creacion del tipo de tarifa Consolidada").
  *
  * Valores de dominio en espanol (CLAUDE.md): alimentan un enum de Postgres.
  */
@@ -55,9 +53,9 @@ export const CLIENT_RATE_KIND_LABELS: Record<ClientRateKind, string> = {
 /** Que significa cada tipo, para el selector del formulario de tarifas. */
 export const CLIENT_RATE_KIND_HINTS: Record<ClientRateKind, string> = {
   [ClientRateKind.Estandar]:
-    'Cobra el peso redondeado hacia arriba (1.1 kg se cobra como 2) y cada paquete se paga por separado.',
+    'Cobra el peso redondeado hacia arriba (1.1 kg se cobra como 2).',
   [ClientRateKind.Consolidada]:
-    'Cobra el peso real del paquete, sin redondear, y el cliente salda todos sus paquetes listos en un solo pago.',
+    'Cobra el peso real del paquete, sin redondear.',
 };
 
 /** Valores para construir el enum de la BD (Drizzle pgEnum), sin repetirlos. */
@@ -78,24 +76,11 @@ export function billsActualWeight(kind: ClientRateKind): boolean {
   return kind === ClientRateKind.Consolidada;
 }
 
-/**
- * La tarifa se salda con un PAGO AGRUPADO: todos los paquetes listos para
- * facturar del casillero en un solo cobro, sin poder elegir cuales.
- *
- * Punto UNICO, igual que arriba: lo consultan la cotizacion del grupo, la guarda
- * que rechaza el pago suelto de un paquete consolidado y la pantalla que decide
- * que boton pintar. Responder distinto en cualquiera de los tres es como un
- * paquete consolidado acaba pagado por fuera del grupo.
- */
-export function billsAsGroup(kind: ClientRateKind): boolean {
-  return kind === ClientRateKind.Consolidada;
-}
-
 /** Tarifa preferencial de cliente (vista publica; forma equivalente a la fila de BD). */
 export interface ClientRate {
   id: string;
   name: string;
-  /** Tipo de tarifa: decide el redondeo del peso y si el cobro es agrupado. */
+  /** Tipo de tarifa: decide el redondeo del peso. */
   kind: ClientRateKind;
   pricePerKg: number;
   /** Moneda del precio por kg (explicita, regla M2). La tasa de cambio no vive aqui. */
@@ -103,14 +88,6 @@ export interface ClientRate {
   isDefault: boolean;
   allowsCard: boolean;
   allowsBankDeposit: boolean;
-  /**
-   * La tarifa ocupa REVISION antes de facturarse (OPS-003). Con la marca activa
-   * el paquete se queda en "Facturacion en proceso" esperando que un operativo o
-   * un administrador le cargue los costos adicionales y apruebe. Sin ella (el
-   * caso de todas las demas tarifas) el sistema factura solo el flete al recibir
-   * el paquete en bodega y lo avanza a "En bodega preparando".
-   */
-  requiresBillingReview: boolean;
   /** Cuantos casilleros usan esta tarifa (para el aviso al eliminar). */
   clientCount: number;
 }
@@ -144,7 +121,7 @@ const kindSchema = z.nativeEnum(ClientRateKind, {
  *
  * La default es a la que caen los casilleros nuevos y la que se usa cuando un
  * casillero se queda sin tarifa (`rateFor`). Consolidada de por defecto pondria a
- * TODO cliente nuevo en cobro agrupado y peso sin redondear sin que nadie lo haya
+ * TODO cliente nuevo a cobrar por peso sin redondear sin que nadie lo haya
  * decidido; la consolidacion es un acuerdo comercial que se asigna casillero a
  * casillero.
  *
@@ -174,8 +151,6 @@ export const createClientRateSchema = z
     currency: currencySchema,
     allowsCard: z.boolean(),
     allowsBankDeposit: z.boolean(),
-    /** Ausente = false: una tarifa normal factura sola, que es el caso corriente. */
-    requiresBillingReview: z.boolean().optional(),
     isDefault: z.boolean().optional(),
   })
   .refine((o) => o.allowsCard || o.allowsBankDeposit, {
@@ -198,7 +173,6 @@ export const updateClientRateSchema = z
     currency: currencySchema.optional(),
     allowsCard: z.boolean().optional(),
     allowsBankDeposit: z.boolean().optional(),
-    requiresBillingReview: z.boolean().optional(),
     isDefault: z.boolean().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No hay cambios que aplicar.' })

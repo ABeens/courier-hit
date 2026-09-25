@@ -16,7 +16,7 @@ import { AnnouncementsScreen } from './screens/AnnouncementsScreen';
 import { UsersScreen } from './screens/UsersScreen';
 import { CostServicesScreen } from './screens/CostServicesScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
-import { CostsScreen } from './screens/CostsScreen';
+import { ProformasScreen } from './screens/ProformasScreen';
 import { TariffsScreen } from './screens/TariffsScreen';
 import { RoutesScreen } from './screens/RoutesScreen';
 import { ShipmentsScreen } from './screens/ShipmentsScreen';
@@ -106,10 +106,11 @@ const STAFF_NAV: NavEntry[] = [
     id: 'finanzas',
     label: 'Costos y tarifas',
     items: [
-      // Los tres son dinero y se consultan en cadena (que costo el envio, que se
-      // le cobra al cliente, que servicio fijo se le suma), asi que van juntos
-      // aunque Costos se opere a diario y las tarifas se toquen de vez en cuando.
-      { resource: Resource.Costs, label: 'Costos' },
+      // Los tres son dinero y se consultan en cadena (que se le factura al
+      // cliente, a que tarifa, que servicio fijo se le suma), asi que van juntos
+      // aunque las proformas se operen a diario y las tarifas se toquen de vez en
+      // cuando. Proformas reemplaza a la antigua cola de Costos por tramite.
+      { resource: Resource.Proformas, label: 'Proformas' },
       { resource: Resource.Tariffs, label: 'Tarifas' },
       { resource: Resource.CostServices, label: 'Servicios de costos' },
     ],
@@ -442,8 +443,10 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
             <TariffsScreen />
           ) : current === Resource.CostServices ? (
             <CostServicesScreen />
-          ) : current === Resource.Costs ? (
-            <CostsScreen key={nav?.key} role={me.role} initialView={nav?.intent.costsView} />
+          ) : current === Resource.Proformas || current === Resource.Costs ? (
+            // `costos` era la cola por tramite: un enlace viejo a esa pantalla cae
+            // en la bandeja de proformas, que es donde ahora se factura.
+            <ProformasScreen key={nav?.key} role={me.role} initialStatus={nav?.intent.proformaStatus} />
           ) : current === Resource.Config ? (
             // El recurso `config` es hoy el enlace con el operador de Miami: es lo
             // único que un Admin necesita administrar aquí. Cuando entren más
@@ -460,6 +463,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
               canEdit={can(me.role, Permission.ExchangeRateWrite)}
               canEditFreight={can(me.role, Permission.FreightRateWrite)}
               canEditSurcharge={can(me.role, Permission.CardSurchargeWrite)}
+              canManageConfig={can(me.role, Permission.ConfigManage)}
             />
           ) : current === Resource.Routes ? (
             <RoutesScreen />
@@ -630,6 +634,7 @@ function NavIcon({ resource }: { resource: Resource }) {
     [Resource.Profile]: <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z" />,
     [Resource.Reception]: <path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M8 9.5v4M12 11v4" />,
     [Resource.Costs]: <path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
+    [Resource.Proformas]: <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8" />,
     [Resource.CostServices]: <path d="M20 12V8H6a2 2 0 01-2-2c0-1.1.9-2 2-2h12v4M4 6v12c0 1.1.9 2 2 2h14v-4M18 12a2 2 0 000 4h4v-4z" />,
     // Llave: la credencial con la que un sistema entra por la API.
     [Resource.ApiKeys]: <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />,

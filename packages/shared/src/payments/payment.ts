@@ -300,6 +300,12 @@ export function chargeBasisIn(currency: Currency, invoiceTotal: number | null): 
 export interface PaymentDto {
   id: string;
   shipmentId: string;
+  /**
+   * Cobro de proformas al que pertenece el abono. La bandeja del administrador
+   * valida el cobro ENTERO con este id: un deposito por varias proformas fue un
+   * solo deposito. Null solo en abonos anteriores al modulo de proformas.
+   */
+  groupId: string | null;
   method: PaymentMethod;
   status: PaymentStatus;
   /** Monto abonado. Siempre >= 0 (regla M3). */

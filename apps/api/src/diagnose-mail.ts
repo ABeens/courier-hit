@@ -1,14 +1,16 @@
 /**
- * Diagnostico de "no llego el correo de avance de estado".
+ * Diagnostico de "no me aparecio el cambio en el correo".
  *
  * Uso: pnpm --filter @courier/api db:diagnose-mail <codigo-de-tramite | correo>
  *
- * Reconstruye, para cada evento del historial, si ese paso DEBIA disparar correo
- * segun la maquina de estados y si habia a quien enviarselo. No manda nada.
+ * No hay avisos inmediatos: el cliente recibe CORREOS DIARIOS con el estado
+ * ACTUAL de sus tramites y paquetes (notifications.service.ts). Este script dice
+ * si el tramite sale en el correo de mañana, en cual y por que, y muestra su
+ * historial para entender como llego a su estado. No manda nada.
  */
 import { asc, eq, or } from 'drizzle-orm';
-import { Flow, STATE_LABELS, Trigger, flowForType, triggersOnEnter } from '@courier/shared';
-import type { ShipmentType, State } from '@courier/shared';
+import { Flow, STATE_LABELS, State, Trigger, flowForType, triggersOnEnter } from '@courier/shared';
+import type { ShipmentType } from '@courier/shared';
 import { db } from './core/db';
 import { clients, users } from './modules/auth/auth.schema';
 import { shipmentEvents, shipments } from './modules/shipments/shipments.schema';
@@ -50,11 +52,6 @@ for (const s of rows) {
   console.log(`Dueño:  ${s.clientId ? `${s.ownerName} <${s.ownerEmail}>` : '*** SIN DUEÑO (clientId null) ***'}`);
   if (s.discardedAt) console.log(`Descartado: ${s.discardedAt.toISOString()}`);
 
-  if (flow !== Flow.Paqueteria) {
-    console.log('');
-    console.log('>> Este flujo NO tiene aviso inmediato: solo entra al resumen diario,');
-    console.log('   que hoy no esta programado. Por eso no llego ningun correo.');
-  }
 
   const events = await db
     .select({
@@ -68,25 +65,30 @@ for (const s of rows) {
     .orderBy(asc(shipmentEvents.createdAt));
 
   console.log('');
-  console.log('Historial (UTC)                 estado                          ¿debia enviar correo?');
+  console.log(`Correo diario: ${verdict(s, flow)}`);
+  console.log('');
+  console.log('Historial (UTC)                 estado');
   for (const e of events) {
-    const notifies = triggersOnEnter(flow, e.state as State).includes(Trigger.NotifyStateChange);
-    // `correct()` escribe el evento con este prefijo y NO dispara las
-    // automatizaciones: es la unica forma de llegar a un estado notificable sin
-    // que salga el correo.
     const corrected = e.note?.startsWith('Corrección:') ?? false;
-    const verdict = !notifies
-      ? 'no (el estado no notifica)'
-      : corrected
-        ? '*** no (corrección de admin: no notifica por diseño) ***'
-        : s.clientId
-          ? 'SI -> buscar "[mailer]" en el log a esa hora'
-          : '*** no (sin dueño a quien escribirle) ***';
     const who = corrected ? 'corrección' : e.createdBy ? 'panel' : 'robot';
-    console.log(
-      `${e.createdAt.toISOString()}  ${STATE_LABELS[e.state as State].padEnd(30)}  ${verdict}  (${who})`,
-    );
+    console.log(`${e.createdAt.toISOString()}  ${STATE_LABELS[e.state as State].padEnd(30)}  (${who})`);
   }
+}
+
+/** Si el tramite sale en el correo diario de mañana, segun su estado ACTUAL. */
+function verdict(s: (typeof rows)[number], flow: Flow): string {
+  if (!s.clientId) return '*** no (sin dueño a quien escribirle) ***';
+  if (s.discardedAt) return 'no (descartado)';
+  const triggers = triggersOnEnter(flow, s.state as State);
+  if (flow !== Flow.Paqueteria) {
+    return triggers.includes(Trigger.DailyActiveSummary)
+      ? 'SI, en "Reporte de estatus trámites HS GLOBAL" (buscar "[digest]" en el log)'
+      : 'no (el trámite ya no está en curso)';
+  }
+  if (s.state === State.Entregado) return 'no (ya entregado)';
+  return triggers.includes(Trigger.DailyPackageReport)
+    ? 'SI, en "Reporte de estatus paquetes HS GLOBAL": su estado hace que el correo salga'
+    : 'solo si el cliente tiene otro paquete en Recibido en Miami, En Aduanas o En ruta de entrega (ahí va listado)';
 }
 
 process.exit(0);

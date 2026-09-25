@@ -8,9 +8,6 @@
  *   - la tarifa por defecto no se puede eliminar.
  *   - al eliminar una tarifa, sus casilleros pasan a la tarifa por defecto.
  *   - cada tarifa admite al menos un medio de pago (tarjeta y/o deposito).
- *   - cada tarifa marca si OCUPA REVISION antes de facturar (OPS-003). Aqui solo
- *     se guarda la marca; quien la lee es `autoBillingService`, al recibir el
- *     paquete en bodega.
  *   - cada tarifa tiene un TIPO (`ClientRateKind`): la Consolidada cobra el peso
  *     real y se salda con un pago agrupado. La tarifa por defecto NO puede ser
  *     consolidada: es a la que caen los casilleros nuevos.
@@ -31,7 +28,6 @@ type RateColumns = Pick<
   | 'isDefault'
   | 'allowsCard'
   | 'allowsBankDeposit'
-  | 'requiresBillingReview'
 >;
 
 /** Adjunta el conteo de casilleros a una fila (para el aviso al eliminar). */
@@ -58,7 +54,6 @@ export const tariffsService = {
       currency: input.currency,
       allowsCard: input.allowsCard,
       allowsBankDeposit: input.allowsBankDeposit,
-      requiresBillingReview: input.requiresBillingReview ?? false,
       isDefault: isFirst || (input.isDefault ?? false),
     });
     return withClientCount(created);
@@ -100,9 +95,6 @@ export const tariffsService = {
       ...(patch.currency !== undefined ? { currency: patch.currency } : {}),
       ...(patch.allowsCard !== undefined ? { allowsCard: patch.allowsCard } : {}),
       ...(patch.allowsBankDeposit !== undefined ? { allowsBankDeposit: patch.allowsBankDeposit } : {}),
-      ...(patch.requiresBillingReview !== undefined
-        ? { requiresBillingReview: patch.requiresBillingReview }
-        : {}),
       ...(patch.isDefault ? { isDefault: true } : {}),
     });
     if (!updated) throw ClientRateErrors.notFound();

@@ -15,6 +15,7 @@ import * as announcementsSchema from '../modules/announcements/announcement.sche
 import * as shipmentsSchema from '../modules/shipments/shipments.schema';
 import * as shipmentCostsSchema from '../modules/costs/shipment-cost.schema';
 import * as paymentsSchema from '../modules/payments/payments.schema';
+import * as proformasSchema from '../modules/proformas/proformas.schema';
 import * as deliveriesSchema from '../modules/deliveries/deliveries.schema';
 import * as settingsSchema from '../modules/settings/settings.schema';
 
@@ -49,6 +50,7 @@ export const schema = {
   ...shipmentsSchema,
   ...shipmentCostsSchema,
   ...paymentsSchema,
+  ...proformasSchema,
   ...deliveriesSchema,
   ...announcementsSchema,
   ...settingsSchema,

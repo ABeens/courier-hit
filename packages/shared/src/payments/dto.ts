@@ -15,7 +15,7 @@
  * La moneda es obligatoria en el borde de entrada (regla M2) y la tasa de cambio
  * lo es AL GUARDAR (regla M5): ningun abono se persiste sin las dos. Que el
  * cuerpo la traiga o la ponga el servidor depende de quien registra (ver
- * `recordPaymentSchema`), pero la fila siempre acaba con una tasa validada.
+ * `recordProformaPaymentSchema`), pero la fila siempre acaba con una tasa validada.
  */
 import { z } from 'zod';
 import { Currency } from '../money/currency';
@@ -56,49 +56,6 @@ const noteSchema = z.string().trim().max(500, 'La nota es demasiado larga.');
 // ---------------------------------------------------------------------------
 
 /**
- * El cliente paga un tramite suyo. NO lleva monto ni moneda: el servidor cobra el
- * monto de factura congelado del tramite y captura la tasa del dia. Lo unico que
- * elige el cliente es COMO paga, y esa eleccion aun la filtra su tarifa (una
- * tarifa que no admite tarjeta no ofrece la opcion).
- *
- * En deposito bancario el comprobante se sube aparte (multipart) contra
- * `/payments/:id/receipt`: mezclar archivo y JSON en un mismo cuerpo obligaria a
- * validar el pago y el adjunto en la misma transaccion.
- */
-export const startPaymentSchema = z
-  .object({
-    shipmentId: z.string().uuid('Trámite inválido.'),
-    method: z.nativeEnum(PaymentMethod, {
-      errorMap: () => ({ message: 'Elige un medio de pago válido.' }),
-    }),
-    /** Solo deposito: datos que el cliente ya conoce al subir su comprobante. */
-    bankAccount: z
-      .nativeEnum(BankAccount, {
-        errorMap: () => ({ message: 'Elige la cuenta donde hiciste el depósito.' }),
-      })
-      .optional(),
-    receiptNumber: receiptNumberSchema.optional(),
-    depositedAt: instantSchema.optional(),
-  })
-  .superRefine((data, ctx) => {
-    /**
-     * En deposito la cuenta es OBLIGATORIA: el requerimiento pide guardar "a cual
-     * cuenta realizo el deposito", y un abono sin cuenta obliga a quien valida a
-     * revisar los cuatro estados de cuenta para encontrarlo. Con tarjeta no aplica
-     * y el servidor la ignora. QUE cuentas son validas depende del tipo de tramite
-     * y eso lo decide el servidor, que es quien conoce el tramite.
-     */
-    if (data.method === PaymentMethod.DepositoBancario && !data.bankAccount) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['bankAccount'],
-        message: 'Elige la cuenta donde hiciste el depósito.',
-      });
-    }
-  });
-export type StartPaymentInput = z.infer<typeof startPaymentSchema>;
-
-/**
  * Correccion de la cuenta de un deposito por el staff, con la nota de por que.
  *
  * Va por su propia puerta y no dentro de `resolvePaymentSchema` porque el
@@ -121,41 +78,6 @@ export type UpdateBankAccountInput = z.infer<typeof updateBankAccountSchema>;
 // ---------------------------------------------------------------------------
 // Registro manual por el staff (permiso payments.record)
 // ---------------------------------------------------------------------------
-
-/**
- * "Informacion de Pago" del manual: el staff registra un deposito que el cliente
- * ya hizo. Aqui el monto SI viaja en el cuerpo, con su moneda: no se deduce del
- * saldo porque un deposito puede ser parcial, venir por otra moneda o traer un
- * centimo de diferencia, y lo que se asienta es lo que dice el comprobante.
- *
- * Lo que NO decide este cuerpo es si el abono queda confirmado: eso sale del
- * permiso de quien lo manda (`recordedPaymentStatus`). Registrar y aprobar son
- * dos actos distintos y el segundo es solo del administrador.
- */
-export const recordPaymentSchema = z.object({
-  shipmentId: z.string().uuid('Trámite inválido.'),
-  amount: paymentAmountSchema,
-  currency: z.nativeEnum(Currency, {
-    errorMap: () => ({ message: 'Elige la moneda del monto.' }),
-  }),
-  /**
-   * Tasa con la que se congela el abono (regla M5). OPCIONAL EN EL BORDE, nunca
-   * en la fila: quien no puede fijar la tasa (`canSetExchangeRate`) no tiene por
-   * que digitarla, y el servidor la resuelve con la de la factura (la que ademas
-   * cuadra el abono con lo cobrado) o con la global. Exigirla aqui obligaria a
-   * la pantalla del Operativo a inventar un numero que el servidor iba a
-   * descartar de todos modos. Venga o se resuelva, pasa por este mismo esquema
-   * antes de guardarse: presente y mayor que cero.
-   */
-  exchangeRate: exchangeRateSchema.optional(),
-  bankAccount: z.nativeEnum(BankAccount, {
-    errorMap: () => ({ message: 'Elige la cuenta donde entró el depósito.' }),
-  }),
-  receiptNumber: receiptNumberSchema,
-  depositedAt: instantSchema,
-  note: noteSchema.optional(),
-});
-export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 
 /**
  * Resolucion de un pago pendiente por el staff: confirmarlo o rechazarlo. El
