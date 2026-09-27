@@ -35,6 +35,7 @@ import type {
 import { ModalOverlay } from '../components/ModalOverlay';
 import { API_BASE, ApiError, api } from '../lib/api';
 import { formatDate, formatStamp } from '../lib/datetime';
+import { useErrorToast } from '../lib/toast';
 
 /**
  * Pildora del estado de un abono. Rechazado NO es un estado neutro: es dinero
@@ -111,7 +112,7 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
 
   const [payments, setPayments] = useState<PaymentDto[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   /**
    * Aviso de lo que acaba de pasar. Lleva el tono aparte porque no todo lo que
    * sale bien es una buena noticia: rechazar un abono funciona, pero anunciarlo
@@ -228,7 +229,6 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
           {notice && <div className={`banner${notice.ok ? ' ok' : ''}`}>{notice.text}</div>}
 
           {/*

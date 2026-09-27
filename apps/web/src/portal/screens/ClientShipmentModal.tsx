@@ -36,6 +36,7 @@ import type { ShipmentDto } from '@courier/shared';
 import { FileField } from '../components/FileField';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { ApiError, api } from '../lib/api';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   onClose: () => void;
@@ -52,7 +53,7 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
   // `documentFile` y no `document`: ese nombre ya es el del DOM y esconderlo
   // dentro del componente se paga caro el dia que alguien lo necesite.
   const [documentFile, setDocumentFile] = useState<File | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [created, setCreated] = useState<ShipmentDto | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -161,7 +162,6 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
           {created && (
             <div className="banner ok">
               Prealerta registrada con el consecutivo <strong>{created.code}</strong> ({created.tracking}).

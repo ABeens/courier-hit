@@ -26,6 +26,7 @@ import {
 import type { ShipmentDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   mode: 'create' | 'edit';
@@ -58,7 +59,7 @@ export function UnassignedFormModal({ mode, initialHawb, row, onClose, onSaved }
     row?.declaredValueUsd != null ? String(row.declaredValueUsd) : '',
   );
   const [notes, setNotes] = useState(row?.billingNotes ?? '');
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
 
   /**
@@ -134,7 +135,6 @@ export function UnassignedFormModal({ mode, initialHawb, row, onClose, onSaved }
         </div>
 
         <div className="modal-body modal-form">
-          {error && <div className="banner err col-full">{error}</div>}
 
           <div className="col-full">
             <label className="field-label" htmlFor="u-description">Descripción del bulto</label>

@@ -8,6 +8,7 @@ import { ModalOverlay } from '../components/ModalOverlay';
 import { ROLE_LABELS, Role, STAFF_ROLES, createStaffSchema } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import type { StaffRow } from './UsersScreen';
+import { useErrorToast } from '../lib/toast';
 
 export interface SavedResult {
   message?: string;
@@ -27,7 +28,7 @@ export function StaffFormModal({ mode, row, onClose, onSaved }: Props) {
   const [email, setEmail] = useState(row?.email ?? '');
   const [phone, setPhone] = useState(row?.phone ?? '');
   const [role, setRole] = useState<Role>(row?.role ?? Role.Operativo);
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -84,7 +85,6 @@ export function StaffFormModal({ mode, row, onClose, onSaved }: Props) {
         </div>
 
         <div className="modal-body modal-form">
-          {error && <div className="banner err col-full">{error}</div>}
 
           <div>
             <label className="field-label" htmlFor="f-name">Nombre completo</label>

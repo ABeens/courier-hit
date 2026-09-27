@@ -51,6 +51,7 @@ import {
   proformaStatusPill,
   proformaTotal,
 } from './ProformasScreen';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   id: string;
@@ -72,7 +73,7 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
   const canDispatch = can(role, Permission.DeliveryManage);
 
   const [data, setData] = useState<ProformaDetailDto | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [fe, setFe] = useState('');
@@ -246,7 +247,6 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
           {notice && <div className="banner ok">{notice}</div>}
 
           {data && (

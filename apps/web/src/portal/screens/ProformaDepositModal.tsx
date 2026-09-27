@@ -25,6 +25,7 @@ import { FileField } from '../components/FileField';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { ApiError, api } from '../lib/api';
 import { startOfLocalDayUtc } from '../lib/datetime';
+import { useErrorToast } from '../lib/toast';
 
 /** Hoy en formato `yyyy-mm-dd`, para precargar la fecha del deposito. */
 function today(): string {
@@ -48,7 +49,7 @@ export function ProformaDepositModal({ proforma, role, onClose, onSaved }: Props
   const [depositDate, setDepositDate] = useState(today());
   const [note, setNote] = useState('');
   const [receipt, setReceipt] = useState<File | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [saving, setSaving] = useState(false);
 
   const bornAs = recordedPaymentStatus(role);
@@ -132,7 +133,6 @@ export function ProformaDepositModal({ proforma, role, onClose, onSaved }: Props
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
 
           <div className="pay-sec is-money">
             <dl className="pay-fields">

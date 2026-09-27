@@ -16,6 +16,7 @@ import type { ProformaDetailDto } from '@courier/shared';
 import { API_BASE, ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { proformaTotal } from './ProformasScreen';
+import { useErrorToast } from '../lib/toast';
 
 type Mark = 'entregado' | 'devuelto' | 'pendiente';
 
@@ -40,7 +41,7 @@ export function ProformaDeliveryModal({ proformaId, onClose, onSaved }: Props) {
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -140,7 +141,6 @@ export function ProformaDeliveryModal({ proformaId, onClose, onSaved }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
 
           {data && inRoute.length === 0 && (
             <div className="banner">Esta proforma no tiene paquetes en ruta de entrega.</div>

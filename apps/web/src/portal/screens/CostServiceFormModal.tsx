@@ -26,6 +26,7 @@ import {
 } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import type { CostServiceRow } from './CostServicesScreen';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   mode: 'create' | 'edit';
@@ -44,7 +45,7 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
   const [currency, setCurrency] = useState<Currency>(row?.currency ?? Currency.USD);
   const [category, setCategory] = useState<CostCategory>(row?.category ?? DEFAULT_COST_CATEGORY);
   const [feCode, setFeCode] = useState(row?.electronicInvoiceCode ?? '');
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
 
   const valueTypeOptions = allowedValueTypes(kind);
@@ -143,7 +144,6 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
 
           <div>
             <label className="field-label" htmlFor="s-name">Nombre del servicio</label>

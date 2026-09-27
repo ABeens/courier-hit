@@ -33,6 +33,7 @@ import type {
 import { API_BASE, ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { formatStamp } from '../lib/datetime';
+import { toast } from '../lib/toast';
 import { STATE_TONE } from '../lib/tone';
 import { tracePlace } from '../lib/trace';
 
@@ -160,7 +161,9 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
       })
       .catch((err) => {
         if (alive) {
-          setError(err instanceof ApiError ? err.message : 'No se pudo cargar el historial.');
+          const message = err instanceof ApiError ? err.message : 'No se pudo cargar el historial.';
+          setError(message);
+          toast.error(message);
         }
       });
     return () => {
@@ -186,8 +189,6 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
           </div>
 
           <div className="modal-body">
-            {error && <div className="banner err">{error}</div>}
-
             {/* Las fotos van ARRIBA del recorrido: son lo primero que se mira
                 cuando existen (es la foto de "mi paquete"), y sin ellas la ventana
                 queda exactamente como estaba. La seccion entera desaparece cuando
@@ -223,7 +224,7 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
               </section>
             )}
 
-            {!events && !error && <div className="empty">Cargando historial…</div>}
+            {!events && <div className="empty">{error ? 'No se pudo cargar el historial.' : 'Cargando historial…'}</div>}
 
             {events && events.length === 0 && !error && (
               <div className="empty">Este trámite todavía no registra movimientos.</div>

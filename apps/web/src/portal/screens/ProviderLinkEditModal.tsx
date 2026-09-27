@@ -16,6 +16,7 @@ import { HELGA_SYNC_STATUS_LABELS, HelgaSyncStatus } from '@courier/shared';
 import type { ProviderLinkDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   row: ProviderLinkDto;
@@ -29,7 +30,7 @@ export function ProviderLinkEditModal({ row, onClose, onSaved }: Props) {
   const [helgaClientId, setHelgaClientId] = useState(row.helgaClientId ?? '');
   const [subLocker, setSubLocker] = useState(row.subLocker ?? '');
   const [note, setNote] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [saving, setSaving] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -75,7 +76,6 @@ export function ProviderLinkEditModal({ row, onClose, onSaved }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
 
           {row.lastError && (
             <div className="banner" style={{ marginBottom: 14 }}>

@@ -25,6 +25,7 @@ import {
 import { API_BASE, ApiError } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 import type { DeliveryQueueRow } from './DeliveriesScreen';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   row: DeliveryQueueRow;
@@ -51,7 +52,7 @@ export function DeliveryConfirmModal({ row, outcome, onClose, onSaved }: Props) 
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [note, setNote] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [saving, setSaving] = useState(false);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -155,7 +156,6 @@ export function DeliveryConfirmModal({ row, outcome, onClose, onSaved }: Props) 
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
 
           {required.photo && (
             <div>

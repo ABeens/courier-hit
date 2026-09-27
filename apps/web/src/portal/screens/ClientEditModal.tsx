@@ -15,6 +15,7 @@ import { CURRENCY_LABELS, Currency } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 import type { ClientRow } from './ClientsScreen';
+import { useErrorToast } from '../lib/toast';
 
 interface Rate {
   id: string;
@@ -37,7 +38,7 @@ export function ClientEditModal({ row, onClose, onSaved }: Props) {
     row.creditLimit != null ? String(row.creditLimit) : '',
   );
   const [currency, setCurrency] = useState<Currency>(row.creditLimitCurrency ?? Currency.USD);
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [saving, setSaving] = useState(false);
 
   // El selector de tarifas se carga al abrir: son pocas y cambian poco, pero
@@ -95,7 +96,6 @@ export function ClientEditModal({ row, onClose, onSaved }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
 
           <div>
             <label className="field-label" htmlFor="c-rate">Tarifa asignada</label>

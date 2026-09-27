@@ -16,6 +16,7 @@ import { discardShipmentSchema } from '@courier/shared';
 import type { ShipmentDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   row: ShipmentDto;
@@ -25,7 +26,7 @@ interface Props {
 
 export function DiscardPackageModal({ row, onClose, onSaved }: Props) {
   const [reason, setReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -59,7 +60,6 @@ export function DiscardPackageModal({ row, onClose, onSaved }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
 
           <div>
             <label className="field-label" htmlFor="d-reason">Motivo</label>

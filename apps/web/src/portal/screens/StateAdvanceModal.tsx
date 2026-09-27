@@ -30,6 +30,7 @@ import {
 import type { Role, ShipmentDto, State } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   row: ShipmentDto;
@@ -62,7 +63,7 @@ export function StateAdvanceModal({ row, role, onClose, onSaved }: Props) {
   const targets = useMemo(() => reachableStates(row, role), [row, role]);
   const [target, setTarget] = useState<State | ''>(targets[0] ?? '');
   const [note, setNote] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
 
   /**
@@ -119,7 +120,6 @@ export function StateAdvanceModal({ row, role, onClose, onSaved }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
 
           <div>
             <label className="field-label">Estado actual</label>

@@ -140,6 +140,23 @@ export const proformaDraftsService = {
   },
 
   /**
+   * El tramite SALIO de "Facturacion en proceso" por una correccion de estado
+   * (hacia atras o saltando). Si sigue en un BORRADOR se saca de ahi: un borrador
+   * con un tramite fuera de facturacion no se podria aprobar. Si vuelve a
+   * facturacion, `onEnterBilling` lo pone de nuevo en el borrador del cliente.
+   *
+   * Con la factura congelada o la proforma ya aprobada no se toca nada: eso se
+   * deshace corrigiendo la proforma, no el estado del tramite.
+   */
+  async onLeaveBilling(shipment: DraftSubject): Promise<void> {
+    if (shipment.costsApprovedAt !== null) return;
+    const proforma = await proformasRepo.findByShipment(shipment.id);
+    if (!proforma || !isProformaEditable(proforma.status)) return;
+    const from = await proformasRepo.detachShipment(shipment.id);
+    if (from) await proformasRepo.deleteIfEmptyDraft(from);
+  },
+
+  /**
    * El tramite cambio de dueño: sacarlo del borrador del dueño anterior y, si esta
    * en facturacion, ponerlo en el del nuevo con el flete de SU tarifa.
    *

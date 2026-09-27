@@ -36,6 +36,7 @@ import {
 import type { Role, ShipmentCostsDto, ShipmentDto, SuggestedCostLine } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { formatDate } from '../lib/datetime';
+import { useErrorToast } from '../lib/toast';
 
 /**
  * Que se edita: las lineas de un tramite, o los servicios de una proforma. De
@@ -126,7 +127,7 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
   /** Clave de la ultima fila agregada a mano: es la que lleva el destello. */
   const [lastAdded, setLastAdded] = useState<string | null>(null);
   const [rate, setRate] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -420,7 +421,6 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
           {notice && <div className="banner ok">{notice}</div>}
 
           {approved && (

@@ -25,6 +25,7 @@ import { IconButton } from '../components/IconButton';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { ApiError, api } from '../lib/api';
 import { formatDateTime } from '../lib/datetime';
+import { useErrorToast } from '../lib/toast';
 import { ApiDocsPanel } from './ApiDocsPanel';
 
 /** Qué está a punto de hacer el modal de confirmación. */
@@ -299,7 +300,7 @@ function CreateKeyModal({
   onCreated: (key: ApiKeyCreatedDto) => void;
 }) {
   const [name, setName] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -326,7 +327,6 @@ function CreateKeyModal({
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
           <div>
             <label className="field-label" htmlFor="k-name">Nombre</label>
             <input
@@ -367,7 +367,7 @@ function ConfirmKeyModal({
   onClose: () => void;
   onDone: (key: ApiKeyCreatedDto | null) => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
   const isRotate = pending.action === 'rotate';
 
@@ -398,8 +398,6 @@ function ConfirmKeyModal({
               : `«${pending.row.name}» dejará de funcionar de inmediato y no se puede recuperar. Lo que la esté usando empezará a recibir errores.`}
           </p>
         </div>
-
-        <div className="modal-body">{error && <div className="banner err">{error}</div>}</div>
 
         <div className="modal-foot">
           <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>

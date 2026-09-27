@@ -18,6 +18,7 @@ import type { ShipmentDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { ClientPicker } from '../components/ClientPicker';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   row: ShipmentDto;
@@ -35,7 +36,7 @@ export function AssignOwnerModal({ row, onClose, onSaved, endpoint }: Props) {
   const isReassignment = row.client !== null;
   const [clientId, setClientId] = useState('');
   const [note, setNote] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
 
   /**
@@ -82,7 +83,6 @@ export function AssignOwnerModal({ row, onClose, onSaved, endpoint }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
 
           {invoiceFrozen && (
             <div className="banner err">

@@ -38,6 +38,7 @@ import { Icon } from '../components/Icon';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { OnvoCardForm } from '../components/OnvoCardForm';
 import type { PaymentResult } from './PaymentResultModal';
+import { useErrorToast } from '../lib/toast';
 
 const CONFIRM_POLL_MS = 2_000;
 const CONFIRM_ATTEMPTS = 15;
@@ -65,7 +66,7 @@ export function ProformaPaymentModal({ onClose, onPaid, onProcessing }: Props) {
   const [receiptNumber, setReceiptNumber] = useState('');
   const [depositDate, setDepositDate] = useState('');
   const [receipt, setReceipt] = useState<File | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [notice, setNotice] = useState<string | null>(null);
   /** Por que se quitaron proformas de la seleccion al cambiar de moneda. */
   const [currencyNotice, setCurrencyNotice] = useState<string | null>(null);
@@ -295,7 +296,6 @@ export function ProformaPaymentModal({ onClose, onPaid, onProcessing }: Props) {
   const cardOpen = cardIntent != null;
   const alerts = (
     <>
-      {error && <div className="banner err">{error}</div>}
       {notice && <div className="banner ok">{notice}</div>}
     </>
   );

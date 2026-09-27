@@ -168,6 +168,12 @@ export const transitionsService = {
    * no le manda al cliente un correo diciendo que su paquete retrocedio. El
    * evento si se escribe.
    *
+   * Lo que SI mantiene es el paso 5, la PROFORMA, porque no es un aviso sino
+   * consistencia de datos: un tramite en "Facturacion en proceso" sin proforma no
+   * se puede aprobar ni cobrar, y uno que sale de facturacion no puede quedarse
+   * en un borrador (aprobarlo fallaria). Entrar lo pone en su borrador; salir lo
+   * saca del borrador (solo si sigue en borrador y sin factura).
+   *
    * De la barrera 3 (CONDICIONES) se conserva UNA, la del monto de factura, y la
    * linea entre las que se saltan y esa no es arbitraria:
    *   - `RequiresConfirmedPayment` es POLITICA de proceso ("no despachar sin
@@ -209,6 +215,12 @@ export const transitionsService = {
     // El prefijo hace que el historial distinga una correccion de un avance real:
     // sin el, el timeline del tramite mentiria sobre como llego a ese estado.
     await shipmentsRepo.transition(id, to, session.userId, `Corrección: ${input.note}`);
+
+    if (to === State.FacturacionEnProceso) {
+      await proformaDraftsService.onEnterBilling(session, row);
+    } else if (row.state === State.FacturacionEnProceso) {
+      await proformaDraftsService.onLeaveBilling(row);
+    }
 
     const updated = await shipmentsRepo.findById(id);
     if (!updated) throw ShipmentErrors.notFound();

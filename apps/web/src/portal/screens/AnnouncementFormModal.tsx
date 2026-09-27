@@ -17,6 +17,7 @@ import {
 } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import type { AnnouncementRow } from './AnnouncementsScreen';
+import { useErrorToast } from '../lib/toast';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -54,7 +55,7 @@ export function AnnouncementFormModal({ mode, row, onClose, onSaved }: Props) {
   const [startsAt, setStartsAt] = useState(row ? toLocalInput(row.startsAt) : defaultLocal(0));
   const [endsAt, setEndsAt] = useState(row ? toLocalInput(row.endsAt) : defaultLocal(7));
   const [enabled, setEnabled] = useState(row?.enabled ?? true);
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -127,7 +128,6 @@ export function AnnouncementFormModal({ mode, row, onClose, onSaved }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
 
           <div>
             <label className="field-label" htmlFor="a-title">

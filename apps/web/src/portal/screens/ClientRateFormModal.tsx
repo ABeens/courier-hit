@@ -18,6 +18,7 @@ import {
 } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import type { ClientRateRow } from './TariffsScreen';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   mode: 'create' | 'edit';
@@ -39,7 +40,7 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
   // Una tarifa por defecto no se puede "desmarcar" desde aqui: solo se promueve otra.
   const [isDefault, setIsDefault] = useState(row?.isDefault ?? false);
   const lockDefault = mode === 'edit' && (row?.isDefault ?? false);
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -116,7 +117,6 @@ export function ClientRateFormModal({ mode, row, onClose, onSaved }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
 
           <div>
             <label className="field-label" htmlFor="r-name">Nombre de la tarifa</label>

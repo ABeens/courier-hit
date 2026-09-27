@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Principal, Role } from '@courier/shared';
 import { api } from './lib/api';
 import { clearDismissedAnnouncements } from './lib/announcements';
+import { Toaster } from './components/Toaster';
 import { LoginScreen } from './screens/LoginScreen';
 import { PortalShell } from './PortalShell';
 import './portal.css';
@@ -74,6 +75,10 @@ export default function PortalApp() {
   }
 
   if (loading) return <div className="portal-splash">Cargando…</div>;
-  if (!me) return <LoginScreen onLoggedIn={handleLoggedIn} />;
-  return <PortalShell me={me} onLoggedOut={handleLoggedOut} />;
+  return (
+    <>
+      {me ? <PortalShell me={me} onLoggedOut={handleLoggedOut} /> : <LoginScreen onLoggedIn={handleLoggedIn} />}
+      <Toaster />
+    </>
+  );
 }

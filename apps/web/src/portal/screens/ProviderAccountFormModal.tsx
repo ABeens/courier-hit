@@ -19,6 +19,7 @@ import type { ProviderAccountDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { PasswordField } from '../components/PasswordField';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   mode: 'create' | 'edit';
@@ -39,7 +40,7 @@ export function ProviderAccountFormModal({ mode, row, onClose, onSaved }: Props)
   const [oauthClientId, setOauthClientId] = useState('');
   const [oauthClientSecret, setOauthClientSecret] = useState('');
   const [appId, setAppId] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [saving, setSaving] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -99,7 +100,6 @@ export function ProviderAccountFormModal({ mode, row, onClose, onSaved }: Props)
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
 
           <div className="field-pair">
             <div>

@@ -17,6 +17,7 @@ import { PROVINCES, getCantons, getDistricts } from '@courier/shared';
 import type { CreateConsolidatedClientResultDto, ProviderAccountDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   account: ProviderAccountDto;
@@ -33,7 +34,7 @@ export function ConsolidatedClientModal({ account, onClose, onSaved }: Props) {
   const [cantonCode, setCantonCode] = useState('');
   const [districtCode, setDistrictCode] = useState('');
   const [addressLine, setAddressLine] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [saving, setSaving] = useState(false);
   /** Solo en desarrollo: en producción el enlace viaja únicamente por correo. */
   const [inviteLink, setInviteLink] = useState<string | null>(null);
@@ -135,7 +136,6 @@ export function ConsolidatedClientModal({ account, onClose, onSaved }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
 
           <div className="field-pair">
             <div>

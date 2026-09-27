@@ -18,6 +18,7 @@ import { Condition, STATE_LABELS, clientName, conditionsFor, statesOf } from '@c
 import type { ShipmentDto, State } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   row: ShipmentDto;
@@ -31,7 +32,7 @@ export function StateCorrectModal({ row, onClose, onSaved }: Props) {
   const options = statesOf(row.flow).filter((s) => s !== row.state);
   const [target, setTarget] = useState<State | ''>('');
   const [note, setNote] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
 
   /**
@@ -86,7 +87,6 @@ export function StateCorrectModal({ row, onClose, onSaved }: Props) {
         </div>
 
         <div className="modal-body">
-          {error && <div className="banner err">{error}</div>}
 
           <div className="banner" style={{ background: 'var(--paper-2)', color: 'var(--muted)' }}>
             Esto no es un avance: salta las reglas del flujo para enmendar un error.

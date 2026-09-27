@@ -33,6 +33,7 @@ import {
 } from '@courier/shared';
 import type { Role, ShipmentDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
+import { useErrorToast } from '../lib/toast';
 
 interface Props {
   mode: 'create' | 'edit';
@@ -98,7 +99,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
   const [warehouse, setWarehouse] = useState(row?.warehouse ?? '');
   const [dua, setDua] = useState(row?.dua ?? '');
   const [feNumber, setFeNumber] = useState(row?.electronicInvoiceNumber ?? '');
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
 
   const isPackage = usesPackageFields(shipmentType);
@@ -260,7 +261,6 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
         </div>
 
         <div className="modal-body modal-form">
-          {error && <div className="banner err col-full">{error}</div>}
           {mode === 'edit' && someFrozen && row && (
             <div className="banner col-full" style={{ background: 'var(--paper-2)', color: 'var(--muted)' }}>
               {allFrozen

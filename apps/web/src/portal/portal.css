@@ -2065,3 +2065,41 @@ button.dash-row:focus-visible { outline: 2px solid var(--brand); outline-offset:
   .api-doc__op-name { flex-basis: 100%; }
   .api-doc__foot { flex-direction: column; align-items: stretch; }
 }
+
+/* ---- Avisos flotantes (toasts) ----
+   Fijos a la ventana y por encima de los modales (.overlay es z 80): un error
+   dentro de un modal con scroll se ve aunque el cuerpo no este arriba. Abajo a
+   la derecha en escritorio, a todo el ancho en movil. */
+.toaster {
+  position: fixed; right: 20px; bottom: 20px; z-index: 120;
+  display: flex; flex-direction: column; gap: 10px;
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.toast {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 12px 12px 14px; border-radius: var(--r-sm);
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-left-width: 4px;
+  box-shadow: 0 10px 30px rgba(20,24,40,.18);
+  font-size: 13.5px; font-weight: 600; line-height: 1.4;
+  pointer-events: auto;
+  animation: fadeUp .25s cubic-bezier(.2,.7,.3,1) both;
+}
+.toast.err { border-left-color: var(--danger); }
+.toast.err .toast-icon { color: var(--danger); }
+.toast.ok { border-left-color: var(--ok); }
+.toast.ok .toast-icon { color: var(--ok); }
+.toast.info { border-left-color: var(--info); }
+.toast.info .toast-icon { color: var(--info); }
+.toast-icon { flex: none; margin-top: 1px; }
+.toast-msg { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.toast-close {
+  flex: none; display: grid; place-items: center; width: 24px; height: 24px;
+  margin: -2px -2px 0 0; border: 0; border-radius: var(--r-xs);
+  background: transparent; color: var(--muted); cursor: pointer;
+}
+.toast-close:hover { background: var(--line-2); color: var(--ink); }
+@media (max-width: 640px) {
+  .toaster { left: 16px; right: 16px; bottom: 16px; width: auto; }
+}
