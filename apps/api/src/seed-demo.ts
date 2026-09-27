@@ -21,6 +21,10 @@
  * su moneda explicita (M2) y su tasa de cambio del momento (M5); los importes
  * derivados pasan por `roundMoney`/`convertMoney`/`computeTotals` (M4).
  *
+ * Al final pasa a proformas lo facturado (`backfillProformas`) y agrega el
+ * escenario del video demo de proformas (`seed-demo-proformas.ts`, guion en
+ * docs/demo-proformas.html), cuyos codigos imprime.
+ *
  * Uso: pnpm --filter @courier/api db:seed:demo
  *      pnpm --filter @courier/api db:seed:demo -- --reset   (borra y resiembra)
  *   Variable opcional: SEED_DEMO_PASSWORD (por defecto `Demo1234!`).
@@ -70,7 +74,7 @@ import { clients, users } from './modules/auth/auth.schema';
 import { costServices } from './modules/cost-services/cost-service.schema';
 import { shipmentCosts } from './modules/costs/shipment-cost.schema';
 import { deliveryAttempts } from './modules/deliveries/deliveries.schema';
-import { payments } from './modules/payments/payments.schema';
+import { paymentGroups, payments } from './modules/payments/payments.schema';
 import { cantonRoutes } from './modules/routes/canton-route.schema';
 import { districtRoutes } from './modules/routes/district-route.schema';
 import { shipmentEvents, shipments } from './modules/shipments/shipments.schema';
@@ -81,6 +85,8 @@ import {
   freightRateHistory,
 } from './modules/settings/settings.schema';
 import { backfillProformas } from './modules/proformas/proforma-backfill';
+import { proformas } from './modules/proformas/proformas.schema';
+import { seedProformaScenario } from './seed-demo-proformas';
 import { clientRates } from './modules/tariffs/tariffs.schema';
 import {
   COST_SERVICES as SERVICES,
@@ -630,6 +636,12 @@ async function resetDemo(tx: Tx): Promise<void> {
     // Los tramites no caen con el casillero (no hay cascade): se borran primero.
     // Eso si arrastra eventos, costos, pagos e intentos de entrega.
     if (clientIds.length > 0) {
+      // Proformas y cobros agrupados ANTES que los usuarios: caen en cascada con
+      // el casillero, pero a la vez apuntan al staff de demo (aprobo, creo) con
+      // "set null", y Postgres intentaria ese UPDATE sobre filas cuyo casillero
+      // ya borro. Borrarlos primero evita el choque.
+      await tx.delete(proformas).where(inArray(proformas.clientId, clientIds));
+      await tx.delete(paymentGroups).where(inArray(paymentGroups.clientId, clientIds));
       await tx.delete(shipments).where(inArray(shipments.clientId, clientIds));
     }
     await tx.delete(users).where(inArray(users.id, userIds));
@@ -651,7 +663,8 @@ async function resetDemo(tx: Tx): Promise<void> {
   console.log('[seed-demo] Datos de demo anteriores eliminados.');
 }
 
-async function seed(tx: Tx): Promise<void> {
+/** Devuelve false si no sembro nada (ya habia datos de demo y no se pidio --reset). */
+async function seed(tx: Tx): Promise<boolean> {
   const reset = process.argv.includes('--reset') || process.env.SEED_DEMO_RESET === '1';
 
   const [existing] = await tx
@@ -662,7 +675,7 @@ async function seed(tx: Tx): Promise<void> {
   if (existing && !reset) {
     console.log('[seed-demo] Ya hay datos de demo sembrados. No se cambió nada.');
     console.log('  Para borrarlos y volver a sembrarlos: agrega -- --reset');
-    return;
+    return false;
   }
   if (reset) await resetDemo(tx);
 
@@ -1257,13 +1270,21 @@ async function seed(tx: Tx): Promise<void> {
   console.log(`  Staff:   ${STAFF.map((s) => email(s.handle)).join(', ')}`);
   console.log(`  Clientes: ${CLIENTS.map((c) => email(c.handle)).join(', ')}`);
   console.log('');
+  return true;
 }
 
-db.transaction((tx) => seed(tx))
+async function main(): Promise<void> {
+  const seeded = await db.transaction((tx) => seed(tx));
+  if (!seeded) return;
   // Los tramites facturados de la siembra entran a proformas (se facturan por
   // fuera del modulo): sin esto no se verian en la bandeja ni se podrian pagar.
-  .then(() => backfillProformas())
-  .then((r) => console.log(`[proformas] ${r.approved} proformas aprobadas y ${r.drafts} trámites en borrador.`))
+  const r = await backfillProformas();
+  console.log(`[proformas] ${r.approved} proformas aprobadas y ${r.drafts} trámites en borrador.`);
+  // El escenario del video: va aparte porque usa los servicios de la API.
+  await seedProformaScenario(DEMO_DOMAIN);
+}
+
+main()
   .then(() => process.exit(0))
   .catch((err) => {
     console.error('[seed-demo] error:', err);

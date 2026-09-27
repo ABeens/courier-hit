@@ -23,6 +23,9 @@ yarn.lock
 .env.*
 !.env.example
 
+# Vista previa de los correos diarios (scripts/preview-correos.ps1)
+correos-diarios/
+
 # Mundo del proveedor Helga simulado (HELGA_MODE=simulated)
 .helga-mock.json
 
