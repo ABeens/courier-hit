@@ -255,8 +255,16 @@ async function resolveExchangeRate(
  * Resuelve el juego completo de lineas a guardar. Dos pasadas, en este orden:
  * primero las que tienen importe propio, luego los porcentajes sobre esa base.
  * Un porcentaje NUNCA se calcula sobre otro porcentaje (ver `percentageBase`).
+ *
+ * `extraBase` suma a la base lineas que NO se guardan con estas: la proforma la
+ * usa para que el porcentaje de un servicio suyo se calcule sobre el subtotal de
+ * la proforma entera (sus paquetes mas sus servicios fijos), no solo sobre sus
+ * propios servicios.
  */
-export function resolveLines(input: CostLineInput[]): {
+export function resolveLines(
+  input: CostLineInput[],
+  extraBase: Parameters<typeof percentageBase>[0] = [],
+): {
   costServiceId: string | null;
   label: string;
   source: CostLineSource;
@@ -287,7 +295,7 @@ export function resolveLines(input: CostLineInput[]): {
         label: l.label,
         source: CostLineSource.Percentage,
         percentage: pct,
-        amount: applyPercentage(percentageBase(base, l.currency), pct, l.currency),
+        amount: applyPercentage(percentageBase([...base, ...extraBase], l.currency), pct, l.currency),
         currency: l.currency,
         exchangeRate: l.exchangeRate,
       };

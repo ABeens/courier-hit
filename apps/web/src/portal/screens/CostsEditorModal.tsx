@@ -27,7 +27,10 @@ import {
   ServiceValueType,
   canSetExchangeRate,
   clientFullLabel,
+  applyPercentage,
   computeTotals,
+  percentageBase,
+  roundMoney,
   formatMoney,
 } from '@courier/shared';
 import type { Role, ShipmentCostsDto, ShipmentDto, SuggestedCostLine } from '@courier/shared';
@@ -240,20 +243,26 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
   /**
    * Totales de la vista previa. Se calculan con el MISMO helper del dominio que
    * usa la API (`computeTotals`), asi lo que el operador ve antes de guardar es
-   * lo que se va a congelar. Los porcentajes se estiman sobre el subtotal.
+   * lo que se va a congelar. Los porcentajes se estiman sobre el subtotal; en una
+   * proforma ese subtotal incluye sus paquetes (`packagesSubtotal`), no solo
+   * los servicios que se editan aqui.
    */
   const preview = (() => {
     if (!rateOk) return null;
     const fixed = lines
       .filter((l) => l.source !== CostLineSource.Percentage)
-      .map((l) => ({ amount: Number(l.amount) || 0, currency: l.currency, exchangeRate: parsedRate }));
+      .map((l) => ({ amount: Number(l.amount) || 0, currency: l.currency, exchangeRate: parsedRate, source: l.source }));
+    const packages = data?.packagesSubtotal ?? { usd: 0, crc: 0 };
     const percentages = lines
       .filter((l) => l.source === CostLineSource.Percentage)
       .map((l) => {
-        const base = computeTotals(fixed);
-        const subtotal = l.currency === Currency.USD ? base.usd : base.crc;
+        // Mismos helpers que `resolveLines` en la API: base y redondeo en un solo punto.
+        const base = roundMoney(
+          percentageBase(fixed, l.currency) + (l.currency === Currency.USD ? packages.usd : packages.crc),
+          l.currency,
+        );
         return {
-          amount: (subtotal * (Number(l.percentage) || 0)) / 100,
+          amount: applyPercentage(base, Number(l.percentage) || 0, l.currency),
           currency: l.currency,
           exchangeRate: parsedRate,
         };
@@ -527,7 +536,9 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
                     </td>
                     <td>
                       {line.source === CostLineSource.Percentage ? (
-                        <span className="muted">% del subtotal</span>
+                        <span className="muted">
+                          {target.kind === 'proforma' ? '% del subtotal de la proforma' : '% del subtotal'}
+                        </span>
                       ) : !isAmountEditable(line) ? (
                         // La moneda del monto fijo tambien viene del catalogo.
                         <span className="muted">

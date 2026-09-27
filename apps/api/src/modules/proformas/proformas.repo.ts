@@ -217,6 +217,17 @@ export const proformasRepo = {
   },
 
   /**
+   * Fija el importe de servicios de la proforma ya guardados, dentro de `tx`. Lo
+   * usa la aprobacion para congelar los porcentajes calculados sobre el subtotal
+   * de ese momento.
+   */
+  async setProformaLineAmounts(tx: Tx, updates: readonly { id: string; amount: number }[]) {
+    for (const u of updates) {
+      await tx.update(proformaCosts).set({ amount: u.amount }).where(eq(proformaCosts.id, u.id));
+    }
+  },
+
+  /**
    * Bloquea la proforma dentro de `tx` y la devuelve. Lo usan aprobar y corregir
    * para que dos personas no hagan lo mismo sobre la misma proforma a la vez: la
    * segunda espera, relee el estado y se encuentra con que ya no aplica.

@@ -141,6 +141,13 @@ export interface ShipmentCostsDto {
   /** Sugerencias para agregar (vacio si ya esta aprobado). */
   suggestions: SuggestedCostLine[];
   totals: { usd: number; crc: number };
+  /**
+   * Solo en el editor de servicios de una PROFORMA: lo que suman sus paquetes
+   * (sin porcentajes), en cada moneda. Es parte de la base de los porcentajes de
+   * la proforma, que se calculan sobre su subtotal entero y no solo sobre sus
+   * servicios. En un tramite no viene.
+   */
+  packagesSubtotal?: { usd: number; crc: number };
   /** Aprobado = congelado. Ya no admite edicion. */
   approved: boolean;
   approvedAt: string | null;

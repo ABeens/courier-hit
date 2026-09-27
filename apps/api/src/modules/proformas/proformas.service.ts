@@ -30,6 +30,7 @@
 import {
   CARD_SURCHARGE_LABEL,
   CORRECTION_NOTE_PREFIX,
+  CostLineSource,
   Currency,
   Flow,
   PROFORMA_JOIN_BLOCK_MESSAGES,
@@ -37,6 +38,7 @@ import {
   ProformaStatus,
   State,
   allocateProformaInvoices,
+  applyPercentage,
   breakdownByCategory,
   canSetExchangeRate,
   canTransition,
@@ -51,6 +53,7 @@ import {
   isProformaEditable,
   joinBlockFor,
   payableStateOf,
+  percentageBase,
   proformaDeliveryStatus,
   roundMoney,
   sumInvoices,
@@ -119,6 +122,31 @@ function groupBy<T>(rows: readonly T[], key: (row: T) => string): Map<string, T[
     map.set(key(row), list);
   }
   return map;
+}
+
+/**
+ * Base de los PORCENTAJES de la proforma: las lineas de sus tramites (sin la
+ * comision de la tarjeta, que se asienta despues de aprobar) mas sus servicios
+ * fijos. `percentageBase` descarta los porcentajes: nunca se calcula uno sobre
+ * otro.
+ */
+function percentageBaseLines(shipmentLines: readonly ShipmentLine[], proformaLines: readonly ProformaLine[]): Line[] {
+  return [...shipmentLines.filter((l) => l.paymentId === null), ...proformaLines];
+}
+
+/**
+ * Los servicios de la proforma con sus porcentajes calculados sobre el subtotal
+ * de AHORA. En un borrador el subtotal cambia (entran, salen o cambian paquetes)
+ * y el importe guardado puede estar viejo: se recalcula al leer, y la aprobacion
+ * congela el resultado.
+ */
+function withLivePercentages(proformaLines: readonly ProformaLine[], shipmentLines: readonly ShipmentLine[]): ProformaLine[] {
+  const base = percentageBaseLines(shipmentLines, proformaLines);
+  return proformaLines.map((l) =>
+    l.source === CostLineSource.Percentage && l.percentage !== null
+      ? { ...l, amount: applyPercentage(percentageBase(base, l.currency), l.percentage, l.currency) }
+      : l,
+  );
 }
 
 /**
@@ -211,9 +239,13 @@ export const proformasService = {
       proformasRepo.shipmentLinesOf(draftIds),
       proformasRepo.proformaLinesOf(draftIds),
     ]);
-    const linesBy = groupBy<Line>([...shipmentLines, ...proformaLines], (l) => l.proformaId);
+    const shipmentLinesBy = groupBy(shipmentLines, (l) => l.proformaId);
+    const extrasBy = groupBy(proformaLines, (l) => l.proformaId);
     return {
-      items: rows.map((row) => toListItem(row, linesBy.get(row.proforma.id) ?? [])),
+      items: rows.map((row) => {
+        const own = shipmentLinesBy.get(row.proforma.id) ?? [];
+        return toListItem(row, [...own, ...withLivePercentages(extrasBy.get(row.proforma.id) ?? [], own)]);
+      }),
       total,
       page: query.page,
       pageSize: query.pageSize,
@@ -229,6 +261,7 @@ export const proformasService = {
       proformasRepo.proformaLinesOf([id]),
     ]);
     const linesByShipment = groupBy(shipmentLines, (l) => l.shipmentId);
+    const extras = isProformaEditable(p.status) ? withLivePercentages(proformaLines, shipmentLines) : proformaLines;
 
     const items: ProformaShipmentDto[] = shipments.map((s) => {
       const lines = linesByShipment.get(s.id) ?? [];
@@ -248,13 +281,13 @@ export const proformasService = {
 
     const weights = shipments.map((s) => s.weightKg).filter((w): w is number => w !== null);
     return {
-      ...toListItem(header, [...shipmentLines, ...proformaLines]),
+      ...toListItem(header, [...shipmentLines, ...extras]),
       editable: isProformaEditable(p.status),
       accumulates: p.accumulates,
       // El peso no es un monto: se suma y se deja con tres decimales de bascula.
       totalWeightKg: weights.length > 0 ? Math.round(weights.reduce((a, b) => a + b, 0) * 1000) / 1000 : null,
       shipments: items,
-      costs: proformaLines.map(toLineDto),
+      costs: extras.map(toLineDto),
       exchangeRate: p.exchangeRate ?? (await currentRate()),
       electronicInvoiceNumber: p.electronicInvoiceNumber,
       approvedByName: header.approvedByName,
@@ -269,16 +302,25 @@ export const proformasService = {
   async costsView(session: Session, id: string): Promise<ShipmentCostsDto> {
     const header = await loadHeader(id);
     const p = header.proforma;
-    const [lines, suggestions, globalRate, reference] = await Promise.all([
+    const [saved, shipmentLines, suggestions, globalRate, reference] = await Promise.all([
       proformasRepo.proformaLinesOf([id]),
+      proformasRepo.shipmentLinesOf([id]),
       catalogSuggestions(p.flow),
       settingsRepo.currentExchangeRate(),
       canSetExchangeRate(session.role) ? exchangeRateReference.suggest() : null,
     ]);
     const editable = isProformaEditable(p.status);
+    const lines = editable ? withLivePercentages(saved, shipmentLines) : saved;
+    // Lo que los paquetes aportan a la base de los porcentajes, para que la
+    // vista previa del editor calcule igual que la API.
+    const packagesBase = percentageBaseLines(shipmentLines, []);
     return {
       shipmentId: id,
       lines: lines.map(toLineDto),
+      packagesSubtotal: {
+        usd: percentageBase(packagesBase, Currency.USD),
+        crc: percentageBase(packagesBase, Currency.CRC),
+      },
       suggestions: editable ? suggestions : [],
       totals: computeTotals(lines),
       approved: !editable,
@@ -312,7 +354,10 @@ export const proformasService = {
       lines = lines.map((l) => ({ ...l, exchangeRate: rate }));
     }
 
-    const resolved = resolveLines(lines);
+    // Los porcentajes van sobre el subtotal de la proforma entera: sus paquetes
+    // entran a la base aunque no se guarden con estas lineas.
+    const shipmentLines = await proformasRepo.shipmentLinesOf([id]);
+    const resolved = resolveLines(lines, percentageBaseLines(shipmentLines, []));
     const serviceIds = [...new Set(resolved.map((l) => l.costServiceId).filter((x) => x !== null))];
     const byId = new Map((await costServicesRepo.listByIds(serviceIds)).map((s) => [s.id, s]));
 
@@ -352,6 +397,8 @@ export const proformasService = {
       proformasRepo.proformaLinesOf([id]),
     ]);
     const linesByShipment = groupBy(shipmentLines, (l) => l.shipmentId);
+    // Los porcentajes, sobre el subtotal de este momento: es el que se congela.
+    const extras = withLivePercentages(proformaLines, shipmentLines);
 
     const payable = payableStateOf(p.flow);
     for (const s of shipments) {
@@ -395,9 +442,13 @@ export const proformasService = {
        * esas facturas. Asi el total de la proforma es exactamente lo que suman sus
        * tramites, y pagarla es saldar cada uno.
        */
+      await proformasRepo.setProformaLineAmounts(
+        tx,
+        extras.filter((l) => l.source === CostLineSource.Percentage).map((l) => ({ id: l.id, amount: l.amount })),
+      );
       const invoices = allocateProformaInvoices(
         shipments.map((s) => computeTotals(linesByShipment.get(s.id) ?? [])),
-        computeTotals(proformaLines),
+        computeTotals(extras),
         p.currency,
       );
       for (const [i, s] of shipments.entries()) {
@@ -573,6 +624,7 @@ export const proformasService = {
     ]);
     if (!client) throw ProformaErrors.notFound();
     const currency = p.currency;
+    const extras = isProformaEditable(p.status) ? withLivePercentages(proformaLines, shipmentLines) : proformaLines;
     /**
      * La comision del cobro con tarjeta se asienta en cada tramite (asi su factura
      * sube junto con su abono), pero para el cliente es UNA linea de la proforma
@@ -627,8 +679,8 @@ export const proformasService = {
         email: client.email,
       },
       items,
-      extras: [...proformaLines.map((l) => toDocumentLine(l, currency)), ...surchargeExtra],
-      totals: totalsOf(p, [...shipmentLines, ...proformaLines]),
+      extras: [...extras.map((l) => toDocumentLine(l, currency)), ...surchargeExtra],
+      totals: totalsOf(p, [...shipmentLines, ...extras]),
     };
   },
 
