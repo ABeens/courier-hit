@@ -24,6 +24,7 @@ import {
   isSettled,
   outstandingFor,
   paged,
+  toSlice,
   pendingAmount,
   proofRequirementFor,
   settledAmount,
@@ -55,6 +56,22 @@ import type {
  * de trescientas hojas que nadie imprime. Lo que deja fuera se anuncia.
  */
 const REPORT_LIMIT = 500;
+
+/**
+ * Tope de paquetes que se agrupan para la cola por proforma. La cola se agrupa en
+ * memoria (una proforma puede tener paquetes en paginas distintas de la consulta
+ * por paquete), asi que se lee entera hasta este freno, como la hoja de ruta.
+ */
+const STOPS_LIMIT = 2000;
+
+/** Paquetes de la proforma por estado: lo que la tarjeta cuenta ademas de lo que va en ruta. */
+export interface DeliveryStopCounts {
+  total: number;
+  inRoute: number;
+  inWarehouse: number;
+  delivered: number;
+  returned: number;
+}
 
 /** Fila de BD -> DTO de la API (fechas en ISO/UTC). */
 function toDto(row: Awaited<ReturnType<typeof deliveriesRepo.listByShipment>>[number]): DeliveryAttemptDto {
@@ -98,6 +115,47 @@ export const deliveriesService = {
       updatedAt: row.updatedAt.toISOString(),
     }));
     return paged(items, total, query);
+  },
+
+  /**
+   * La cola AGRUPADA POR PROFORMA: una parada por proforma, con sus paquetes en
+   * ruta y los conteos de la proforma entera (para avisar si algo sigue en
+   * bodega). Un paquete en ruta sin proforma (anterior al modulo) es su propia
+   * parada. Mismo filtro y mismo orden que la cola por paquete; se pagina por
+   * parada, no por paquete, para que una proforma no quede partida en dos paginas.
+   */
+  async stops(query: ListDeliveryQueueQuery) {
+    const page = await this.queue({ ...query, page: 1, pageSize: STOPS_LIMIT });
+    const groups = new Map<string, { proformaId: string | null; proformaNumber: number | null; shipments: typeof page.items }>();
+    for (const item of page.items) {
+      const key = item.proformaId ?? `shipment:${item.id}`;
+      const group = groups.get(key) ?? { proformaId: item.proformaId, proformaNumber: item.proformaNumber, shipments: [] };
+      group.shipments.push(item);
+      groups.set(key, group);
+    }
+    const all = [...groups.values()];
+    const { limit, offset } = toSlice(query);
+    const slice = all.slice(offset, offset + limit);
+
+    const ids = slice.map((g) => g.proformaId).filter((id): id is string => id !== null);
+    const rows = await deliveriesRepo.proformaStateCounts(ids);
+    const countsOf = (proformaId: string): DeliveryStopCounts => {
+      const own = rows.filter((r) => r.proformaId === proformaId);
+      const of = (state: State) => own.find((r) => r.state === state)?.n ?? 0;
+      return {
+        total: own.reduce((n, r) => n + r.n, 0),
+        inRoute: of(State.EnRutaEntrega),
+        inWarehouse: of(State.EnBodegaPendientePago),
+        delivered: of(State.Entregado),
+        returned: of(State.DevueltoBodega),
+      };
+    };
+
+    const items = slice.map((g) => ({
+      ...g,
+      counts: g.proformaId ? countsOf(g.proformaId) : null,
+    }));
+    return { ...paged(items, all.length, query), packagesInRoute: page.total };
   },
 
   /**

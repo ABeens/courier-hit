@@ -4,8 +4,9 @@
  *
  * Es la bandeja del modulo: los borradores que arma el sistema al recibir los
  * paquetes, las proformas aprobadas esperando pago y las pagadas. Desde aqui se
- * aprueba (una o varias a la vez) y se entra al detalle, donde se ajusta el
- * borrador, se corrige una aprobada o se registra un deposito.
+ * aprueba (una o varias a la vez), se envian a ruta las pagadas de Paqueteria
+ * (permiso de entregas) y se entra al detalle, donde se ajusta el borrador, se
+ * corrige una aprobada o se registra un deposito.
  *
  * Reemplaza a la antigua cola de "Costos" por tramite: con el modulo de
  * proformas lo que se revisa y se aprueba es la proforma, no el tramite suelto.
@@ -23,7 +24,7 @@ import {
   can,
   formatMoney,
 } from '@courier/shared';
-import type { ApproveProformasResult, ProformaListItem, Role } from '@courier/shared';
+import type { ApproveProformasResult, DispatchProformasResult, ProformaListItem, Role } from '@courier/shared';
 import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
 import { IconButton } from '../components/IconButton';
@@ -53,6 +54,29 @@ export function proformaTotal(item: Pick<ProformaListItem, 'currency' | 'totals'
   return formatMoney(item.currency === Currency.USD ? item.totals.usd : item.totals.crc, item.currency);
 }
 
+/** Pagada, de Paqueteria y con paquetes en bodega: la puede sacar a ruta quien tiene el permiso de entregas. */
+export function isDispatchable(item: Pick<ProformaListItem, 'flow' | 'status' | 'readyForRouteCount'>): boolean {
+  return item.flow === Flow.Paqueteria && item.status === ProformaStatus.Pagada && item.readyForRouteCount > 0;
+}
+
+/** Texto del resultado de enviar a ruta: lo que salio y, aparte, lo que no y por que. */
+export function dispatchSummary(result: DispatchProformasResult): { ok: string | null; failed: string | null } {
+  const moved = result.dispatched.reduce((n, d) => n + d.shipmentCodes.length, 0);
+  const ok =
+    result.dispatched.length === 0
+      ? null
+      : `En ruta de entrega: ${moved} ${moved === 1 ? 'paquete' : 'paquetes'} (${result.dispatched
+          .map((d) => `proforma ${d.number}`)
+          .join(', ')}).`;
+  const failed =
+    result.failed.length === 0
+      ? null
+      : result.failed
+          .map((f) => `${f.shipmentCode ? `${f.shipmentCode} (proforma ${f.number})` : `Proforma ${f.number ?? ''}`}: ${f.message}`)
+          .join(' ');
+  return { ok, failed };
+}
+
 /** Abre el documento de la proforma (vista previa si es borrador) en otra pestaña. */
 export function openProformaDocument(id: string): void {
   window.open(`${API_BASE}/api/proformas/${id}/document`, '_blank');
@@ -60,14 +84,19 @@ export function openProformaDocument(id: string): void {
 
 export function ProformasScreen({
   role,
-  initialStatus = ProformaStatus.Borrador,
+  initialStatus,
 }: {
   role: Role;
   /** Estado de arranque (lo fija el Resumen al llegar desde un cuadro). */
   initialStatus?: ProformaStatus;
 }) {
   const canManage = can(role, Permission.ProformasManage);
-  const [status, setStatus] = useState<ProformaStatus | ''>(initialStatus);
+  /** Sacar a ruta es el permiso de entregas (Administrador y Mensajeria). */
+  const canDispatch = can(role, Permission.DeliveryManage);
+  // Quien arma proformas arranca en los borradores; quien solo reparte, en las pagadas.
+  const [status, setStatus] = useState<ProformaStatus | ''>(
+    initialStatus ?? (canManage ? ProformaStatus.Borrador : canDispatch ? ProformaStatus.Pagada : ''),
+  );
   const [flow, setFlow] = useState<Flow | ''>('');
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -82,9 +111,16 @@ export function ProformasScreen({
   );
   const { error, setError } = list;
 
-  /** Solo los borradores se aprueban: son los unicos que se pueden marcar. */
-  const selectable = list.items.filter((i) => i.status === ProformaStatus.Borrador);
+  /**
+   * Se marcan las que admiten una accion en bloque: los borradores (aprobar) y
+   * las pagadas con paquetes en bodega (enviar a ruta), segun los permisos.
+   */
+  const isSelectable = (i: ProformaListItem) =>
+    (canManage && i.status === ProformaStatus.Borrador) || (canDispatch && isDispatchable(i));
+  const selectable = list.items.filter(isSelectable);
   const allSelected = selectable.length > 0 && selectable.every((i) => selected.has(i.id));
+  const selectedDrafts = list.items.filter((i) => selected.has(i.id) && i.status === ProformaStatus.Borrador);
+  const selectedDispatch = list.items.filter((i) => selected.has(i.id) && isDispatchable(i));
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -105,7 +141,7 @@ export function ProformasScreen({
    * que se le enseña al operador en vez de un "listo" que esconda los fallos.
    */
   async function approveSelected() {
-    const ids = [...selected];
+    const ids = selectedDrafts.map((i) => i.id);
     if (ids.length === 0) return;
     if (!window.confirm(`Se aprobarán ${ids.length} proformas y se les asignará número. ¿Continuar?`)) return;
     setBusy(true);
@@ -126,12 +162,35 @@ export function ProformasScreen({
     }
   }
 
+  /** Enviar a ruta en bloque: cada paquete avanza por su cuenta y se informa lo que no salio. */
+  async function dispatchSelected() {
+    const ids = selectedDispatch.map((i) => i.id);
+    if (ids.length === 0) return;
+    const count = selectedDispatch.reduce((n, i) => n + i.readyForRouteCount, 0);
+    if (!window.confirm(`Se enviarán a ruta de entrega ${count} paquetes de ${ids.length} proformas. ¿Continuar?`)) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const summary = dispatchSummary(await api.post<DispatchProformasResult>('/proformas/dispatch', { ids }));
+      if (summary.ok) setNotice(summary.ok);
+      if (summary.failed) setError(`No salieron: ${summary.failed}`);
+      setSelected(new Set());
+      list.reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudieron enviar a ruta.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const chips: FilterChip[] = [
     ...(status ? [{ label: `Estado: ${PROFORMA_STATUS_LABELS[status]}`, onClear: () => setStatus('') }] : []),
     ...(flow ? [{ label: `Tipo: ${FLOW_LABELS[flow]}`, onClear: () => setFlow('') }] : []),
   ];
 
-  const columnCount = canManage ? 9 : 8;
+  const canSelect = canManage || canDispatch;
+  const columnCount = canSelect ? 9 : 8;
 
   return (
     <div className="fadeIn">
@@ -140,16 +199,28 @@ export function ProformasScreen({
           <div className="title">Proformas</div>
           {list.data && <div className="count">{list.total.toLocaleString('es-CR')} proformas</div>}
         </div>
-        {canManage && (
+        {canSelect && (
           <div className="actions">
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={busy || selected.size === 0}
-              onClick={() => void approveSelected()}
-            >
-              {busy ? 'Aprobando…' : `Aprobar seleccionadas (${selected.size})`}
-            </button>
+            {canDispatch && (
+              <button
+                type="button"
+                className={canManage ? 'btn' : 'btn btn-primary'}
+                disabled={busy || selectedDispatch.length === 0}
+                onClick={() => void dispatchSelected()}
+              >
+                {`Enviar a ruta (${selectedDispatch.length})`}
+              </button>
+            )}
+            {canManage && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy || selectedDrafts.length === 0}
+                onClick={() => void approveSelected()}
+              >
+                {busy ? 'Procesando…' : `Aprobar seleccionadas (${selectedDrafts.length})`}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -196,11 +267,11 @@ export function ProformasScreen({
           <table className="table">
             <thead>
               <tr>
-                {canManage && (
+                {canSelect && (
                   <th style={{ width: 36 }}>
                     <input
                       type="checkbox"
-                      aria-label="Marcar todos los borradores"
+                      aria-label="Marcar todas las que admiten una acción"
                       checked={allSelected}
                       disabled={selectable.length === 0}
                       onChange={toggleAll}
@@ -221,9 +292,9 @@ export function ProformasScreen({
             <tbody>
               {list.items.map((row) => (
                 <tr key={row.id}>
-                  {canManage && (
+                  {canSelect && (
                     <td>
-                      {row.status === ProformaStatus.Borrador && (
+                      {isSelectable(row) && (
                         <input
                           type="checkbox"
                           aria-label={`Marcar la proforma de ${row.client.name}`}
@@ -248,6 +319,11 @@ export function ProformasScreen({
                     </span>
                     {row.status !== ProformaStatus.Borrador && (
                       <div className="cell-sub">{PROFORMA_DELIVERY_STATUS_LABELS[row.deliveryStatus]}</div>
+                    )}
+                    {isDispatchable(row) && (
+                      <div className="cell-sub">
+                        {row.readyForRouteCount} en bodega para salir a ruta
+                      </div>
                     )}
                   </td>
                   <td>{row.shipmentCount}</td>

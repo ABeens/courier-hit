@@ -33,6 +33,14 @@ deliveriesRoutes.get('/queue', zValidator('query', listDeliveryQueueQuerySchema)
 });
 
 /**
+ * La cola agrupada por PROFORMA: lo que pinta la pantalla del mensajero, que
+ * entrega proformas y no paquetes sueltos. Mismos filtros; se pagina por parada.
+ */
+deliveriesRoutes.get('/stops', zValidator('query', listDeliveryQueueQuerySchema), async (c) => {
+  return c.json(await deliveriesService.stops(c.req.valid('query')));
+});
+
+/**
  * La cola del filtro como DOCUMENTO imprimible (la hoja de ruta que el mensajero
  * se lleva en el bolsillo). Se responde HTML y no JSON a proposito: es papel, no
  * una tabla que la pantalla vaya a pintar. Ver `delivery-report.render.ts`.

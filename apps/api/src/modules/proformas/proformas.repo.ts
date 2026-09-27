@@ -74,6 +74,8 @@ const headerColumns = {
    */
   deliveredCount: sql<number>`(select count(*)::int from proforma_shipments ps join shipments s on s.id = ps.shipment_id where ps.proforma_id = ${proformas.id} and s.state = 'entregado')`,
   finishedCount: sql<number>`(select count(*)::int from proforma_shipments ps join shipments s on s.id = ps.shipment_id where ps.proforma_id = ${proformas.id} and s.state = 'tramite_finalizado')`,
+  /** Paquetes en bodega esperando salir a ruta (lo que "Enviar a ruta" mueve). */
+  readyForRouteCount: sql<number>`(select count(*)::int from proforma_shipments ps join shipments s on s.id = ps.shipment_id where ps.proforma_id = ${proformas.id} and s.state = 'en_bodega_pendiente_pago')`,
 };
 
 /** Filtros del listado traducidos a SQL. */

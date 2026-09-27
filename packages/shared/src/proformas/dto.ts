@@ -66,6 +66,11 @@ export interface ProformaListItem {
   totals: ProformaTotals;
   /** Estado de entrega, derivado de sus tramites (ver `proformaDeliveryStatus`). */
   deliveryStatus: ProformaDeliveryStatus;
+  /**
+   * Paquetes en "En bodega preparando": los que "Enviar a ruta" sacaria. Solo
+   * Paqueteria los tiene; en los otros flujos es 0.
+   */
+  readyForRouteCount: number;
   createdAt: string;
   approvedAt: string | null;
   paidAt: string | null;
@@ -136,6 +141,27 @@ export type ApproveProformasInput = z.infer<typeof approveProformasSchema>;
 export interface ApproveProformasResult {
   approved: { id: string; number: string }[];
   failed: { id: string; code: string; message: string }[];
+}
+
+/** Enviar a ruta varias proformas pagadas de una vez (misma forma que aprobar). */
+export const dispatchProformasSchema = z.object({
+  ids: z
+    .array(z.string().uuid())
+    .min(1, 'Elige al menos una proforma.')
+    .max(100, 'Se envían hasta 100 proformas por vez.'),
+});
+export type DispatchProformasInput = z.infer<typeof dispatchProformasSchema>;
+
+/**
+ * Resultado de enviar a ruta. Cada paquete avanza por su cuenta: uno que no
+ * puede (por ejemplo, sin el pago confirmado) no frena a los demas, y la
+ * pantalla dice cual quedo y por que.
+ */
+export interface DispatchProformasResult {
+  /** Paquetes que salieron a ruta, por proforma. */
+  dispatched: { id: string; number: string | null; shipmentCodes: string[] }[];
+  /** Lo que no salio: la proforma entera (`shipmentCode` null) o un paquete suyo. */
+  failed: { id: string; number: string | null; shipmentCode: string | null; message: string }[];
 }
 
 /** Corregir una proforma aprobada y no pagada. El motivo queda en el historial. */

@@ -27,7 +27,14 @@ import {
   can,
   formatMoney,
 } from '@courier/shared';
-import type { ProformaDetailDto, ProformaListItem, Page, Role, ShipmentDto } from '@courier/shared';
+import type {
+  DispatchProformasResult,
+  ProformaDetailDto,
+  ProformaListItem,
+  Page,
+  Role,
+  ShipmentDto,
+} from '@courier/shared';
 import { IconButton } from '../components/IconButton';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { API_BASE, ApiError, api } from '../lib/api';
@@ -36,7 +43,14 @@ import { AssignOwnerModal } from './AssignOwnerModal';
 import { CostsEditorModal } from './CostsEditorModal';
 import type { CostsTarget } from './CostsEditorModal';
 import { ProformaDepositModal } from './ProformaDepositModal';
-import { deliveryPill, openProformaDocument, proformaStatusPill, proformaTotal } from './ProformasScreen';
+import {
+  deliveryPill,
+  dispatchSummary,
+  isDispatchable,
+  openProformaDocument,
+  proformaStatusPill,
+  proformaTotal,
+} from './ProformasScreen';
 
 interface Props {
   id: string;
@@ -54,6 +68,8 @@ function money(value: number, currency: Currency): string {
 export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
   const canManage = can(role, Permission.ProformasManage);
   const canRecord = can(role, Permission.PaymentsRecord);
+  /** Sacar a ruta es el permiso de entregas (Administrador y Mensajeria). */
+  const canDispatch = can(role, Permission.DeliveryManage);
 
   const [data, setData] = useState<ProformaDetailDto | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -158,6 +174,26 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
       setNotice(`Proforma ${dto.number} aprobada.`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo aprobar la proforma.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Pasa a "En ruta de entrega" los paquetes de esta proforma que siguen en bodega. */
+  async function dispatch() {
+    if (!data) return;
+    const n = data.readyForRouteCount;
+    if (!window.confirm(`Se enviarán a ruta de entrega ${n} ${n === 1 ? 'paquete' : 'paquetes'} de esta proforma. ¿Continuar?`)) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const summary = dispatchSummary(await api.post<DispatchProformasResult>('/proformas/dispatch', { ids: [id] }));
+      setData(await api.get<ProformaDetailDto>(`/proformas/${id}`));
+      if (summary.ok) setNotice(summary.ok);
+      if (summary.failed) setError(`No salieron: ${summary.failed}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo enviar a ruta.');
     } finally {
       setBusy(false);
     }
@@ -424,6 +460,11 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
               {canRecord && data.status === ProformaStatus.Aprobada && (
                 <button type="button" className="btn btn-ghost" onClick={() => setDepositing(true)} disabled={busy}>
                   Registrar depósito
+                </button>
+              )}
+              {canDispatch && isDispatchable(data) && (
+                <button type="button" className="btn btn-primary" onClick={() => void dispatch()} disabled={busy}>
+                  {busy ? 'Procesando…' : `Enviar a ruta (${data.readyForRouteCount})`}
                 </button>
               )}
               {editable && (

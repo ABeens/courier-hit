@@ -3,13 +3,14 @@
  * `shipments` + `clients` + `users` + la definicion de rutas para armar la cola
  * del mensajero (que necesita saber a nombre de quien va y por que ruta).
  */
-import { and, asc, count, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { State, toSlice } from '@courier/shared';
 import type { DeliveryQueueFilter, ListDeliveryQueueQuery } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { settlementColumn } from '../payments/settlement';
+import { proformaShipments } from '../proformas/proformas.schema';
 import { cantonRoutes } from '../routes/canton-route.schema';
 import { districtRoutes } from '../routes/district-route.schema';
 import { cantonRouteJoin, districtRouteJoin, effectiveRouteNumber } from '../routes/effective-route';
@@ -153,6 +154,20 @@ export const deliveriesRepo = {
       .leftJoin(cantonRoutes, cantonRouteJoin)
       .where(and(...queueConditions(query)));
     return row?.n ?? 0;
+  },
+
+  /**
+   * Paquetes de cada proforma por estado, para que la tarjeta de la cola diga
+   * cuantos van en ruta y cuantos siguen en bodega (o ya se entregaron).
+   */
+  async proformaStateCounts(proformaIds: readonly string[]) {
+    if (proformaIds.length === 0) return [];
+    return db
+      .select({ proformaId: proformaShipments.proformaId, state: shipments.state, n: count() })
+      .from(proformaShipments)
+      .innerJoin(shipments, eq(shipments.id, proformaShipments.shipmentId))
+      .where(inArray(proformaShipments.proformaId, [...proformaIds]))
+      .groupBy(proformaShipments.proformaId, shipments.state);
   },
 
   /** Intentos de un tramite, del mas antiguo al mas reciente. */

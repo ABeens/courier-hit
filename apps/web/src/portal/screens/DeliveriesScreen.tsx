@@ -6,10 +6,14 @@
  * es inservible en un telefono) y muestra la direccion y el telefono del cliente
  * completos.
  *
- * Sus dos acciones (confirmar o devolver) son iconos como en el resto del
- * portal, pero NO encogen hasta el tamaño de un listado de escritorio: el CSS
- * les reserva un blanco mayor, y en pantalla tactil lo sube a 44px. Aqui se
- * pulsa sin mirar y equivocarse cierra una entrega que no era.
+ * La cola va POR PROFORMA: una tarjeta por proforma con sus paquetes en ruta y
+ * un solo boton, "Entregar", que abre la entrega de la proforma. Ahi se elige
+ * paquete por paquete: entregado, devuelto a bodega (con motivo) o sigue en
+ * ruta. Si parte de la proforma sigue en bodega, la tarjeta lo avisa: el
+ * mensajero no puede salir creyendo que lleva todo.
+ *
+ * Los botones por paquete (confirmar o devolver) solo quedan para un paquete en
+ * ruta SIN proforma, anterior al modulo.
  *
  * La foto se toma con la camara del propio telefono: `capture="environment"`
  * abre la camara trasera directamente en vez del explorador de archivos.
@@ -80,6 +84,39 @@ export interface DeliveryQueueRow {
 
 type ModalState = { row: DeliveryQueueRow; outcome: DeliveryOutcome } | null;
 
+/** Paquetes de la proforma por estado (lo que la tarjeta cuenta ademas de lo que va en ruta). */
+interface StopCounts {
+  total: number;
+  inRoute: number;
+  inWarehouse: number;
+  delivered: number;
+  returned: number;
+}
+
+/** Una parada: una proforma con sus paquetes en ruta, o un paquete suelto sin proforma. */
+interface DeliveryStop {
+  proformaId: string | null;
+  proformaNumber: number | null;
+  shipments: DeliveryQueueRow[];
+  /** Null en un paquete sin proforma. */
+  counts: StopCounts | null;
+}
+
+/** La bandera de cobro de la parada: la del primer paquete con saldo, o la del primero si todo esta pagado. */
+function payRow(stop: DeliveryStop): DeliveryQueueRow {
+  return stop.shipments.find((s) => !s.settled) ?? stop.shipments[0]!;
+}
+
+/** "2 siguen en bodega, 1 ya entregado": lo que NO va en ruta de la proforma. */
+function outsideRoute(counts: StopCounts): string | null {
+  const parts = [
+    counts.inWarehouse > 0 && `${counts.inWarehouse} ${counts.inWarehouse === 1 ? 'sigue' : 'siguen'} en bodega`,
+    counts.delivered > 0 && `${counts.delivered} ya ${counts.delivered === 1 ? 'entregado' : 'entregados'}`,
+    counts.returned > 0 && `${counts.returned} ${counts.returned === 1 ? 'devuelto' : 'devueltos'} a bodega`,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
 /**
  * Par etiqueta/valor de la ficha, el mismo de Paqueteria y Clientes. Antes esta
  * pantalla usaba `.field-label` con un `<span>` suelto: eso es el atomo de un
@@ -113,8 +150,8 @@ export function DeliveriesScreen() {
    * ruta) se aplican en SQL: el mensajero que filtra por su ruta tiene que ver
    * SU recorrido entero, no la parte de el que cabia en la primera pagina.
    */
-  const list = usePagedList<DeliveryQueueRow>(
-    '/deliveries/queue',
+  const list = usePagedList<DeliveryStop, { packagesInRoute: number }>(
+    '/deliveries/stops',
     { q: q.trim() || undefined, routeNumber: route.trim() || undefined },
     { errorMessage: 'No se pudo cargar la ruta.' },
   );
@@ -140,7 +177,10 @@ export function DeliveriesScreen() {
         <div>
           <div className="title">Entregas</div>
           {list.data && (
-            <div className="count">{list.total.toLocaleString('es-CR')} paquetes en ruta</div>
+            <div className="count">
+              {list.total.toLocaleString('es-CR')} {list.total === 1 ? 'entrega' : 'entregas'} ·{' '}
+              {list.data.packagesInRoute.toLocaleString('es-CR')} paquetes en ruta
+            </div>
           )}
         </div>
         <div className="actions">
@@ -187,95 +227,118 @@ export function DeliveriesScreen() {
 
       <ListBody refreshing={list.refreshing}>
         <div className="cards">
-        {list.items.map((row) => (
-          <article className="card-item tone-info" key={row.id}>
-            <div className="card-item-head">
-              <div className="card-item-ident">
-                <div className="card-item-code">{row.code}</div>
-                <div className="card-item-title">{row.clientName}</div>
-                <div className="card-item-sub">
-                  {SHIPMENT_TYPE_LABELS[row.shipmentType]} · {row.tracking}
-                  {row.proformaNumber != null && <> · Proforma {row.proformaNumber}</>}
+        {list.items.map((stop) => {
+          const first = stop.shipments[0]!;
+          const pay = payRow(stop);
+          const outside = stop.counts ? outsideRoute(stop.counts) : null;
+          return (
+            <article className="card-item tone-info" key={stop.proformaId ?? first.id}>
+              <div className="card-item-head">
+                <div className="card-item-ident">
+                  <div className="card-item-code">
+                    {stop.proformaNumber != null ? `Proforma ${stop.proformaNumber}` : first.code}
+                  </div>
+                  <div className="card-item-title">{first.clientName}</div>
+                  <div className="card-item-sub">
+                    {stop.counts
+                      ? `${stop.counts.inRoute} de ${stop.counts.total} ${stop.counts.total === 1 ? 'paquete' : 'paquetes'} en ruta`
+                      : `${SHIPMENT_TYPE_LABELS[first.shipmentType]} · ${first.tracking}`}
+                  </div>
+                </div>
+                <div className="card-item-aside">
+                  {/* El mensajero tiene que saber ANTES de tocar el timbre si lleva
+                      algo con saldo: es lo unico de la tarjeta que cambia lo que
+                      hace al llegar. */}
+                  <PayFlag
+                    shipmentType={pay.shipmentType}
+                    invoiceTotalUsd={pay.invoiceTotalUsd}
+                    invoiceTotalCrc={pay.invoiceTotalCrc}
+                    settledUsd={pay.settledUsd}
+                    settledCrc={pay.settledCrc}
+                    settled={pay.settled}
+                    pendingUsd={pay.pendingUsd}
+                    pendingCrc={pay.pendingCrc}
+                  />
+                  <span className="spill">
+                    <span className="dot" />
+                    {first.routeNumber != null ? `Ruta ${first.routeNumber}` : 'Sin ruta'}
+                  </span>
                 </div>
               </div>
-              <div className="card-item-aside">
-                {/* El mensajero tiene que saber ANTES de tocar el timbre si el
-                    paquete lleva saldo: es lo único de esta tarjeta que cambia lo
-                    que hace al llegar. */}
-                <PayFlag
-                  shipmentType={row.shipmentType}
-                  invoiceTotalUsd={row.invoiceTotalUsd}
-                  invoiceTotalCrc={row.invoiceTotalCrc}
-                  settledUsd={row.settledUsd}
-                  settledCrc={row.settledCrc}
-                  settled={row.settled}
-                  pendingUsd={row.pendingUsd}
-                  pendingCrc={row.pendingCrc}
-                />
-                <span className="spill">
-                  <span className="dot" />
-                  {row.routeNumber != null ? `Ruta ${row.routeNumber}` : 'Sin ruta'}
-                </span>
-              </div>
-            </div>
 
-            <div className="card-item-body">
-              <section className="card-sec">
-                <dl className="card-sec-fields">
-                  <Field
-                    label="Dirección"
-                    value={`${findProvince(row.provinceCode)?.name}, ${findCanton(row.cantonCode)?.name}, ${findDistrict(row.districtCode)?.name}`}
-                  />
-                  <Field label="Otras señas" value={row.addressLine} />
-                  {/* Enlace `tel:` a proposito: el mensajero llama desde la propia tarjeta. */}
-                  <Field
-                    label="Teléfono"
-                    value={row.clientPhone ? <a href={`tel:${row.clientPhone}`}>{row.clientPhone}</a> : null}
-                    mono
-                  />
-                  {/*
-                    Va con los datos de la parada y no en el encabezado: el
-                    encabezado responde "de quien es este paquete" y esto
-                    responde "cual de los que llevo es". Solo en los tipos que
-                    tienen HAWB; cuando aplica y esta vacio, la raya ES el dato
-                    (el paquete todavia no pasó por Miami), el mismo criterio de
-                    la ficha de Trámites.
-                  */}
-                  {usesPackageFields(row.shipmentType) && (
-                    <Field label="HAWB (LES)" value={row.hawb} mono />
-                  )}
-                  <Field label="Descripción" value={row.description} />
-                </dl>
-              </section>
-            </div>
-
-            {/* Ambas abren un modal que pide confirmacion con texto: aqui el
-                icono elige el camino, no cierra la entrega. */}
-            <div className="actions">
-              {/* La entrega normal es la de la proforma entera (decision D4): una
-                  visita marca todos sus paquetes. Los botones de al lado quedan
-                  para confirmar despues un paquete que siguio en ruta. */}
-              {row.proformaId && (
-                <IconButton
-                  label={`Entregar proforma ${row.proformaNumber ?? ''}`}
-                  icon="clipboard"
-                  tone="primary"
-                  onClick={() => setDelivering(row.proformaId)}
-                />
+              {/* Lo que falta de la proforma, a la vista: si algo sigue en bodega,
+                  esta visita va a quedar como entrega parcial. */}
+              {outside && (
+                <div className={stop.counts!.inWarehouse > 0 ? 'banner warn' : 'banner info'}>
+                  No van en ruta: {outside}.
+                </div>
               )}
-              <IconButton
-                label="Confirmar entrega"
-                icon="checkCircle"
-                onClick={() => setModal({ row, outcome: DeliveryOutcome.Entregado })}
-              />
-              <IconButton
-                label="Devolver a bodega"
-                icon="undo"
-                onClick={() => setModal({ row, outcome: DeliveryOutcome.DevueltoBodega })}
-              />
-            </div>
-          </article>
-        ))}
+
+              <div className="card-item-body">
+                <section className="card-sec">
+                  <dl className="card-sec-fields">
+                    <Field
+                      label="Dirección"
+                      value={`${findProvince(first.provinceCode)?.name}, ${findCanton(first.cantonCode)?.name}, ${findDistrict(first.districtCode)?.name}`}
+                    />
+                    <Field label="Otras señas" value={first.addressLine} />
+                    {/* Enlace `tel:` a proposito: el mensajero llama desde la propia tarjeta. */}
+                    <Field
+                      label="Teléfono"
+                      value={first.clientPhone ? <a href={`tel:${first.clientPhone}`}>{first.clientPhone}</a> : null}
+                      mono
+                    />
+                  </dl>
+                </section>
+                {/* Los paquetes que lleva: codigo, HAWB (el numero impreso en la
+                    etiqueta de la caja, con el que casa la tarjeta con el bulto) y
+                    descripcion. */}
+                <section className="card-sec">
+                  <div className="card-sec-title">
+                    {stop.shipments.length === 1 ? 'Paquete en ruta' : `Paquetes en ruta (${stop.shipments.length})`}
+                  </div>
+                  <dl className="card-sec-fields">
+                    {stop.shipments.map((row) => (
+                      <Field
+                        key={row.id}
+                        label={row.code}
+                        value={
+                          <>
+                            {usesPackageFields(row.shipmentType) && <span className="mono">{row.hawb ?? '—'}</span>}
+                            {usesPackageFields(row.shipmentType) && ' · '}
+                            {row.description}
+                          </>
+                        }
+                      />
+                    ))}
+                  </dl>
+                </section>
+              </div>
+
+              <div className="actions">
+                {stop.proformaId ? (
+                  <button type="button" className="btn btn-primary" onClick={() => setDelivering(stop.proformaId)}>
+                    Entregar
+                  </button>
+                ) : (
+                  <>
+                    {/* Paquete sin proforma (anterior al modulo): se entrega suelto. */}
+                    <IconButton
+                      label="Confirmar entrega"
+                      icon="checkCircle"
+                      onClick={() => setModal({ row: first, outcome: DeliveryOutcome.Entregado })}
+                    />
+                    <IconButton
+                      label="Devolver a bodega"
+                      icon="undo"
+                      onClick={() => setModal({ row: first, outcome: DeliveryOutcome.DevueltoBodega })}
+                    />
+                  </>
+                )}
+              </div>
+            </article>
+          );
+        })}
         </div>
 
         <Pagination
@@ -285,12 +348,12 @@ export function DeliveriesScreen() {
           totalPages={list.totalPages}
           onPage={list.goToPage}
           busy={list.refreshing}
-          noun="paquetes"
+          noun="entregas"
         />
       </ListBody>
 
       <EmptyList loading={list.loading} empty={list.items.length === 0}>
-        No hay paquetes en ruta que coincidan.
+        No hay entregas en ruta que coincidan.
       </EmptyList>
 
       {delivering && (

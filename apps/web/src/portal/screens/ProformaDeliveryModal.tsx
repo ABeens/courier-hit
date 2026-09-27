@@ -11,7 +11,7 @@
  * sus paquetes que siguen "En ruta de entrega".
  */
 import { useEffect, useRef, useState } from 'react';
-import { MAX_DELIVERY_PHOTOS, State, formatMoney } from '@courier/shared';
+import { MAX_DELIVERY_PHOTOS, STATE_LABELS, State, formatMoney } from '@courier/shared';
 import type { ProformaDetailDto } from '@courier/shared';
 import { API_BASE, ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
@@ -185,9 +185,27 @@ export function ProformaDeliveryModal({ proformaId, onClose, onSaved }: Props) {
             </div>
           )}
 
+          {/* Lo que NO va en esta visita, paquete por paquete y con su estado: si
+              algo sigue en bodega, la proforma va a quedar entregada a medias. */}
           {others.length > 0 && (
-            <div className="field-hint">
-              {others.length} paquetes de esta proforma no están en ruta (ya entregados, devueltos o sin salir).
+            <div className="pay-sec">
+              <div className="card-sec-title">No van en ruta ({others.length})</div>
+              {others.some((s) => s.state === State.EnBodegaPendientePago) && (
+                <div className="banner warn">
+                  Hay paquetes de esta proforma que siguen en bodega: esta entrega quedará como parcial.
+                </div>
+              )}
+              <dl className="pay-list">
+                {others.map((s) => (
+                  <div className="card-item-field" key={s.id}>
+                    <dt>
+                      <strong>{s.code}</strong> · {s.hawb ?? s.tracking}
+                      <div className="cell-sub">{s.description}</div>
+                    </dt>
+                    <dd>{STATE_LABELS[s.state]}</dd>
+                  </div>
+                ))}
+              </dl>
             </div>
           )}
 

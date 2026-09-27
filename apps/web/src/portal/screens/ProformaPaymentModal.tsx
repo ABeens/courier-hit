@@ -7,7 +7,8 @@
  *
  *   - PROFORMAS COMPLETAS: no hay monto que digitar; el saldo lo pone la API.
  *   - UNA MONEDA POR COBRO: las proformas en dolares y las en colones se pagan
- *     por separado. La pantalla solo deja marcar las de la moneda elegida.
+ *     por separado. Marcar una de la otra moneda cambia la seleccion entera, y la
+ *     pantalla dice por que quito las que estaban marcadas.
  *   - LA COMISION DE LA TARJETA SE DICE ANTES DE PAGAR, con las tres cifras
  *     (saldo, comision y total), y solo si se elige tarjeta.
  *
@@ -48,6 +49,12 @@ interface Props {
   onProcessing: (result: PaymentResult | null) => void;
 }
 
+/** La moneda en plural, para el aviso de "se pagan por separado". */
+const CURRENCY_NAMES: Record<Currency, string> = {
+  [Currency.USD]: 'dólares',
+  [Currency.CRC]: 'colones',
+};
+
 export function ProformaPaymentModal({ onClose, onPaid, onProcessing }: Props) {
   const [open, setOpen] = useState<ProformaPaymentItem[] | null>(null);
   const [currency, setCurrency] = useState<Currency | null>(null);
@@ -60,6 +67,8 @@ export function ProformaPaymentModal({ onClose, onPaid, onProcessing }: Props) {
   const [receipt, setReceipt] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Por que se quitaron proformas de la seleccion al cambiar de moneda. */
+  const [currencyNotice, setCurrencyNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [cardIntent, setCardIntent] = useState<{ groupId: string; intent: PaymentIntentDto } | null>(null);
 
@@ -111,10 +120,19 @@ export function ProformaPaymentModal({ onClose, onPaid, onProcessing }: Props) {
   function toggle(item: ProformaPaymentItem) {
     // Una moneda por cobro: marcar una de la otra moneda cambia la seleccion entera.
     if (item.currency !== currency) {
+      const dropped = (open ?? []).filter((i) => selected.has(i.proformaId)).map((i) => i.number);
       setCurrency(item.currency);
       setSelected(new Set([item.proformaId]));
+      setCurrencyNotice(
+        dropped.length === 0
+          ? null
+          : `Las proformas en ${CURRENCY_NAMES[item.currency]} se pagan por separado de las de ${CURRENCY_NAMES[currency ?? item.currency]}. ` +
+              `Quitamos de este pago ${dropped.length === 1 ? 'la proforma' : 'las proformas'} ${dropped.join(', ')}; ` +
+              'puedes pagarlas después en otro pago.',
+      );
       return;
     }
+    setCurrencyNotice(null);
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(item.proformaId)) next.delete(item.proformaId);
@@ -335,10 +353,16 @@ export function ProformaPaymentModal({ onClose, onPaid, onProcessing }: Props) {
                   );
                 })}
               </dl>
-              {new Set(open.map((i) => i.currency)).size > 1 && (
-                <div className="field-hint">
-                  Las proformas en dólares y en colones se pagan por separado.
+              {currencyNotice ? (
+                <div className="banner info" role="status" style={{ marginTop: 10 }}>
+                  {currencyNotice}
                 </div>
+              ) : (
+                new Set(open.map((i) => i.currency)).size > 1 && (
+                  <div className="field-hint">
+                    Las proformas en dólares y en colones se pagan por separado.
+                  </div>
+                )
               )}
             </div>
           )}

@@ -155,6 +155,13 @@ export const ProformaErrors = {
       'La proforma cambió mientras la procesabas. Vuelve a abrirla e inténtalo de nuevo.',
       409,
     ),
+  /** "Enviar a ruta" es de Paqueteria: Transporte y Agenciamiento no reparten. */
+  notDispatchableFlow: () =>
+    new AppError('PROFORMA_NOT_DISPATCHABLE', 'Solo las proformas de Paquetería salen a ruta de entrega.', 409),
+  notPaid: () =>
+    new AppError('PROFORMA_NOT_PAID', 'La proforma todavía no está pagada: no puede salir a ruta.', 409),
+  nothingToDispatch: () =>
+    new AppError('PROFORMA_NOTHING_TO_DISPATCH', 'La proforma no tiene paquetes en bodega listos para salir.', 409),
   notCorrectable: () =>
     new AppError(
       'PROFORMA_NOT_CORRECTABLE',

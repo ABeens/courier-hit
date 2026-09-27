@@ -15,6 +15,7 @@ import {
   ProformaStatus,
   Role,
   approveProformasSchema,
+  dispatchProformasSchema,
   assignShipmentOwnerSchema,
   correctProformaSchema,
   listProformasQuerySchema,
@@ -78,6 +79,20 @@ proformasRoutes.get('/', read, zValidator('query', listProformasQuerySchema), as
 proformasRoutes.post('/approve', manage, zValidator('json', approveProformasSchema), async (c) => {
   return c.json(await proformasService.approveMany(c.get('session'), c.req.valid('json').ids));
 });
+
+/**
+ * Enviar a ruta: pasa a "En ruta de entrega" los paquetes de proformas pagadas.
+ * Es el permiso de entregas (Administrador y Mensajeria), el mismo que exige la
+ * maquina de estados para ese paso; sirve para una proforma o para varias.
+ */
+proformasRoutes.post(
+  '/dispatch',
+  requirePermission(Permission.DeliveryManage),
+  zValidator('json', dispatchProformasSchema),
+  async (c) => {
+    return c.json(await proformasService.dispatchMany(c.get('session'), c.req.valid('json').ids));
+  },
+);
 
 // --- Una proforma -----------------------------------------------------------
 
