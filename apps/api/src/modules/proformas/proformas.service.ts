@@ -70,6 +70,7 @@ import type {
   Page,
   ProformaCounterDto,
   ProformaDetailDto,
+  ProformaFilter,
   ProformaListItem,
   ProformaShipmentDto,
   SaveProformaCostsInput,
@@ -185,6 +186,29 @@ function toListItem(row: ListRow, lines: readonly Line[]): ProformaListItem {
   };
 }
 
+/** Tope de filas del CSV del listado y de documentos del lote imprimible. */
+const EXPORT_LIMIT = 5000;
+const DOCUMENTS_LIMIT = 200;
+
+/**
+ * Filas de la bandeja con su total. Solo los borradores necesitan sus lineas
+ * (vista previa del total, con los porcentajes al dia): las aprobadas traen el
+ * total congelado en la fila.
+ */
+async function toListItems(rows: readonly ListRow[]): Promise<ProformaListItem[]> {
+  const draftIds = rows.filter((r) => r.proforma.totalUsd === null).map((r) => r.proforma.id);
+  const [shipmentLines, proformaLines] = await Promise.all([
+    proformasRepo.shipmentLinesOf(draftIds),
+    proformasRepo.proformaLinesOf(draftIds),
+  ]);
+  const shipmentLinesBy = groupBy(shipmentLines, (l) => l.proformaId);
+  const extrasBy = groupBy(proformaLines, (l) => l.proformaId);
+  return rows.map((row) => {
+    const own = shipmentLinesBy.get(row.proforma.id) ?? [];
+    return toListItem(row, [...own, ...withLivePercentages(extrasBy.get(row.proforma.id) ?? [], own)]);
+  });
+}
+
 /** Tasa vigente del sistema, validada; null si nadie la fijo o no es valida (M5). */
 async function currentRate(): Promise<number | null> {
   const checked = costLineExchangeRateSchema.safeParse(await settingsRepo.currentExchangeRate());
@@ -234,24 +258,29 @@ async function loadDraft(id: string): Promise<Header> {
 export const proformasService = {
   async list(query: ListProformasQuery): Promise<Page<ProformaListItem>> {
     const { rows, total } = await proformasRepo.list(query);
-    // Solo los borradores necesitan sus lineas (vista previa del total): las
-    // aprobadas traen el total congelado en la fila.
-    const draftIds = rows.filter((r) => r.proforma.totalUsd === null).map((r) => r.proforma.id);
-    const [shipmentLines, proformaLines] = await Promise.all([
-      proformasRepo.shipmentLinesOf(draftIds),
-      proformasRepo.proformaLinesOf(draftIds),
-    ]);
-    const shipmentLinesBy = groupBy(shipmentLines, (l) => l.proformaId);
-    const extrasBy = groupBy(proformaLines, (l) => l.proformaId);
-    return {
-      items: rows.map((row) => {
-        const own = shipmentLinesBy.get(row.proforma.id) ?? [];
-        return toListItem(row, [...own, ...withLivePercentages(extrasBy.get(row.proforma.id) ?? [], own)]);
-      }),
-      total,
-      page: query.page,
-      pageSize: query.pageSize,
-    };
+    return { items: await toListItems(rows), total, page: query.page, pageSize: query.pageSize };
+  },
+
+  /**
+   * REPORTE del listado: el filtro entero de la bandeja en CSV, una fila por
+   * proforma. Tope `EXPORT_LIMIT`; si recorta, lo dice en la ultima fila.
+   */
+  async exportList(filter: ProformaFilter): Promise<{ items: ProformaListItem[]; total: number; electronicInvoice: Map<string, string | null> }> {
+    const { rows, total } = await proformasRepo.listAll(filter, EXPORT_LIMIT);
+    const electronicInvoice = new Map(rows.map((r) => [r.proforma.id, r.proforma.electronicInvoiceNumber]));
+    return { items: await toListItems(rows), total, electronicInvoice };
+  },
+
+  /**
+   * LOTE para imprimir: los documentos de todas las proformas del filtro, una por
+   * pagina (el antiguo "bajar todas las proformas"). Tope `DOCUMENTS_LIMIT`; lo
+   * que se queda fuera se dice impreso en el documento.
+   */
+  async documents(filter: ProformaFilter): Promise<{ docs: ProformaDocument[]; total: number }> {
+    const { rows, total } = await proformasRepo.listAll(filter, DOCUMENTS_LIMIT);
+    const docs: ProformaDocument[] = [];
+    for (const row of rows) docs.push(await this.document(row.proforma.id));
+    return { docs, total };
   },
 
   async get(id: string): Promise<ProformaDetailDto> {

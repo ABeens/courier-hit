@@ -14,7 +14,7 @@
 import { and, asc, count, desc, eq, ilike, inArray, max, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { ProformaStatus, toSlice } from '@courier/shared';
-import type { Currency, Flow, ListProformasQuery } from '@courier/shared';
+import type { Currency, Flow, ListProformasQuery, ProformaFilter } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { shipmentCosts } from '../costs/shipment-cost.schema';
@@ -79,7 +79,7 @@ const headerColumns = {
 };
 
 /** Filtros del listado traducidos a SQL. */
-function listConditions(query: ListProformasQuery): SQL[] {
+function listConditions(query: ProformaFilter): SQL[] {
   const conds: SQL[] = [];
   if (query.status) conds.push(eq(proformas.status, query.status));
   if (query.flow) conds.push(eq(proformas.flow, query.flow));
@@ -122,6 +122,32 @@ export const proformasRepo = {
         .orderBy(desc(proformas.updatedAt), desc(proformas.id))
         .limit(limit)
         .offset(offset),
+      db
+        .select({ n: count() })
+        .from(proformas)
+        .innerJoin(clients, eq(proformas.clientId, clients.id))
+        .innerJoin(users, eq(clients.userId, users.id))
+        .where(where),
+    ]);
+    return { rows, total: totalRow?.n ?? 0 };
+  },
+
+  /**
+   * El filtro ENTERO, sin paginar, para el CSV del listado y el lote de
+   * documentos. `limit` es el freno de un filtro demasiado abierto: quien llama
+   * compara contra `total` y dice lo que se quedo fuera.
+   */
+  async listAll(filter: ProformaFilter, limit: number) {
+    const where = and(...listConditions(filter));
+    const [rows, [totalRow]] = await Promise.all([
+      db
+        .select(headerColumns)
+        .from(proformas)
+        .innerJoin(clients, eq(proformas.clientId, clients.id))
+        .innerJoin(users, eq(clients.userId, users.id))
+        .where(where)
+        .orderBy(desc(proformas.updatedAt), desc(proformas.id))
+        .limit(limit),
       db
         .select({ n: count() })
         .from(proformas)

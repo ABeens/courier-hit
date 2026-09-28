@@ -19,6 +19,7 @@ import {
   Flow,
   MAX_DELIVERY_PHOTOS,
   State,
+  CollectionStatus,
   chargeBasisFor,
   collectionStatus,
   isSettled,
@@ -27,6 +28,7 @@ import {
   toSlice,
   pendingAmount,
   proofRequirementFor,
+  roundMoney,
   settledAmount,
   stateForOutcome,
 } from '@courier/shared';
@@ -48,6 +50,7 @@ import type {
   DeliveryReportDoc,
   DeliveryReportRoute,
   DeliveryReportRow,
+  DeliveryReportStop,
 } from './delivery-report.render';
 
 /**
@@ -160,7 +163,8 @@ export const deliveriesService = {
 
   /**
    * La hoja de ruta imprimible de la cola: el MISMO filtro de la pantalla
-   * (`DeliveryQueueFilter`) sobre el mismo orden, agrupado por ruta.
+   * (`DeliveryQueueFilter`) sobre el mismo orden, agrupado por ruta y, dentro de
+   * cada ruta, por proforma (una parada por proforma, como la pantalla).
    *
    * Aqui no se pagina: el papel con el que sale el mensajero tiene que traer su
    * recorrido entero. El tope de `REPORT_LIMIT` es el freno de un filtro
@@ -174,6 +178,8 @@ export const deliveriesService = {
     ]);
 
     const routes: DeliveryReportRoute[] = [];
+    /** Parada de cada proforma ya abierta, por ruta y proforma. */
+    const stopsByKey = new Map<string, DeliveryReportStop>();
     for (const { settlement, ...row } of rows) {
       /**
        * El cobro se resuelve EN LA MONEDA EN QUE SE COBRA el trámite
@@ -200,9 +206,48 @@ export const deliveriesService = {
        * anterior. Se respeta ese orden en vez de reordenar por numero: es el
        * orden en que se arma el recorrido, y es el que el mensajero sigue.
        */
-      const last = routes[routes.length - 1];
-      if (last && last.routeNumber === item.routeNumber) last.rows.push(item);
-      else routes.push({ routeNumber: item.routeNumber, rows: [item] });
+      let route = routes[routes.length - 1];
+      if (!route || route.routeNumber !== item.routeNumber) {
+        route = { routeNumber: item.routeNumber, stops: [], packages: 0 };
+        routes.push(route);
+      }
+      route.packages += 1;
+
+      /**
+       * Dentro de la ruta, una PARADA POR PROFORMA: el mensajero entrega
+       * proformas, no paquetes sueltos (`recordProforma`), y la hoja tiene que
+       * decir lo mismo que la pantalla. Un paquete sin proforma (anterior al
+       * modulo) es su propia parada, igual que en `stops`. El repo ya trae juntos
+       * los paquetes de una proforma; el mapa es para no depender de eso.
+       */
+      const key = `${item.routeNumber ?? '-'}|${item.proformaId ?? `shipment:${item.id}`}`;
+      let stop = stopsByKey.get(key);
+      if (!stop) {
+        stop = { proformaNumber: item.proformaNumber, rows: [], dueTotals: [] };
+        stopsByKey.set(key, stop);
+        route.stops.push(stop);
+      }
+      stop.rows.push(item);
+    }
+
+    /**
+     * El saldo de la parada es lo que se cobra en la puerta, por moneda: se suman
+     * las mismas filas que imprimen cifra (pendiente o en validacion), y cada
+     * total pasa por `roundMoney` (regla M4) para no arrastrar decimales de float.
+     */
+    for (const route of routes) {
+      for (const stop of route.stops) {
+        const totals = new Map<Currency, number>();
+        for (const r of stop.rows) {
+          if (r.collection === CollectionStatus.Pagado || r.collection === CollectionStatus.SinFacturar) continue;
+          if (r.due <= 0) continue;
+          totals.set(r.dueCurrency, (totals.get(r.dueCurrency) ?? 0) + r.due);
+        }
+        stop.dueTotals = [...totals].map(([currency, amount]) => ({
+          currency,
+          amount: roundMoney(amount, currency),
+        }));
+      }
     }
 
     return {

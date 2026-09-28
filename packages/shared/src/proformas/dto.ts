@@ -27,14 +27,22 @@ export interface ShipmentProformaRef {
   status: ProformaStatus;
 }
 
-/** Filtros del listado de proformas. */
-export const listProformasQuerySchema = paginationQuerySchema.extend({
+/**
+ * Filtros de la bandeja de proformas, SIN paginacion. Los comparten el listado
+ * paginado y las dos salidas del filtro entero (el CSV del listado y el lote de
+ * documentos para imprimir): asi lo que se exporta es lo que se esta viendo.
+ */
+export const proformaFilterSchema = z.object({
   status: z.nativeEnum(ProformaStatus).optional(),
   flow: z.nativeEnum(Flow).optional(),
   clientId: z.string().uuid().optional(),
   /** Busca por numero de proforma, codigo o nombre del cliente. */
   q: z.string().trim().max(100).optional(),
 });
+export type ProformaFilter = z.infer<typeof proformaFilterSchema>;
+
+/** Filtros del listado de proformas, con su pagina. */
+export const listProformasQuerySchema = paginationQuerySchema.merge(proformaFilterSchema);
 export type ListProformasQuery = z.infer<typeof listProformasQuerySchema>;
 
 /** Cliente de la proforma, lo minimo para identificarlo en pantalla. */

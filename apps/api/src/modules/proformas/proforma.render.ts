@@ -17,10 +17,13 @@ import {
   CURRENCY_DECIMALS,
   CURRENCY_SYMBOLS,
   Currency,
+  FLOW_LABELS,
+  PROFORMA_DELIVERY_STATUS_LABELS,
   PROFORMA_STATUS_LABELS,
   ProformaStatus,
   roundMoney,
 } from '@courier/shared';
+import type { ProformaListItem } from '@courier/shared';
 
 /** Zona del negocio: todos los clientes son de Costa Rica (CLAUDE.md). */
 const TIME_ZONE = 'America/Costa_Rica';
@@ -319,6 +322,82 @@ export function renderProforma(doc: ProformaDocument): string {
 ${sheet(doc)}
 </body>
 </html>`;
+}
+
+/**
+ * LOTE de documentos: todas las proformas del filtro en un solo HTML, una por
+ * pagina, para imprimirlas o guardarlas como PDF de una vez. Si el tope recorto
+ * el filtro, la primera hoja lo dice: un lote que calla lo que dejo fuera se lee
+ * como si fuera todo.
+ */
+export function renderProformas(docs: readonly ProformaDocument[], total: number): string {
+  const omitted = total - docs.length;
+  const notice =
+    omitted > 0
+      ? `<section class="sheet"><h1>Lote incompleto</h1><p>Este documento trae ${docs.length} de ${total} proformas del filtro. Filtra por estado, tipo o cliente para imprimir las ${omitted} restantes.</p></section>`
+      : '';
+  const body =
+    docs.length > 0
+      ? docs.map((d) => sheet(d)).join('\n')
+      : '<section class="sheet"><p>No hay proformas con ese filtro.</p></section>';
+  return `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proformas (${docs.length})</title>
+<style>${STYLES}</style>
+</head>
+<body>
+${notice}
+${body}
+</body>
+</html>`;
+}
+
+/** Instante UTC -> fecha en hora de Costa Rica, o vacio. Para el CSV. */
+function csvDay(iso: string | null): string | null {
+  return iso ? day(iso) : null;
+}
+
+/**
+ * REPORTE del listado en CSV: una fila por proforma, con los filtros de la
+ * bandeja. Mismas convenciones que el CSV del documento (BOM, punto decimal, sin
+ * separador de miles). El total va en la moneda de la proforma y, aparte, en las
+ * dos monedas para poder sumar columnas sin mezclar.
+ */
+export function renderProformaListCsv(
+  items: readonly ProformaListItem[],
+  total: number,
+  electronicInvoice: ReadonlyMap<string, string | null>,
+): string {
+  const header = [
+    'Proforma', 'Estado', 'Entrega', 'Tipo', 'Cliente', 'Casillero', 'Trámites',
+    'Moneda', 'Total', 'Total USD', 'Total CRC', 'Factura electrónica',
+    'Creada', 'Aprobada', 'Pagada',
+  ];
+  const rows = items.map((i) => [
+    i.number,
+    PROFORMA_STATUS_LABELS[i.status],
+    i.status === ProformaStatus.Borrador ? null : PROFORMA_DELIVERY_STATUS_LABELS[i.deliveryStatus],
+    FLOW_LABELS[i.flow],
+    i.client.name,
+    i.client.code,
+    i.shipmentCount,
+    i.currency,
+    (i.currency === Currency.USD ? i.totals.usd : i.totals.crc).toFixed(CURRENCY_DECIMALS[i.currency]),
+    i.totals.usd.toFixed(CURRENCY_DECIMALS[Currency.USD]),
+    i.totals.crc.toFixed(CURRENCY_DECIMALS[Currency.CRC]),
+    electronicInvoice.get(i.id) ?? null,
+    csvDay(i.createdAt),
+    csvDay(i.approvedAt),
+    csvDay(i.paidAt),
+  ]);
+  const lines = [header, ...rows].map((r) => r.map((v) => csvCell(v as string | number | null)).join(','));
+  if (total > items.length) {
+    lines.push(csvCell(`Faltan ${total - items.length} proformas del filtro: el reporte trae las ${items.length} más recientes.`));
+  }
+  return '\uFEFF' + lines.join('\r\n') + '\r\n';
 }
 
 /** Una celda CSV: comillas dobles escapadas y todo entre comillas. */

@@ -99,7 +99,13 @@ export function ProformasScreen({
   );
   const [flow, setFlow] = useState<Flow | ''>('');
   const [q, setQ] = useState('');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  /**
+   * Lo marcado, con su fila. Se guarda la FILA y no solo el id para que la
+   * seleccion sobreviva a una busqueda o a un cambio de pagina: antes se cruzaba
+   * contra lo que estaba a la vista, y lo marcado en otra pagina (o antes de
+   * buscar otra proforma) se perdia sin aviso al aprobar.
+   */
+  const [selected, setSelected] = useState<Map<string, ProformaListItem>>(new Map());
   const [opened, setOpened] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -119,20 +125,28 @@ export function ProformasScreen({
     (canManage && i.status === ProformaStatus.Borrador) || (canDispatch && isDispatchable(i));
   const selectable = list.items.filter(isSelectable);
   const allSelected = selectable.length > 0 && selectable.every((i) => selected.has(i.id));
-  const selectedDrafts = list.items.filter((i) => selected.has(i.id) && i.status === ProformaStatus.Borrador);
-  const selectedDispatch = list.items.filter((i) => selected.has(i.id) && isDispatchable(i));
+  const selectedDrafts = [...selected.values()].filter((i) => i.status === ProformaStatus.Borrador);
+  const selectedDispatch = [...selected.values()].filter(isDispatchable);
 
-  function toggle(id: string) {
+  function toggle(row: ProformaListItem) {
     setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const next = new Map(prev);
+      if (next.has(row.id)) next.delete(row.id);
+      else next.set(row.id, row);
       return next;
     });
   }
 
+  /** Marca o desmarca las de ESTA pagina, sin tocar lo marcado en otras. */
   function toggleAll() {
-    setSelected(allSelected ? new Set() : new Set(selectable.map((i) => i.id)));
+    setSelected((prev) => {
+      const next = new Map(prev);
+      for (const row of selectable) {
+        if (allSelected) next.delete(row.id);
+        else next.set(row.id, row);
+      }
+      return next;
+    });
   }
 
   /**
@@ -153,7 +167,7 @@ export function ProformasScreen({
       const failed = result.failed.map((f) => f.message).join(' ');
       if (result.approved.length > 0) setNotice(`Aprobadas: ${ok}.`);
       if (result.failed.length > 0) setError(`No se aprobaron ${result.failed.length}: ${failed}`);
-      setSelected(new Set());
+      setSelected(new Map());
       list.reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudieron aprobar las proformas.');
@@ -175,13 +189,26 @@ export function ProformasScreen({
       const summary = dispatchSummary(await api.post<DispatchProformasResult>('/proformas/dispatch', { ids }));
       if (summary.ok) setNotice(summary.ok);
       if (summary.failed) setError(`No salieron: ${summary.failed}`);
-      setSelected(new Set());
+      setSelected(new Map());
       list.reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudieron enviar a ruta.');
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * Los dos REPORTES del filtro que se esta viendo (estado, tipo y busqueda): el
+   * listado en CSV y el lote de documentos para imprimir. Se abren en otra
+   * pestaña: la cookie de sesion viaja igual por ser el mismo origen.
+   */
+  function openReport(path: 'export.csv' | 'documents') {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (flow) params.set('flow', flow);
+    if (q.trim()) params.set('q', q.trim());
+    window.open(`${API_BASE}/api/proformas/${path}?${params.toString()}`, '_blank');
   }
 
   const chips: FilterChip[] = [
@@ -199,8 +226,23 @@ export function ProformasScreen({
           <div className="title">Proformas</div>
           {list.data && <div className="count">{list.total.toLocaleString('es-CR')} proformas</div>}
         </div>
-        {canSelect && (
-          <div className="actions">
+        <div className="actions">
+          <button
+            type="button" className="btn btn-ghost" disabled={list.total === 0}
+            title="Listado de las proformas del filtro, en CSV para la hoja de cálculo"
+            onClick={() => openReport('export.csv')}
+          >
+            Exportar listado
+          </button>
+          <button
+            type="button" className="btn btn-ghost" disabled={list.total === 0}
+            title="Todas las proformas del filtro en un documento, una por página, para imprimir o guardar como PDF"
+            onClick={() => openReport('documents')}
+          >
+            Imprimir todas
+          </button>
+          {canSelect && (
+            <>
             {canDispatch && (
               <button
                 type="button"
@@ -221,8 +263,9 @@ export function ProformasScreen({
                 {busy ? 'Procesando…' : `Aprobar seleccionadas (${selectedDrafts.length})`}
               </button>
             )}
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
@@ -242,7 +285,7 @@ export function ProformasScreen({
             id="pf-status" className="input" value={status}
             onChange={(e) => {
               setStatus(e.target.value as ProformaStatus | '');
-              setSelected(new Set());
+              setSelected(new Map());
             }}
           >
             <option value="">Todos</option>
@@ -299,7 +342,7 @@ export function ProformasScreen({
                           type="checkbox"
                           aria-label={`Marcar la proforma de ${row.client.name}`}
                           checked={selected.has(row.id)}
-                          onChange={() => toggle(row.id)}
+                          onChange={() => toggle(row)}
                         />
                       )}
                     </td>

@@ -15,6 +15,7 @@ import {
   ProformaStatus,
   Role,
   approveProformasSchema,
+  proformaFilterSchema,
   dispatchProformasSchema,
   assignShipmentOwnerSchema,
   correctProformaSchema,
@@ -29,7 +30,7 @@ import type { AppEnv } from '../../core/http';
 import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
 import { zValidator } from '../../core/validator';
-import { renderProforma, renderProformaCsv } from './proforma.render';
+import { renderProforma, renderProformaCsv, renderProformaListCsv, renderProformas } from './proforma.render';
 import { proformasRepo } from './proformas.repo';
 import { proformasService } from './proformas.service';
 
@@ -93,6 +94,24 @@ proformasRoutes.post(
     return c.json(await proformasService.dispatchMany(c.get('session'), c.req.valid('json').ids));
   },
 );
+
+/**
+ * REPORTE de proformas: el filtro de la bandeja en CSV, una fila por proforma
+ * (numero, cliente, estado, entrega, totales, FE y fechas).
+ */
+proformasRoutes.get('/export.csv', read, zValidator('query', proformaFilterSchema), async (c) => {
+  const { items, total, electronicInvoice } = await proformasService.exportList(c.req.valid('query'));
+  return c.body(renderProformaListCsv(items, total, electronicInvoice), 200, {
+    'content-type': 'text/csv; charset=utf-8',
+    'content-disposition': 'attachment; filename="proformas.csv"',
+  });
+});
+
+/** Todas las proformas del filtro en un documento, una por pagina, para imprimir o guardar como PDF. */
+proformasRoutes.get('/documents', read, zValidator('query', proformaFilterSchema), async (c) => {
+  const { docs, total } = await proformasService.documents(c.req.valid('query'));
+  return c.html(renderProformas(docs, total));
+});
 
 // --- Una proforma -----------------------------------------------------------
 

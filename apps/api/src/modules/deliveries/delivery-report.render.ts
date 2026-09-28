@@ -10,7 +10,8 @@
  * modulo es el unico punto que cambia: el documento ya viene armado.
  *
  * EL PAPEL ES PARA LA CALLE. La pantalla de Entregas es la version interactiva y
- * esta es la de bolsillo: va agrupada por ruta, en el mismo orden en que se
+ * esta es la de bolsillo: va agrupada por ruta y, dentro, por proforma (una
+ * parada por proforma, con una sola firma), en el mismo orden en que se
  * recorre, y lleva una columna en blanco para firmar. Por eso incluye direccion
  * y telefono completos, y por eso el saldo va impreso: el mensajero tiene que
  * saber antes de tocar el timbre si va a cobrar.
@@ -57,8 +58,12 @@ function stamp(iso: string): string {
   });
 }
 
-/** Una parada del recorrido. */
+/** Un paquete del recorrido. */
 export interface DeliveryReportRow {
+  id: string;
+  /** Proforma del paquete. Null en paquetes anteriores al modulo de proformas. */
+  proformaId: string | null;
+  proformaNumber: number | null;
   code: string;
   tracking: string;
   /** HAWB (LES) de la bodega de Miami. Null mientras el paquete no ha llegado. */
@@ -79,10 +84,25 @@ export interface DeliveryReportRow {
   dueCurrency: Currency;
 }
 
+/**
+ * Una parada del recorrido: una proforma con sus paquetes en ruta, que el
+ * mensajero entrega en una sola visita y con una sola firma. Un paquete sin
+ * proforma es su propia parada (`proformaNumber` null).
+ */
+export interface DeliveryReportStop {
+  proformaNumber: number | null;
+  /** Paquetes de la parada. Todos del mismo cliente: la proforma es de uno solo. */
+  rows: DeliveryReportRow[];
+  /** Saldo por cobrar en la puerta, por moneda. Vacio si no hay nada que cobrar. */
+  dueTotals: { currency: Currency; amount: number }[];
+}
+
 /** Las paradas de una ruta. `routeNumber` null = direcciones sin ruta asignada. */
 export interface DeliveryReportRoute {
   routeNumber: number | null;
-  rows: DeliveryReportRow[];
+  stops: DeliveryReportStop[];
+  /** Paquetes de la ruta, sumando todas sus paradas. */
+  packages: number;
 }
 
 /** Lo que hace falta para armar el documento. */
@@ -133,6 +153,10 @@ const STYLES = `
   /* El saldo es lo unico de la fila que cambia lo que el mensajero hace al llegar. */
   .due { font-weight: 700; color: #92400e; white-space: nowrap; }
   .paid { color: #166534; }
+  /* Paquetes de la parada: uno por linea, con su cobro a la derecha. */
+  .pkg { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+  .pkg + .pkg { border-top: 1px dashed #e5e7eb; }
+  .pkg .num { text-align: right; flex: none; }
   /* Casilla de firma: se rellena a mano, asi que se deja alta y con linea. */
   .sign { height: 34px; border-bottom: 1px solid #9ca3af; }
   .foot { margin-top: 20px; font-size: 10px; color: #6b7280; }
@@ -149,7 +173,7 @@ const STYLES = `
     tr { page-break-inside: avoid; }
     thead { display: table-header-group; }
   }
-  /* Apaisado: son siete columnas y en vertical la direccion queda en un hilo. */
+  /* Apaisado: son seis columnas anchas y en vertical la direccion queda en un hilo. */
   @page { size: A4 landscape; margin: 10mm; }
 `;
 
@@ -196,44 +220,82 @@ function collection(row: DeliveryReportRow): string {
     <div class="sub">${esc(COLLECTION_STATUS_LABELS[row.collection])}</div>`;
 }
 
-/** Una ruta: su titulo y su tabla de paradas, numeradas en el orden del recorrido. */
+/** Un paquete dentro de la parada: sus tres numeros, que es, y su propio cobro. */
+function packageLine(row: DeliveryReportRow): string {
+  return `<div class="pkg">
+    <div>
+      <div class="mono">${esc(row.code)} <span class="sub">· ${esc(row.tracking)}</span></div>
+      ${les(row)}
+      <div class="sub">${esc(row.description)} · ${esc(SHIPMENT_TYPE_LABELS[row.shipmentType])}</div>
+    </div>
+    <div class="num">${collection(row)}</div>
+  </div>`;
+}
+
+/**
+ * El cobro de la parada entera: lo que el mensajero cobra en la puerta. Con
+ * saldo, la suma por moneda (una fila por moneda, nunca mezcladas en una cifra).
+ * Sin saldo, "Pagado" si todo lo facturado esta cubierto, y se avisa si algun
+ * paquete va sin facturar, porque eso tambien es algo que preguntar en la oficina.
+ */
+function stopCollection(stop: DeliveryReportStop): string {
+  if (stop.dueTotals.length > 0) {
+    const amounts = stop.dueTotals
+      .map((t) => `<div class="due">${esc(formatMoney(t.amount, t.currency))}</div>`)
+      .join('');
+    return `${amounts}<div class="sub">Por cobrar</div>`;
+  }
+  const unbilled = stop.rows.filter((r) => r.collection === CollectionStatus.SinFacturar).length;
+  if (unbilled === stop.rows.length) {
+    return `<span class="empty">${esc(COLLECTION_STATUS_LABELS[CollectionStatus.SinFacturar])}</span>`;
+  }
+  const note = unbilled > 0 ? `<div class="sub">${unbilled} sin facturar</div>` : '';
+  return `<span class="paid">${esc(COLLECTION_STATUS_LABELS[CollectionStatus.Pagado])}</span>${note}`;
+}
+
+/**
+ * Una ruta: su titulo y su tabla de paradas, numeradas en el orden del recorrido.
+ * Una fila por PROFORMA, con cliente, direccion, cobro total y firma una sola
+ * vez, y sus paquetes listados adentro: es una visita, no N.
+ */
 function routeTable(route: DeliveryReportRoute): string {
   const title = route.routeNumber != null ? `Ruta ${route.routeNumber}` : 'Sin ruta asignada';
-  const count = `${route.rows.length} paquete${route.rows.length === 1 ? '' : 's'}`;
-  const rows = route.rows
-    .map(
-      (row, i) => `<tr>
+  const stops = route.stops.length;
+  const count =
+    `${stops} parada${stops === 1 ? '' : 's'} · ` +
+    `${route.packages} paquete${route.packages === 1 ? '' : 's'}`;
+  const rows = route.stops
+    .map((stop, i) => {
+      // Una parada nace con su primer paquete, asi que nunca viene vacia.
+      const first = stop.rows[0]!;
+      const proforma =
+        stop.proformaNumber != null
+          ? `<div class="mono"><strong>Proforma #${esc(stop.proformaNumber)}</strong></div>`
+          : '<div class="sub">Sin proforma</div>';
+      return `<tr>
         <td class="num">${i + 1}</td>
         <td>
-          <div class="mono">${esc(row.code)}</div>
-          ${les(row)}
-          <div class="sub mono">${esc(row.tracking)}</div>
+          ${proforma}
+          <div>${esc(first.clientName)}</div>
+          <div class="sub mono">${first.clientPhone ? esc(first.clientPhone) : '—'}</div>
         </td>
-        <td>
-          <div>${esc(row.clientName)}</div>
-          <div class="sub mono">${row.clientPhone ? esc(row.clientPhone) : '—'}</div>
-        </td>
-        <td>${address(row)}</td>
-        <td>
-          <div>${esc(row.description)}</div>
-          <div class="sub">${esc(SHIPMENT_TYPE_LABELS[row.shipmentType])}</div>
-        </td>
-        <td class="num">${collection(row)}</td>
+        <td>${address(first)}</td>
+        <td>${stop.rows.map(packageLine).join('')}</td>
+        <td class="num">${stopCollection(stop)}</td>
         <td class="sign"></td>
-      </tr>`,
-    )
+      </tr>`;
+    })
     .join('');
 
   return `<h2>${esc(title)}<span>${count}</span></h2>
   <table>
     <colgroup>
-      <col style="width:4%"><col style="width:15%"><col style="width:16%">
-      <col style="width:23%"><col style="width:17%"><col style="width:11%">
-      <col style="width:14%">
+      <col style="width:4%"><col style="width:16%"><col style="width:19%">
+      <col style="width:36%"><col style="width:11%"><col style="width:14%">
     </colgroup>
     <thead><tr>
-      <th class="num">#</th><th>Trámite / LES / Tracking</th><th>Cliente / Teléfono</th>
-      <th>Dirección</th><th>Descripción</th><th class="num">Cobro</th>
+      <th class="num">#</th><th>Proforma / Cliente / Teléfono</th><th>Dirección</th>
+      <th>Paquetes (Trámite · Tracking / LES)</th><th class="num">Cobro</th>
       <th>Recibido por (firma)</th>
     </tr></thead>
     <tbody>${rows}</tbody>
