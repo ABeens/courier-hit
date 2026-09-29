@@ -464,10 +464,16 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   // de proformas) y asienta los depositos que el cliente le manda
   // (`payments.record`).
   //
-  // Lo que NO lleva, y por eso no aparece aqui: la entrega (`delivery.manage`,
-  // que es Mensajeria) y la APROBACION de esos depositos (`payments.validate`).
-  // Antes tampoco facturaba Agenciamiento (`costs.tramite.manage` era solo del
-  // administrador); con el modulo de proformas factura las tres verticales.
+  // Tambien saca a ruta los paquetes pagados (`delivery.manage`): el paso a "En
+  // ruta de entrega" lo exige la maquina de estados, y sin el el Operativo que
+  // cobro la proforma tenia que esperar a un administrador para despacharla. El
+  // permiso es el del modulo de entregas entero, asi que de paso ve el dashboard
+  // de ruta y puede confirmar o devolver una entrega, igual que Mensajeria.
+  //
+  // Lo que NO lleva, y por eso no aparece aqui: la APROBACION de esos depositos
+  // (`payments.validate`). Antes tampoco facturaba Agenciamiento
+  // (`costs.tramite.manage` era solo del administrador); con el modulo de
+  // proformas factura las tres verticales.
   [Role.Operativo]: [
     Permission.DashboardRead,
     Permission.PackageReceive,
@@ -479,6 +485,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ProformasRead,
     Permission.ProformasManage,
     Permission.PaymentsRecord,
+    Permission.DeliveryManage,
     Permission.ReportsOperationalBasic,
     Permission.ReportsOperational,
     Permission.ClientsRead,

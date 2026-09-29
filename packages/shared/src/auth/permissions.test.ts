@@ -21,6 +21,9 @@ import {
   resourcesFor,
 } from './permissions';
 import { Role } from './roles';
+import { permissionFor } from '../workflow/machine';
+import { Flow } from '../workflow/shipment-type';
+import { State } from '../workflow/states';
 
 test('el Operativo puede registrar un deposito', () => {
   assert.equal(can(Role.Operativo, Permission.PaymentsRecord), true);
@@ -28,6 +31,15 @@ test('el Operativo puede registrar un deposito', () => {
 
 test('el Operativo NO puede aprobarlo: registrar no es cobrar', () => {
   assert.equal(can(Role.Operativo, Permission.PaymentsValidate), false);
+});
+
+/**
+ * Quien cobra la proforma la despacha: el paso a "En ruta de entrega" pide
+ * `delivery.manage` en la maquina, y sin el el Operativo dejaba los paquetes
+ * pagados esperando a un administrador.
+ */
+test('el Operativo puede sacar a ruta un paquete pagado', () => {
+  assert.equal(can(Role.Operativo, permissionFor(Flow.Paqueteria, State.EnRutaEntrega)!), true);
 });
 
 test('el Administrador puede las dos cosas', () => {
