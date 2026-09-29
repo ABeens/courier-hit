@@ -378,14 +378,19 @@ function opCreateRecipient(body: Record<string, unknown>): Response {
     .filter(Boolean)
     .join(' ');
 
-  // Helga valida que el correo no exista. Reintentar con el mismo cliente produce
-  // el mismo correo derivado, asi que devolvemos el destinatario ya creado en vez
-  // de duplicarlo: es lo que hace la reconciliacion cuando reintenta.
-  const existing = w.recipients.find((r) => r.email === email);
-  if (existing) {
-    return legacyEnvelope(
-      { id: existing.id, sub_casillero: existing.subLocker, nombre_completo: existing.name },
-      'El destinatario ya existe.',
+  // Helga exige nombre y cedula unicos en la cuenta y RECHAZA el duplicado, con el
+  // mismo texto que en vivo (2026-09-28), incluso cuando es el mismo cliente
+  // reintentando: no devuelve el destinatario existente. Averiguar su id es trabajo
+  // de la op. G (`opListRecipients`). Los recuperados no cuentan: su nombre es un
+  // relleno y no tienen cedula.
+  const idNumber = String(body.numero_de_identificacion ?? '').trim();
+  const duplicate = w.recipients.find(
+    (r) => r.email !== '' && ((idNumber !== '' && r.idNumber === idNumber) || r.name === name),
+  );
+  if (duplicate) {
+    return errorResponse(
+      422,
+      'Para este cliente ya existe un destinatario casillero con el nombre y/o número de identificación ingresados.',
     );
   }
 
@@ -397,7 +402,7 @@ function opCreateRecipient(body: Record<string, unknown>): Response {
     subLocker: `SJO008835S9${String(seq).padStart(2, '0')}`,
     name,
     email,
-    idNumber: String(body.numero_de_identificacion ?? ''),
+    idNumber,
     createdAt: new Date().toISOString(),
   };
   w.recipients.push(recipient);
@@ -408,6 +413,30 @@ function opCreateRecipient(body: Record<string, unknown>): Response {
     { id: recipient.id, sub_casillero: recipient.subLocker, nombre_completo: recipient.name },
     'Destinatario creado.',
   );
+}
+
+/**
+ * Op. G: listado de destinatarios de la cuenta, filtrado por `str_busqueda`
+ * contra cedula, nombre, sub-casillero o correo, como el real. Paginador estilo
+ * Laravel. No pagina de verdad: el mundo simulado nunca tiene tantos.
+ */
+function opListRecipients(body: Record<string, unknown>): Response {
+  const search = String(body.str_busqueda ?? '').trim().toLowerCase();
+  const rows = getWorld()
+    .recipients.filter(
+      (r) =>
+        search === '' ||
+        [r.idNumber, r.name, r.subLocker ?? '', r.email].some((v) => v.toLowerCase().includes(search)),
+    )
+    .map((r) => ({
+      id: Number(r.id),
+      sub_casillero: r.subLocker,
+      numero_de_identificacion: r.idNumber,
+      nombre_completo: r.name,
+      activo: true,
+      cliente_id: 7536,
+    }));
+  return legacyEnvelope({ current_page: 1, last_page: 1, total: rows.length, data: rows }, '');
 }
 
 /**
@@ -643,6 +672,7 @@ export async function mockHelgaRequest(
   }
 
   if (rawPath === '/api/casillero/destinatarios') return opCreateRecipient(payload);
+  if (rawPath === '/api/casillero/clientes/destinatarios') return opListRecipients(payload);
   if (rawPath === '/api/v2/prealertas') return opCreatePrealert(payload);
   if (rawPath.startsWith('/api/casillero/consulta-estado/')) {
     return opPackageState(decodeURIComponent(rawPath.slice('/api/casillero/consulta-estado/'.length)));

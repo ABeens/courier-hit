@@ -4,7 +4,8 @@
  * cuya IP esta en la lista blanca del proveedor, con un `Origin` registrado.
  *
  * Operaciones: A (token, en `helga.auth`), B (consulta de estado), C (prealerta
- * v2), D (crear destinatario casillero) y E (paquetes disponibles).
+ * v2), D (crear destinatario casillero), E (paquetes disponibles) y G (listar
+ * destinatarios).
  *
  * Rutas y shapes de B, D y E verificados EN VIVO contra la cuenta SJO008835
  * (2026-07-23): la IP del backend ya esta en la lista blanca. C (prealerta v2)
@@ -39,6 +40,7 @@ import type {
   HelgaPackageStatus,
   HelgaPaginator,
   HelgaPrealertResponse,
+  HelgaRecipientListItem,
   HelgaRecipientResponse,
 } from './helga.types';
 import { normalizeEnvelope } from './helga.types';
@@ -277,6 +279,56 @@ export async function createHelgaRecipient(params: {
     ...(params.priority ? { priority: params.priority } : {}),
   });
   return { id: extractRecipientId(data), subLocker: data?.sub_casillero ?? null };
+}
+
+/** Un destinatario ya existente en la cuenta principal (op. G), normalizado. */
+export interface HelgaRecipientListing {
+  id: string;
+  subLocker: string | null;
+  idNumber: string | null;
+  name: string | null;
+  /** Ausente en la respuesta = se asume activo; solo un `false` explicito lo descarta. */
+  active: boolean;
+}
+
+/**
+ * Op. G: destinatarios de la cuenta principal que coinciden con `search`
+ * (cedula, nombre, sub-casillero o correo; el filtro lo aplica Helga).
+ *
+ * Existe para un solo caso: el alta (op. D) se rechazo porque el destinatario YA
+ * existe, y hay que averiguar su id sin que nadie lo copie a mano. Es de solo
+ * lectura. Recorre todas las paginas: con una busqueda por cedula casi siempre es
+ * una.
+ */
+export async function listHelgaRecipients(params: {
+  search: string;
+  priority?: HelgaCallPriority;
+}): Promise<HelgaRecipientListing[]> {
+  const out: HelgaRecipientListing[] = [];
+  let page = 1;
+  let lastPage = 1;
+
+  do {
+    const data = await post<HelgaPaginator<HelgaRecipientListItem>>(
+      `/api/casillero/clientes/destinatarios?page=${page}`,
+      { pageSize: 50, str_busqueda: params.search },
+      params.priority ? { priority: params.priority } : {},
+    );
+    for (const row of data?.data ?? []) {
+      if (row.id === undefined || row.id === null || row.id === '') continue;
+      out.push({
+        id: String(row.id),
+        subLocker: row.sub_casillero?.trim() || null,
+        idNumber: row.numero_de_identificacion?.trim() || null,
+        name: row.nombre_completo?.trim() || null,
+        active: row.activo !== false,
+      });
+    }
+    lastPage = data?.last_page ?? page;
+    page += 1;
+  } while (page <= lastPage);
+
+  return out;
 }
 
 /**

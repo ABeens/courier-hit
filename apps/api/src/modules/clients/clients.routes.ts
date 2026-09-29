@@ -69,7 +69,7 @@ clientsRoutes.patch('/me/address', zValidator('json', deliveryAddressSchema), as
 // Permiso `config.manage` (solo Admin), no `clients.write`: corregir el enlace a
 // mano puede abrirle el portal a un cliente que el proveedor no reconoce.
 //
-// Ademas del permiso, las tres piden `MIAMI_LINK_ENABLED=true`: con la bandera
+// Ademas del permiso, todas piden `MIAMI_LINK_ENABLED=true`: con la bandera
 // apagada la pantalla no se ofrece en el portal, y estas rutas responden 403 en
 // vez de quedar accesibles por URL.
 
@@ -104,6 +104,20 @@ clientsRoutes.patch(
     return c.json(
       await providerLinkService.update(c.get('session'), c.req.param('id'), c.req.valid('json')),
     );
+  },
+);
+
+/**
+ * Busca en el operador el destinatario que ya existe para este casillero y lo
+ * enlaza si es inequivocamente suyo (misma cedula, uno solo, sin dueño nuestro).
+ * Responde 200 tambien cuando no adopta: el motivo es la respuesta.
+ */
+clientsRoutes.post(
+  '/:id/provider-link/adopt',
+  requireMiamiLink(),
+  requirePermission(Permission.ConfigManage),
+  async (c) => {
+    return c.json(await providerLinkService.adopt(c.get('session'), c.req.param('id')));
   },
 );
 

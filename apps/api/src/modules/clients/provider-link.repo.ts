@@ -7,8 +7,9 @@
  * la correccion manual del enlace es una funcion del panel de administracion, y
  * ponerla en auth mezclaria el alta de cuentas con la operacion diaria.
  */
-import { and, count, desc, eq, inArray, ilike, ne, or } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, ilike, ne, notExists, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { HelgaSyncStatus, toSlice } from '@courier/shared';
 import type { ListProviderLinksQuery, ProviderLinkSource } from '@courier/shared';
 import { db } from '../../core/db';
@@ -167,6 +168,84 @@ export const providerLinkRepo = {
     } catch (err) {
       console.error(`[provider-link] no se pudo registrar el evento de ${event.clientId}:`, err);
     }
+  },
+
+  /**
+   * Otro casillero que ya tenga ese destinatario o ese sub-casillero. Es la
+   * pregunta que protege el ownership: enlazar un id o un sub-casillero que ya
+   * tiene dueño le desviaria a otro cliente los paquetes de ese dueño.
+   *
+   * Devuelve el primero que choque y cual de los dos campos choco, para poder
+   * decir en el error a quien pertenece.
+   */
+  async findLinkOwner(
+    excludeClientId: string,
+    link: { helgaClientId?: string | null; subLocker?: string | null },
+  ): Promise<{ code: string; field: 'helgaClientId' | 'subLocker' } | null> {
+    const matches: SQL[] = [];
+    if (link.helgaClientId) matches.push(eq(clients.helgaClientId, link.helgaClientId));
+    if (link.subLocker) matches.push(eq(clients.helgaSubLocker, link.subLocker));
+    if (matches.length === 0) return null;
+
+    const [row] = await db
+      .select({ code: clients.code, helgaClientId: clients.helgaClientId })
+      .from(clients)
+      .where(and(ne(clients.id, excludeClientId), or(...matches)))
+      .limit(1);
+    if (!row) return null;
+    return {
+      code: row.code,
+      field: link.helgaClientId && row.helgaClientId === link.helgaClientId ? 'helgaClientId' : 'subLocker',
+    };
+  },
+
+  /**
+   * Adopta un destinatario de Helga que ya existia: deja el casillero `synced` con
+   * ese id y sub-casillero, en UNA sentencia que ademas exige que ningun otro
+   * casillero los tenga. Hacer la comprobacion aparte y escribir despues dejaria
+   * una ventana en la que dos procesos adoptan el mismo destinatario; aqui la
+   * cierra el `NOT EXISTS` y, para la carrera exacta, los indices unicos de las
+   * dos columnas (el llamador traduce ese 23505).
+   *
+   * Devuelve false si no escribio: el casillero ya estaba `synced` o el
+   * destinatario ya tiene dueño.
+   */
+  async adoptRecipient(
+    clientId: string,
+    recipient: { helgaClientId: string; subLocker: string },
+  ): Promise<boolean> {
+    const other = alias(clients, 'other');
+    const rows = await db
+      .update(clients)
+      .set({
+        helgaSyncStatus: HelgaSyncStatus.Synced,
+        helgaClientId: recipient.helgaClientId,
+        helgaSubLocker: recipient.subLocker,
+        helgaSyncedAt: new Date(),
+        helgaLastError: null,
+      })
+      .where(
+        and(
+          eq(clients.id, clientId),
+          ne(clients.helgaSyncStatus, HelgaSyncStatus.Synced),
+          notExists(
+            db
+              .select({ one: sql`1` })
+              .from(other)
+              .where(
+                and(
+                  ne(other.id, clientId),
+                  or(
+                    eq(other.helgaClientId, recipient.helgaClientId),
+                    eq(other.helgaSubLocker, recipient.subLocker),
+                  ),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ id: clients.id });
+    return rows.length > 0;
   },
 
   /**

@@ -24,13 +24,14 @@ import type {
   VerifyInput,
 } from '@courier/shared';
 import { config, isProd } from '../../core/config';
-import { AuthErrors, isProviderRateLimited } from '../../core/errors';
+import { AuthErrors, isProviderRateLimited, isProviderRejection } from '../../core/errors';
 import { mailer } from '../../core/mailer';
 import type { HelgaCallPriority, HelgaRecipient } from '../../integrations/helga/helga.client';
 import { createHelgaRecipient, isHelgaEnabled } from '../../integrations/helga/helga.client';
 // La bitacora del enlace la declara el modulo de casilleros (es donde vive el
 // panel que la consulta); aqui solo se ESCRIBE desde los caminos automaticos.
 import { providerLinkRepo } from '../clients/provider-link.repo';
+import { providerLinkService } from '../clients/provider-link.service';
 import { tariffsRepo } from '../tariffs/tariffs.repo';
 import { authRepo } from './auth.repo';
 import type { UserRow } from './auth.schema';
@@ -148,6 +149,13 @@ export const authService = {
       detail: link.error ?? (link.recipient ? `Destinatario ${link.recipient.id}.` : 'Integración apagada.'),
     });
 
+    // Rechazo del dato: puede ser que el destinatario ya exista y sea de este
+    // mismo cliente (se registro antes en Helga). Si es inequivocamente suyo, se
+    // adopta; si no, queda `failed` con el motivo en la bitacora.
+    if (link.status === HelgaSyncStatus.Failed) {
+      await this.tryAdoptExisting(clientRow.id, ProviderLinkSource.Registro);
+    }
+
     // En dev se devuelve el codigo para mostrarlo en la UI (sin SMTP). En prod
     // issueVerificationCode devuelve null: el codigo solo viaja por correo.
     const verificationCode = await this.issueVerificationCode(user.id, user.email);
@@ -163,7 +171,14 @@ export const authService = {
    *   no crear destinatarios reales en cada prueba; el enlace lo hara la
    *   reconciliacion cuando Helga este disponible).
    * - Exito: `synced`.
-   * - El proveedor rechaza o no responde: `failed`, con el mensaje del error.
+   * - El proveedor rechaza el dato (duplicado, campo invalido): `failed`, con el
+   *   mensaje. Es definitivo: el robot NO lo reintenta, porque reenviar lo mismo
+   *   da el mismo rechazo (un caso real llego a 476 intentos). El llamador intenta
+   *   entonces adoptar el destinatario existente (`tryAdoptExisting`); si no se
+   *   puede, sale por la correccion manual del enlace.
+   * - El proveedor no responde, o nos rechaza la conexion (lista blanca,
+   *   credenciales): `pending`, con el mensaje. Es un problema nuestro o suyo,
+   *   no del casillero, y el robot lo resuelve solo cuando se arregla.
    * - El proveedor nos limita por ritmo (429): `pending`, 0 intentos y
    *   `rateLimited`. No dice nada del casillero, asi que no se sella como fallo;
    *   la bandera es para que la reconciliacion CORTE la corrida en vez de gastar
@@ -203,17 +218,19 @@ export const authService = {
         console.warn(`[auth] límite de peticiones del proveedor: el casillero de ${email} queda pendiente.`);
         return { recipient: null, status: HelgaSyncStatus.Pending, attempts: 0, error: null, rateLimited: true };
       }
-      // No aborta el registro: se guarda el motivo y la reconciliacion reintenta.
+      // No aborta el registro: se guarda el motivo. Solo un rechazo del dato es
+      // `failed`; el resto queda `pending` para que la reconciliacion lo reintente.
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[auth] Helga rechazó el alta de ${email}:`, err);
-      return { recipient: null, status: HelgaSyncStatus.Failed, attempts: 1, error: message };
+      const status = isProviderRejection(err) ? HelgaSyncStatus.Failed : HelgaSyncStatus.Pending;
+      return { recipient: null, status, attempts: 1, error: message };
     }
   },
 
   /**
    * Tarea del robot: reintenta enlazar con el proveedor los casilleros que
-   * quedaron sin sincronizar ('pending' o 'failed') y actualiza la bandera al
-   * resultado. Reusa `linkWithProvider` (la misma llamada del registro) y sella
+   * quedaron `pending` y actualiza la bandera al resultado. Los `failed` no entran:
+   * son rechazos del dato que ningun reintento arregla (ver `linkWithProvider`). Reusa `linkWithProvider` (la misma llamada del registro) y sella
    * el resultado en el casillero: en exito lo deja 'synced' con su `helgaClientId`
    * y sub-casillero; en fallo suma un intento y guarda el motivo para diagnostico.
    *
@@ -271,10 +288,39 @@ export const authService = {
           : null,
       });
 
-      if (link.status === HelgaSyncStatus.Synced) report.synced += 1;
+      // Mismo razonamiento que en el registro. Corre una sola vez por casillero:
+      // un `failed` ya no vuelve a esta cola.
+      const adopted =
+        link.status === HelgaSyncStatus.Failed &&
+        (await this.tryAdoptExisting(client.id, ProviderLinkSource.Reconciliacion, 'robot'));
+
+      if (link.status === HelgaSyncStatus.Synced || adopted) report.synced += 1;
       else report.failed += 1;
     }
     return report;
+  },
+
+  /**
+   * Adopcion del destinatario ya existente, sin lanzar nunca: el registro de un
+   * cliente o la corrida del robot no pueden caerse por esto. Un fallo inesperado
+   * (la BD, no el proveedor, que `adoptExistingRecipient` ya absorbe) se loguea y
+   * el casillero queda como estaba, `failed` y visible en el panel.
+   */
+  async tryAdoptExisting(
+    clientId: string,
+    source: ProviderLinkSource,
+    priority?: HelgaCallPriority,
+  ): Promise<boolean> {
+    try {
+      const outcome = await providerLinkService.adoptExistingRecipient(clientId, {
+        source,
+        ...(priority ? { priority } : {}),
+      });
+      return outcome.adopted;
+    } catch (err) {
+      console.error(`[auth] falló la adopción del destinatario existente de ${clientId}:`, err);
+      return false;
+    }
   },
 
   /**

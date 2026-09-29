@@ -1,7 +1,7 @@
 /**
  * Tipos del contrato del proveedor Helga (docs/13 §2): token (op. A), consulta de
- * estado (B), prealerta v2 (C), crear destinatario casillero (D) y paquetes
- * disponibles (E).
+ * estado (B), prealerta v2 (C), crear destinatario casillero (D), paquetes
+ * disponibles (E) y listado de destinatarios (G).
  *
  * Los shapes de B y E se verificaron EN VIVO contra la cuenta SJO008835
  * (2026-07-23): las rutas y nombres de campo de abajo son los reales, no los del
@@ -57,6 +57,22 @@ export interface HelgaRecipientResponse {
   destinatario_id?: string | number;
   sub_casillero?: string;
   nombre_completo?: string;
+}
+
+/**
+ * Una fila del listado de destinatarios de la cuenta (op. G,
+ * `POST /api/casillero/clientes/destinatarios`). La ruta no esta en el manual:
+ * forma verificada en vivo el 2026-09-28. Trae mas campos (contacto, geografia);
+ * se declaran solo los que usa la adopcion de un destinatario ya existente.
+ */
+export interface HelgaRecipientListItem {
+  id?: number | string;
+  sub_casillero?: string | null;
+  numero_de_identificacion?: string | null;
+  nombre_completo?: string | null;
+  activo?: boolean;
+  /** Cuenta bajo la que cuelga (`cliente_id` de la op. D). */
+  cliente_id?: number;
 }
 
 /**

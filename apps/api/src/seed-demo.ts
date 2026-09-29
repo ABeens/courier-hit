@@ -757,12 +757,12 @@ async function seed(tx: Tx): Promise<boolean> {
           creditLimit: c.creditLimit?.amount ?? null,
           creditLimitCurrency: c.creditLimit?.currency ?? null,
           helgaClientId: synced ? `HLG-${seq}` : null,
-          helgaSubLocker: synced ? `SJO008835S${String(seq).slice(-3)}` : null,
+          helgaSubLocker: synced ? `SJO008835S${String(seq).padStart(3, '0')}` : null,
           helgaSyncedAt: synced ? daysAgo(c.memberSinceDays) : null,
           helgaSyncStatus: c.helga,
           helgaSyncAttempts: c.helga === HelgaSyncStatus.Pending ? 0 : c.helga === HelgaSyncStatus.Failed ? 3 : 1,
           helgaLastError:
-            c.helga === HelgaSyncStatus.Failed ? 'El proveedor rechazó la cédula: ya existe otro destinatario con ese documento.' : null,
+            c.helga === HelgaSyncStatus.Failed ? 'El operador en Miami rechazó los datos: Para este cliente ya existe un destinatario casillero con el nombre y/o número de identificación ingresados.' : null,
           memberSince: isoDay(daysAgo(c.memberSinceDays)),
           createdAt: daysAgo(c.memberSinceDays),
         };

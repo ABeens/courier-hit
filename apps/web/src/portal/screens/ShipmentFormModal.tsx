@@ -250,7 +250,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
 
   return (
     <ModalOverlay onClose={onClose}>
-      <form className="modal modal-lg fadeUp" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
+      <form className="modal modal-lg fadeUp" autoComplete="off" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal-head">
           <h3>{mode === 'create' ? 'Nuevo trámite' : `Editar trámite ${row?.code}`}</h3>
           <p>
@@ -308,7 +308,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
               {isPackage ? 'Tracking' : 'Tracking (AWB / BL)'}
             </label>
             <input
-              id="t-tracking" className="input" value={tracking}
+              id="t-tracking" className="input" autoComplete="off" value={tracking}
               placeholder={isPackage ? '1Z999AA10123456784' : 'FLO-26-0755'}
               disabled={!canEdit(ShipmentField.Tracking)}
               onChange={(e) => setTracking(e.target.value)}
@@ -318,7 +318,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
           <div>
             <label className="field-label" htmlFor="t-desc">Descripción (REF)</label>
             <input
-              id="t-desc" className="input" value={description}
+              id="t-desc" className="input" autoComplete="off" value={description}
               placeholder={isPackage ? 'Audífonos bluetooth' : 'CHEVROLET SPARK VIN583378'}
               disabled={!canEdit(ShipmentField.Description)}
               onChange={(e) => setDescription(e.target.value)}
@@ -347,7 +347,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
                     quien lo digita aquí es quien después lo lee ahí. */}
                 <label className="field-label" htmlFor="t-hawb">HAWB (LES)</label>
                 <input
-                  id="t-hawb" className="input" value={hawb}
+                  id="t-hawb" className="input" autoComplete="off" value={hawb}
                   placeholder="p. ej. LES48450141" disabled={!canEdit(ShipmentField.Hawb)}
                   onChange={(e) => setHawb(e.target.value)}
                 />
@@ -355,7 +355,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
               <div>
                 <label className="field-label" htmlFor="t-weight">Peso (kg)</label>
                 <input
-                  id="t-weight" className="input" type="number" min="0" step="0.01" value={weight}
+                  id="t-weight" className="input" autoComplete="off" type="number" min="0" step="0.01" value={weight}
                   disabled={!canEdit(ShipmentField.WeightKg) || weightLocked}
                   onChange={(e) => setWeight(e.target.value)}
                 />
@@ -372,7 +372,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
               <div>
                 <label className="field-label" htmlFor="t-value">Valor declarado (USD)</label>
                 <input
-                  id="t-value" className="input" type="number" min="0" step="0.01" value={declaredValue}
+                  id="t-value" className="input" autoComplete="off" type="number" min="0" step="0.01" value={declaredValue}
                   placeholder="Ej: 45.00" disabled={!canEdit(ShipmentField.DeclaredValue)}
                   onChange={(e) => setDeclaredValue(e.target.value)}
                 />
@@ -381,7 +381,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
               <div>
                 <label className="field-label" htmlFor="t-insured">Valor asegurado (USD)</label>
                 <input
-                  id="t-insured" className="input" type="number" min="0" step="0.01" value={insuredValue}
+                  id="t-insured" className="input" autoComplete="off" type="number" min="0" step="0.01" value={insuredValue}
                   placeholder="0.00" disabled={!canEdit(ShipmentField.InsuredValue)}
                   onChange={(e) => setInsuredValue(e.target.value)}
                 />
@@ -390,7 +390,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
               <div>
                 <label className="field-label" htmlFor="t-tariff">Posición arancelaria</label>
                 <input
-                  id="t-tariff" className="input" value={tariffPosition}
+                  id="t-tariff" className="input" autoComplete="off" value={tariffPosition}
                   placeholder="Opcional" disabled={!canEdit(ShipmentField.TariffPosition)}
                   onChange={(e) => setTariffPosition(e.target.value)}
                 />
@@ -413,7 +413,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
                   <div>
                     <label className="field-label" htmlFor="t-warehouse">Almacén</label>
                     <input
-                      id="t-warehouse" className="input" value={warehouse}
+                      id="t-warehouse" className="input" autoComplete="off" value={warehouse}
                       disabled={!canEdit(ShipmentField.Warehouse)}
                       onChange={(e) => setWarehouse(e.target.value)}
                     />
@@ -444,7 +444,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
           <div className="col-full">
             <label className="field-label" htmlFor="t-notes">Notas para facturar</label>
             <textarea
-              id="t-notes" className="input" rows={3} value={billingNotes}
+              id="t-notes" className="input" autoComplete="off" rows={3} value={billingNotes}
               disabled={!canEdit(ShipmentField.BillingNotes)}
               onChange={(e) => setBillingNotes(e.target.value)}
             />

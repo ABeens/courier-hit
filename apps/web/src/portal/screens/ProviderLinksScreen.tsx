@@ -3,9 +3,10 @@
  *
  * Existe por un problema muy concreto: con la integración encendida, un cliente
  * cuyo casillero no quedó `synced` **no puede entrar al portal**. El robot
- * reintenta cada hora, pero hay rechazos que ningún reintento arregla (el típico
- * es el nombre duplicado, porque el proveedor exige nombre único en la cuenta).
- * Sin esta pantalla ese cliente queda encerrado y nadie puede ver por qué.
+ * reintenta solo los que están en proceso (caídas, conexión); un rechazo del dato
+ * (el típico es el nombre duplicado, porque el proveedor exige nombre único en la
+ * cuenta) queda `failed` y ya no se reintenta. Sin esta pantalla ese cliente
+ * queda encerrado y nadie puede ver por qué.
  *
  * Por eso el listado arranca mostrando **solo los casos con problema**: los
  * casilleros sanos no generan trabajo, y mezclarlos escondería los pocos que sí.
@@ -16,7 +17,11 @@ import {
   HelgaSyncStatus,
   PROVIDER_LINK_SOURCE_LABELS,
 } from '@courier/shared';
-import type { ProviderLinkDetailDto, ProviderLinkDto } from '@courier/shared';
+import type {
+  ProviderLinkAdoptResultDto,
+  ProviderLinkDetailDto,
+  ProviderLinkDto,
+} from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { usePagedList } from '../lib/usePagedList';
 import { IconButton } from '../components/IconButton';
@@ -82,6 +87,34 @@ export function ProviderLinksScreen() {
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cargar la bitácora.');
+    }
+  }
+
+  /**
+   * Busca en el operador el destinatario que ya existe y lo enlaza si es
+   * inequivocamente de este cliente. No adoptar no es un error: el servidor dice
+   * por que (homonimo, varios, ya tiene dueño) y eso es lo que el admin necesita.
+   */
+  const [adoptingId, setAdoptingId] = useState<string | null>(null);
+  async function adopt(row: ProviderLinkDto) {
+    setAdoptingId(row.clientId);
+    setNotice(null);
+    setError(null);
+    try {
+      const res = await api.post<ProviderLinkAdoptResultDto>(
+        `/clients/${row.clientId}/provider-link/adopt`,
+        {},
+      );
+      if (res.adopted) {
+        setNotice(`${row.clientCode}: ${res.message}`);
+        void load();
+      } else {
+        setError(`${row.clientCode}: ${res.message}`);
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo consultar el operador.');
+    } finally {
+      setAdoptingId(null);
     }
   }
 
@@ -162,6 +195,15 @@ export function ProviderLinksScreen() {
                   {HELGA_SYNC_STATUS_LABELS[row.status]}
                 </span>
                 <IconButton label="Ver bitácora" icon="clock" onClick={() => void openDetail(row.clientId)} />
+                {row.status === HelgaSyncStatus.Failed && (
+                  <IconButton
+                    label="Buscar en el operador"
+                    hint="Buscar en el operador un destinatario con esta cédula y enlazarlo si es de este cliente"
+                    icon="search"
+                    disabled={adoptingId === row.clientId}
+                    onClick={() => void adopt(row)}
+                  />
+                )}
                 <IconButton label="Corregir enlace" icon="edit" tone="primary" onClick={() => setEditing(row)} />
               </div>
             </div>
@@ -170,6 +212,8 @@ export function ProviderLinksScreen() {
               <div className="banner err" style={{ margin: '0 0 10px' }}>
                 Este cliente <strong>no puede ingresar al portal</strong> hasta que el
                 casillero quede enlazado.
+                {row.status === HelgaSyncStatus.Failed &&
+                  ' El operador rechazó los datos y el robot ya no lo reintenta: corrige la causa y el enlace a mano.'}
               </div>
             )}
 

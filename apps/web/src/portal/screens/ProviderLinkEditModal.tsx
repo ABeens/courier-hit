@@ -64,6 +64,7 @@ export function ProviderLinkEditModal({ row, onClose, onSaved }: Props) {
   }
 
   const markingSynced = status === HelgaSyncStatus.Synced && row.status !== HelgaSyncStatus.Synced;
+  const requeuing = status === HelgaSyncStatus.Pending && row.status === HelgaSyncStatus.Failed;
 
   return (
     <ModalOverlay onClose={onClose}>
@@ -141,6 +142,15 @@ export function ProviderLinkEditModal({ row, onClose, onSaved }: Props) {
               Al marcarlo como <strong>enlazado</strong>, el cliente podrá ingresar al
               portal. Confirma que el destinatario existe de verdad en el operador: si
               no, sus paquetes llegarán a Miami sin dueño.
+            </div>
+          )}
+
+          {requeuing && (
+            <div className="banner warn" style={{ marginTop: 4 }}>
+              Al pasarlo a <strong>en proceso</strong>, el robot volverá a intentar el
+              alta en su próxima corrida. Hazlo solo después de corregir la causa del
+              rechazo (en el operador o en los datos del cliente): si no, volverá a
+              rechazarse.
             </div>
           )}
 

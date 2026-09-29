@@ -91,6 +91,19 @@ export interface ProviderLinkDetailDto {
   events: ProviderLinkEventDto[];
 }
 
+/**
+ * Resultado de buscar en el operador un destinatario que ya existe y enlazarlo
+ * (`POST /clients/:id/provider-link/adopt`). No adoptar NO es un error HTTP: es
+ * una respuesta normal ("no hay uno solo con esa cédula", "ya es de HS-0123") que
+ * el panel muestra tal cual.
+ */
+export interface ProviderLinkAdoptResultDto {
+  adopted: boolean;
+  /** Qué pasó, en texto para el admin. También queda en la bitácora. */
+  message: string;
+  detail: ProviderLinkDetailDto;
+}
+
 /** Filtro del listado. Por defecto el panel mira los casos con problema. */
 export const listProviderLinksSchema = z
   .object({

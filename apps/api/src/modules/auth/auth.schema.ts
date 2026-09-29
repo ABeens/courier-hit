@@ -141,7 +141,8 @@ export const clients = pgTable(
     /**
      * Estado del enlace con el proveedor. Nace 'pending': el casillero existe de
      * nuestro lado aunque aun no este en Helga. La reconciliacion lo llevara a
-     * 'synced' (o 'failed' si el proveedor rechaza). Gobierna el acceso del
+     * 'synced', o a 'failed' si el proveedor rechaza el dato; 'failed' es
+     * terminal para el robot y solo sale por correccion manual. Gobierna el acceso del
      * cliente mientras la integracion este encendida (ver auth.service login).
      */
     helgaSyncStatus: helgaSyncStatusEnum('helga_sync_status')
@@ -168,6 +169,13 @@ export const clients = pgTable(
     index('clients_unlinked_idx')
       .on(t.createdAt)
       .where(sql`${t.helgaSyncStatus} in ('pending', 'failed')`),
+    /**
+     * Un sub-casillero, un casillero. Es la direccion con la que el cliente compra
+     * en Miami: si dos casilleros la comparten, los paquetes de uno le aparecen al
+     * otro. Los NULL no chocan entre si (los casilleros aun sin enlazar). Los
+     * consolidados usan el codigo de su cuenta, y cada cuenta tiene uno solo.
+     */
+    uniqueIndex('clients_helga_sub_locker_uq').on(t.helgaSubLocker),
   ],
 );
 

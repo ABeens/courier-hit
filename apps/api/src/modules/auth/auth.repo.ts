@@ -1,7 +1,7 @@
 /**
  * Acceso a datos del modulo auth (Drizzle). Solo toca SUS tablas.
  */
-import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
 import { HelgaSyncStatus } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, emailVerifications, passwordResets, sessions, users } from './auth.schema';
@@ -66,10 +66,12 @@ export const authRepo = {
 
   /**
    * Casilleros que el robot debe reintentar enlazar con el proveedor: los que
-   * quedaron 'pending' (Helga estaba apagado o el casillero aun no se creo alli)
-   * o 'failed' (el proveedor rechazo). Trae la identidad real que necesita el
-   * alta (op. D de Helga). Se ordena por antiguedad y se acota a un lote: cada
-   * corrida drena `limit`, el resto cae en la siguiente.
+   * quedaron 'pending' (Helga estaba apagado, caido o nos rechazo la conexion).
+   * Los 'failed' NO entran: el proveedor rechazo el dato y reenviarlo da lo mismo.
+   * Ademas, como el lote sale por antiguedad, incluirlos dejaba que los rechazos
+   * viejos ocuparan todo el lote y los casilleros nuevos no se enlazaran nunca.
+   * Trae la identidad real que necesita el alta (op. D de Helga). Se acota a un
+   * lote: cada corrida drena `limit`, el resto cae en la siguiente.
    */
   async findClientsToReconcile(limit: number) {
     return db
@@ -83,7 +85,7 @@ export const authRepo = {
       })
       .from(clients)
       .innerJoin(users, eq(clients.userId, users.id))
-      .where(inArray(clients.helgaSyncStatus, [HelgaSyncStatus.Pending, HelgaSyncStatus.Failed]))
+      .where(eq(clients.helgaSyncStatus, HelgaSyncStatus.Pending))
       .orderBy(clients.createdAt)
       .limit(limit);
   },

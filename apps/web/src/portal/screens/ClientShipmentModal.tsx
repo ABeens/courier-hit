@@ -155,7 +155,7 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
 
   return (
     <ModalOverlay onClose={onClose}>
-      <form className="modal fadeUp" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
+      <form className="modal fadeUp" autoComplete="off" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal-head">
           <h3>Prealertar</h3>
           <p>Avísanos qué viene en camino para darle seguimiento.</p>
@@ -172,7 +172,7 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
           <div>
             <label className="field-label" htmlFor="p-tracking">Tracking</label>
             <input
-              id="p-tracking" className="input" value={tracking}
+              id="p-tracking" className="input" autoComplete="off" value={tracking}
               placeholder="1Z999AA10123456784"
               onChange={(e) => setTracking(e.target.value)}
             />
@@ -181,7 +181,7 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
           <div>
             <label className="field-label" htmlFor="p-desc">Descripción (REF)</label>
             <input
-              id="p-desc" className="input" value={description}
+              id="p-desc" className="input" autoComplete="off" value={description}
               placeholder="Audífonos bluetooth"
               onChange={(e) => setDescription(e.target.value)}
             />
@@ -207,7 +207,7 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
           <div>
             <label className="field-label" htmlFor="p-value">Valor declarado (USD)</label>
             <input
-              id="p-value" className="input" type="number" min="0" step="0.01" value={declaredValue}
+              id="p-value" className="input" autoComplete="off" type="number" min="0" step="0.01" value={declaredValue}
               placeholder="Ej: 45.00"
               onChange={(e) => setDeclaredValue(e.target.value)}
             />

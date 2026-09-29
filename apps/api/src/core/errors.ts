@@ -268,6 +268,16 @@ export function isProviderRateLimited(err: unknown): boolean {
 }
 
 /**
+ * True si el proveedor rechazo EL DATO (400/422): nombre o cedula duplicados,
+ * un campo invalido. Reenviar lo mismo da la misma respuesta, asi que el robot no
+ * lo reintenta; se distingue de las caidas, la lista blanca o las credenciales,
+ * que no dicen nada del casillero y se curan solas cuando se arregla lo nuestro.
+ */
+export function isProviderRejection(err: unknown): boolean {
+  return err instanceof AppError && err.code === 'PROVIDER_VALIDATION';
+}
+
+/**
  * Errores de la correccion MANUAL del enlace de un casillero (panel de
  * administracion). Distintos de `ProviderErrors`: aqui el proveedor no
  * interviene, el que se equivoca es quien corrige.
@@ -279,6 +289,19 @@ export const ProviderLinkErrors = {
     new AppError(
       'PROVIDER_LINK_NEEDS_HELGA_ID',
       'No se puede marcar el casillero como enlazado sin el id de destinatario de Helga.',
+      409,
+    ),
+  /**
+   * El id o el sub-casillero ya son de otro casillero. Se rechaza en vez de
+   * "moverlo": quitarselo al dueño actual le desviaria sus paquetes a otro cliente.
+   * `ownerCode` es null cuando solo lo delato el indice unico (carrera).
+   */
+  linkInUse: (field: 'helgaClientId' | 'subLocker', ownerCode: string | null) =>
+    new AppError(
+      'PROVIDER_LINK_IN_USE',
+      `${field === 'helgaClientId' ? 'Ese id de destinatario' : 'Ese sub-casillero'} ya pertenece ${
+        ownerCode ? `al casillero ${ownerCode}` : 'a otro casillero'
+      }. Corrige ese casillero primero si de verdad está mal enlazado.`,
       409,
     ),
 };
