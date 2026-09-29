@@ -449,15 +449,19 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   // (`tramite.manage`), carga los costos de Paqueteria y Transporte, y asienta
   // los depositos que el cliente le manda (`payments.record`).
   //
+  // Tambien saca a ruta los paquetes pagados (`delivery.manage`): el paso a "En
+  // ruta de entrega" lo exige la maquina de estados, y sin el un paquete ya
+  // cobrado se quedaba en bodega esperando a un administrador. El permiso es el
+  // del modulo de entregas entero, asi que de paso ve el dashboard de ruta y
+  // puede confirmar o devolver una entrega, igual que Mensajeria.
+  //
   // Lo que NO lleva, y por eso no aparece aqui: los costos de Agenciamiento
-  // (`costs.tramite.manage`, los servicios manuales que negocia el admin), la
-  // entrega (`delivery.manage`, que es Mensajeria) y la APROBACION de esos
-  // depositos (`payments.validate`). Un tramite de Agenciamiento avanza con este
-  // rol hasta "Preparando Borrador de DUA"; facturarlo es la puerta donde pasa a
-  // manos del administrador, y con la proforma emitida vuelve a este rol, que la
-  // cobra y lo lleva a aduana. Igual que Paqueteria le pasa el paquete al
-  // mensajero en "En bodega preparando" y el deposito le pasa al administrador
-  // en "Pagado - en validacion".
+  // (`costs.tramite.manage`, los servicios manuales que negocia el admin) y la
+  // APROBACION de esos depositos (`payments.validate`). Un tramite de
+  // Agenciamiento avanza con este rol hasta "Preparando Borrador de DUA";
+  // facturarlo es la puerta donde pasa a manos del administrador, y con la
+  // proforma emitida vuelve a este rol, que la cobra y lo lleva a aduana. Igual
+  // que el deposito le pasa al administrador en "Pagado - en validacion".
   [Role.Operativo]: [
     Permission.DashboardRead,
     Permission.PackageReceive,
@@ -466,6 +470,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.TramiteManage,
     Permission.CostsManage,
     Permission.PaymentsRecord,
+    Permission.DeliveryManage,
     Permission.ReportsOperationalBasic,
     Permission.ReportsOperational,
     Permission.ClientsRead,

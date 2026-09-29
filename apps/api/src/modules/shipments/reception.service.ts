@@ -53,9 +53,18 @@ export const receptionService = {
       throw ReceptionErrors.alreadyReceived(STATE_LABELS[row.state]);
     }
 
-    return transitionsService.transition(session, row.id, {
-      state: State.FacturacionEnProceso,
-      note: 'Recibido en bodega HS Global.',
-    });
+    /**
+     * `skipPermission`: el acto autorizado es RECIBIR (`package.receive`, que la
+     * ruta ya exigio). El estado destino pide `costs.manage` porque en el avance
+     * manual del panel entrar a facturacion es cosa de quien carga costos, pero
+     * aqui es solo la consecuencia del escaneo. Sin esto, Bodega (que no lleva
+     * `costs.manage` a proposito) recibia un 403 en cada paquete.
+     */
+    return transitionsService.transition(
+      session,
+      row.id,
+      { state: State.FacturacionEnProceso, note: 'Recibido en bodega HS Global.' },
+      { skipPermission: true },
+    );
   },
 };
