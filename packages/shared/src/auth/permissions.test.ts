@@ -35,11 +35,27 @@ test('el Operativo NO puede aprobarlo: registrar no es cobrar', () => {
 
 /**
  * Quien cobra el paquete lo despacha: el paso a "En ruta de entrega" pide
- * `delivery.manage` en la maquina, y sin el el Operativo dejaba los paquetes
+ * `delivery.dispatch` en la maquina, y sin el el Operativo dejaba los paquetes
  * pagados esperando a un administrador.
  */
 test('el Operativo puede sacar a ruta un paquete pagado', () => {
   assert.equal(can(Role.Operativo, permissionFor(Flow.Paqueteria, State.EnRutaEntrega)!), true);
+});
+
+/**
+ * Despachar no es entregar: sacar a ruta no le abre al Operativo el modulo de
+ * Entregas (ni el menu, ni confirmar, ni devolver).
+ */
+test('el Operativo no ve el modulo de Entregas', () => {
+  assert.equal(can(Role.Operativo, Permission.DeliveryManage), false);
+  assert.equal(resourcesFor(Role.Operativo).has(Resource.Delivery), false);
+  assert.equal(can(Role.Operativo, permissionFor(Flow.Paqueteria, State.Entregado)!), false);
+  assert.equal(can(Role.Operativo, permissionFor(Flow.Paqueteria, State.DevueltoBodega)!), false);
+});
+
+/** Mensajeria sigue con su modulo y nada mas: el despacho no le abre Paqueteria. */
+test('Mensajeria solo abre Entregas', () => {
+  assert.deepEqual([...resourcesFor(Role.Mensajeria)], [Resource.Delivery]);
 });
 
 test('el Administrador puede las dos cosas', () => {
