@@ -39,6 +39,7 @@ import { authRepo } from '../auth/auth.repo';
 // TODO(correo): vuelve al reactivar el cambio de correo (reemite el codigo).
 // import { authService } from '../auth/auth.service';
 import { shipmentsRepo } from '../shipments/shipments.repo';
+import { settingsService } from '../settings/settings.service';
 import { clientsRepo } from './clients.repo';
 
 /** Casillero tal como lo ve el panel administrador. */
@@ -189,12 +190,13 @@ export const clientsService = {
     if (!session.clientId) throw ShipmentErrors.missingClientProfile();
     const row = await clientsRepo.findById(session.clientId);
     if (!row) throw ShipmentErrors.missingClientProfile();
+    const warehouse = await settingsService.miamiWarehouse();
 
     return {
       clientCode: row.code,
       /** Sub-casillero del proveedor; `null` si el casillero aun no se sincronizo. */
       subLocker: row.helgaSubLocker,
-      lines: lockerAddressFor(row.name, row.code),
+      lines: lockerAddressFor(row.name, row.code, warehouse),
     };
   },
 

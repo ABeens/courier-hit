@@ -9,8 +9,9 @@
  */
 import { and, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
-import { HelgaSyncStatus, PaymentStatus, toSlice } from '@courier/shared';
+import { HelgaSyncStatus, PaymentStatus, ProformaStatus, SHIPMENT_TYPE_VALUES, toSlice, usesPackageFields } from '@courier/shared';
 import type { ListShipmentsQuery, State } from '@courier/shared';
+import { helgaPrincipalAccountCode } from '../../core/config';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { payments } from '../payments/payments.schema';
@@ -104,6 +105,9 @@ function baseQuery() {
  * el servicio cuando la sesion es de un cliente: es la barrera de "lo propio" y
  * NO puede llegar desde la query del usuario.
  */
+/** Tipos de Paqueteria: los unicos que entran por una cuenta del operador de Miami. */
+const PACKAGE_SHIPMENT_TYPES = SHIPMENT_TYPE_VALUES.filter(usesPackageFields);
+
 function buildConditions(
   query: ListShipmentsQuery,
   ownerClientId?: string,
@@ -156,16 +160,36 @@ function buildConditions(
     );
   }
 
+  /**
+   * Pendientes de pago: el tramite esta en una proforma aprobada (por cobrar).
+   * Con EXISTS y no con el join de `baseQuery`, porque el conteo no lo lleva.
+   */
+  if (query.pendingPayment) {
+    conds.push(
+      sql`exists (select 1 from ${proformaShipments} inner join ${proformas} on ${proformas.id} = ${proformaShipments.proformaId} where ${proformaShipments.shipmentId} = ${shipments.id} and ${proformas.status} = ${ProformaStatus.Aprobada})`,
+    );
+  }
+
   // Rango por fecha de ingreso: inicio inclusive, fin exclusivo (la web manda el
   // arranque del dia siguiente), asi el ultimo dia del rango entra completo.
   if (query.from) conds.push(gte(shipments.createdAt, new Date(query.from)));
   if (query.to) conds.push(lt(shipments.createdAt, new Date(query.to)));
 
+  // El buscador cubre los identificadores por los que se pregunta en operacion:
+  // consecutivo, tracking, HAWB (el "LES" de la bodega de Miami), cuenta en
+  // Miami (la cuenta del operador por la que entro, p. ej. SJO009623) y casillero.
   if (query.q) {
     const term = `%${query.q}%`;
     const match = or(
       ilike(shipments.code, term),
       ilike(shipments.tracking, term),
+      ilike(shipments.hawb, term),
+      ilike(shipments.providerAccountCode, term),
+      // Los de la principal guardan null: se encuentran por el codigo que ese
+      // null significa, igual que la ficha lo muestra.
+      ...(helgaPrincipalAccountCode.toLowerCase().includes(query.q.toLowerCase())
+        ? [and(isNull(shipments.providerAccountCode), inArray(shipments.shipmentType, PACKAGE_SHIPMENT_TYPES))]
+        : []),
       ilike(shipments.description, term),
       ilike(clients.code, term),
       ilike(users.name, term),

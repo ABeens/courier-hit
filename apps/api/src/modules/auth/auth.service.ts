@@ -13,6 +13,7 @@ import {
   Role,
   UserStatus,
   principalForRole,
+  warehouseAddressLines,
 } from '@courier/shared';
 import type {
   AcceptInviteInput,
@@ -32,6 +33,7 @@ import { createHelgaRecipient, isHelgaEnabled } from '../../integrations/helga/h
 // panel que la consulta); aqui solo se ESCRIBE desde los caminos automaticos.
 import { providerLinkRepo } from '../clients/provider-link.repo';
 import { providerLinkService } from '../clients/provider-link.service';
+import { settingsService } from '../settings/settings.service';
 import { tariffsRepo } from '../tariffs/tariffs.repo';
 import { authRepo } from './auth.repo';
 import type { UserRow } from './auth.schema';
@@ -356,11 +358,21 @@ export const authService = {
     return isProd ? null : code;
   },
 
-  /** Confirma el codigo y activa la cuenta (sella email_verified_at). */
-  async verify(input: VerifyInput): Promise<{ verified: true }> {
+  /**
+   * Confirma el codigo y activa la cuenta (sella email_verified_at).
+   *
+   * Devuelve las lineas de la bodega en Miami para el paso "Listo" del registro:
+   * la direccion es configurable y el cliente todavia no tiene sesion para
+   * pedirla a "Mi casillero".
+   */
+  async verify(input: VerifyInput): Promise<{ verified: true; warehouseLines: string[] }> {
     const user = await authRepo.findUserByEmail(input.email);
     if (!user) throw AuthErrors.invalidCode();
-    if (user.emailVerifiedAt) return { verified: true }; // idempotente
+    const verified = async () => ({
+      verified: true as const,
+      warehouseLines: warehouseAddressLines(await settingsService.miamiWarehouse()),
+    });
+    if (user.emailVerifiedAt) return verified(); // idempotente
 
     const v = await authRepo.latestVerification(user.id);
     if (!v) throw AuthErrors.invalidCode();
@@ -373,7 +385,7 @@ export const authService = {
 
     await authRepo.markEmailVerified(user.id);
     await authRepo.deleteVerifications(user.id);
-    return { verified: true };
+    return verified();
   },
 
   /**

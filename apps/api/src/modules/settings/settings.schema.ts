@@ -13,7 +13,8 @@
  * a depender del orden de las filas.
  */
 import { sql } from 'drizzle-orm';
-import { check, doublePrecision, index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import type { MiamiWarehouse } from '@courier/shared';
+import { check, doublePrecision, index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { users } from '../auth/auth.schema';
 
 /** Clave de la unica fila de `app_settings`. */
@@ -88,6 +89,20 @@ export const appSettings = pgTable(
      * siguiente cuenta los cambios desde aqui.
      */
     dailyDigestLastRunAt: timestamp('daily_digest_last_run_at', { withTimezone: true }),
+
+    /**
+     * DIRECCION DEL CASILLERO DE HS GLOBAL EN MIAMI, la que el cliente copia al
+     * comprar. Null = nadie la fijo y rige la de fabrica (`MIAMI_WAREHOUSE`).
+     *
+     * `jsonb` y no una columna por campo: la direccion se lee y se escribe
+     * SIEMPRE completa (media direccion nueva con media vieja no es la de ninguna
+     * bodega), y el esquema Zod garantiza que trae los siete campos.
+     */
+    miamiWarehouse: jsonb('miami_warehouse').$type<MiamiWarehouse>(),
+    miamiWarehouseSetBy: uuid('miami_warehouse_set_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    miamiWarehouseSetAt: timestamp('miami_warehouse_set_at', { withTimezone: true }),
 
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

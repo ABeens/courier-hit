@@ -81,8 +81,8 @@ const TYPES_BY_VIEW: Record<ShipmentView, ShipmentType[]> = {
  * `mono` es para identificadores (tracking, DUA, HAWB): en monoespaciada los
  * digitos alinean y es mas facil cotejarlos contra una guia impresa.
  */
-function Field({ label, value, mono }: { label: string; value: string | null; mono?: boolean }) {
-  const classes = [mono ? 'mono' : '', value ? '' : 'empty-val'].filter(Boolean).join(' ');
+function Field({ label, value, mono, due }: { label: string; value: string | null; mono?: boolean; due?: boolean }) {
+  const classes = [mono ? 'mono' : '', value ? '' : 'empty-val', due ? 'is-due' : ''].filter(Boolean).join(' ');
   return (
     <div className="card-item-field">
       <dt>{label}</dt>
@@ -95,6 +95,8 @@ interface CardField {
   label: string;
   value: string | null;
   mono?: boolean;
+  /** Saldo pendiente de cobro: se pinta en rojo para que se vea que falta pagar. */
+  due?: boolean;
 }
 
 /** Bloque tematico dentro de una ficha. */
@@ -136,17 +138,13 @@ function hawbField(row: ShipmentDto): CardField {
  * su unica guia en vez de inventar una fila vacia que no aplica.
  */
 /**
- * De qué cuenta del operador de Miami entró el paquete.
- *
- * Solo aparece cuando NO es la principal, es decir, cuando el dueño es un
- * cliente consolidado con cuenta dedicada. En la principal el campo sería ruido:
- * es de donde viene casi todo, y una fila que dice siempre lo mismo no informa
- * nada. Aquí, en cambio, responde de un vistazo por qué casillero llegó y con
- * qué cuenta se está consultando su estado.
+ * De qué cuenta del operador de Miami entró el paquete: la principal de HS
+ * Global o la dedicada de un cliente consolidado. Responde de un vistazo por qué
+ * casillero llegó y con qué cuenta se está consultando su estado.
  */
 function originField(row: ShipmentDto): CardField[] {
-  if (!row.providerAccountCode) return [];
-  return [{ label: 'Cuenta en Miami', value: row.providerAccountCode, mono: true }];
+  if (!row.providerAccountDisplayCode) return [];
+  return [{ label: 'Cuenta en Miami', value: row.providerAccountDisplayCode, mono: true }];
 }
 
 function guideFields(row: ShipmentDto): CardField[] {
@@ -186,7 +184,7 @@ function moneySection(row: ShipmentDto, amounts: BillingAmounts): CardSection | 
        * respuesta de un vistazo; estas dos líneas, la cifra exacta.
        */
       { label: 'Abonado', value: formatMoney(amounts.paid, currency) },
-      { label: 'Saldo', value: formatMoney(amounts.due, currency) },
+      { label: 'Saldo', value: formatMoney(amounts.due, currency), due: amounts.due > 0 },
     ],
   };
 }
@@ -267,6 +265,8 @@ export function ShipmentsScreen({
   const [q, setQ] = useState(initialQuery ?? '');
   const [state, setState] = useState<string>(initialState ?? '');
   const [pendingDeposit, setPendingDeposit] = useState(initialPendingDeposit ?? false);
+  /** Solo los pendientes de pago (en una proforma aprobada, aun sin cubrir). */
+  const [pendingPayment, setPendingPayment] = useState(false);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
@@ -367,6 +367,7 @@ export function ShipmentsScreen({
       state: state || undefined,
       shipmentType: TYPES_BY_VIEW[view].join(',') || undefined,
       pendingDeposit: pendingDeposit ? 'true' : undefined,
+      pendingPayment: pendingPayment ? 'true' : undefined,
       // El usuario elige dias en su hora local; el rango viaja como instantes UTC.
       from: from ? startOfLocalDayUtc(from) : undefined,
       to: to ? startOfNextLocalDayUtc(to) : undefined,
@@ -382,6 +383,9 @@ export function ShipmentsScreen({
    */
   const chips: FilterChip[] = [
     ...(state ? [{ label: `Estado: ${STATE_LABELS[state as State]}`, onClear: () => setState('') }] : []),
+    ...(pendingPayment
+      ? [{ label: 'Pago: pendientes de pago', onClear: () => setPendingPayment(false) }]
+      : []),
     ...(pendingDeposit
       ? [{ label: 'Pago: depósito por validar', onClear: () => setPendingDeposit(false) }]
       : []),
@@ -393,6 +397,7 @@ export function ShipmentsScreen({
   function clearFilters() {
     setState('');
     setPendingDeposit(false);
+    setPendingPayment(false);
     setFrom('');
     setTo('');
   }
@@ -486,8 +491,8 @@ export function ShipmentsScreen({
           value: q,
           onChange: setQ,
           placeholder: isOwn
-            ? 'Buscar por consecutivo, tracking o descripción…'
-            : 'Buscar por consecutivo, tracking, descripción o cliente…',
+            ? 'Buscar por consecutivo, tracking, LES o descripción…'
+            : 'Buscar por consecutivo, tracking, LES, casillero, cuenta en Miami o cliente…',
         }}
         chips={chips}
         onClearAll={clearFilters}
@@ -502,21 +507,26 @@ export function ShipmentsScreen({
           </select>
         </div>
 
-        {/* Cola de tesorería: los trámites con un comprobante subido que nadie
-            ha validado. Solo para staff: el titular no valida nada, y desde el
-            Resumen se llega aquí con el filtro ya puesto. */}
-        {canCollect && !isOwn && (
-          <div>
-            <label className="field-label" htmlFor="f-pay">Pago</label>
-            <select
-              id="f-pay" className="input" value={pendingDeposit ? 'pending' : ''}
-              onChange={(e) => setPendingDeposit(e.target.value === 'pending')}
-            >
-              <option value="">Todos</option>
-              <option value="pending">Con depósito por validar</option>
-            </select>
-          </div>
-        )}
+        {/* Pago. "Pendientes de pago" lo ve todo el mundo: al cliente le dice
+            qué le falta pagar, al staff qué falta cobrar. La cola de tesorería
+            (comprobante subido que nadie ha validado) es solo para staff: el
+            titular no valida nada, y desde el Resumen se llega aquí con el
+            filtro ya puesto. Los dos son excluyentes en el selector. */}
+        <div>
+          <label className="field-label" htmlFor="f-pay">Pago</label>
+          <select
+            id="f-pay" className="input"
+            value={pendingPayment ? 'due' : pendingDeposit ? 'pending' : ''}
+            onChange={(e) => {
+              setPendingPayment(e.target.value === 'due');
+              setPendingDeposit(e.target.value === 'pending');
+            }}
+          >
+            <option value="">Todos</option>
+            <option value="due">Pendientes de pago</option>
+            {canCollect && !isOwn && <option value="pending">Con depósito por validar</option>}
+          </select>
+        </div>
 
         {/* El rango va en una fila: son los dos extremos de UN filtro, y
             separados en dos bloques sueltos se leen como dos fechas sin relación. */}
@@ -759,7 +769,7 @@ export function ShipmentsScreen({
                   <div className="card-sec-title">{section.title}</div>
                   <dl className="card-sec-fields">
                     {section.fields.map((f) => (
-                      <Field key={f.label} label={f.label} value={f.value} mono={f.mono} />
+                      <Field key={f.label} label={f.label} value={f.value} mono={f.mono} due={f.due} />
                     ))}
                   </dl>
                 </section>

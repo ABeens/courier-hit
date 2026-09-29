@@ -107,9 +107,32 @@ shipmentsRoutes.post('/prealert', requirePermission(Permission.PrealertCreate), 
   return c.json(created, 201);
 });
 
-/** Alta por staff. El permiso definitivo lo valida el servicio segun el tipo. */
-shipmentsRoutes.post('/', canWrite, zValidator('json', createShipmentSchema), async (c) => {
-  const created = await shipmentsService.create(c.get('session'), c.req.valid('json'));
+/**
+ * Alta por staff. El permiso definitivo lo valida el servicio segun el tipo.
+ *
+ * MULTIPART, como la prealerta, para que el documento (opcional aqui) viaje en la
+ * misma peticion que los datos: o entra todo o no entra nada. El campo `payload`
+ * lleva el JSON de `createShipmentSchema` (mismo patron que la entrega de una
+ * proforma: el esquema tiene numeros y booleanos, y reconstruirlos campo a campo
+ * desde texto duplicaria la validacion) y `document` el archivo, si lo hay.
+ */
+shipmentsRoutes.post('/', canWrite, async (c) => {
+  const form = await c.req.parseBody();
+  const rawPayload = form['payload'];
+  let parsed: unknown = {};
+  try {
+    parsed = typeof rawPayload === 'string' ? JSON.parse(rawPayload) : {};
+  } catch {
+    parsed = {};
+  }
+  const input = createShipmentSchema.parse(parsed);
+  const document = form['document'];
+
+  const created = await shipmentsService.create(
+    c.get('session'),
+    input,
+    document instanceof File ? document : null,
+  );
   return c.json(created, 201);
 });
 

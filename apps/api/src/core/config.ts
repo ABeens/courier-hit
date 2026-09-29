@@ -3,7 +3,7 @@
  * invalido, la API no arranca: fallamos temprano y claro.
  */
 import { z } from 'zod';
-import { MAX_ACTIVE_API_KEYS } from '@courier/shared';
+import { MASTER_LOCKER_ID, MAX_ACTIVE_API_KEYS } from '@courier/shared';
 import { isValidDuration, parseDuration } from './scheduler/duration';
 
 /**
@@ -712,6 +712,19 @@ export const helgaAccounts: readonly HelgaAccount[] = (() => {
  * que hay al menos una.
  */
 export const helgaPrincipalAccount: HelgaAccount | null = helgaAccounts[0] ?? null;
+
+/**
+ * Codigo de casillero de la cuenta principal, para MOSTRARLO. En la base un
+ * paquete de la principal guarda `provider_account_code = null`; este es el
+ * codigo que ese null significa.
+ *
+ * Con `HELGA_ACCOUNTS` es el `code` de la primera cuenta. Con la forma antigua
+ * (o la integracion apagada) no hay codigo real configurado (`'principal'` es
+ * solo una clave interna), y se cae al casillero maestro de HS Global.
+ */
+export const helgaPrincipalAccountCode: string = config.HELGA_ACCOUNTS?.length
+  ? config.HELGA_ACCOUNTS[0]!.code
+  : MASTER_LOCKER_ID;
 
 if (helgaMode === 'on' && helgaAccounts.length > 1) {
   const otras = helgaAccounts

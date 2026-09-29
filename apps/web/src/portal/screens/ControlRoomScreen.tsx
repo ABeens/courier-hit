@@ -207,7 +207,7 @@ export function ControlRoomScreen({ role }: { role: Role }) {
         search={{
           value: q,
           onChange: setQ,
-          placeholder: 'Buscar por consecutivo, guía, descripción, casillero o cliente…',
+          placeholder: 'Buscar por consecutivo, guía, LES, cuenta en Miami, descripción, casillero o cliente…',
         }}
         chips={chips}
         onClearAll={() => setState('')}

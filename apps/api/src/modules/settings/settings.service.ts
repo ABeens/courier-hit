@@ -14,7 +14,12 @@
  * Quien puede fijarla lo decide el PERMISO, no el rol: la barrera esta en las
  * rutas (`requirePermission`), asi que sumar el permiso a otro rol basta.
  */
-import { BUSINESS_TIME_ZONE, DEFAULT_CARD_SURCHARGE, DEFAULT_DAILY_DIGEST_HOUR } from '@courier/shared';
+import {
+  BUSINESS_TIME_ZONE,
+  DEFAULT_CARD_SURCHARGE,
+  DEFAULT_DAILY_DIGEST_HOUR,
+  MIAMI_WAREHOUSE,
+} from '@courier/shared';
 import type {
   CardSurchargeHistoryEntryDto,
   CardSurchargeSettingDto,
@@ -23,11 +28,14 @@ import type {
   ExchangeRateHistoryEntryDto,
   ExchangeRateSettingDto,
   FreightRateSettingDto,
+  MiamiWarehouse,
+  MiamiWarehouseSettingDto,
   Session,
   SetCardSurchargeInput,
   SetDailyDigestInput,
   SetExchangeRateInput,
   SetFreightRateInput,
+  SetMiamiWarehouseInput,
 } from '@courier/shared';
 import { exchangeRateReference } from './exchange-rate-reference';
 import { settingsRepo } from './settings.repo';
@@ -50,6 +58,35 @@ export const settingsService = {
   async setDailyDigest(session: Session, input: SetDailyDigestInput): Promise<DailyDigestSettingDto> {
     await settingsRepo.setDailyDigestHour(input.hour, session.userId);
     return this.dailyDigest();
+  },
+
+  /**
+   * DIRECCION DE LA BODEGA EN MIAMI con la que se arma hoy el casillero de todo
+   * cliente: la fijada en Configuración o, mientras nadie la fije, la de fabrica.
+   * Punto UNICO de esa caida al defecto: el portal, la API publica y el registro
+   * la piden aqui, asi que no pueden enseñar direcciones distintas.
+   */
+  async miamiWarehouse(): Promise<MiamiWarehouse> {
+    return (await settingsRepo.currentMiamiWarehouse()) ?? MIAMI_WAREHOUSE;
+  },
+
+  async miamiWarehouseSetting(): Promise<MiamiWarehouseSettingDto> {
+    const setting = await settingsRepo.miamiWarehouseSetting();
+    const isDefault = setting.warehouse == null;
+    return {
+      warehouse: setting.warehouse ?? MIAMI_WAREHOUSE,
+      isDefault,
+      updatedAt: isDefault ? null : (setting.setAt?.toISOString() ?? null),
+      updatedByName: isDefault ? null : setting.setByName,
+    };
+  },
+
+  async setMiamiWarehouse(
+    session: Session,
+    input: SetMiamiWarehouseInput,
+  ): Promise<MiamiWarehouseSettingDto> {
+    await settingsRepo.setMiamiWarehouse(input, session.userId);
+    return settingsService.miamiWarehouseSetting();
   },
 
   /** Tasa vigente + referencia del dia. */

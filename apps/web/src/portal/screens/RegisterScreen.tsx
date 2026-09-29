@@ -17,7 +17,6 @@ import {
   formatLockerCode,
   registerSchema,
   verifySchema,
-  warehouseAddressLines,
 } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
 import { AuthShell } from '../components/AuthShell';
@@ -32,14 +31,6 @@ const POINTS = [
   { title: 'Vuelos todos los días', sub: 'Salidas diarias desde Miami hacia Costa Rica.' },
   { title: 'Tarifa por peso real', sub: 'Pagas solo lo que pesa tu paquete, sin sorpresas.' },
 ];
-
-/**
- * Dirección del casillero en Miami: es fija de HS Global y sale de
- * @courier/shared. No se copia aquí: una segunda copia es una segunda verdad, y
- * durante un tiempo esta pantalla mostró una dirección distinta a la de "Mi
- * casillero".
- */
-const MIAMI_ADDRESS = warehouseAddressLines();
 
 const CODE_LENGTH = 6;
 
@@ -82,6 +73,13 @@ export default function RegisterScreen() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [code, setCode] = useState<string[]>(Array<string>(CODE_LENGTH).fill(''));
   const [lockerCode, setLockerCode] = useState('');
+  /**
+   * Dirección del casillero en Miami. La devuelve la API al verificar: es
+   * configurable ("Configuración") y sale de la misma fuente que "Mi casillero".
+   * No se copia aquí: una segunda copia es una segunda verdad, y durante un
+   * tiempo esta pantalla mostró una dirección distinta a la del portal.
+   */
+  const [warehouseLines, setWarehouseLines] = useState<string[]>([]);
   // Solo llega fuera de produccion: la API no lo expone con NODE_ENV=production.
   const [devCode, setDevCode] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -140,7 +138,11 @@ export default function RegisterScreen() {
 
     setBusy(true);
     try {
-      await api.post('/auth/verify', parsed.data);
+      const verified = await api.post<{ verified: true; warehouseLines: string[] }>(
+        '/auth/verify',
+        parsed.data,
+      );
+      setWarehouseLines(verified.warehouseLines);
       setStep(2);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo verificar el código.');
@@ -384,7 +386,7 @@ export default function RegisterScreen() {
               <div className="locker-address">
                 {/* Mismo formato que la línea "Nombre" de "Mi casillero". */}
                 {form.name} {formatLockerCode(lockerCode)}
-                {MIAMI_ADDRESS.map((line) => (
+                {warehouseLines.map((line) => (
                   <span key={line}>
                     <br />
                     {line}

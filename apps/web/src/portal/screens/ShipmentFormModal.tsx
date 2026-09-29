@@ -13,8 +13,10 @@
  */
 import { useState } from 'react';
 import { ClientPicker } from '../components/ClientPicker';
+import { FileField } from '../components/FileField';
 import { ModalOverlay } from '../components/ModalOverlay';
 import {
+  DOCUMENT_ATTACHMENT,
   MANUAL_SHIPMENT_TYPES,
   Permission,
   SHIPMENT_TYPE_LABELS,
@@ -23,6 +25,7 @@ import {
   STATE_LABELS,
   STORES,
   CARRIERS,
+  attachmentRejection,
   can,
   clientFullLabel,
   createShipmentSchema,
@@ -99,8 +102,30 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
   const [warehouse, setWarehouse] = useState(row?.warehouse ?? '');
   const [dua, setDua] = useState(row?.dua ?? '');
   const [feNumber, setFeNumber] = useState(row?.electronicInvoiceNumber ?? '');
+  // Solo en alta y OPCIONAL (a diferencia de la prealerta del cliente). Mismo
+  // nombre que en `ClientShipmentModal`: `document` ya es el del DOM.
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
   const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
+
+  /**
+   * Filtra el archivo con el MISMO catalogo que aplica la API, para que el
+   * rechazo llegue al elegirlo y no despues de mandar el tramite.
+   */
+  function pickDocument(file: File | null) {
+    if (!file) {
+      setDocumentFile(null);
+      return;
+    }
+    const rejection = attachmentRejection(DOCUMENT_ATTACHMENT, file.type, file.name);
+    if (rejection) {
+      setError(rejection);
+      setDocumentFile(null);
+      return;
+    }
+    setError(null);
+    setDocumentFile(file);
+  }
 
   const isPackage = usesPackageFields(shipmentType);
 
@@ -196,7 +221,12 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
           setBusy(false);
           return;
         }
-        const created = await api.post<ShipmentDto>('/shipments', parsed.data);
+        // Multipart: los datos van en `payload` (JSON) y el documento, si lo hay,
+        // en la misma peticion; asi un archivo rechazado no deja el tramite creado.
+        const form = new FormData();
+        form.set('payload', JSON.stringify(parsed.data));
+        if (documentFile) form.set('document', documentFile);
+        const created = await api.postForm<ShipmentDto>('/shipments', form);
         onSaved(`Trámite ${created.code} creado.`);
         return;
       }
@@ -449,6 +479,20 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
               onChange={(e) => setBillingNotes(e.target.value)}
             />
           </div>
+
+          {mode === 'create' && (
+            <div className="col-full">
+              <FileField
+                id="t-document"
+                label="Documento (opcional)"
+                accept={DOCUMENT_ATTACHMENT.accept}
+                file={documentFile}
+                onPick={pickDocument}
+                disabled={busy}
+                hint={`Factura, orden de compra u otro soporte del trámite. Se aceptan ${DOCUMENT_ATTACHMENT.label}.`}
+              />
+            </div>
+          )}
 
           {mode === 'edit' && (
             <div>

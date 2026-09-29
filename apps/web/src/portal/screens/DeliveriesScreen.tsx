@@ -205,7 +205,7 @@ export function DeliveriesScreen() {
       {notice && <div className="banner ok" style={{ marginBottom: 14 }}>{notice}</div>}
 
       <FilterBar
-        search={{ value: q, onChange: setQ, placeholder: 'Buscar por nombre o tracking…' }}
+        search={{ value: q, onChange: setQ, placeholder: 'Buscar por nombre, casillero, tracking o LES…' }}
         chips={route ? [{ label: `Ruta: ${route}`, onClear: () => setRoute('') }] : []}
         onClearAll={() => setRoute('')}
       >

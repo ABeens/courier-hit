@@ -6,6 +6,7 @@
  * clave primaria y devuelve solo el numero. La version con quien/cuando (que
  * necesita el JOIN con users) queda aparte, para la pantalla de Configuración.
  */
+import type { MiamiWarehouse } from '@courier/shared';
 import { desc, eq } from 'drizzle-orm';
 import { db } from '../../core/db';
 import { users } from '../auth/auth.schema';
@@ -46,6 +47,49 @@ export const settingsRepo = {
       .insert(appSettings)
       .values({ id: SETTINGS_ROW_ID, dailyDigestLastRunAt: at })
       .onConflictDoUpdate({ target: appSettings.id, set: { dailyDigestLastRunAt: at, updatedAt: at } });
+  },
+
+  /** Direccion de la bodega en Miami fijada, o null si rige la de fabrica. */
+  async currentMiamiWarehouse(): Promise<MiamiWarehouse | null> {
+    const [row] = await db
+      .select({ warehouse: appSettings.miamiWarehouse })
+      .from(appSettings)
+      .where(eq(appSettings.id, SETTINGS_ROW_ID))
+      .limit(1);
+    return row?.warehouse ?? null;
+  },
+
+  /** La misma direccion con su sello (quien la fijo y cuando), para Configuración. */
+  async miamiWarehouseSetting() {
+    const [row] = await db
+      .select({
+        warehouse: appSettings.miamiWarehouse,
+        setAt: appSettings.miamiWarehouseSetAt,
+        setByName: users.name,
+      })
+      .from(appSettings)
+      .leftJoin(users, eq(users.id, appSettings.miamiWarehouseSetBy))
+      .where(eq(appSettings.id, SETTINGS_ROW_ID))
+      .limit(1);
+    return row ?? { warehouse: null, setAt: null, setByName: null };
+  },
+
+  /** Fija la direccion completa (crea la fila de ajustes si no existe). */
+  async setMiamiWarehouse(warehouse: MiamiWarehouse, userId: string) {
+    const now = new Date();
+    await db
+      .insert(appSettings)
+      .values({
+        id: SETTINGS_ROW_ID,
+        miamiWarehouse: warehouse,
+        miamiWarehouseSetBy: userId,
+        miamiWarehouseSetAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: appSettings.id,
+        set: { miamiWarehouse: warehouse, miamiWarehouseSetBy: userId, miamiWarehouseSetAt: now, updatedAt: now },
+      });
   },
 
   /** Tasa vigente, o null si todavia nadie la fijo. */

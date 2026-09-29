@@ -29,6 +29,7 @@ import { PublicApiErrors, ShipmentErrors } from '../../core/errors';
 import type { ApiClient } from '../../core/http';
 import { clientsRepo } from '../clients/clients.repo';
 import { shipmentsRepo } from '../shipments/shipments.repo';
+import { settingsService } from '../settings/settings.service';
 import { shipmentsService, toDto } from '../shipments/shipments.service';
 
 /**
@@ -124,10 +125,11 @@ export const publicApiService = {
   async locker(apiClient: ApiClient): Promise<PublicLocker> {
     const row = await clientsRepo.findById(apiClient.clientId);
     if (!row) throw ShipmentErrors.missingClientProfile();
+    const warehouse = await settingsService.miamiWarehouse();
     return {
       clientCode: row.code,
       subLocker: row.helgaSubLocker,
-      lines: lockerAddressFor(row.name, row.code),
+      lines: lockerAddressFor(row.name, row.code, warehouse),
     };
   },
 

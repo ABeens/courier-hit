@@ -31,10 +31,14 @@ function queueConditions(query: DeliveryQueueFilter): SQL[] {
   }
   if (query.q) {
     const term = `%${query.q}%`;
+    // HAWB (LES) porque es lo que el mensajero lee en la etiqueta de la caja, y
+    // casillero porque es como se identifica al cliente por telefono.
     const match = or(
       ilike(users.name, term),
       ilike(shipments.tracking, term),
       ilike(shipments.code, term),
+      ilike(shipments.hawb, term),
+      ilike(clients.code, term),
     );
     if (match) conds.push(match);
   }

@@ -2,6 +2,11 @@
  * Casillero en Miami: la direccion que el cliente usa para comprar en USA.
  * Fuente: "Requerimientos Parte 2 - Portal Cliente" L36-40.
  *
+ * La direccion VIGENTE se configura en "Configuración" (permiso config.manage) y
+ * vive en `app_settings`; `MIAMI_WAREHOUSE` es solo el valor de fabrica que rige
+ * mientras nadie la haya fijado. Por eso las funciones de abajo reciben la
+ * direccion como parametro: quien las llama (la API) la lee de la BD.
+ *
  * El manual describe la direccion como la del casillero MAESTRO de HS Global
  * (`SJO008835`) al que se le agrega el identificador del casillero del cliente.
  * Es decir: todos los clientes comparten domicilio fisico y lo que los distingue
@@ -20,8 +25,20 @@
  */
 export const MASTER_LOCKER_ID = 'SJO008835';
 
+/** Campos de la direccion de la bodega en Miami (casillero de HS Global). */
+export interface MiamiWarehouse {
+  addressLine1: string;
+  /** Linea "Apto / Suite" del formulario de compra. */
+  addressLine2: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
+  phone: string;
+}
+
 /**
- * Direccion fisica de la bodega en Miami. Datos DEFINITIVOS confirmados por HS
+ * Direccion fisica de la bodega en Miami POR DEFECTO. Datos DEFINITIVOS confirmados por HS
  * Global (2026-08-08); ya no son valores de relleno.
  *
  * Esta es la direccion que el cliente copia al comprar y un error aqui manda
@@ -33,7 +50,7 @@ export const MASTER_LOCKER_ID = 'SJO008835';
  * espacio) porque el negocio lo dicta como una sola linea de formulario: es el
  * campo "Apto / Suite" que el cliente pega tal cual en el checkout.
  */
-export const MIAMI_WAREHOUSE = {
+export const MIAMI_WAREHOUSE: MiamiWarehouse = {
   addressLine1: '1350 NW 121 ST Ave',
   addressLine2: 'Suite 700 SJO 008835',
   city: 'Miami',
@@ -41,7 +58,7 @@ export const MIAMI_WAREHOUSE = {
   zipCode: '33182-1542',
   country: 'USA',
   phone: '+1 305 714 0023',
-} as const;
+};
 
 /**
  * Identificador del casillero del cliente en el formato del manual: `HS` + 7
@@ -90,12 +107,12 @@ function lockerIdFor(clientCode: string): string {
  * Direccion de la bodega SIN cliente, para la web publica (landing, FAQ) donde
  * todavia no hay casillero asignado. Mismas lineas, misma fuente.
  */
-export function warehouseAddressLines(): string[] {
+export function warehouseAddressLines(warehouse: MiamiWarehouse = MIAMI_WAREHOUSE): string[] {
   return [
-    MIAMI_WAREHOUSE.addressLine1,
-    MIAMI_WAREHOUSE.addressLine2,
-    `${MIAMI_WAREHOUSE.city}, ${MIAMI_WAREHOUSE.state} ${MIAMI_WAREHOUSE.zipCode}`,
-    `${MIAMI_WAREHOUSE.country} · ${MIAMI_WAREHOUSE.phone}`,
+    warehouse.addressLine1,
+    warehouse.addressLine2,
+    `${warehouse.city}, ${warehouse.state} ${warehouse.zipCode}`,
+    `${warehouse.country} · ${warehouse.phone}`,
   ];
 }
 
@@ -104,19 +121,23 @@ export function warehouseAddressLines(): string[] {
  * formulario de compra en USA. Punto UNICO donde se arma esa direccion: la usan
  * la pantalla de Casillero y cualquier correo que la incluya.
  */
-export function lockerAddressFor(clientName: string, clientCode: string): LockerAddressLine[] {
+export function lockerAddressFor(
+  clientName: string,
+  clientCode: string,
+  warehouse: MiamiWarehouse = MIAMI_WAREHOUSE,
+): LockerAddressLine[] {
   const locker = lockerIdFor(clientCode);
   return [
     { label: 'Nombre', value: `${clientName} ${locker}` },
-    { label: 'Dirección', value: MIAMI_WAREHOUSE.addressLine1 },
-    // La suite NO lleva el codigo del cliente: el negocio la define fija
-    // ("Suite 700 SJO 008835"). Lo unico que distingue al destinatario es la
-    // linea de Nombre.
-    { label: 'Apto / Suite', value: MIAMI_WAREHOUSE.addressLine2 },
-    { label: 'Ciudad', value: MIAMI_WAREHOUSE.city },
-    { label: 'Estado', value: MIAMI_WAREHOUSE.state },
-    { label: 'Código postal', value: MIAMI_WAREHOUSE.zipCode },
-    { label: 'País', value: MIAMI_WAREHOUSE.country },
-    { label: 'Teléfono', value: MIAMI_WAREHOUSE.phone },
+    { label: 'Dirección', value: warehouse.addressLine1 },
+    // La suite NO lleva el codigo del cliente: el negocio la define igual para
+    // todos (hoy "Suite 700 SJO 008835"). Lo unico que distingue al
+    // destinatario es la linea de Nombre.
+    { label: 'Apto / Suite', value: warehouse.addressLine2 },
+    { label: 'Ciudad', value: warehouse.city },
+    { label: 'Estado', value: warehouse.state },
+    { label: 'Código postal', value: warehouse.zipCode },
+    { label: 'País', value: warehouse.country },
+    { label: 'Teléfono', value: warehouse.phone },
   ];
 }

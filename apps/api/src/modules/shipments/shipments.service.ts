@@ -56,6 +56,7 @@ import type {
   ShipmentPhotosResponse,
   UpdateShipmentInput,
 } from '@courier/shared';
+import { helgaPrincipalAccountCode } from '../../core/config';
 import { AuthErrors, ShipmentErrors, isProviderRateLimited } from '../../core/errors';
 import { formatProformaNumber, formatShipmentCode } from '@courier/shared';
 import {
@@ -318,6 +319,10 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     dua: row.dua,
     billingNotes: row.billingNotes,
     providerAccountCode: row.providerAccountCode,
+    // null en la base = la principal; la ficha la muestra con su codigo igual.
+    providerAccountDisplayCode: usesPackageFields(row.shipmentType)
+      ? (row.providerAccountCode ?? helgaPrincipalAccountCode)
+      : null,
     routeNumber: row.routeNumber,
     invoiceTotalUsd: row.invoiceTotalUsd,
     invoiceTotalCrc: row.invoiceTotalCrc,
@@ -826,37 +831,52 @@ export const shipmentsService = {
     return report;
   },
 
-  /** Alta por un usuario de staff. El permiso depende del tipo de tramite. */
-  async create(session: Session, input: CreateShipmentInput): Promise<ShipmentDto> {
+  /**
+   * Alta por un usuario de staff. El permiso depende del tipo de tramite.
+   *
+   * El DOCUMENTO es OPCIONAL aqui (a diferencia de la prealerta del portal): el
+   * staff puede adjuntarlo al crear o despues por `attachDocument`. Cuando viene,
+   * se guarda ANTES del alta y se borra si el alta falla, igual que en `prealert`:
+   * un archivo rechazado no deja un tramite ocupando el tracking, y un tracking
+   * repetido no deja un archivo huerfano.
+   */
+  async create(session: Session, input: CreateShipmentInput, document: File | null): Promise<ShipmentDto> {
     assertCanWrite(session, input.shipmentType);
 
     const client = await clientsRepo.findById(input.clientId);
     if (!client) throw ShipmentErrors.clientNotFound();
 
-    return this.insert(
-      {
-        clientId: input.clientId,
-        shipmentType: input.shipmentType,
-        tracking: input.tracking,
-        description: input.description,
-        store: input.store ?? null,
-        carrier: input.carrier ?? null,
-        hawb: input.hawb ?? null,
-        // Peso de bascula tal cual, con decimales: el redondeo hacia arriba del
-        // manual es una regla de cobro y se aplica al cotizar el flete.
-        weightKg: input.weightKg ?? null,
-        // Datos para la prealerta del proveedor. Los importes se redondean a 2
-        // decimales (USD) en este unico punto; retener y arancel viajan tal cual.
-        declaredValueUsd:
-          input.declaredValueUsd === undefined ? null : roundMoney(input.declaredValueUsd, Currency.USD),
-        insuredValueUsd:
-          input.insuredValueUsd === undefined ? null : roundMoney(input.insuredValueUsd, Currency.USD),
-        tariffPosition: input.tariffPosition ?? null,
-        retain: input.retain ?? null,
-        billingNotes: input.billingNotes ?? null,
-      },
-      session.userId,
-    );
+    const documentFileKey = document ? await storage.put('documents', document, DOCUMENT_ATTACHMENT) : null;
+    try {
+      return await this.insert(
+        {
+          clientId: input.clientId,
+          shipmentType: input.shipmentType,
+          tracking: input.tracking,
+          description: input.description,
+          store: input.store ?? null,
+          carrier: input.carrier ?? null,
+          hawb: input.hawb ?? null,
+          // Peso de bascula tal cual, con decimales: el redondeo hacia arriba del
+          // manual es una regla de cobro y se aplica al cotizar el flete.
+          weightKg: input.weightKg ?? null,
+          // Datos para la prealerta del proveedor. Los importes se redondean a 2
+          // decimales (USD) en este unico punto; retener y arancel viajan tal cual.
+          declaredValueUsd:
+            input.declaredValueUsd === undefined ? null : roundMoney(input.declaredValueUsd, Currency.USD),
+          insuredValueUsd:
+            input.insuredValueUsd === undefined ? null : roundMoney(input.insuredValueUsd, Currency.USD),
+          tariffPosition: input.tariffPosition ?? null,
+          retain: input.retain ?? null,
+          billingNotes: input.billingNotes ?? null,
+          documentFileKey,
+        },
+        session.userId,
+      );
+    } catch (err) {
+      if (documentFileKey) await storage.remove(documentFileKey);
+      throw err;
+    }
   },
 
   /** Inserta con consecutivo y estado inicial derivados; comun a prealerta y alta. */

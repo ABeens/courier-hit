@@ -13,6 +13,7 @@ export * from './settings/exchange-rate-dto';
 export * from './settings/freight-rate-dto';
 export * from './settings/card-surcharge-dto';
 export * from './settings/daily-digest-dto';
+export * from './settings/miami-warehouse-dto';
 export * from './users/dto';
 export * from './tariffs/dto';
 export * from './costs/cost-service';

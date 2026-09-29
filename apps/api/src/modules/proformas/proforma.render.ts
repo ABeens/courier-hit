@@ -24,6 +24,7 @@ import {
   roundMoney,
 } from '@courier/shared';
 import type { ProformaListItem } from '@courier/shared';
+import { BRAND_LOGO_DATA_URI } from '../../core/brand-logo';
 
 /** Zona del negocio: todos los clientes son de Costa Rica (CLAUDE.md). */
 const TIME_ZONE = 'America/Costa_Rica';
@@ -159,7 +160,8 @@ const STYLES = `
     width: 210mm; min-height: 297mm; margin: 12px auto; padding: 16mm 14mm;
     background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.15);
   }
-  .brand { font-size: 20px; font-weight: 700; letter-spacing: .5px; }
+  .brand { display: flex; align-items: center; gap: 14px; font-size: 20px; font-weight: 700; letter-spacing: .5px; }
+  .brand img { width: 96px; height: auto; flex: none; }
   .brand small { display: block; font-size: 11px; font-weight: 400; color: #6b7280; letter-spacing: 0; }
   .head { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
   .meta { text-align: right; font-size: 12px; }
@@ -282,7 +284,10 @@ function sheet(doc: ProformaDocument): string {
 
   return `<section class="sheet">
     <div class="head">
-      <div class="brand">HS Global Services<small>Proforma · ${esc(PROFORMA_STATUS_LABELS[doc.status])}</small></div>
+      <div class="brand">
+        <img src="${BRAND_LOGO_DATA_URI}" alt="HS Global Services">
+        <div>HS Global Services<small>Proforma · ${esc(PROFORMA_STATUS_LABELS[doc.status])}</small></div>
+      </div>
       <div class="meta">
         ${number}
         <div>Fecha: ${day(doc.issuedAt)}</div>

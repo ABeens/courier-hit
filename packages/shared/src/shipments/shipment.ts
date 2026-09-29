@@ -119,6 +119,17 @@ export interface ShipmentDto {
   providerAccountCode: string | null;
 
   /**
+   * La misma cuenta, PARA MOSTRAR: el codigo de casillero siempre resuelto,
+   * tambien cuando vino de la principal (donde `providerAccountCode` es null y
+   * aqui va el codigo de la principal, p. ej. `SJO008835`). `null` solo fuera de
+   * Paqueteria, donde no hay cuenta del operador.
+   *
+   * Va aparte y no reemplaza a `providerAccountCode` porque ese null tiene
+   * significado: dice con que credenciales preguntarle al proveedor.
+   */
+  providerAccountDisplayCode: string | null;
+
+  /**
    * Ruta operativa del distrito de entrega del cliente. Se resuelve al leer
    * (join con las rutas por distrito) en vez de copiarse al tramite: si el
    * administrador reasigna la ruta de un distrito, los tramites en curso la

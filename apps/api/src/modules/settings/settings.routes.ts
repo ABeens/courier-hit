@@ -14,6 +14,7 @@ import {
   setDailyDigestSchema,
   setExchangeRateSchema,
   setFreightRateSchema,
+  setMiamiWarehouseSchema,
 } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
 import { requireAnyPermission } from '../../core/middleware/requireAnyPermission';
@@ -35,6 +36,22 @@ settingsRoutes.put(
   requirePermission(Permission.ConfigManage),
   zValidator('json', setDailyDigestSchema),
   async (c) => c.json(await settingsService.setDailyDigest(c.get('session'), c.req.valid('json'))),
+);
+
+/**
+ * Direccion del casillero de HS Global en Miami. Es configuracion del sistema.
+ * El cliente no llama a esta ruta: su direccion le llega ya armada en "Mi
+ * casillero" (`/clients/me/locker`).
+ */
+settingsRoutes.get('/miami-warehouse', requirePermission(Permission.ConfigManage), async (c) => {
+  return c.json(await settingsService.miamiWarehouseSetting());
+});
+
+settingsRoutes.put(
+  '/miami-warehouse',
+  requirePermission(Permission.ConfigManage),
+  zValidator('json', setMiamiWarehouseSchema),
+  async (c) => c.json(await settingsService.setMiamiWarehouse(c.get('session'), c.req.valid('json'))),
 );
 
 /** Tasa vigente + referencia del dia. La lee quien opera con montos. */

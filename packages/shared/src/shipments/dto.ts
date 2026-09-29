@@ -618,6 +618,16 @@ export const listShipmentsQuerySchema = z.object({
     .enum(['true', 'false'])
     .optional()
     .transform((v) => v === 'true'),
+  /**
+   * Solo los tramites pendientes de pago: los de una proforma APROBADA, que es
+   * la que el cliente tiene por pagar (todo se cobra por proforma). Al quedar
+   * cubierta pasa a `pagada` y el tramite sale del filtro. Incluye los que ya
+   * tienen un deposito en validacion: siguen sin estar pagados.
+   */
+  pendingPayment: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
   /** Inicio del rango por fecha de ingreso, inclusive. */
   from: instantSchema.optional(),
   /** Fin del rango por fecha de ingreso, exclusivo (la web manda el inicio del dia siguiente). */

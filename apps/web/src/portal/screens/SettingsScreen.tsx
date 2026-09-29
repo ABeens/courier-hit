@@ -2,7 +2,8 @@
  * Pantalla "Configuración" (permiso exchange_rate.write para escribir).
  *
  * Ajustes GENERALES del sistema: los valores que se aplican igual a todos los
- * trámites. Hoy la tasa de cambio y la tarifa de transporte internacional; es el
+ * trámites. Hoy la tasa de cambio, la tarifa de transporte internacional, el
+ * recargo por tarjeta y la dirección del casillero en Miami; es el
  * sitio donde van a entrar los que vengan, por eso la pantalla se arma por
  * bloques y no como un formulario suelto.
  *
@@ -17,6 +18,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { ProformaSettings } from './ProformaSettings';
+import { WarehouseSettings } from './WarehouseSettings';
 import { CURRENCY_SYMBOLS, Currency, formatMoney } from '@courier/shared';
 import type {
   CardSurchargeSettingDto,
@@ -485,6 +487,7 @@ export function SettingsScreen({
       </div>
 
       {canManageConfig && <ProformaSettings />}
+      {canManageConfig && <WarehouseSettings />}
 
       {canEdit && (
         <>

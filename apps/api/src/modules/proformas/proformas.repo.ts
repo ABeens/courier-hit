@@ -79,8 +79,13 @@ const headerColumns = {
 };
 
 /** Filtros del listado traducidos a SQL. */
-function listConditions(query: ProformaFilter): SQL[] {
+/**
+ * `issuedOnly` deja fuera los borradores: es la lectura del cliente, que solo ve
+ * lo que ya es un documento (aprobadas y pagadas).
+ */
+function listConditions(query: ProformaFilter, issuedOnly = false): SQL[] {
   const conds: SQL[] = [];
+  if (issuedOnly) conds.push(inArray(proformas.status, [ProformaStatus.Aprobada, ProformaStatus.Pagada]));
   if (query.status) conds.push(eq(proformas.status, query.status));
   if (query.flow) conds.push(eq(proformas.flow, query.flow));
   if (query.clientId) conds.push(eq(proformas.clientId, query.clientId));
@@ -109,8 +114,8 @@ export const proformasRepo = {
    * desempate por id (regla de `http/pagination`: sin desempate, dos filas con la
    * misma fecha se cruzan entre paginas).
    */
-  async list(query: ListProformasQuery) {
-    const where = and(...listConditions(query));
+  async list(query: ListProformasQuery, issuedOnly = false) {
+    const where = and(...listConditions(query, issuedOnly));
     const { limit, offset } = toSlice(query);
     const [rows, [totalRow]] = await Promise.all([
       db
