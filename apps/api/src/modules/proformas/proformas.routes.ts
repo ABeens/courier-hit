@@ -83,12 +83,12 @@ proformasRoutes.post('/approve', manage, zValidator('json', approveProformasSche
 
 /**
  * Enviar a ruta: pasa a "En ruta de entrega" los paquetes de proformas pagadas.
- * Es el permiso de entregas (Administrador y Mensajeria), el mismo que exige la
- * maquina de estados para ese paso; sirve para una proforma o para varias.
+ * Es el permiso de despacho (Administrador, Operativo y Mensajeria), el mismo que
+ * exige la maquina de estados para ese paso; sirve para una proforma o para varias.
  */
 proformasRoutes.post(
   '/dispatch',
-  requirePermission(Permission.DeliveryManage),
+  requirePermission(Permission.DeliveryDispatch),
   zValidator('json', dispatchProformasSchema),
   async (c) => {
     return c.json(await proformasService.dispatchMany(c.get('session'), c.req.valid('json').ids));

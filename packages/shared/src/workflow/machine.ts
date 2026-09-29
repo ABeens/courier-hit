@@ -122,7 +122,7 @@ export const FLOWS: Record<Flow, FlowDef> = {
       { state: State.EnAduanas, permission: Permission.PackageWrite, triggers: [Trigger.DailyPackageReport], conditions: [], restrictions: LINEAR_ADVANCE, editable: PKG_IN_TRANSIT },
       { state: State.FacturacionEnProceso, permission: Permission.CostsManage, triggers: [], conditions: [], restrictions: LINEAR_ADVANCE, editable: PKG_BILLING },
       { state: State.EnBodegaPendientePago, permission: Permission.PackageWrite, triggers: [], conditions: [Condition.RequiresInvoiceAmount], restrictions: LINEAR_ADVANCE, editable: FROZEN },
-      { state: State.EnRutaEntrega, permission: Permission.DeliveryManage, triggers: [Trigger.DailyPackageReport], conditions: [Condition.RequiresConfirmedPayment], restrictions: LINEAR_ADVANCE, editable: FROZEN },
+      { state: State.EnRutaEntrega, permission: Permission.DeliveryDispatch, triggers: [Trigger.DailyPackageReport], conditions: [Condition.RequiresConfirmedPayment], restrictions: LINEAR_ADVANCE, editable: FROZEN },
       { state: State.Entregado, permission: Permission.DeliveryManage, triggers: [], conditions: [], restrictions: [Restriction.Terminal], editable: FROZEN },
       { state: State.DevueltoBodega, permission: Permission.DeliveryManage, triggers: [], conditions: [Condition.RequiresComment], restrictions: [], editable: FROZEN },
     ],

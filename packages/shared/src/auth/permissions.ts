@@ -97,6 +97,8 @@ export enum Action {
    * operado mal: no la tiene quien ejecuta, solo quien responde por el sistema.
    */
   Correct = 'correct',
+  /** Sacar a ruta un tramite ya cobrado (ver Permission.DeliveryDispatch). */
+  Dispatch = 'dispatch',
 }
 
 /** Alcance: sobre lo propio (cliente) o sobre todo (staff). */
@@ -237,6 +239,26 @@ export enum Permission {
    * `admin`: es la puerta que convierte un comprobante en cobro.
    */
   PaymentsValidate = 'payments.validate',
+  /**
+   * SACAR A RUTA un paquete pagado: el paso a "En ruta de entrega", tambien el
+   * reintento desde "Devuelto a bodega". Es el permiso que exige la maquina de
+   * estados para ese paso y el del boton "Enviar a ruta" de la bandeja.
+   *
+   * VA APARTE DE `delivery.manage` PORQUE NO ES EL MISMO TRABAJO. Despachar
+   * cierra la operacion de bodega: lo hace quien cobro y preparo el paquete.
+   * Gestionar la entrega es el trabajo de la calle (dashboard de ruta, confirmar
+   * con foto, devolver a bodega) y es un modulo propio del menu. Con un solo
+   * permiso, dejar despachar al Operativo le abria de paso el modulo de Entregas.
+   *
+   * Cuelga de Resource.Proformas y no de Resource.Delivery por eso mismo: el menu
+   * se deriva de los recursos (`resourcesFor`), y el despacho se hace desde la
+   * bandeja de proformas, que los tres roles que lo llevan ya tienen.
+   */
+  DeliveryDispatch = 'delivery.dispatch',
+  /**
+   * El modulo de Entregas: dashboard de ruta, confirmar con foto y devolver a
+   * bodega. No incluye sacar a ruta (eso es `delivery.dispatch`).
+   */
   DeliveryManage = 'delivery.manage',
   ReportsOperationalBasic = 'reports.operational.basic',
   ReportsOperationalFull = 'reports.operational.full',
@@ -365,6 +387,7 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   // Action.Create y no Validate: registrar es dar de alta el abono, no resolverlo.
   [Permission.PaymentsRecord]: { resource: Resource.Payments, action: Action.Create, scope: Scope.All },
   [Permission.PaymentsValidate]: { resource: Resource.Payments, action: Action.Validate, scope: Scope.All },
+  [Permission.DeliveryDispatch]: { resource: Resource.Proformas, action: Action.Dispatch, scope: Scope.All },
   [Permission.DeliveryManage]: { resource: Resource.Delivery, action: Action.Manage, scope: Scope.All },
   [Permission.ReportsOperationalBasic]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
   [Permission.ReportsOperationalFull]: { resource: Resource.Reports, action: Action.Generate, scope: Scope.All },
@@ -409,6 +432,7 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   Permission.PaymentsRecord,
   // Solo admin: aprobar el deposito es dar el dinero por recibido.
   Permission.PaymentsValidate,
+  Permission.DeliveryDispatch,
   Permission.DeliveryManage,
   Permission.ReportsOperationalBasic,
   Permission.ReportsOperationalFull,
@@ -464,14 +488,13 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   // de proformas) y asienta los depositos que el cliente le manda
   // (`payments.record`).
   //
-  // Tambien saca a ruta los paquetes pagados (`delivery.manage`): el paso a "En
-  // ruta de entrega" lo exige la maquina de estados, y sin el el Operativo que
-  // cobro la proforma tenia que esperar a un administrador para despacharla. El
-  // permiso es el del modulo de entregas entero, asi que de paso ve el dashboard
-  // de ruta y puede confirmar o devolver una entrega, igual que Mensajeria.
+  // Tambien saca a ruta los paquetes pagados (`delivery.dispatch`): sin eso el
+  // Operativo que cobro la proforma tenia que esperar a un administrador para
+  // despacharla.
   //
-  // Lo que NO lleva, y por eso no aparece aqui: la APROBACION de esos depositos
-  // (`payments.validate`). Antes tampoco facturaba Agenciamiento
+  // Lo que NO lleva, y por eso no aparece aqui: el modulo de Entregas
+  // (`delivery.manage`, confirmar y devolver es trabajo de Mensajeria) y la
+  // APROBACION de esos depositos (`payments.validate`). Antes tampoco facturaba Agenciamiento
   // (`costs.tramite.manage` era solo del administrador); con el modulo de
   // proformas factura las tres verticales.
   [Role.Operativo]: [
@@ -485,7 +508,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ProformasRead,
     Permission.ProformasManage,
     Permission.PaymentsRecord,
-    Permission.DeliveryManage,
+    Permission.DeliveryDispatch,
     Permission.ReportsOperationalBasic,
     Permission.ReportsOperational,
     Permission.ClientsRead,
@@ -499,8 +522,9 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ProformasRead,
   ],
 
-  // Entrega por proforma (decision D4) y ve la proforma con sus montos (P7).
-  [Role.Mensajeria]: [Permission.DeliveryManage, Permission.ProformasRead],
+  // Saca a ruta y entrega por proforma (decision D4) y ve la proforma con sus
+  // montos (P7).
+  [Role.Mensajeria]: [Permission.DeliveryDispatch, Permission.DeliveryManage, Permission.ProformasRead],
 
   /**
    * Bodega: UN solo permiso, y por eso un solo modulo en el menu (Recepcion).

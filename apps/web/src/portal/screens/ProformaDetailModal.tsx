@@ -69,8 +69,8 @@ function money(value: number, currency: Currency): string {
 export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
   const canManage = can(role, Permission.ProformasManage);
   const canRecord = can(role, Permission.PaymentsRecord);
-  /** Sacar a ruta es el permiso de entregas (Administrador y Mensajeria). */
-  const canDispatch = can(role, Permission.DeliveryManage);
+  /** Sacar a ruta es el permiso de despacho (Administrador, Operativo y Mensajeria). */
+  const canDispatch = can(role, Permission.DeliveryDispatch);
 
   const [data, setData] = useState<ProformaDetailDto | null>(null);
   const setError = useErrorToast();

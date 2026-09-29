@@ -91,8 +91,8 @@ export function ProformasScreen({
   initialStatus?: ProformaStatus;
 }) {
   const canManage = can(role, Permission.ProformasManage);
-  /** Sacar a ruta es el permiso de entregas (Administrador y Mensajeria). */
-  const canDispatch = can(role, Permission.DeliveryManage);
+  /** Sacar a ruta es el permiso de despacho (Administrador, Operativo y Mensajeria). */
+  const canDispatch = can(role, Permission.DeliveryDispatch);
   // Quien arma proformas arranca en los borradores; quien solo reparte, en las pagadas.
   const [status, setStatus] = useState<ProformaStatus | ''>(
     initialStatus ?? (canManage ? ProformaStatus.Borrador : canDispatch ? ProformaStatus.Pagada : ''),
