@@ -46,6 +46,7 @@ import { ProformaDepositModal } from './ProformaDepositModal';
 import {
   deliveryPill,
   dispatchSummary,
+  dispatchesUnpaid,
   isDispatchable,
   openProformaDocument,
   proformaStatusPill,
@@ -75,6 +76,7 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
   const [data, setData] = useState<ProformaDetailDto | null>(null);
   const setError = useErrorToast();
   const [notice, setNotice] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [fe, setFe] = useState('');
 
@@ -184,14 +186,19 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
   async function dispatch() {
     if (!data) return;
     const n = data.readyForRouteCount;
-    if (!window.confirm(`Se enviarán a ruta de entrega ${n} ${n === 1 ? 'paquete' : 'paquetes'} de esta proforma. ¿Continuar?`)) return;
+    const unpaidWarning = dispatchesUnpaid(data)
+      ? '\n\nATENCIÓN: esta proforma NO está pagada. Sale igual porque el cliente está exento de la retención por pago; el cobro queda pendiente.'
+      : '';
+    if (!window.confirm(`Se enviarán a ruta de entrega ${n} ${n === 1 ? 'paquete' : 'paquetes'} de esta proforma.${unpaidWarning}\n\n¿Continuar?`)) return;
     setBusy(true);
     setError(null);
     setNotice(null);
+    setWarning(null);
     try {
       const summary = dispatchSummary(await api.post<DispatchProformasResult>('/proformas/dispatch', { ids: [id] }));
       setData(await api.get<ProformaDetailDto>(`/proformas/${id}`));
       if (summary.ok) setNotice(summary.ok);
+      if (summary.unpaid) setWarning(summary.unpaid);
       if (summary.failed) setError(`No salieron: ${summary.failed}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo enviar a ruta.');
@@ -248,6 +255,15 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
 
         <div className="modal-body">
           {notice && <div className="banner ok">{notice}</div>}
+          {warning && <div className="banner warn">{warning}</div>}
+          {/* Antes de enviar, no despues: quien va a sacar la proforma tiene que
+              saber que no esta pagada sin tener que abrir los pagos. */}
+          {data && canDispatch && isDispatchable(data) && dispatchesUnpaid(data) && (
+            <div className="banner warn">
+              Esta proforma no está pagada. El cliente está exento de la retención por pago, así que
+              se puede enviar a ruta igual, pero el cobro sigue pendiente.
+            </div>
+          )}
 
           {data && (
             <>
@@ -464,7 +480,11 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
               )}
               {canDispatch && isDispatchable(data) && (
                 <button type="button" className="btn btn-primary" onClick={() => void dispatch()} disabled={busy}>
-                  {busy ? 'Procesando…' : `Enviar a ruta (${data.readyForRouteCount})`}
+                  {busy
+                    ? 'Procesando…'
+                    : dispatchesUnpaid(data)
+                      ? `Enviar a ruta sin pago (${data.readyForRouteCount})`
+                      : `Enviar a ruta (${data.readyForRouteCount})`}
                 </button>
               )}
               {editable && (

@@ -36,6 +36,7 @@ import { ModalOverlay } from '../components/ModalOverlay';
 import { API_BASE, ApiError, api } from '../lib/api';
 import { formatDate, formatStamp } from '../lib/datetime';
 import { useErrorToast } from '../lib/toast';
+import { ProformaLink } from '../components/ProformaLink';
 
 /**
  * Pildora del estado de un abono. Rechazado NO es un estado neutro: es dinero
@@ -507,7 +508,7 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
           {canRecord && !figures.settled && shipment.invoiceTotalCrc != null && (
             <div className="banner">
               Los depósitos se registran por proforma completa.
-              {shipment.proforma?.number && <> Este trámite está en la proforma <strong>{shipment.proforma.number}</strong>.</>}{' '}
+              {shipment.proforma?.number && <> Este trámite está en la proforma <strong><ProformaLink id={shipment.proforma.id} number={shipment.proforma.number} /></strong>.</>}{' '}
               Regístralo desde su detalle en <strong>Proformas</strong>.
             </div>
           )}

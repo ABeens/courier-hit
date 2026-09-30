@@ -329,6 +329,18 @@ export enum Permission {
    * por el rol, asi que abrirselo a otro es sumarlo en ROLE_PERMISSIONS.
    */
   ClientsApiAccess = 'clients.api_access',
+  /**
+   * Prender y apagar la EXENCION DE LA RETENCION POR PAGO de un casillero: con
+   * ella, sus paquetes salen a ruta aunque el pago no este confirmado (la
+   * pantalla lo advierte, pero no lo impide). Nace apagada para todos.
+   *
+   * Permiso propio y no `clients.write` por lo mismo que la API: editar la ficha
+   * ES revisarla, y sobre todo porque esto es CREDITO. Quien negocia una tarifa
+   * no tiene por que poder dejar salir mercancia sin cobrar.
+   *
+   * Hoy solo `admin`.
+   */
+  ClientsPaymentExempt = 'clients.payment_exempt',
   ConfigManage = 'config.manage',
   /**
    * Dar de alta y mantener las cuentas EXCLUSIVAS del operador de Miami, y crear
@@ -404,6 +416,8 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   // propio. Action.Manage por lo mismo que el anterior: no edita datos, abre o
   // cierra una puerta.
   [Permission.ClientsApiAccess]: { resource: Resource.Clients, action: Action.Manage, scope: Scope.All },
+  // Igual que el anterior: se opera desde la ficha del casillero y no edita datos.
+  [Permission.ClientsPaymentExempt]: { resource: Resource.Clients, action: Action.Manage, scope: Scope.All },
   [Permission.ConfigManage]: { resource: Resource.Config, action: Action.Manage, scope: Scope.All },
   [Permission.ProviderAccountsManage]: { resource: Resource.ProviderAccounts, action: Action.Manage, scope: Scope.All },
   [Permission.TariffsManage]: { resource: Resource.Tariffs, action: Action.Manage, scope: Scope.All },
@@ -447,6 +461,8 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   Permission.ClientsSuspend,
   // Solo admin: la API de un cliente se enciende una vez y a conciencia.
   Permission.ClientsApiAccess,
+  // Solo admin: dejar salir paquetes sin cobrar es dar credito.
+  Permission.ClientsPaymentExempt,
   Permission.ConfigManage,
   // Solo admin: son credenciales de una cuenta ajena del proveedor, y el alta del
   // unico tipo de cliente que no puede nacer del landing.

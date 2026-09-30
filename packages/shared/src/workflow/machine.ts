@@ -256,6 +256,39 @@ export function isCollectible(
 }
 
 /**
+ * True si el tramite ya paso por su estado de cobro (esta en el o en uno
+ * posterior de la ruta principal, o en una rama que cuelga de esa parte).
+ *
+ * `DevueltoBodega` va en la ruta principal despues de En ruta de entrega, asi que
+ * cae solo dentro del tramo.
+ */
+export function isAtOrPastPayable(flow: Flow, state: State): boolean {
+  const payable = payableStateOf(flow);
+  if (!payable) return false;
+  const order = statesOf(flow);
+  const at = order.indexOf(state);
+  return at >= 0 && at >= order.indexOf(payable);
+}
+
+/**
+ * True si al tramite le queda SALDO por pagar y se le puede cobrar: esta en su
+ * estado de cobro o mas alla, tiene factura y no esta pagado.
+ *
+ * Existe aparte de `isCollectible` porque aquella pregunta por el estado EXACTO,
+ * y eso bastaba mientras nadie salia del estado de cobro sin pagar. Con la
+ * exencion de la retencion por pago (`paymentGateWaived`) un paquete sale a ruta
+ * con saldo, y el cliente tiene que seguir viendo "Pagar" en ruta, entregado o
+ * devuelto. Lo que ofrece el cobro pregunta aqui; lo que describe el estado de
+ * cobro en si (la etiqueta, el texto del historial) sigue con `isCollectible`.
+ */
+export function hasOutstandingBalance(
+  flow: Flow,
+  data: { state: State; invoiceTotalCrc: number | null; settled: boolean },
+): boolean {
+  return isAtOrPastPayable(flow, data.state) && data.invoiceTotalCrc != null && !data.settled;
+}
+
+/**
  * Estados que CIERRAN un tramite, en cualquier flow (Restriction.Terminal).
  *
  * Existe porque el cierre dejo de ser un solo estado: Paqueteria termina en
@@ -342,6 +375,32 @@ export interface GuardData {
   invoiceTotalCrc: number | null;
   /** Si los abonos confirmados cubren ese monto (la respuesta de `isSettled`). */
   settled: boolean;
+  /**
+   * Si al tramite se le perdona la retencion por pago (`paymentGateWaived`). Con
+   * esto en true, `RequiresConfirmedPayment` deja de bloquear y pasa a ser una
+   * ADVERTENCIA (`waivedConditions`).
+   */
+  paymentGateWaived: boolean;
+}
+
+/**
+ * Flows en los que un casillero exento (`clients.payment_gate_exempt`) puede
+ * saltarse la retencion por pago. Hoy solo Paqueteria: Transporte y
+ * Agenciamiento siguen exigiendo el pago confirmado a todos, exento o no.
+ *
+ * Es una lista y no un `flow === Flow.Paqueteria` para que abrirlo a otro flow
+ * sea sumarlo aqui y nada mas: la API, la web y el envio a ruta preguntan todos
+ * por `paymentGateWaived`.
+ */
+export const PAYMENT_GATE_WAIVABLE_FLOWS: readonly Flow[] = [Flow.Paqueteria];
+
+/**
+ * True si a un tramite de este flow, de un casillero con la bandera de exencion,
+ * se le perdona la retencion por pago. Punto UNICO de la regla: la bandera sola
+ * no basta, porque vale para unos flows y no para otros.
+ */
+export function paymentGateWaived(flow: Flow, clientExempt: boolean): boolean {
+  return clientExempt && PAYMENT_GATE_WAIVABLE_FLOWS.includes(flow);
 }
 
 /**
@@ -356,6 +415,8 @@ export interface GuardData {
  * tramite sino algo que el usuario escribe en el mismo formulario del avance, asi
  * que evaluarla contra la fila la daria por incumplida siempre. La valida el
  * formulario (y la API con la nota recibida).
+ *
+ * Una guarda PERDONADA (`waivedConditions`) tampoco sale aqui: no bloquea.
  */
 export function unmetConditions(
   flow: Flow,
@@ -367,11 +428,31 @@ export function unmetConditions(
       case Condition.RequiresInvoiceAmount:
         return data.invoiceTotalCrc == null;
       case Condition.RequiresConfirmedPayment:
-        return !data.settled;
+        return !data.settled && !data.paymentGateWaived;
       case Condition.RequiresComment:
         return false;
     }
   });
+}
+
+/**
+ * Guardas del estado destino que el tramite NO cumple pero que se le PERDONAN:
+ * el avance se ejecuta igual y quien lo hace tiene que verlo como advertencia
+ * explicita. Hoy solo el pago confirmado de un casillero exento.
+ *
+ * Va aparte de `unmetConditions` y no como un flag dentro de ella porque las dos
+ * listas se leen distinto: una deshabilita el boton, la otra lo deja pulsar y
+ * pinta el aviso. Mezclarlas obligaria a cada pantalla a volver a separarlas.
+ */
+export function waivedConditions(
+  flow: Flow,
+  state: State,
+  data: GuardData,
+): readonly Condition[] {
+  return conditionsFor(flow, state).filter(
+    (condition) =>
+      condition === Condition.RequiresConfirmedPayment && !data.settled && data.paymentGateWaived,
+  );
 }
 
 /** Restrictions estructurales del estado. */

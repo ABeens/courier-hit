@@ -43,6 +43,11 @@ export interface ClientRow {
   status: UserStatus;
   /** Acceso a la API (docs/16 §3). Apagado hasta que un administrador lo encienda. */
   apiAccessEnabled: boolean;
+  /**
+   * Exencion de la retencion por pago: sus paquetes salen a ruta aunque no esten
+   * pagados (con aviso). Apagada hasta que un administrador la encienda.
+   */
+  paymentGateExempt: boolean;
   clientRateName: string | null;
   clientRateId: string | null;
   creditLimit: number | null;
@@ -96,12 +101,15 @@ export function ClientsScreen({
   canWrite,
   canSuspend,
   canManageApiAccess,
+  canManagePaymentExempt,
 }: {
   canWrite: boolean;
   /** Permiso `clients.suspend`: bloquear o reactivar el acceso del titular. */
   canSuspend: boolean;
   /** Permiso `clients.api_access`: habilitar o deshabilitar la API del casillero. */
   canManageApiAccess: boolean;
+  /** Permiso `clients.payment_exempt`: eximir al casillero de la retencion por pago. */
+  canManagePaymentExempt: boolean;
 }) {
   const [q, setQ] = useState('');
   const [onlyNew, setOnlyNew] = useState(false);
@@ -183,6 +191,32 @@ export function ClientsScreen({
       void load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cambiar el acceso a la API.');
+    }
+  }
+
+  /**
+   * Enciende o apaga la exencion de la retencion por pago. Se confirma antes
+   * porque encenderla es dar credito: desde el siguiente avance, los paquetes del
+   * cliente salen a ruta sin el pago confirmado. Hoy aplica solo a Paqueteria
+   * (`paymentGateWaived`); Transporte y Agenciamiento siguen reteniendo.
+   */
+  async function togglePaymentExempt(row: ClientRow) {
+    const enabling = !row.paymentGateExempt;
+    const confirmed = window.confirm(
+      enabling
+        ? `¿Eximir a ${row.name} (${row.code}) de la retención por pago? Sus paquetes podrán salir a ruta sin el pago confirmado (con aviso en cada envío). Solo aplica a Paquetería.`
+        : `¿Quitar la exención de pago a ${row.name} (${row.code})? Sus paquetes volverán a quedarse en bodega hasta que el pago esté confirmado. Lo que ya salió a ruta no cambia.`,
+    );
+    if (!confirmed) return;
+
+    setError(null);
+    setNotice(null);
+    try {
+      await api.patch(`/clients/${row.id}/payment-exempt`, { enabled: enabling });
+      setNotice(`${row.name}: ${enabling ? 'exento de la retención por pago' : 'vuelve a la retención por pago'}.`);
+      void load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo cambiar la exención de pago.');
     }
   }
 
@@ -308,6 +342,21 @@ export function ClientsScreen({
                       onClick={() => void toggleApiAccess(row)}
                     />
                   )}
+                  {/* Credito, no acceso: por eso va aparte de la API y del bloqueo,
+                      y con el tono de alerta cuando esta encendida. */}
+                  {canManagePaymentExempt && (
+                    <IconButton
+                      label={row.paymentGateExempt ? 'Quitar exención de pago' : 'Eximir de retención por pago'}
+                      icon="dollar"
+                      tone={row.paymentGateExempt ? 'danger' : undefined}
+                      hint={
+                        row.paymentGateExempt
+                          ? 'Quitar la exención (sus paquetes vuelven a esperar el pago para salir a ruta)'
+                          : 'Eximir de la retención por pago (sus paquetes salen a ruta sin pago, con aviso)'
+                      }
+                      onClick={() => void togglePaymentExempt(row)}
+                    />
+                  )}
                   {canSuspend &&
                     (blocked ? (
                       <IconButton
@@ -355,6 +404,13 @@ export function ClientsScreen({
                       label="API"
                       value={row.apiAccessEnabled ? 'Habilitada' : null}
                       empty="Deshabilitada"
+                    />
+                    {/* Tambien siempre: responde "¿por que este paquete salio a
+                        ruta sin pagar?" sin tener que abrir el historial. */}
+                    <Field
+                      label="Retención por pago"
+                      value={row.paymentGateExempt ? 'Exento (paquetes salen sin pago)' : null}
+                      empty="Aplica"
                     />
                   </dl>
                 </section>

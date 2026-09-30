@@ -12,7 +12,10 @@
  * 1. LEGALIDAD    — `canTransition`: el destino sale del estado actual en ese flow.
  * 2. PERMISO      — `permissionFor`: el rol puede llevar el tramite a ese estado.
  * 3. CONDICIONES  — las guardas de datos del step destino (comentario, monto de
- *                   factura, pago confirmado).
+ *                   factura, pago confirmado). El pago confirmado es la UNICA que
+ *                   se puede perdonar, y solo a un casillero exento en un flow que
+ *                   lo admita (`paymentGateWaived`): el avance sigue y el
+ *                   historial deja escrito que salio sin pagar.
  * 4. EFECTOS      — se escribe el evento (el cliente lo recibe en su correo diario).
  *
  * Las tres primeras salen de @courier/shared. Aqui no se decide ninguna regla: se
@@ -33,6 +36,7 @@ import {
   flowForType,
   chargeBasisFor,
   isSettled,
+  paymentGateWaived,
   permissionFor,
   statesOf,
 } from '@courier/shared';
@@ -64,16 +68,30 @@ function assertOperable(row: ShipmentRow): void {
 }
 
 /**
+ * Nota que se le agrega al evento cuando el tramite avanza con la retencion por
+ * pago perdonada. Va en el HISTORIAL y no solo en la pantalla porque es la unica
+ * constancia duradera de que alguien lo dejo salir sin cobrar: la pantalla se
+ * cierra, el evento queda.
+ */
+export const PAYMENT_WAIVED_NOTE = 'Avanzó SIN el pago confirmado: el casillero está exento de la retención por pago.';
+
+/**
  * Comprueba las guardas de datos del estado destino. Cada Condition se traduce a
  * la pregunta que la responde; una Condition sin traducir aqui es un olvido, no
  * un permiso, asi que el `switch` es exhaustivo a proposito.
+ *
+ * Devuelve las guardas que NO se cumplen pero que se PERDONAN (hoy solo el pago
+ * confirmado de un casillero exento): el avance sigue, y quien llama las deja
+ * escritas en el evento.
  */
 async function assertConditions(
   row: ShipmentRow,
   to: State,
   note: string | undefined,
-): Promise<void> {
-  for (const condition of conditionsFor(flowForType(row.shipmentType), to)) {
+): Promise<Condition[]> {
+  const flow = flowForType(row.shipmentType);
+  const waived: Condition[] = [];
+  for (const condition of conditionsFor(flow, to)) {
     switch (condition) {
       case Condition.RequiresComment:
         if (!note?.trim()) throw TransitionErrors.requiresComment();
@@ -88,13 +106,24 @@ async function assertConditions(
         // En la moneda con la que se le cobro (`chargeCurrencyFor`). Preguntarlo
         // en la otra columna retiene un paquete de Paqueteria que ya pago sus
         // dolares, por los colones que la conversion deja sueltos.
-        if (!isSettled(paid, chargeBasisFor(row.shipmentType, row))) {
+        if (isSettled(paid, chargeBasisFor(row.shipmentType, row))) break;
+        // Sin pagar: se retiene, salvo que el casillero este exento y el flow lo
+        // admita. La bandera se lee EN VIVO de la fila, no de una copia.
+        if (!paymentGateWaived(flow, row.clientPaymentGateExempt === true)) {
           throw TransitionErrors.requiresConfirmedPayment();
         }
+        waived.push(condition);
         break;
       }
     }
   }
+  return waived;
+}
+
+/** La nota del evento, con el aviso de la guarda perdonada si la hubo. */
+function eventNote(note: string | undefined, waived: readonly Condition[]): string | undefined {
+  if (!waived.includes(Condition.RequiresConfirmedPayment)) return note;
+  return note?.trim() ? `${note.trim()} ${PAYMENT_WAIVED_NOTE}` : PAYMENT_WAIVED_NOTE;
 }
 
 export const transitionsService = {
@@ -131,12 +160,12 @@ export const transitionsService = {
       if (!permission || !can(session.role, permission)) throw AuthErrors.forbidden();
     }
 
-    // 3. Guardas de datos del step destino.
-    await assertConditions(row, to, input.note);
+    // 3. Guardas de datos del step destino (y las que se perdonan).
+    const waived = await assertConditions(row, to, input.note);
 
     // 4. Efectos: el evento. No hay correo inmediato: el cambio sale en el correo
     // diario del cliente, que lee el historial (decision P16).
-    await shipmentsRepo.transition(id, to, session.userId, input.note);
+    await shipmentsRepo.transition(id, to, session.userId, eventNote(input.note, waived));
 
     /**
      * 5. BORRADOR DE PROFORMA. Entrar a "Facturacion en proceso" pone el tramite

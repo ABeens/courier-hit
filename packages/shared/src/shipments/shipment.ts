@@ -209,6 +209,17 @@ export interface ShipmentDto {
   pendingUsd: number;
 
   /**
+   * Si a ESTE tramite se le perdona la retencion por pago: el casillero tiene la
+   * bandera de exencion y el flow la admite (`paymentGateWaived`, hoy solo
+   * Paqueteria). Con true, salir a ruta sin el pago confirmado se permite, pero
+   * la pantalla lo advierte de forma explicita.
+   *
+   * Viaja ya resuelto contra el flow, no como la bandera cruda del casillero,
+   * para que ninguna pantalla repita la regla de a que flows aplica.
+   */
+  paymentGateWaived: boolean;
+
+  /**
    * Descarte de un paquete sin dueño: el instante en que un administrador decidio
    * que ese bulto no da para mas (llego destrozado, era basura de relleno, se
    * devolvio al operador de Miami). Null en todo tramite vivo.

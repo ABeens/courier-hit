@@ -39,6 +39,8 @@ const columns = {
    * llave pertenece al casillero, no a la persona (ver `api_keys.client_id`).
    */
   apiAccessEnabled: clients.apiAccessEnabled,
+  /** Exencion de la retencion por pago (sus paquetes salen a ruta sin cobrar). */
+  paymentGateExempt: clients.paymentGateExempt,
   clientRateName: clientRates.name,
   clientRateId: clients.clientRateId,
   creditLimit: clients.creditLimit,

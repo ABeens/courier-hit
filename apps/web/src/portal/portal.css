@@ -2118,3 +2118,8 @@ button.dash-row:focus-visible { outline: 2px solid var(--brand); outline-offset:
 @media (max-width: 640px) {
   .toaster { left: 16px; right: 16px; bottom: 16px; width: auto; }
 }
+
+/* Numero de proforma que abre su documento (`ProformaLink`). Hereda tamano
+   y fuente del texto que lo rodea: solo cambia el color y el subrayado. */
+.proforma-link { color: var(--brand); font-weight: 700; text-decoration: none; }
+.proforma-link:hover { color: var(--brand-700); text-decoration: underline; }

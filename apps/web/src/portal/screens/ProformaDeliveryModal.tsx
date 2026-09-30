@@ -17,6 +17,7 @@ import { API_BASE, ApiError, api } from '../lib/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { proformaTotal } from './ProformasScreen';
 import { useErrorToast } from '../lib/toast';
+import { ProformaLink } from '../components/ProformaLink';
 
 type Mark = 'entregado' | 'devuelto' | 'pendiente';
 
@@ -132,7 +133,7 @@ export function ProformaDeliveryModal({ proformaId, onClose, onSaved }: Props) {
     <ModalOverlay onClose={onClose}>
       <form className="modal fadeUp" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal-head">
-          <h3>Entregar proforma {data?.number ?? ''}</h3>
+          <h3>Entregar proforma {data?.number ? <ProformaLink id={data.id} number={data.number} /> : null}</h3>
           {data && (
             <p>
               {data.client.name} · {proformaTotal(data)}

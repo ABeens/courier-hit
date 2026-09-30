@@ -504,6 +504,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
               canWrite={can(me.role, Permission.ClientsWrite)}
               canSuspend={can(me.role, Permission.ClientsSuspend)}
               canManageApiAccess={can(me.role, Permission.ClientsApiAccess)}
+              canManagePaymentExempt={can(me.role, Permission.ClientsPaymentExempt)}
             />
           ) : current === Resource.Reports ? (
             <ReportsScreen />

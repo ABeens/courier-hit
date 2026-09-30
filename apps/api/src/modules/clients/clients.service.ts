@@ -60,6 +60,11 @@ export interface ClientListItem {
   status: UserStatus;
   /** Si el casillero puede usar la API (docs/16 §3). Apagado mientras nadie lo encienda. */
   apiAccessEnabled: boolean;
+  /**
+   * Exencion de la retencion por pago: sus paquetes salen a ruta aunque no esten
+   * pagados (con aviso). Apagada mientras nadie la encienda.
+   */
+  paymentGateExempt: boolean;
   /** Nombre de la tarifa asignada; null si quedo sin tarifa. */
   clientRateName: string | null;
   clientRateId: string | null;
@@ -182,6 +187,27 @@ export const clientsService = {
     if (current.apiAccessEnabled === enabled) return this.get(id);
 
     await clientsRepo.update(id, { apiAccessEnabled: enabled });
+    return this.get(id);
+  },
+
+  /**
+   * Enciende o apaga la EXENCION DE LA RETENCION POR PAGO del casillero (permiso
+   * `clients.payment_exempt`).
+   *
+   * Es una bandera y nada mas, como la de la API: no toca pagos, proformas ni
+   * tramites. Se lee EN VIVO en cada avance (`transitionsService`) y en cada
+   * envio a ruta, asi que apagarla vuelve a retener desde el siguiente paquete;
+   * lo que ya salio a ruta sin pagar sigue en ruta y se cobra como siempre.
+   *
+   * NO marca el casillero como revisado: dar credito no es haber mirado sus datos.
+   * Idempotente: volver a pedir el estado que ya tiene no hace nada.
+   */
+  async setPaymentExempt(id: string, enabled: boolean): Promise<ClientListItem> {
+    const current = await clientsRepo.findById(id);
+    if (!current) throw ShipmentErrors.clientNotFound();
+    if (current.paymentGateExempt === enabled) return this.get(id);
+
+    await clientsRepo.update(id, { paymentGateExempt: enabled });
     return this.get(id);
   },
 

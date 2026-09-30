@@ -53,6 +53,7 @@ import {
   isProformaEditable,
   joinBlockFor,
   payableStateOf,
+  paymentGateWaived,
   percentageBase,
   proformaDeliveryStatus,
   roundMoney,
@@ -180,6 +181,7 @@ function toListItem(row: ListRow, lines: readonly Line[]): ProformaListItem {
       finished: row.finishedCount,
     }),
     readyForRouteCount: row.readyForRouteCount,
+    paymentGateWaived: paymentGateWaived(p.flow, row.clientPaymentGateExempt),
     createdAt: p.createdAt.toISOString(),
     approvedAt: p.approvedAt?.toISOString() ?? null,
     paidAt: p.paidAt?.toISOString() ?? null,
@@ -537,22 +539,29 @@ export const proformasService = {
 
   /**
    * ENVIAR A RUTA: pasa a "En ruta de entrega" los paquetes de las proformas que
-   * esten en "En bodega preparando". Solo Paqueteria y solo pagadas.
+   * esten en "En bodega preparando". Solo Paqueteria y solo pagadas, salvo que el
+   * casillero este EXENTO de la retencion por pago (`paymentGateWaived`): entonces
+   * basta con que este aprobada, y el resultado la marca `unpaid` para que la
+   * pantalla lo advierta.
    *
    * Cada paquete avanza por la maquina de estados (`transitionsService`), sin
    * saltarse nada: queda su evento en el historial, se comprueba el permiso de
-   * entregas y la guarda del pago confirmado. Por eso uno que falla no frena a
-   * los demas: se reporta y se sigue, igual que la aprobacion en bloque.
+   * entregas y la guarda del pago confirmado (que para el exento se perdona y
+   * queda escrita en el evento). Por eso uno que falla no frena a los demas: se
+   * reporta y se sigue, igual que la aprobacion en bloque.
    */
   async dispatchMany(session: Session, ids: readonly string[]): Promise<DispatchProformasResult> {
     const result: DispatchProformasResult = { dispatched: [], failed: [] };
     for (const id of [...new Set(ids)]) {
       let number: string | null = null;
       try {
-        const p = (await loadHeader(id)).proforma;
+        const header = await loadHeader(id);
+        const p = header.proforma;
         number = p.number === null ? null : formatProformaNumber(p.number);
         if (p.flow !== Flow.Paqueteria) throw ProformaErrors.notDispatchableFlow();
-        if (p.status !== ProformaStatus.Pagada) throw ProformaErrors.notPaid();
+        const unpaid = p.status === ProformaStatus.Aprobada;
+        const waived = paymentGateWaived(p.flow, header.clientPaymentGateExempt);
+        if (p.status !== ProformaStatus.Pagada && !(unpaid && waived)) throw ProformaErrors.notPaid();
         const ready = (await proformasRepo.shipmentsOf(id)).filter((s) => s.state === State.EnBodegaPendientePago);
         if (ready.length === 0) throw ProformaErrors.nothingToDispatch();
 
@@ -569,7 +578,7 @@ export const proformasService = {
             result.failed.push({ id, number, shipmentCode: s.code, message: error.message });
           }
         }
-        if (moved.length > 0) result.dispatched.push({ id, number, shipmentCodes: moved });
+        if (moved.length > 0) result.dispatched.push({ id, number, shipmentCodes: moved, unpaid });
       } catch (error) {
         if (!(error instanceof AppError)) throw error;
         result.failed.push({ id, number, shipmentCode: null, message: error.message });

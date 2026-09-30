@@ -26,6 +26,7 @@ import { ModalOverlay } from '../components/ModalOverlay';
 import { ApiError, api } from '../lib/api';
 import { startOfLocalDayUtc } from '../lib/datetime';
 import { useErrorToast } from '../lib/toast';
+import { ProformaLink } from '../components/ProformaLink';
 
 /** Hoy en formato `yyyy-mm-dd`, para precargar la fecha del deposito. */
 function today(): string {
@@ -128,7 +129,7 @@ export function ProformaDepositModal({ proforma, role, onClose, onSaved }: Props
         <div className="modal-head">
           <h3>Registrar depósito</h3>
           <p>
-            Proforma {proforma.number} · {proforma.client.name}
+            Proforma {proforma.number ? <ProformaLink id={proforma.id} number={proforma.number} /> : null} · {proforma.client.name}
           </p>
         </div>
 

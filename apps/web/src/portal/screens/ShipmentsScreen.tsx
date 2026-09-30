@@ -20,6 +20,7 @@
  * por firme una cifra que todavia se esta armando.
  */
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   Currency,
   Flow,
@@ -34,6 +35,7 @@ import {
   billingCurrencyFor,
   can,
   clientFullLabel,
+  hasOutstandingBalance,
   isCollectible,
   isPayable,
   formatMoney,
@@ -59,6 +61,7 @@ import { ProformaPaymentModal } from './ProformaPaymentModal';
 import { PaymentResultModal } from './PaymentResultModal';
 import type { PaymentResult } from './PaymentResultModal';
 import { ShipmentPaymentsModal } from './ShipmentPaymentsModal';
+import { ProformaLink } from '../components/ProformaLink';
 
 /** Que tablero se esta mirando. */
 export type ShipmentView = 'paqueteria' | 'transporte' | 'todos' | 'propios' | 'propios-tramites';
@@ -82,7 +85,7 @@ const TYPES_BY_VIEW: Record<ShipmentView, ShipmentType[]> = {
  * `mono` es para identificadores (tracking, DUA, HAWB): en monoespaciada los
  * digitos alinean y es mas facil cotejarlos contra una guia impresa.
  */
-function Field({ label, value, mono, due }: { label: string; value: string | null; mono?: boolean; due?: boolean }) {
+function Field({ label, value, mono, due }: { label: string; value: ReactNode; mono?: boolean; due?: boolean }) {
   const classes = [mono ? 'mono' : '', value ? '' : 'empty-val', due ? 'is-due' : ''].filter(Boolean).join(' ');
   return (
     <div className="card-item-field">
@@ -94,7 +97,8 @@ function Field({ label, value, mono, due }: { label: string; value: string | nul
 
 interface CardField {
   label: string;
-  value: string | null;
+  /** Texto, o un nodo cuando el valor es un enlace (p. ej. el numero de proforma). */
+  value: ReactNode;
   mono?: boolean;
   /** Saldo pendiente de cobro: se pinta en rojo para que se vea que falta pagar. */
   due?: boolean;
@@ -172,7 +176,9 @@ function moneySection(row: ShipmentDto, amounts: BillingAmounts, isOwn: boolean)
     money: true,
     fields: [
       // El numero de la proforma en la que se facturo (objetivo 11 del SOW).
-      ...(row.proforma?.number ? [{ label: 'Proforma', value: row.proforma.number, mono: true }] : []),
+      ...(row.proforma?.number
+        ? [{ label: 'Proforma', value: <ProformaLink id={row.proforma.id} number={row.proforma.number} />, mono: true }]
+        : []),
       ...(currency === Currency.CRC
         ? [
             { label: 'Dólares', value: formatMoney(row.invoiceTotalUsd, Currency.USD) },
@@ -758,8 +764,13 @@ export function ShipmentsScreen({
                   Con el saldo cubierto no se ofrece nada; con el comprobante en
                   revisión se ofrece "Ver pago", que abre el mismo modal para
                   consultar sin empujar a pagar de nuevo.
+
+                  Y se pregunta por el estado de cobro O POSTERIOR, no por el
+                  exacto: un cliente exento de la retención por pago tiene
+                  paquetes en ruta (o ya entregados) con saldo, y el botón no
+                  puede desaparecer justo cuando el paquete sale.
                 */}
-                {canPay && isCollectible(row.flow, row) && !row.settled && (
+                {canPay && hasOutstandingBalance(row.flow, row) && (
                   /*
                     Cuenta CONSOLIDADA: no se paga paquete por paquete. El botón de
                     pagar no se ofrece —la API lo rechazaría igual— y en su lugar

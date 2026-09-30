@@ -70,6 +70,8 @@ const columns = {
   clientId: clients.id,
   clientCode: clients.code,
   clientName: users.name,
+  // Bandera CRUDA del casillero; a que flows aplica lo resuelve `paymentGateWaived`.
+  clientPaymentGateExempt: clients.paymentGateExempt,
   routeNumber: effectiveRouteNumber,
   // Proforma en la que esta el tramite (objetivo 11 del SOW). LEFT JOIN: el que
   // todavia no entro a facturacion no esta en ninguna.

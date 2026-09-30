@@ -16,13 +16,18 @@ import { ShipmentField } from '../shipments/shipment';
 import {
   canEditField,
   editableFieldsAt,
+  hasOutstandingBalance,
   isCollectible,
   isPayable,
   nextStates,
   payableStateOf,
+  paymentGateWaived,
   statesOf,
   terminalStates,
+  unmetConditions,
+  waivedConditions,
 } from './machine';
+import { Condition } from './automation';
 
 /**
  * Campos exclusivos de cada familia de tramite (coherencia tipo <-> campo).
@@ -226,4 +231,48 @@ test('Invariante: ningun flow permite retroceder por la maquina de estados', () 
       }
     }
   }
+});
+
+/**
+ * Exencion de la retencion por pago (`clients.payment_gate_exempt`): el pago
+ * pendiente deja de BLOQUEAR la salida a ruta y pasa a ser una ADVERTENCIA, y
+ * solo en Paqueteria.
+ */
+test('Exencion de pago: solo aplica en Paqueteria y solo con la bandera', () => {
+  assert.equal(paymentGateWaived(Flow.Paqueteria, true), true);
+  assert.equal(paymentGateWaived(Flow.Paqueteria, false), false);
+  assert.equal(paymentGateWaived(Flow.Transporte, true), false);
+  assert.equal(paymentGateWaived(Flow.Agenciamiento, true), false);
+});
+
+test('Exencion de pago: el pago pendiente pasa de bloqueo a advertencia', () => {
+  const unpaid = { invoiceTotalCrc: 10_000, settled: false, paymentGateWaived: false };
+  const exempt = { ...unpaid, paymentGateWaived: true };
+  const paid = { ...exempt, settled: true };
+  const to = State.EnRutaEntrega;
+
+  assert.deepEqual(unmetConditions(Flow.Paqueteria, to, unpaid), [Condition.RequiresConfirmedPayment]);
+  assert.deepEqual(waivedConditions(Flow.Paqueteria, to, unpaid), []);
+
+  assert.deepEqual(unmetConditions(Flow.Paqueteria, to, exempt), []);
+  assert.deepEqual(waivedConditions(Flow.Paqueteria, to, exempt), [Condition.RequiresConfirmedPayment]);
+
+  // Pagado no hay nada que advertir.
+  assert.deepEqual(waivedConditions(Flow.Paqueteria, to, paid), []);
+});
+
+test('Saldo pendiente: se cobra en el estado de cobro y en los posteriores, no antes', () => {
+  const unpaid = { invoiceTotalCrc: 10_000, settled: false };
+  const at = (state: State) => hasOutstandingBalance(Flow.Paqueteria, { ...unpaid, state });
+
+  assert.equal(at(State.FacturacionEnProceso), false);
+  assert.equal(at(State.EnBodegaPendientePago), true);
+  // Salio a ruta sin pagar (casillero exento): el cobro sigue vivo.
+  assert.equal(at(State.EnRutaEntrega), true);
+  assert.equal(at(State.Entregado), true);
+  assert.equal(at(State.DevueltoBodega), true);
+
+  // Pagado o sin factura no hay nada que cobrar.
+  assert.equal(hasOutstandingBalance(Flow.Paqueteria, { state: State.EnRutaEntrega, invoiceTotalCrc: 10_000, settled: true }), false);
+  assert.equal(hasOutstandingBalance(Flow.Paqueteria, { state: State.EnRutaEntrega, invoiceTotalCrc: null, settled: false }), false);
 });

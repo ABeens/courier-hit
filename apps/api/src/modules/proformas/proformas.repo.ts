@@ -67,6 +67,8 @@ const headerColumns = {
   proforma: proformas,
   clientCode: clients.code,
   clientName: users.name,
+  /** Exencion de la retencion por pago del casillero (ver `paymentGateWaived`). */
+  clientPaymentGateExempt: clients.paymentGateExempt,
   shipmentCount: sql<number>`(select count(*)::int from ${proformaShipments} where ${proformaShipments.proformaId} = ${proformas.id})`,
   /**
    * Cuantos de sus tramites estan entregados y cuantos finalizados: con eso se

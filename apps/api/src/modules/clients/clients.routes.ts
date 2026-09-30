@@ -19,6 +19,7 @@ import {
   listClientsQuerySchema,
   listProviderLinksSchema,
   setClientApiAccessSchema,
+  setClientPaymentExemptSchema,
   setClientStatusSchema,
   updateClientSchema,
   updateProfileSchema,
@@ -176,5 +177,19 @@ clientsRoutes.patch(
   zValidator('json', setClientApiAccessSchema),
   async (c) => {
     return c.json(await clientsService.setApiAccess(c.req.param('id'), c.req.valid('json').enabled));
+  },
+);
+
+/**
+ * Exencion de la retencion por pago del casillero. Endpoint y permiso propios
+ * (`clients.payment_exempt`, solo Admin): es dar credito, no editar la ficha.
+ * Ver `clientsService.setPaymentExempt`.
+ */
+clientsRoutes.patch(
+  '/:id/payment-exempt',
+  requirePermission(Permission.ClientsPaymentExempt),
+  zValidator('json', setClientPaymentExemptSchema),
+  async (c) => {
+    return c.json(await clientsService.setPaymentExempt(c.req.param('id'), c.req.valid('json').enabled));
   },
 );

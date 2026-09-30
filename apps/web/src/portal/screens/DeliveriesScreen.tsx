@@ -39,6 +39,7 @@ import { API_BASE } from '../lib/api';
 import { usePagedList } from '../lib/usePagedList';
 import { DeliveryConfirmModal } from './DeliveryConfirmModal';
 import { ProformaDeliveryModal } from './ProformaDeliveryModal';
+import { ProformaLink } from '../components/ProformaLink';
 
 export interface DeliveryQueueRow {
   id: string;
@@ -236,7 +237,9 @@ export function DeliveriesScreen() {
               <div className="card-item-head">
                 <div className="card-item-ident">
                   <div className="card-item-code">
-                    {stop.proformaNumber != null ? `Proforma ${stop.proformaNumber}` : first.code}
+                    {stop.proformaId && stop.proformaNumber != null
+                      ? <>Proforma <ProformaLink id={stop.proformaId} number={stop.proformaNumber} /></>
+                      : first.code}
                   </div>
                   <div className="card-item-title">{first.clientName}</div>
                   <div className="card-item-sub">

@@ -79,6 +79,12 @@ export interface ProformaListItem {
    * Paqueteria los tiene; en los otros flujos es 0.
    */
   readyForRouteCount: number;
+  /**
+   * Si la proforma puede salir a ruta SIN estar pagada: su casillero tiene la
+   * exencion de la retencion por pago y el flow la admite (`paymentGateWaived`).
+   * La pantalla ofrece "Enviar a ruta" sobre una aprobada con un aviso explicito.
+   */
+  paymentGateWaived: boolean;
   createdAt: string;
   approvedAt: string | null;
   paidAt: string | null;
@@ -151,7 +157,10 @@ export interface ApproveProformasResult {
   failed: { id: string; code: string; message: string }[];
 }
 
-/** Enviar a ruta varias proformas pagadas de una vez (misma forma que aprobar). */
+/**
+ * Enviar a ruta varias proformas de una vez (misma forma que aprobar). Pagadas,
+ * o aprobadas de un casillero exento de la retencion por pago.
+ */
 export const dispatchProformasSchema = z.object({
   ids: z
     .array(z.string().uuid())
@@ -166,8 +175,12 @@ export type DispatchProformasInput = z.infer<typeof dispatchProformasSchema>;
  * pantalla dice cual quedo y por que.
  */
 export interface DispatchProformasResult {
-  /** Paquetes que salieron a ruta, por proforma. */
-  dispatched: { id: string; number: string | null; shipmentCodes: string[] }[];
+  /**
+   * Paquetes que salieron a ruta, por proforma. `unpaid` marca la que salio SIN
+   * estar pagada (casillero exento): la pantalla lo advierte aparte, para que
+   * nadie lo lea como un envio normal.
+   */
+  dispatched: { id: string; number: string | null; shipmentCodes: string[]; unpaid: boolean }[];
   /** Lo que no salio: la proforma entera (`shipmentCode` null) o un paquete suyo. */
   failed: { id: string; number: string | null; shipmentCode: string | null; message: string }[];
 }

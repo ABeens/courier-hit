@@ -33,6 +33,7 @@ import {
   chargeBasisFor,
   isSettled,
   paged,
+  paymentGateWaived,
   pendingAmount,
   roundMoney,
   settledAmount,
@@ -358,6 +359,8 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
      */
     settledUsd: settledAmount(row.settlement, Currency.USD),
     pendingUsd: pendingAmount(row.settlement, Currency.USD),
+    // Resuelta contra el flow: la bandera del casillero sola no dice si aplica.
+    paymentGateWaived: paymentGateWaived(flowForType(row.shipmentType), row.clientPaymentGateExempt === true),
     discardedAt: row.discardedAt?.toISOString() ?? null,
     discardReason: row.discardReason,
     createdAt: row.createdAt.toISOString(),

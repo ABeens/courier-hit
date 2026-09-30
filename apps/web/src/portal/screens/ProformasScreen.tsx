@@ -54,13 +54,45 @@ export function proformaTotal(item: Pick<ProformaListItem, 'currency' | 'totals'
   return formatMoney(item.currency === Currency.USD ? item.totals.usd : item.totals.crc, item.currency);
 }
 
-/** Pagada, de Paqueteria y con paquetes en bodega: la puede sacar a ruta quien tiene el permiso de entregas. */
-export function isDispatchable(item: Pick<ProformaListItem, 'flow' | 'status' | 'readyForRouteCount'>): boolean {
-  return item.flow === Flow.Paqueteria && item.status === ProformaStatus.Pagada && item.readyForRouteCount > 0;
+type DispatchFields = Pick<ProformaListItem, 'flow' | 'status' | 'readyForRouteCount' | 'paymentGateWaived'>;
+
+/**
+ * Aprobada SIN pagar de un casillero exento de la retencion por pago: sale a
+ * ruta igual, pero la pantalla lo tiene que advertir cada vez que lo ofrece.
+ */
+export function dispatchesUnpaid(item: DispatchFields): boolean {
+  return item.status === ProformaStatus.Aprobada && item.paymentGateWaived;
 }
 
-/** Texto del resultado de enviar a ruta: lo que salio y, aparte, lo que no y por que. */
-export function dispatchSummary(result: DispatchProformasResult): { ok: string | null; failed: string | null } {
+/**
+ * De Paqueteria y con paquetes en bodega, y ademas pagada (o aprobada sin pagar
+ * si el casillero esta exento): la puede sacar a ruta quien tiene el permiso de
+ * entregas. La misma regla que aplica `proformasService.dispatchMany`.
+ */
+export function isDispatchable(item: DispatchFields): boolean {
+  return (
+    item.flow === Flow.Paqueteria &&
+    item.readyForRouteCount > 0 &&
+    (item.status === ProformaStatus.Pagada || dispatchesUnpaid(item))
+  );
+}
+
+/**
+ * Texto del resultado de enviar a ruta: lo que salio, lo que salio SIN pagar
+ * (aparte, como advertencia: no es un envio normal) y lo que no salio y por que.
+ */
+export function dispatchSummary(result: DispatchProformasResult): {
+  ok: string | null;
+  unpaid: string | null;
+  failed: string | null;
+} {
+  const unpaidOnes = result.dispatched.filter((d) => d.unpaid);
+  const unpaid =
+    unpaidOnes.length === 0
+      ? null
+      : `Salieron a ruta SIN el pago confirmado (cliente exento de la retención por pago): ${unpaidOnes
+          .map((d) => `proforma ${d.number}`)
+          .join(', ')}. El cobro sigue pendiente.`;
   const moved = result.dispatched.reduce((n, d) => n + d.shipmentCodes.length, 0);
   const ok =
     result.dispatched.length === 0
@@ -74,7 +106,7 @@ export function dispatchSummary(result: DispatchProformasResult): { ok: string |
       : result.failed
           .map((f) => `${f.shipmentCode ? `${f.shipmentCode} (proforma ${f.number})` : `Proforma ${f.number ?? ''}`}: ${f.message}`)
           .join(' ');
-  return { ok, failed };
+  return { ok, unpaid, failed };
 }
 
 /** Abre el documento de la proforma (vista previa si es borrador) en otra pestaña. */
@@ -108,6 +140,7 @@ export function ProformasScreen({
   const [selected, setSelected] = useState<Map<string, ProformaListItem>>(new Map());
   const [opened, setOpened] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const list = usePagedList<ProformaListItem>(
@@ -119,7 +152,8 @@ export function ProformasScreen({
 
   /**
    * Se marcan las que admiten una accion en bloque: los borradores (aprobar) y
-   * las pagadas con paquetes en bodega (enviar a ruta), segun los permisos.
+   * las pagadas con paquetes en bodega (enviar a ruta), segun los permisos. Las
+   * aprobadas de un casillero exento tambien salen a ruta, con aviso.
    */
   const isSelectable = (i: ProformaListItem) =>
     (canManage && i.status === ProformaStatus.Borrador) || (canDispatch && isDispatchable(i));
@@ -181,13 +215,21 @@ export function ProformasScreen({
     const ids = selectedDispatch.map((i) => i.id);
     if (ids.length === 0) return;
     const count = selectedDispatch.reduce((n, i) => n + i.readyForRouteCount, 0);
-    if (!window.confirm(`Se enviarán a ruta de entrega ${count} paquetes de ${ids.length} proformas. ¿Continuar?`)) return;
+    const unpaid = selectedDispatch.filter(dispatchesUnpaid).length;
+    const unpaidWarning =
+      unpaid === 0
+        ? ''
+        : `\n\nATENCIÓN: ${unpaid} ${unpaid === 1 ? 'proforma no está pagada' : 'proformas no están pagadas'}. ` +
+          'Salen igual porque el cliente está exento de la retención por pago; el cobro queda pendiente.';
+    if (!window.confirm(`Se enviarán a ruta de entrega ${count} paquetes de ${ids.length} proformas.${unpaidWarning}\n\n¿Continuar?`)) return;
     setBusy(true);
     setError(null);
     setNotice(null);
+    setWarning(null);
     try {
       const summary = dispatchSummary(await api.post<DispatchProformasResult>('/proformas/dispatch', { ids }));
       if (summary.ok) setNotice(summary.ok);
+      if (summary.unpaid) setWarning(summary.unpaid);
       if (summary.failed) setError(`No salieron: ${summary.failed}`);
       setSelected(new Map());
       list.reload();
@@ -270,6 +312,7 @@ export function ProformasScreen({
 
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
       {notice && <div className="banner ok" style={{ marginBottom: 14 }}>{notice}</div>}
+      {warning && <div className="banner warn" style={{ marginBottom: 14 }}>{warning}</div>}
 
       <FilterBar
         search={{ value: q, onChange: setQ, placeholder: 'Buscar por número de proforma, casillero o cliente…' }}
@@ -366,6 +409,11 @@ export function ProformasScreen({
                     {isDispatchable(row) && (
                       <div className="cell-sub">
                         {row.readyForRouteCount} en bodega para salir a ruta
+                      </div>
+                    )}
+                    {isDispatchable(row) && dispatchesUnpaid(row) && (
+                      <div className="cell-sub" style={{ color: 'var(--warn)', fontWeight: 600 }}>
+                        Sin pagar: sale a ruta por exención del cliente
                       </div>
                     )}
                   </td>

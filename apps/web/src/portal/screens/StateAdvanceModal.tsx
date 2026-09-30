@@ -26,6 +26,7 @@ import {
   nextStates,
   permissionFor,
   unmetConditions,
+  waivedConditions,
 } from '@courier/shared';
 import type { Role, ShipmentDto, State } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
@@ -84,6 +85,13 @@ export function StateAdvanceModal({ row, role, onClose, onSaved }: Props) {
    */
   const conditions = target ? conditionsFor(row.flow, target) : [];
   const unmet = target ? unmetConditions(row.flow, target, row) : [];
+  /**
+   * Las que NO se cumplen pero se perdonan (hoy, el pago de un casillero exento
+   * de la retencion por pago). No bloquean: el avance se puede enviar, pero con
+   * la advertencia a la vista y el boton diciendo lo que hace.
+   */
+  const waived = target ? waivedConditions(row.flow, target, row) : [];
+  const unpaidWaived = waived.includes(Condition.RequiresConfirmedPayment);
   const needsNote = conditions.includes(Condition.RequiresComment);
   const blocked = unmet.length > 0;
 
@@ -177,9 +185,21 @@ export function StateAdvanceModal({ row, role, onClose, onSaved }: Props) {
                   <li key={c}>
                     {CONDITION_LABELS[c]}
                     {unmet.includes(c) && <strong> (falta)</strong>}
+                    {waived.includes(c) && <strong> (falta, se permite por exención)</strong>}
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {/* La exencion no esconde el pendiente: lo dice aparte y en amarillo,
+              para que salir sin cobrar sea una decision a la vista y no un
+              descuido. El historial del tramite lo deja escrito igual. */}
+          {unpaidWaived && !blocked && (
+            <div className="banner warn">
+              Este trámite NO está pagado. El cliente está exento de la retención por pago, así que
+              puede avanzar a «{STATE_LABELS[target as State]}» igual, pero el cobro queda pendiente
+              y el historial registra que salió sin pago confirmado.
             </div>
           )}
 
@@ -205,7 +225,7 @@ export function StateAdvanceModal({ row, role, onClose, onSaved }: Props) {
             type="submit" className="btn btn-primary"
             disabled={busy || targets.length === 0 || blocked}
           >
-            {busy ? 'Avanzando…' : 'Avanzar'}
+            {busy ? 'Avanzando…' : unpaidWaived ? 'Avanzar sin pago' : 'Avanzar'}
           </button>
         </div>
       </form>

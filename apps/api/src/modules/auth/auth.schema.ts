@@ -109,6 +109,15 @@ export const clients = pgTable(
      * no tiene API ninguna.
      */
     apiAccessEnabled: boolean('api_access_enabled').notNull().default(false),
+    /**
+     * Exencion de la RETENCION POR PAGO. Nace APAGADA: por regla, un paquete no
+     * sale a ruta sin el pago confirmado (Condition.RequiresConfirmedPayment).
+     * Un administrador la enciende (`clients.payment_exempt`) a los casilleros a
+     * los que se les da credito: sus paquetes salen igual, con el aviso de que
+     * no estan pagados. A que flows aplica lo decide `paymentGateWaived` (hoy
+     * solo Paqueteria), no esta columna.
+     */
+    paymentGateExempt: boolean('payment_gate_exempt').notNull().default(false),
     /** Todo casillero nace 'nuevo' para que un admin lo revise despues. */
     reviewStatus: clientReviewStatusEnum('review_status')
       .notNull()

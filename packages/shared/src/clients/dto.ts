@@ -75,6 +75,20 @@ export const setClientApiAccessSchema = z.object({
 export type SetClientApiAccessInput = z.infer<typeof setClientApiAccessSchema>;
 
 /**
+ * EXENCION DE LA RETENCION POR PAGO de un casillero (permiso
+ * `clients.payment_exempt`). Con ella encendida sus paquetes salen a ruta sin el
+ * pago confirmado; el aviso se sigue mostrando, pero no bloquea. A que flows
+ * aplica lo decide `paymentGateWaived`, no el casillero.
+ *
+ * Cuerpo y endpoint propios por lo mismo que la API: otro permiso, y no puede dar
+ * el casillero por revisado. Booleano explicito para que sea idempotente.
+ */
+export const setClientPaymentExemptSchema = z.object({
+  enabled: z.boolean(),
+});
+export type SetClientPaymentExemptInput = z.infer<typeof setClientPaymentExemptSchema>;
+
+/**
  * Limite de credito del casillero (Parte 3 L48: "ingresarles un límite de
  * crédito"). Es un TECHO de politica comercial, no un monto transaccional: por
  * eso lleva moneda explicita (regla M2) pero no tasa de cambio (no hay un
