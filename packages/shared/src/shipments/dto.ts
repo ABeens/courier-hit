@@ -15,6 +15,7 @@
  */
 import { z } from 'zod';
 import { paginationQuerySchema } from '../http/pagination';
+import { ProformaStatus } from '../proformas/proforma';
 import { ShipmentType } from '../workflow/shipment-type';
 import { State } from '../workflow/states';
 import { CARRIERS, STORES } from './catalogs';
@@ -628,6 +629,12 @@ export const listShipmentsQuerySchema = z.object({
     .enum(['true', 'false'])
     .optional()
     .transform((v) => v === 'true'),
+  /**
+   * Solo los tramites que estan en una proforma con ese estado: `aprobada` (por
+   * pagar) o `pagada`. Es el filtro del portal del cliente en sus paquetes y
+   * tramites. El borrador no se acepta: es trabajo interno y el cliente no lo ve.
+   */
+  proformaStatus: z.enum([ProformaStatus.Aprobada, ProformaStatus.Pagada]).optional(),
   /** Inicio del rango por fecha de ingreso, inclusive. */
   from: instantSchema.optional(),
   /** Fin del rango por fecha de ingreso, exclusivo (la web manda el inicio del dia siguiente). */

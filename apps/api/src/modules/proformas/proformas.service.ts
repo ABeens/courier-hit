@@ -262,15 +262,6 @@ export const proformasService = {
   },
 
   /**
-   * Las proformas del propio cliente: solo las aprobadas y pagadas. El dueño lo
-   * pone la sesion y no el query, asi que un `clientId` ajeno no abre nada.
-   */
-  async listOwn(clientId: string, query: ListProformasQuery): Promise<Page<ProformaListItem>> {
-    const { rows, total } = await proformasRepo.list({ ...query, clientId }, true);
-    return { items: await toListItems(rows), total, page: query.page, pageSize: query.pageSize };
-  },
-
-  /**
    * REPORTE del listado: el filtro entero de la bandeja en CSV, una fila por
    * proforma. Tope `EXPORT_LIMIT`; si recorta, lo dice en la ultima fila.
    */

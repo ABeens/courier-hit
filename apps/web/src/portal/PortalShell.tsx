@@ -17,7 +17,6 @@ import { UsersScreen } from './screens/UsersScreen';
 import { CostServicesScreen } from './screens/CostServicesScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { ProformasScreen } from './screens/ProformasScreen';
-import { ClientProformasScreen } from './screens/ClientProformasScreen';
 import { TariffsScreen } from './screens/TariffsScreen';
 import { RoutesScreen } from './screens/RoutesScreen';
 import { ShipmentsScreen } from './screens/ShipmentsScreen';
@@ -73,8 +72,6 @@ const CLIENT_NAV: NavEntry[] = [
   { resource: Resource.Locker, label: 'Mi casillero' },
   { resource: Resource.Package, label: 'Mis paquetes' },
   { resource: Resource.Tramite, label: 'Otros trámites' },
-  // Solo las emitidas (aprobadas y pagadas): lo que el cliente paga o ya pago.
-  { resource: Resource.Proformas, label: 'Mis proformas' },
   { resource: Resource.Profile, label: 'Mi perfil' },
   // Ultima: es la unica entrada que no sirve para la operacion diaria del
   // casillero sino para conectar un sistema, y a eso se entra una vez. Se llama
@@ -446,8 +443,6 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
             <TariffsScreen />
           ) : current === Resource.CostServices ? (
             <CostServicesScreen />
-          ) : current === Resource.Proformas && isClient ? (
-            <ClientProformasScreen />
           ) : current === Resource.Proformas || current === Resource.Costs ? (
             // `costos` era la cola por tramite: un enlace viejo a esa pantalla cae
             // en la bandeja de proformas, que es donde ahora se factura.

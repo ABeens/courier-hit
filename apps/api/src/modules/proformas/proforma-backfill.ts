@@ -16,6 +16,9 @@
  *      borrador como si acabara de llegar (`proformaDraftsService.onEnterBilling`).
  *
  * Es idempotente: solo toca tramites que no estan en ninguna proforma.
+ *
+ * Con `dryRun` solo cuenta lo que haria y no escribe nada: es lo que se corre
+ * primero contra produccion para ver el alcance antes de aplicarlo.
  */
 import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
@@ -39,7 +42,9 @@ import { proformaShipments, proformas } from './proformas.schema';
 /** Tramites que todavia no estan en ninguna proforma. */
 const notInProforma = sql`not exists (select 1 from proforma_shipments ps where ps.shipment_id = ${shipments.id})`;
 
-export async function backfillProformas(): Promise<{ approved: number; drafts: number }> {
+export async function backfillProformas(
+  options: { dryRun?: boolean } = {},
+): Promise<{ approved: number; drafts: number }> {
   const [admin] = await db
     .select({ id: users.id })
     .from(users)
@@ -80,6 +85,10 @@ export async function backfillProformas(): Promise<{ approved: number; drafts: n
     // Tasa del documento: el cociente de la propia factura (M5); sin el, no se inventa.
     const rate = exchangeRateSchema.safeParse(usd > 0 && crc > 0 ? crc / usd : null);
     if (!rate.success) continue;
+    if (options.dryRun) {
+      approved++;
+      continue;
+    }
 
     const id = await db.transaction(async (tx) => {
       const [number] = await proformasRepo.takeNumbers(tx, 1);
@@ -130,7 +139,7 @@ export async function backfillProformas(): Promise<{ approved: number; drafts: n
     )
     .orderBy(asc(shipments.createdAt));
 
-  for (const s of pending) await proformaDraftsService.onEnterBilling(session, s);
+  if (!options.dryRun) for (const s of pending) await proformaDraftsService.onEnterBilling(session, s);
 
   return { approved, drafts: pending.length };
 }

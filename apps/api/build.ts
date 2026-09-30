@@ -41,15 +41,16 @@ const banner = {
 
 await build({
   /**
-   * Cuatro entry points, no uno: la imagen tiene que poder hacer cuatro cosas con
+   * Cinco entry points, no uno: la imagen tiene que poder hacer cinco cosas con
    * el mismo codigo. `main` es el servidor, `migrate` es el paso de migraciones
    * del despliegue, `seed` siembra el primer administrador (que no puede
    * autoregistrarse ni recibir invitacion, ver `src/seed.ts`) y `clean-shipments`
    * vacia los tramites, que en la nube solo se puede hacer desde dentro de la VPC
-   * (la base no es alcanzable desde fuera). Los otros seeds son de desarrollo y
-   * no entran.
+   * (la base no es alcanzable desde fuera). `backfill-proformas` pone en
+   * proformas los tramites facturados antes del modulo, por la misma razon. Los
+   * otros seeds son de desarrollo y no entran.
    */
-  entryPoints: ['src/main.ts', 'src/migrate.ts', 'src/seed.ts', 'src/clean-shipments.ts'],
+  entryPoints: ['src/main.ts', 'src/migrate.ts', 'src/seed.ts', 'src/clean-shipments.ts', 'src/backfill-proformas.ts'],
   outdir: 'dist',
   bundle: true,
   platform: 'node',

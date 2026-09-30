@@ -66,6 +66,8 @@ interface Props extends PayState {
    * preguntas de contabilidad y tienen una sola respuesta.
    */
   amounts?: BillingAmounts;
+  /** Vista del cliente: el saldo se pinta en rojo suave, como deuda por pagar. */
+  debt?: boolean;
 }
 
 /**
@@ -90,7 +92,7 @@ function crcAmounts(row: PayState): BillingAmounts {
   return billingAmounts(row, Currency.CRC, row.settled);
 }
 
-export function PayFlag({ amounts, ...row }: Props) {
+export function PayFlag({ amounts, debt, ...row }: Props) {
   const { invoiceTotalCrc, settled } = row;
   if (invoiceTotalCrc == null) return null;
 
@@ -118,7 +120,7 @@ export function PayFlag({ amounts, ...row }: Props) {
   const abonado = `Abonado ${formatMoney(paid, currency)} de ${formatMoney(invoiceTotal ?? 0, currency)}.`;
   return (
     <span
-      className="pay-flag is-due"
+      className={debt ? 'pay-flag is-due is-debt' : 'pay-flag is-due'}
       title={
         pending > 0 ? `${abonado} En validación: ${formatMoney(pending, currency)}.` : abonado
       }

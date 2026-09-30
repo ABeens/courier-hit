@@ -25,6 +25,7 @@ import {
   Flow,
   MANUAL_SHIPMENT_TYPES,
   Permission,
+  ProformaStatus,
   SHIPMENT_TYPE_LABELS,
   STATE_LABELS,
   ShipmentType,
@@ -163,7 +164,7 @@ function guideFields(row: ShipmentDto): CardField[] {
  * el bloque habla en una sola moneda: enseñarle las dos le da dos cifras para la
  * misma deuda y la pregunta de con cuál se le va a cobrar.
  */
-function moneySection(row: ShipmentDto, amounts: BillingAmounts): CardSection | null {
+function moneySection(row: ShipmentDto, amounts: BillingAmounts, isOwn: boolean): CardSection | null {
   if (row.invoiceTotalUsd == null || row.invoiceTotalCrc == null) return null;
   const { currency } = amounts;
   return {
@@ -184,7 +185,7 @@ function moneySection(row: ShipmentDto, amounts: BillingAmounts): CardSection | 
        * respuesta de un vistazo; estas dos líneas, la cifra exacta.
        */
       { label: 'Abonado', value: formatMoney(amounts.paid, currency) },
-      { label: 'Saldo', value: formatMoney(amounts.due, currency), due: amounts.due > 0 },
+      { label: 'Saldo', value: formatMoney(amounts.due, currency), due: isOwn && amounts.due > 0 },
     ],
   };
 }
@@ -199,7 +200,7 @@ function moneySection(row: ShipmentDto, amounts: BillingAmounts): CardSection | 
  * columnas que la mitad de las filas no tiene.
  */
 function sectionsFor(row: ShipmentDto, view: ShipmentView, amounts: BillingAmounts): CardSection[] {
-  const money = moneySection(row, amounts);
+  const money = moneySection(row, amounts, view === 'propios' || view === 'propios-tramites');
   const entrega: CardField = {
     label: 'Ruta',
     value: row.routeNumber != null ? `Ruta ${row.routeNumber}` : null,
@@ -254,6 +255,13 @@ interface Props {
   initialPendingDeposit?: boolean;
 }
 
+/** Opciones del filtro por proforma del cliente. */
+type ProformaFilter = ProformaStatus.Aprobada | ProformaStatus.Pagada;
+const PROFORMA_FILTER_LABELS: Record<ProformaFilter, string> = {
+  [ProformaStatus.Aprobada]: 'Aprobada (por pagar)',
+  [ProformaStatus.Pagada]: 'Pagada',
+};
+
 export function ShipmentsScreen({
   role,
   initialView,
@@ -265,8 +273,11 @@ export function ShipmentsScreen({
   const [q, setQ] = useState(initialQuery ?? '');
   const [state, setState] = useState<string>(initialState ?? '');
   const [pendingDeposit, setPendingDeposit] = useState(initialPendingDeposit ?? false);
-  /** Solo los pendientes de pago (en una proforma aprobada, aun sin cubrir). */
-  const [pendingPayment, setPendingPayment] = useState(false);
+  /**
+   * Estado de la proforma en la que estan (portal del cliente): aprobada es lo
+   * que tiene por pagar, pagada lo ya cubierto. Vacio no filtra.
+   */
+  const [proformaStatus, setProformaStatus] = useState<ProformaFilter | ''>('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
@@ -367,7 +378,7 @@ export function ShipmentsScreen({
       state: state || undefined,
       shipmentType: TYPES_BY_VIEW[view].join(',') || undefined,
       pendingDeposit: pendingDeposit ? 'true' : undefined,
-      pendingPayment: pendingPayment ? 'true' : undefined,
+      proformaStatus: proformaStatus || undefined,
       // El usuario elige dias en su hora local; el rango viaja como instantes UTC.
       from: from ? startOfLocalDayUtc(from) : undefined,
       to: to ? startOfNextLocalDayUtc(to) : undefined,
@@ -383,8 +394,8 @@ export function ShipmentsScreen({
    */
   const chips: FilterChip[] = [
     ...(state ? [{ label: `Estado: ${STATE_LABELS[state as State]}`, onClear: () => setState('') }] : []),
-    ...(pendingPayment
-      ? [{ label: 'Pago: pendientes de pago', onClear: () => setPendingPayment(false) }]
+    ...(proformaStatus
+      ? [{ label: `Proforma: ${PROFORMA_FILTER_LABELS[proformaStatus]}`, onClear: () => setProformaStatus('') }]
       : []),
     ...(pendingDeposit
       ? [{ label: 'Pago: depósito por validar', onClear: () => setPendingDeposit(false) }]
@@ -397,7 +408,7 @@ export function ShipmentsScreen({
   function clearFilters() {
     setState('');
     setPendingDeposit(false);
-    setPendingPayment(false);
+    setProformaStatus('');
     setFrom('');
     setTo('');
   }
@@ -507,26 +518,38 @@ export function ShipmentsScreen({
           </select>
         </div>
 
-        {/* Pago. "Pendientes de pago" lo ve todo el mundo: al cliente le dice
-            qué le falta pagar, al staff qué falta cobrar. La cola de tesorería
-            (comprobante subido que nadie ha validado) es solo para staff: el
-            titular no valida nada, y desde el Resumen se llega aquí con el
-            filtro ya puesto. Los dos son excluyentes en el selector. */}
-        <div>
-          <label className="field-label" htmlFor="f-pay">Pago</label>
-          <select
-            id="f-pay" className="input"
-            value={pendingPayment ? 'due' : pendingDeposit ? 'pending' : ''}
-            onChange={(e) => {
-              setPendingPayment(e.target.value === 'due');
-              setPendingDeposit(e.target.value === 'pending');
-            }}
-          >
-            <option value="">Todos</option>
-            <option value="due">Pendientes de pago</option>
-            {canCollect && !isOwn && <option value="pending">Con depósito por validar</option>}
-          </select>
-        </div>
+        {/* Cola de tesorería: los trámites con un comprobante subido que nadie
+            ha validado. Solo para staff: el titular no valida nada, y desde el
+            Resumen se llega aquí con el filtro ya puesto. */}
+        {canCollect && !isOwn && (
+          <div>
+            <label className="field-label" htmlFor="f-pay">Pago</label>
+            <select
+              id="f-pay" className="input" value={pendingDeposit ? 'pending' : ''}
+              onChange={(e) => setPendingDeposit(e.target.value === 'pending')}
+            >
+              <option value="">Todos</option>
+              <option value="pending">Con depósito por validar</option>
+            </select>
+          </div>
+        )}
+
+        {/* Por proforma: lo que el cliente tiene por pagar (aprobada) y lo que
+            ya pagó. Solo en sus tableros: el staff sigue con la cola de
+            tesorería de arriba. El borrador no se ofrece: el cliente no lo ve. */}
+        {isOwn && (
+          <div>
+            <label className="field-label" htmlFor="f-proforma">Proforma</label>
+            <select
+              id="f-proforma" className="input" value={proformaStatus}
+              onChange={(e) => setProformaStatus(e.target.value as ProformaFilter | '')}
+            >
+              <option value="">Todas</option>
+              <option value={ProformaStatus.Aprobada}>{PROFORMA_FILTER_LABELS[ProformaStatus.Aprobada]}</option>
+              <option value={ProformaStatus.Pagada}>{PROFORMA_FILTER_LABELS[ProformaStatus.Pagada]}</option>
+            </select>
+          </div>
+        )}
 
         {/* El rango va en una fila: son los dos extremos de UN filtro, y
             separados en dos bloques sueltos se leen como dos fechas sin relación. */}
@@ -648,6 +671,7 @@ export function ShipmentsScreen({
                   pendingUsd={row.pendingUsd}
                   pendingCrc={row.pendingCrc}
                   amounts={amounts}
+                  debt={isOwn}
                 />
                 {/*
                   Al cliente NO se le muestra "En bodega preparando". Es la

@@ -377,7 +377,7 @@ export function ProformaPaymentModal({ onClose, onPaid, onProcessing }: Props) {
                 </div>
                 <div className="card-item-field">
                   <dt>Saldo</dt>
-                  <dd className="pay-due">{formatMoney(due, chargeCurrency)}</dd>
+                  <dd className="pay-due is-debt">{formatMoney(due, chargeCurrency)}</dd>
                 </div>
               </dl>
               {quote.inValidation && (

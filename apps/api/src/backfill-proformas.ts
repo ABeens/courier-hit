@@ -6,13 +6,22 @@
  *
  * Idempotente: solo toca tramites que no estan en ninguna proforma.
  *
+ * Con BACKFILL_DRY_RUN=1 solo cuenta y no escribe nada. En la nube corre dentro
+ * de la instancia, con la imagen de la API: scripts/backfill-proformas.ps1.
+ *
  * Uso: pnpm --filter @courier/api db:backfill-proformas
  */
 import { backfillProformas } from './modules/proformas/proforma-backfill';
 
-backfillProformas()
+const dryRun = process.env.BACKFILL_DRY_RUN === '1';
+
+backfillProformas({ dryRun })
   .then((r) => {
-    console.log(`[proformas] ${r.approved} proformas aprobadas y ${r.drafts} trámites puestos en borrador.`);
+    if (dryRun) {
+      console.log(`[proformas] SIMULACION: se aprobarían ${r.approved} proformas y ${r.drafts} trámites irían a borrador. No se escribió nada.`);
+    } else {
+      console.log(`[proformas] ${r.approved} proformas aprobadas y ${r.drafts} trámites puestos en borrador.`);
+    }
     process.exit(0);
   })
   .catch((err) => {

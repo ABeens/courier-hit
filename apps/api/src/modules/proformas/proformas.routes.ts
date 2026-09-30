@@ -13,7 +13,7 @@ import type { MiddlewareHandler } from 'hono';
 import {
   Permission,
   ProformaStatus,
-  can,
+  Role,
   approveProformasSchema,
   proformaFilterSchema,
   dispatchProformasSchema,
@@ -25,7 +25,7 @@ import {
   setProformaCounterSchema,
   updateProformaSchema,
 } from '@courier/shared';
-import { AuthErrors, ProformaErrors } from '../../core/errors';
+import { ProformaErrors } from '../../core/errors';
 import type { AppEnv } from '../../core/http';
 import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
@@ -49,7 +49,7 @@ const manage = requirePermission(Permission.ProformasManage);
  */
 const readOwnOrStaff: MiddlewareHandler<AppEnv> = async (c, next) => {
   const session = c.get('session');
-  if (!can(session.role, Permission.ProformasReadOwn)) return read(c, next);
+  if (session.role !== Role.Client) return read(c, next);
   const proforma = await proformasRepo.findById(c.req.param('id') ?? '');
   if (!proforma || proforma.clientId !== session.clientId || proforma.status === ProformaStatus.Borrador) {
     throw ProformaErrors.notFound();
@@ -71,21 +71,6 @@ proformasRoutes.put(
 );
 
 // --- Bandeja ----------------------------------------------------------------
-
-/**
- * "Mis proformas" del cliente: sus aprobadas y pagadas. Va antes de `/:id` por
- * la misma razon que `/counter`.
- */
-proformasRoutes.get(
-  '/mine',
-  requirePermission(Permission.ProformasReadOwn),
-  zValidator('query', listProformasQuerySchema),
-  async (c) => {
-    const { clientId } = c.get('session');
-    if (!clientId) throw AuthErrors.forbidden();
-    return c.json(await proformasService.listOwn(clientId, c.req.valid('query')));
-  },
-);
 
 proformasRoutes.get('/', read, zValidator('query', listProformasQuerySchema), async (c) => {
   return c.json(await proformasService.list(c.req.valid('query')));

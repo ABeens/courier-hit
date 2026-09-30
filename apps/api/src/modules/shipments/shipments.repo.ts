@@ -170,6 +170,13 @@ function buildConditions(
     );
   }
 
+  /** En una proforma con ese estado (aprobada o pagada). Mismo EXISTS que el anterior. */
+  if (query.proformaStatus) {
+    conds.push(
+      sql`exists (select 1 from ${proformaShipments} inner join ${proformas} on ${proformas.id} = ${proformaShipments.proformaId} where ${proformaShipments.shipmentId} = ${shipments.id} and ${proformas.status} = ${query.proformaStatus})`,
+    );
+  }
+
   // Rango por fecha de ingreso: inicio inclusive, fin exclusivo (la web manda el
   // arranque del dia siguiente), asi el ultimo dia del rango entra completo.
   if (query.from) conds.push(gte(shipments.createdAt, new Date(query.from)));

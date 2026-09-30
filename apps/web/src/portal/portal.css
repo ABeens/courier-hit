@@ -733,9 +733,13 @@ select.input { cursor: pointer; padding-right: 30px; }
 .pay-fields > .card-item-field { flex: 0 1 auto; }
 /* El saldo es la cifra que se va a cobrar: manda sobre factura y abonado. */
 .pay-fields .card-item-field dd.pay-due {
-  font-size: 19px; font-weight: 800; color: var(--danger); line-height: 1.15;
+  font-size: 19px; font-weight: 800; color: var(--brand-700); line-height: 1.15;
+}
+/* Al cliente el saldo se le pinta en rojo suave: es deuda que le toca pagar.
+   Solo en sus pantallas; el staff sigue viendo la cifra en el color de marca. */
+.pay-fields .card-item-field dd.pay-due.is-debt {
+  color: var(--danger); background: var(--danger-soft);
   display: inline-block; padding: 2px 9px; border-radius: var(--r-sm);
-  background: var(--danger-soft);
 }
 /* Historial de abonos: uno por linea, y cada linea separada de la siguiente por
    un filete. Enfilados sin divisor se leen como campos de un mismo pago cuando
@@ -1170,10 +1174,11 @@ select.input { cursor: pointer; padding-right: 30px; }
   padding: 3px 9px; border-radius: var(--r-pill); white-space: nowrap;
   background: var(--ok-soft); color: var(--ok);
 }
-/* Con saldo: rojo suave. Es deuda por pagar y debe verse de un vistazo, sin
-   llegar al rojo pleno de un error. */
-.pay-flag.is-due { background: var(--danger-soft); color: var(--danger); }
-/* En validacion: el cliente ya pago y espera. No es rojo (no le falta hacer
+.pay-flag.is-due { background: var(--warn-soft); color: var(--warn); }
+/* En la vista del cliente el saldo va en rojo suave: es deuda que le toca pagar
+   y debe verse de un vistazo, sin llegar al rojo pleno de un error. */
+.pay-flag.is-due.is-debt { background: var(--danger-soft); color: var(--danger); }
+/* En validacion: el cliente ya pago y espera. No es ambar (no le falta hacer
    nada) ni verde (todavia no es dinero recibido); es el azul de "en curso". */
 .pay-flag.is-review { background: var(--info-soft); color: var(--info); }
 
@@ -1206,7 +1211,8 @@ select.input { cursor: pointer; padding-right: 30px; }
    distingue solo con color (fondo blanco como el resto), no con un recuadro. */
 .card-sec.is-money .card-sec-title { color: var(--brand); }
 .card-sec.is-money .card-item-field dd { font-weight: 700; color: var(--brand-700); }
-/* Saldo pendiente: pastilla en rojo suave para que se lea como deuda por pagar. */
+/* Saldo pendiente en la vista del cliente: pastilla en rojo suave para que se
+   lea como deuda por pagar. */
 .card-sec.is-money .card-item-field dd.is-due {
   display: inline-block; padding: 1px 7px; border-radius: var(--r-sm);
   background: var(--danger-soft); color: var(--danger); font-weight: 800;
