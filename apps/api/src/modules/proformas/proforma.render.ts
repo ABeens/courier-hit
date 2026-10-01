@@ -29,6 +29,9 @@ import { BRAND_LOGO_DATA_URI } from '../../core/brand-logo';
 /** Zona del negocio: todos los clientes son de Costa Rica (CLAUDE.md). */
 const TIME_ZONE = 'America/Costa_Rica';
 
+/** Cuenta SINPE Móvil donde el cliente paga la proforma. */
+export const SINPE_MOVIL = { holder: 'Jennifer Sanchez', phone: '7019-6535' } as const;
+
 /** Un concepto cobrado, ya en la moneda del documento. */
 export interface DocumentLine {
   label: string;
@@ -43,6 +46,7 @@ export interface DocumentItem {
   awb: string;
   tracking: string;
   description: string;
+  /** Peso FACTURABLE (el que multiplica al flete), no el de bascula. */
   weightKg: number | null;
   freight: number;
   others: number;
@@ -90,7 +94,7 @@ function esc(value: string | number | null | undefined): string {
 }
 
 /** Instante UTC -> fecha en hora de Costa Rica. */
-function day(iso: string): string {
+export function day(iso: string): string {
   return new Date(iso).toLocaleDateString('es-CR', {
     timeZone: TIME_ZONE,
     day: '2-digit',
@@ -109,19 +113,28 @@ function money(amount: number, currency: Currency): string {
 }
 
 /** La tasa no es un importe: se imprime con dos decimales, sin redondear a colon entero. */
-function rate(crcPerUsd: number): string {
+export function rate(crcPerUsd: number): string {
   return crcPerUsd.toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /** Subtotal de los servicios de la proforma, redondeado por la politica unica (M4). */
-function extrasTotal(doc: ProformaDocument): number {
+export function extrasTotal(doc: ProformaDocument): number {
   return roundMoney(
     doc.extras.reduce((sum, line) => sum + line.amount, 0),
     doc.currency,
   );
 }
 
-function otherCurrency(currency: Currency): Currency {
+/**
+ * Peso total del documento: la suma del peso facturable de cada paquete. No es un
+ * monto, asi que se deja con tres decimales de bascula. `null` si ninguno tiene peso.
+ */
+export function totalWeightKg(doc: ProformaDocument): number | null {
+  const weights = doc.items.map((item) => item.weightKg).filter((w): w is number => w !== null);
+  return weights.length > 0 ? Math.round(weights.reduce((a, b) => a + b, 0) * 1000) / 1000 : null;
+}
+
+export function otherCurrency(currency: Currency): Currency {
   return currency === Currency.USD ? Currency.CRC : Currency.USD;
 }
 
@@ -171,7 +184,16 @@ const STYLES = `
     margin: 14px 0 0; padding: 8px 12px; border: 2px dashed #b45309; color: #92400e;
     font-weight: 700; letter-spacing: 2px; text-align: center; text-transform: uppercase;
   }
-  .who { margin: 22px 0 18px; }
+  .client-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin: 22px 0 18px; }
+  .who { min-width: 0; }
+  tr.weight td { font-weight: 700; }
+  .sinpe {
+    flex: none; min-width: 210px; padding: 10px 16px; border-left: 4px solid #1e3a8a;
+    background: #eff6ff; border-radius: 4px;
+  }
+  .sinpe .title { font-size: 16px; font-weight: 700; letter-spacing: .5px; color: #1e3a8a; text-transform: uppercase; }
+  .sinpe .holder { font-size: 15px; color: #1e40af; text-transform: uppercase; }
+  .sinpe .phone { font-size: 16px; font-weight: 700; color: #dc2626; }
   .who h2 { margin: 0 0 6px; font-size: 11px; letter-spacing: 1px; color: #6b7280; text-transform: uppercase; }
   .who .name { font-weight: 600; font-size: 15px; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
@@ -197,28 +219,40 @@ const STYLES = `
   }
 `;
 
-/** Tabla de paquetes: una fila por paquete, con su desglose y el total del documento. */
+/**
+ * Tabla de paquetes: una fila por paquete con su peso y su total. El desglose por
+ * concepto ya lo da el detalle de conceptos (arriba), asi que aqui no se repite
+ * flete / otros / impuestos por paquete.
+ */
 function itemsTable(doc: ProformaDocument): string {
   const { currency } = doc;
   const rows = doc.items
     .map(
       (item) => `<tr>
         <td>${esc(item.code)}</td>
+        <td>${esc(item.tracking)}</td>
         <td>${esc(item.awb)}</td>
         <td>${esc(item.description)}</td>
         <td class="num">${item.weightKg ?? ''}</td>
-        <td class="num">${money(item.freight, currency)}</td>
-        <td class="num">${money(item.others, currency)}</td>
-        <td class="num">${money(item.taxes, currency)}</td>
         <td class="num">${money(item.total, currency)}</td>
       </tr>`,
     )
     .join('');
 
+  const weight = totalWeightKg(doc);
+  const weightRow =
+    weight !== null
+      ? `<tr class="weight">
+        <td colspan="4">Peso total</td>
+        <td class="num">${weight}</td>
+        <td></td>
+      </tr>`
+      : '';
+
   const extrasRow =
     doc.extras.length > 0
       ? `<tr>
-        <td colspan="7">Servicios de la proforma</td>
+        <td colspan="5">Servicios de la proforma</td>
         <td class="num">${money(extrasTotal(doc), currency)}</td>
       </tr>`
       : '';
@@ -228,36 +262,64 @@ function itemsTable(doc: ProformaDocument): string {
       Paquetes y trámites (${doc.items.length}) · montos en ${esc(currency)} (${esc(CURRENCY_SYMBOLS[currency])})
     </caption>
     <colgroup>
-      <col style="width:13%"><col style="width:13%"><col style="width:20%"><col style="width:7%">
-      <col style="width:11%"><col style="width:12%"><col style="width:11%"><col style="width:13%">
+      <col style="width:15%"><col style="width:19%"><col style="width:16%"><col style="width:28%">
+      <col style="width:9%"><col style="width:13%">
     </colgroup>
     <thead><tr>
-      <th>Trámite</th><th>AWB / Guía</th><th>Descripción</th><th class="num">Peso kg</th>
-      <th class="num">Flete</th><th class="num">Otros / Permisos</th><th class="num">Impuestos</th>
+      <th>Trámite</th><th>Tracking Number</th><th>AWB / Guía</th><th>Descripción</th><th class="num">Peso kg</th>
       <th class="num">Total</th>
     </tr></thead>
-    <tbody>${rows}${extrasRow}</tbody>
-    <tfoot>${totalRows(doc, 7)}</tfoot>
+    <tbody>${rows}${weightRow}${extrasRow}</tbody>
+    <tfoot>${totalRows(doc, 5)}</tfoot>
   </table>`;
 }
 
-/** Conceptos cobrados, agrupados por tramite, y al final los de la proforma. */
-function linesTable(doc: ProformaDocument): string {
-  const lineRow = (line: DocumentLine) => `<tr>
-      <td class="num">1</td>
-      <td>${esc(line.label)}</td>
-      <td>${line.electronicInvoiceCode ? esc(line.electronicInvoiceCode) : '<span class="empty">-</span>'}</td>
-      <td class="num">${money(line.amount, doc.currency)}</td>
-    </tr>`;
+/** Un concepto del detalle: todas las lineas iguales del documento, sumadas. */
+export interface ConceptSummary {
+  label: string;
+  electronicInvoiceCode: string | null;
+  quantity: number;
+  amount: number;
+}
 
-  const groups = doc.items
-    .filter((item) => item.lines.length > 0)
-    .map((item) => `<tr class="group"><td colspan="4">${esc(item.code)} · ${esc(item.tracking)}</td></tr>${item.lines.map(lineRow).join('')}`)
+/**
+ * Agrupa los conceptos de TODO el documento (paquetes y servicios de la
+ * proforma) por concepto + codigo FE: seis paquetes con flete dan UNA linea de
+ * Flete con la suma y cantidad 6. Conserva el orden de primera aparicion.
+ */
+export function conceptSummary(doc: ProformaDocument): ConceptSummary[] {
+  const groups = new Map<string, ConceptSummary>();
+  const all = [...doc.items.flatMap((item) => item.lines), ...doc.extras];
+  for (const line of all) {
+    const key = `${line.label}|${line.electronicInvoiceCode ?? ''}`;
+    const group = groups.get(key);
+    if (group) {
+      group.quantity += 1;
+      group.amount += line.amount;
+    } else {
+      groups.set(key, {
+        label: line.label,
+        electronicInvoiceCode: line.electronicInvoiceCode,
+        quantity: 1,
+        amount: line.amount,
+      });
+    }
+  }
+  return [...groups.values()].map((g) => ({ ...g, amount: roundMoney(g.amount, doc.currency) }));
+}
+
+/** Detalle de conceptos: una linea por concepto con su cantidad y su suma, y el total. */
+function linesTable(doc: ProformaDocument): string {
+  const rows = conceptSummary(doc)
+    .map(
+      (c) => `<tr>
+      <td class="num">${c.quantity}</td>
+      <td>${esc(c.label)}</td>
+      <td>${c.electronicInvoiceCode ? esc(c.electronicInvoiceCode) : '<span class="empty">-</span>'}</td>
+      <td class="num">${money(c.amount, doc.currency)}</td>
+    </tr>`,
+    )
     .join('');
-  const extras =
-    doc.extras.length > 0
-      ? `<tr class="group"><td colspan="4">Servicios de la proforma</td></tr>${doc.extras.map(lineRow).join('')}`
-      : '';
 
   return `<table>
     <caption>Detalle de conceptos</caption>
@@ -265,7 +327,8 @@ function linesTable(doc: ProformaDocument): string {
       <th class="num">Cantidad</th><th>Concepto</th><th>Cod sis FE</th>
       <th class="num">Monto (${esc(doc.currency)})</th>
     </tr></thead>
-    <tbody>${groups}${extras}</tbody>
+    <tbody>${rows}</tbody>
+    <tfoot>${totalRows(doc, 3)}</tfoot>
   </table>`;
 }
 
@@ -296,17 +359,24 @@ function sheet(doc: ProformaDocument): string {
     </div>
     ${draftMark}
 
-    <div class="who">
-      <h2>Datos del cliente</h2>
-      <div class="name">${esc(doc.client.name)}</div>
-      <div>Cédula: ${esc(doc.client.idNumber)}</div>
-      ${doc.client.phone ? `<div>Tel: ${esc(doc.client.phone)}</div>` : ''}
-      <div>${esc(doc.client.address)}</div>
-      <div>${esc(doc.client.email)}</div>
+    <div class="client-row">
+      <div class="who">
+        <h2>Datos del cliente</h2>
+        <div class="name">${esc(doc.client.name)}</div>
+        <div>Cédula: ${esc(doc.client.idNumber)}</div>
+        ${doc.client.phone ? `<div>Tel: ${esc(doc.client.phone)}</div>` : ''}
+        <div>${esc(doc.client.address)}</div>
+        <div>${esc(doc.client.email)}</div>
+      </div>
+      <div class="sinpe">
+        <div class="title">SINPE Móvil</div>
+        <div class="holder">${esc(SINPE_MOVIL.holder)}</div>
+        <div class="phone">Tel: ${esc(SINPE_MOVIL.phone)}</div>
+      </div>
     </div>
 
-    ${itemsTable(doc)}
     ${linesTable(doc)}
+    ${itemsTable(doc)}
 
     <div class="foot">Documento proforma. No sustituye la factura electrónica.</div>
   </section>`;
@@ -371,11 +441,7 @@ function csvDay(iso: string | null): string | null {
  * separador de miles). El total va en la moneda de la proforma y, aparte, en las
  * dos monedas para poder sumar columnas sin mezclar.
  */
-export function renderProformaListCsv(
-  items: readonly ProformaListItem[],
-  total: number,
-  electronicInvoice: ReadonlyMap<string, string | null>,
-): string {
+export function renderProformaListCsv(items: readonly ProformaListItem[], total: number): string {
   const header = [
     'Proforma', 'Estado', 'Entrega', 'Tipo', 'Cliente', 'Casillero', 'Trámites',
     'Moneda', 'Total', 'Total USD', 'Total CRC', 'Factura electrónica',
@@ -393,7 +459,7 @@ export function renderProformaListCsv(
     (i.currency === Currency.USD ? i.totals.usd : i.totals.crc).toFixed(CURRENCY_DECIMALS[i.currency]),
     i.totals.usd.toFixed(CURRENCY_DECIMALS[Currency.USD]),
     i.totals.crc.toFixed(CURRENCY_DECIMALS[Currency.CRC]),
-    electronicInvoice.get(i.id) ?? null,
+    i.electronicInvoiceNumber,
     csvDay(i.createdAt),
     csvDay(i.approvedAt),
     csvDay(i.paidAt),

@@ -25,10 +25,12 @@ import {
   STATE_LABELS,
   STORES,
   CARRIERS,
+  CLIENT_RATE_KIND_LABELS,
   attachmentRejection,
   can,
   clientFullLabel,
   createShipmentSchema,
+  displayedWeightKg,
   editableFieldsAt,
   formatDua,
   updateShipmentSchema,
@@ -189,6 +191,14 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
     isPackage && weight && Number(weight) > 0 && !Number.isInteger(Number(weight))
       ? Math.ceil(Number(weight))
       : null;
+  /**
+   * Con el casillero ya conocido (edicion, sin cambiarle el dueño) se sabe su
+   * tarifa, asi que se dice el kilaje EXACTO que se facturara en vez de la regla
+   * general de las dos modalidades.
+   */
+  const knownRateKind = row?.rateKind != null && row.client?.id === clientId ? row.rateKind : null;
+  const billedPreview =
+    weightPreview !== null && knownRateKind !== null ? displayedWeightKg(Number(weight), knownRateKind) : null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -391,6 +401,11 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
                 />
                 {weightLocked ? (
                   <div className="field-hint">La factura ya fue aprobada: el peso no se puede cambiar sin reversar los costos.</div>
+                ) : billedPreview !== null && knownRateKind !== null ? (
+                  <div className="field-hint">
+                    Se guarda el peso real. Con su tarifa ({CLIENT_RATE_KIND_LABELS[knownRateKind]}) se
+                    facturan {billedPreview} kg.
+                  </div>
                 ) : weightPreview !== null && (
                   <div className="field-hint">
                     Se guarda el peso real. Las tarifas estándar cobran {weightPreview} kg

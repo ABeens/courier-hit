@@ -25,12 +25,13 @@ import {
   setProformaCounterSchema,
   updateProformaSchema,
 } from '@courier/shared';
-import { ProformaErrors } from '../../core/errors';
+import { AuthErrors, ProformaErrors } from '../../core/errors';
 import type { AppEnv } from '../../core/http';
 import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
 import { zValidator } from '../../core/validator';
 import { renderProforma, renderProformaCsv, renderProformaListCsv, renderProformas } from './proforma.render';
+import { renderProformaXlsx, renderProformasXlsx } from './proforma.xlsx';
 import { proformasRepo } from './proformas.repo';
 import { proformasService } from './proformas.service';
 
@@ -40,6 +41,8 @@ proformasRoutes.use('*', requireSession());
 
 const read = requirePermission(Permission.ProformasRead);
 const manage = requirePermission(Permission.ProformasManage);
+
+const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 /**
  * El documento lo abre el staff con permiso de lectura y TAMBIEN el cliente dueño
@@ -72,6 +75,22 @@ proformasRoutes.put(
 
 // --- Bandeja ----------------------------------------------------------------
 
+/**
+ * "Mis proformas" del cliente: sus aprobadas y pagadas, con la misma busqueda de
+ * la bandeja (numero de proforma o factura electronica). Va antes de `/:id` por
+ * la misma razon que `/counter`.
+ */
+proformasRoutes.get(
+  '/mine',
+  requirePermission(Permission.ProformasReadOwn),
+  zValidator('query', listProformasQuerySchema),
+  async (c) => {
+    const { clientId } = c.get('session');
+    if (!clientId) throw AuthErrors.forbidden();
+    return c.json(await proformasService.listOwn(clientId, c.req.valid('query')));
+  },
+);
+
 proformasRoutes.get('/', read, zValidator('query', listProformasQuerySchema), async (c) => {
   return c.json(await proformasService.list(c.req.valid('query')));
 });
@@ -100,8 +119,8 @@ proformasRoutes.post(
  * (numero, cliente, estado, entrega, totales, FE y fechas).
  */
 proformasRoutes.get('/export.csv', read, zValidator('query', proformaFilterSchema), async (c) => {
-  const { items, total, electronicInvoice } = await proformasService.exportList(c.req.valid('query'));
-  return c.body(renderProformaListCsv(items, total, electronicInvoice), 200, {
+  const { items, total } = await proformasService.exportList(c.req.valid('query'));
+  return c.body(renderProformaListCsv(items, total), 200, {
     'content-type': 'text/csv; charset=utf-8',
     'content-disposition': 'attachment; filename="proformas.csv"',
   });
@@ -111,6 +130,15 @@ proformasRoutes.get('/export.csv', read, zValidator('query', proformaFilterSchem
 proformasRoutes.get('/documents', read, zValidator('query', proformaFilterSchema), async (c) => {
   const { docs, total } = await proformasService.documents(c.req.valid('query'));
   return c.html(renderProformas(docs, total));
+});
+
+/** El mismo lote en Excel, con el formato del documento: una hoja por proforma. */
+proformasRoutes.get('/documents.xlsx', read, zValidator('query', proformaFilterSchema), async (c) => {
+  const { docs, total } = await proformasService.documents(c.req.valid('query'));
+  return c.body(await renderProformasXlsx(docs, total), 200, {
+    'content-type': XLSX_TYPE,
+    'content-disposition': 'attachment; filename="proformas.xlsx"',
+  });
 });
 
 // --- Una proforma -----------------------------------------------------------
@@ -134,6 +162,19 @@ proformasRoutes.get('/:id/export.csv', read, async (c) => {
   return c.body(renderProformaCsv(doc), 200, {
     'content-type': 'text/csv; charset=utf-8',
     'content-disposition': `attachment; filename="${name}.csv"`,
+  });
+});
+
+/**
+ * El documento en Excel, con su formato (logo, cliente, SINPE, conceptos,
+ * paquetes y totales). Solo staff: el cliente tiene el documento imprimible.
+ */
+proformasRoutes.get('/:id/export.xlsx', read, async (c) => {
+  const doc = await proformasService.document(c.req.param('id'));
+  const name = doc.number ? `proforma-${doc.number}` : 'proforma-borrador';
+  return c.body(await renderProformaXlsx(doc), 200, {
+    'content-type': XLSX_TYPE,
+    'content-disposition': `attachment; filename="${name}.xlsx"`,
   });
 });
 

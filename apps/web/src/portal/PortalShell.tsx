@@ -17,6 +17,7 @@ import { UsersScreen } from './screens/UsersScreen';
 import { CostServicesScreen } from './screens/CostServicesScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { ProformasScreen } from './screens/ProformasScreen';
+import { ClientProformasScreen } from './screens/ClientProformasScreen';
 import { TariffsScreen } from './screens/TariffsScreen';
 import { RoutesScreen } from './screens/RoutesScreen';
 import { ShipmentsScreen } from './screens/ShipmentsScreen';
@@ -29,6 +30,7 @@ import { ReportsScreen } from './screens/ReportsScreen';
 import { ReceptionScreen } from './screens/ReceptionScreen';
 import { ControlRoomScreen } from './screens/ControlRoomScreen';
 import { ApiKeysScreen } from './screens/ApiKeysScreen';
+import { AuditScreen } from './screens/AuditScreen';
 import { LockerScreen } from './screens/LockerScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 
@@ -72,6 +74,8 @@ const CLIENT_NAV: NavEntry[] = [
   { resource: Resource.Locker, label: 'Mi casillero' },
   { resource: Resource.Package, label: 'Mis paquetes' },
   { resource: Resource.Tramite, label: 'Otros trámites' },
+  // Solo las emitidas (aprobadas y pagadas): lo que el cliente paga o ya pago.
+  { resource: Resource.Proformas, label: 'Mis proformas' },
   { resource: Resource.Profile, label: 'Mi perfil' },
   // Ultima: es la unica entrada que no sirve para la operacion diaria del
   // casillero sino para conectar un sistema, y a eso se entra una vez. Se llama
@@ -133,6 +137,7 @@ const STAFF_NAV: NavEntry[] = [
       // consolidados.
       { resource: Resource.ProviderAccounts, label: 'Cuentas de Miami' },
       { resource: Resource.Settings, label: 'Configuración' },
+      { resource: Resource.Audit, label: 'Auditoría' },
     ],
   },
 ];
@@ -443,6 +448,8 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
             <TariffsScreen />
           ) : current === Resource.CostServices ? (
             <CostServicesScreen />
+          ) : current === Resource.Proformas && isClient ? (
+            <ClientProformasScreen />
           ) : current === Resource.Proformas || current === Resource.Costs ? (
             // `costos` era la cola por tramite: un enlace viejo a esa pantalla cae
             // en la bandeja de proformas, que es donde ahora se factura.
@@ -514,6 +521,8 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
             <ProfileScreen onLoggedOut={onLoggedOut} />
           ) : current === Resource.ApiKeys ? (
             <ApiKeysScreen />
+          ) : current === Resource.Audit ? (
+            <AuditScreen />
           ) : (
             <div className="stub">
               <div className="big">{currentLabel}</div>
@@ -656,6 +665,8 @@ function NavIcon({ resource }: { resource: Resource }) {
     [Resource.Announcements]: <path d="M3 11l18-5v12L3 13v-2zM11.6 16.8a3 3 0 11-5.8-1.6" />,
     // Caja con interrogante: el bulto que llegó sin que nadie sepa de quién es.
     [Resource.ControlRoom]: <path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v3M12 19h.01" />,
+    // Escudo con check: el registro de lo que se corrigio y por que.
+    [Resource.Audit]: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4" />,
   };
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

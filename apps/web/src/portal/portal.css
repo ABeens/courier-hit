@@ -724,6 +724,9 @@ select.input { cursor: pointer; padding-right: 30px; }
 .pay-sec.is-money { background: var(--brand-softer); border-color: var(--brand-soft); }
 .pay-sec.is-money .card-sec-title { color: var(--brand); }
 .pay-sec.is-money .card-item-field dd { font-weight: 700; color: var(--brand-700); }
+/* Datos para el depósito: el cliente los copia a su banca, van en azul de marca. */
+.pay-sec.is-bank .card-sec-title { color: var(--brand); }
+.pay-sec.is-bank .card-item-field dd { font-weight: 600; color: var(--brand-700); }
 
 /* Campos de un panel: se colocan uno tras otro y saltan de linea cuando no
    caben, NO en columnas de igual ancho. La rejilla de `.card-sec-fields` reparte
@@ -1163,6 +1166,13 @@ select.input { cursor: pointer; padding-right: 30px; }
 .card-item .actions .btn svg { width: 18px; height: 18px; }
 @media (pointer: coarse) {
   .card-item .actions .btn-sm { height: 44px; }
+}
+
+/* Entregas: cada proforma del cliente es un bloque propio dentro de su ficha,
+   con su cobro y su boton de entregar. Divisor arriba, sin caja, como `.card-sec`. */
+.delivery-stop {
+  display: flex; flex-direction: column; gap: 8px;
+  border-top: 1px solid var(--line-2); padding-top: 10px;
 }
 
 /* Bandera de cobro. NO usa `--tone` como la pildora de estado: el pago es una

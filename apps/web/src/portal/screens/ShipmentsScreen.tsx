@@ -218,7 +218,8 @@ function sectionsFor(row: ShipmentDto, view: ShipmentView, amounts: BillingAmoun
       { title: 'Compra', fields: [{ label: 'Tienda', value: row.store }, { label: 'Transportista', value: row.carrier }] },
       {
         title: 'Logística',
-        fields: [{ label: 'Peso', value: row.weightKg != null ? `${row.weightKg} kg` : null }, entrega],
+        // El peso que se factura, no el de bascula: es el que cuadra con el flete.
+        fields: [{ label: 'Peso', value: row.billableWeightKg != null ? `${row.billableWeightKg} kg` : null }, entrega],
       },
       ...(money ? [money] : []),
     ];

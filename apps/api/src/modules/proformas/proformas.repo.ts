@@ -20,6 +20,7 @@ import { clients, users } from '../auth/auth.schema';
 import { shipmentCosts } from '../costs/shipment-cost.schema';
 import { settlementColumn } from '../payments/settlement';
 import { shipments } from '../shipments/shipments.schema';
+import { effectiveRateKind } from '../tariffs/effective-rate-kind';
 import {
   PROFORMA_COUNTER_ID,
   proformaCosts,
@@ -80,15 +81,24 @@ const headerColumns = {
   readyForRouteCount: sql<number>`(select count(*)::int from proforma_shipments ps join shipments s on s.id = ps.shipment_id where ps.proforma_id = ${proformas.id} and s.state = 'en_bodega_pendiente_pago')`,
 };
 
-/** Filtros del listado traducidos a SQL. */
-function listConditions(query: ProformaFilter): SQL[] {
+/**
+ * Filtros del listado traducidos a SQL. `issuedOnly` deja fuera los borradores:
+ * es la lectura del cliente, que solo ve lo que ya es un documento (aprobadas y
+ * pagadas).
+ */
+function listConditions(query: ProformaFilter, issuedOnly = false): SQL[] {
   const conds: SQL[] = [];
+  if (issuedOnly) conds.push(inArray(proformas.status, [ProformaStatus.Aprobada, ProformaStatus.Pagada]));
   if (query.status) conds.push(eq(proformas.status, query.status));
   if (query.flow) conds.push(eq(proformas.flow, query.flow));
   if (query.clientId) conds.push(eq(proformas.clientId, query.clientId));
   if (query.q) {
     const like = `%${query.q}%`;
-    const byText = or(ilike(clients.code, like), ilike(users.name, like))!;
+    const byText = or(
+      ilike(clients.code, like),
+      ilike(users.name, like),
+      ilike(proformas.electronicInvoiceNumber, like),
+    )!;
     // Un numero se busca EXACTO: "12" no deberia traer la 120, la 1200 y la 312.
     conds.push(/^\d+$/.test(query.q) ? or(byText, eq(proformas.number, Number(query.q)))! : byText);
   }
@@ -111,8 +121,8 @@ export const proformasRepo = {
    * desempate por id (regla de `http/pagination`: sin desempate, dos filas con la
    * misma fecha se cruzan entre paginas).
    */
-  async list(query: ListProformasQuery) {
-    const where = and(...listConditions(query));
+  async list(query: ListProformasQuery, issuedOnly = false) {
+    const where = and(...listConditions(query, issuedOnly));
     const { limit, offset } = toSlice(query);
     const [rows, [totalRow]] = await Promise.all([
       db
@@ -206,6 +216,8 @@ export const proformasRepo = {
         hawb: shipments.hawb,
         description: shipments.description,
         weightKg: shipments.weightKg,
+        // Para imprimir el peso FACTURABLE, el mismo que multiplica al flete.
+        rateKind: effectiveRateKind(shipments.clientId),
         discardedAt: shipments.discardedAt,
         costsApprovedAt: shipments.costsApprovedAt,
         addedAt: proformaShipments.addedAt,

@@ -59,7 +59,7 @@ import type {
 } from '@courier/shared';
 import { helgaPrincipalAccountCode } from '../../core/config';
 import { AuthErrors, ShipmentErrors, isProviderRateLimited } from '../../core/errors';
-import { formatProformaNumber, formatShipmentCode } from '@courier/shared';
+import { displayedWeightKg, formatProformaNumber, formatShipmentCode } from '@courier/shared';
 import {
   createHelgaPrealert,
   deleteHelgaPrealert,
@@ -307,6 +307,8 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     carrier: row.carrier,
     hawb: row.hawb,
     weightKg: row.weightKg,
+    rateKind: row.rateKind,
+    billableWeightKg: displayedWeightKg(row.weightKg, row.rateKind),
     lengthCm: row.lengthCm,
     widthCm: row.widthCm,
     heightCm: row.heightCm,

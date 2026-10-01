@@ -32,6 +32,7 @@ export const RESOURCE_SLUGS: Record<Resource, string> = {
   [Resource.Routes]: 'rutas',
   [Resource.Users]: 'usuarios',
   [Resource.Announcements]: 'anuncios',
+  [Resource.Audit]: 'auditoria',
 };
 
 const SLUG_TO_RESOURCE: Record<string, Resource> = Object.fromEntries(

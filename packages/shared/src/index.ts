@@ -51,6 +51,8 @@ export * from './workflow/shipment-type';
 export * from './workflow/states';
 export * from './workflow/automation';
 export * from './workflow/machine';
+// Despues de tramites: la auditoria lee el prefijo de correccion del historial.
+export * from './audit/dto';
 // Al final: el contrato de la API publica (`/api/v1`) se apoya en los esquemas
 // de tramites y en el sobre de paginacion, asi que se exporta despues de ellos.
 export * from './public-api/dto';

@@ -6,8 +6,9 @@
  * es inservible en un telefono) y muestra la direccion y el telefono del cliente
  * completos.
  *
- * La cola va POR PROFORMA: una tarjeta por proforma con sus paquetes en ruta y
- * un solo boton, "Entregar", que abre la entrega de la proforma. Ahi se elige
+ * La cola va POR CLIENTE: una tarjeta por cliente (direccion y telefono una sola
+ * vez) y, dentro, un bloque por proforma con sus paquetes en ruta y su propio
+ * boton "Entregar", que abre la entrega de ESA proforma. Ahi se elige
  * paquete por paquete: entregado, devuelto a bodega (con motivo) o sigue en
  * ruta. Si parte de la proforma sigue en bodega, la tarjeta lo avisa: el
  * mensajero no puede salir creyendo que lleva todo.
@@ -94,13 +95,20 @@ interface StopCounts {
   returned: number;
 }
 
-/** Una parada: una proforma con sus paquetes en ruta, o un paquete suelto sin proforma. */
+/** Una entrega: una proforma con sus paquetes en ruta, o un paquete suelto sin proforma. */
 interface DeliveryStop {
   proformaId: string | null;
   proformaNumber: number | null;
   shipments: DeliveryQueueRow[];
   /** Null en un paquete sin proforma. */
   counts: StopCounts | null;
+}
+
+/** Un cliente de la cola con sus proformas en ruta: una puerta, N entregas. */
+interface DeliveryClient {
+  clientId: string;
+  /** Nunca vacio: el cliente nace con su primer paquete en ruta. */
+  stops: DeliveryStop[];
 }
 
 /** La bandera de cobro de la parada: la del primer paquete con saldo, o la del primero si todo esta pagado. */
@@ -151,7 +159,7 @@ export function DeliveriesScreen() {
    * ruta) se aplican en SQL: el mensajero que filtra por su ruta tiene que ver
    * SU recorrido entero, no la parte de el que cabia en la primera pagina.
    */
-  const list = usePagedList<DeliveryStop, { packagesInRoute: number }>(
+  const list = usePagedList<DeliveryClient, { packagesInRoute: number; proformasInRoute: number }>(
     '/deliveries/stops',
     { q: q.trim() || undefined, routeNumber: route.trim() || undefined },
     { errorMessage: 'No se pudo cargar la ruta.' },
@@ -179,7 +187,9 @@ export function DeliveriesScreen() {
           <div className="title">Entregas</div>
           {list.data && (
             <div className="count">
-              {list.total.toLocaleString('es-CR')} {list.total === 1 ? 'entrega' : 'entregas'} ·{' '}
+              {list.total.toLocaleString('es-CR')} {list.total === 1 ? 'cliente' : 'clientes'} ·{' '}
+              {list.data.proformasInRoute.toLocaleString('es-CR')}{' '}
+              {list.data.proformasInRoute === 1 ? 'entrega' : 'entregas'} ·{' '}
               {list.data.packagesInRoute.toLocaleString('es-CR')} paquetes en ruta
             </div>
           )}
@@ -228,54 +238,25 @@ export function DeliveriesScreen() {
 
       <ListBody refreshing={list.refreshing}>
         <div className="cards">
-        {list.items.map((stop) => {
-          const first = stop.shipments[0]!;
-          const pay = payRow(stop);
-          const outside = stop.counts ? outsideRoute(stop.counts) : null;
+        {list.items.map((client) => {
+          const first = client.stops[0]!.shipments[0]!;
+          const proformas = client.stops.length;
           return (
-            <article className="card-item tone-info" key={stop.proformaId ?? first.id}>
+            <article className="card-item tone-info" key={client.clientId}>
               <div className="card-item-head">
                 <div className="card-item-ident">
-                  <div className="card-item-code">
-                    {stop.proformaId && stop.proformaNumber != null
-                      ? <>Proforma <ProformaLink id={stop.proformaId} number={stop.proformaNumber} /></>
-                      : first.code}
-                  </div>
                   <div className="card-item-title">{first.clientName}</div>
                   <div className="card-item-sub">
-                    {stop.counts
-                      ? `${stop.counts.inRoute} de ${stop.counts.total} ${stop.counts.total === 1 ? 'paquete' : 'paquetes'} en ruta`
-                      : `${SHIPMENT_TYPE_LABELS[first.shipmentType]} · ${first.tracking}`}
+                    {proformas} {proformas === 1 ? 'entrega' : 'entregas'}
                   </div>
                 </div>
                 <div className="card-item-aside">
-                  {/* El mensajero tiene que saber ANTES de tocar el timbre si lleva
-                      algo con saldo: es lo unico de la tarjeta que cambia lo que
-                      hace al llegar. */}
-                  <PayFlag
-                    shipmentType={pay.shipmentType}
-                    invoiceTotalUsd={pay.invoiceTotalUsd}
-                    invoiceTotalCrc={pay.invoiceTotalCrc}
-                    settledUsd={pay.settledUsd}
-                    settledCrc={pay.settledCrc}
-                    settled={pay.settled}
-                    pendingUsd={pay.pendingUsd}
-                    pendingCrc={pay.pendingCrc}
-                  />
                   <span className="spill">
                     <span className="dot" />
                     {first.routeNumber != null ? `Ruta ${first.routeNumber}` : 'Sin ruta'}
                   </span>
                 </div>
               </div>
-
-              {/* Lo que falta de la proforma, a la vista: si algo sigue en bodega,
-                  esta visita va a quedar como entrega parcial. */}
-              {outside && (
-                <div className={stop.counts!.inWarehouse > 0 ? 'banner warn' : 'banner info'}>
-                  No van en ruta: {outside}.
-                </div>
-              )}
 
               <div className="card-item-body">
                 <section className="card-sec">
@@ -293,52 +274,97 @@ export function DeliveriesScreen() {
                     />
                   </dl>
                 </section>
-                {/* Los paquetes que lleva: codigo, HAWB (el numero impreso en la
-                    etiqueta de la caja, con el que casa la tarjeta con el bulto) y
-                    descripcion. */}
-                <section className="card-sec">
-                  <div className="card-sec-title">
-                    {stop.shipments.length === 1 ? 'Paquete en ruta' : `Paquetes en ruta (${stop.shipments.length})`}
-                  </div>
-                  <dl className="card-sec-fields">
-                    {stop.shipments.map((row) => (
-                      <Field
-                        key={row.id}
-                        label={row.code}
-                        value={
-                          <>
-                            {usesPackageFields(row.shipmentType) && <span className="mono">{row.hawb ?? '—'}</span>}
-                            {usesPackageFields(row.shipmentType) && ' · '}
-                            {row.description}
-                          </>
-                        }
-                      />
-                    ))}
-                  </dl>
-                </section>
               </div>
 
-              <div className="actions">
-                {stop.proformaId ? (
-                  <button type="button" className="btn btn-primary" onClick={() => setDelivering(stop.proformaId)}>
-                    Entregar
-                  </button>
-                ) : (
-                  <>
-                    {/* Paquete sin proforma (anterior al modulo): se entrega suelto. */}
-                    <IconButton
-                      label="Confirmar entrega"
-                      icon="checkCircle"
-                      onClick={() => setModal({ row: first, outcome: DeliveryOutcome.Entregado })}
-                    />
-                    <IconButton
-                      label="Devolver a bodega"
-                      icon="undo"
-                      onClick={() => setModal({ row: first, outcome: DeliveryOutcome.DevueltoBodega })}
-                    />
-                  </>
-                )}
-              </div>
+              {/* Una entrega por proforma: misma puerta, pero cada una se entrega
+                  (y se firma) por separado con su propio boton. */}
+              {client.stops.map((stop) => {
+                const head = stop.shipments[0]!;
+                const pay = payRow(stop);
+                const outside = stop.counts ? outsideRoute(stop.counts) : null;
+                return (
+                  <section className="delivery-stop" key={stop.proformaId ?? head.id}>
+                    <div className="card-item-head">
+                      <div className="card-item-ident">
+                        <div className="card-item-code">
+                          {stop.proformaId && stop.proformaNumber != null
+                            ? <>Proforma <ProformaLink id={stop.proformaId} number={stop.proformaNumber} /></>
+                            : head.code}
+                        </div>
+                        <div className="card-item-sub">
+                          {stop.counts
+                            ? `${stop.counts.inRoute} de ${stop.counts.total} ${stop.counts.total === 1 ? 'paquete' : 'paquetes'} en ruta`
+                            : `${SHIPMENT_TYPE_LABELS[head.shipmentType]} · ${head.tracking}`}
+                        </div>
+                      </div>
+                      <div className="card-item-aside">
+                        {/* El mensajero tiene que saber ANTES de tocar el timbre si
+                            lleva algo con saldo: es lo unico que cambia lo que hace
+                            al llegar. */}
+                        <PayFlag
+                          shipmentType={pay.shipmentType}
+                          invoiceTotalUsd={pay.invoiceTotalUsd}
+                          invoiceTotalCrc={pay.invoiceTotalCrc}
+                          settledUsd={pay.settledUsd}
+                          settledCrc={pay.settledCrc}
+                          settled={pay.settled}
+                          pendingUsd={pay.pendingUsd}
+                          pendingCrc={pay.pendingCrc}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Lo que falta de la proforma, a la vista: si algo sigue en
+                        bodega, esta visita va a quedar como entrega parcial. */}
+                    {outside && (
+                      <div className={stop.counts!.inWarehouse > 0 ? 'banner warn' : 'banner info'}>
+                        No van en ruta: {outside}.
+                      </div>
+                    )}
+
+                    {/* Los paquetes que lleva: codigo, HAWB (el numero impreso en
+                        la etiqueta de la caja, con el que casa la tarjeta con el
+                        bulto) y descripcion. */}
+                    <dl className="card-sec-fields">
+                      {stop.shipments.map((row) => (
+                        <Field
+                          key={row.id}
+                          label={row.code}
+                          value={
+                            <>
+                              {usesPackageFields(row.shipmentType) && <span className="mono">{row.hawb ?? '—'}</span>}
+                              {usesPackageFields(row.shipmentType) && ' · '}
+                              {row.description}
+                            </>
+                          }
+                        />
+                      ))}
+                    </dl>
+
+                    <div className="actions">
+                      {stop.proformaId ? (
+                        <button type="button" className="btn btn-primary" onClick={() => setDelivering(stop.proformaId)}>
+                          {stop.proformaNumber != null ? `Entregar proforma #${stop.proformaNumber}` : 'Entregar'}
+                        </button>
+                      ) : (
+                        <>
+                          {/* Paquete sin proforma (anterior al modulo): se entrega suelto. */}
+                          <IconButton
+                            label="Confirmar entrega"
+                            icon="checkCircle"
+                            onClick={() => setModal({ row: head, outcome: DeliveryOutcome.Entregado })}
+                          />
+                          <IconButton
+                            label="Devolver a bodega"
+                            icon="undo"
+                            onClick={() => setModal({ row: head, outcome: DeliveryOutcome.DevueltoBodega })}
+                          />
+                        </>
+                      )}
+                    </div>
+                  </section>
+                );
+              })}
             </article>
           );
         })}
@@ -351,7 +377,7 @@ export function DeliveriesScreen() {
           totalPages={list.totalPages}
           onPage={list.goToPage}
           busy={list.refreshing}
-          noun="entregas"
+          noun="clientes"
         />
       </ListBody>
 

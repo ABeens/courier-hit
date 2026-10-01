@@ -20,6 +20,7 @@ import { settlementColumn } from '../payments/settlement';
 import { cantonRoutes } from '../routes/canton-route.schema';
 import { districtRoutes } from '../routes/district-route.schema';
 import { cantonRouteJoin, districtRouteJoin, effectiveRouteNumber } from '../routes/effective-route';
+import { effectiveRateKind } from '../tariffs/effective-rate-kind';
 import { shipmentEvents, shipments } from './shipments.schema';
 
 /** Columnas de la vista de lectura: el tramite + el cliente + la ruta. */
@@ -34,6 +35,8 @@ const columns = {
   carrier: shipments.carrier,
   hawb: shipments.hawb,
   weightKg: shipments.weightKg,
+  // Tipo de la tarifa efectiva del casillero: decide el peso que se muestra (el facturable).
+  rateKind: effectiveRateKind(shipments.clientId),
   declaredValueUsd: shipments.declaredValueUsd,
   insuredValueUsd: shipments.insuredValueUsd,
   tariffPosition: shipments.tariffPosition,

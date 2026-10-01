@@ -47,6 +47,7 @@ import { shipmentsRepo } from '../shipments/shipments.repo';
 import { transitionsService } from '../shipments/transitions.service';
 import { deliveriesRepo } from './deliveries.repo';
 import type {
+  DeliveryReportClient,
   DeliveryReportDoc,
   DeliveryReportRoute,
   DeliveryReportRow,
@@ -121,26 +122,44 @@ export const deliveriesService = {
   },
 
   /**
-   * La cola AGRUPADA POR PROFORMA: una parada por proforma, con sus paquetes en
-   * ruta y los conteos de la proforma entera (para avisar si algo sigue en
-   * bodega). Un paquete en ruta sin proforma (anterior al modulo) es su propia
-   * parada. Mismo filtro y mismo orden que la cola por paquete; se pagina por
-   * parada, no por paquete, para que una proforma no quede partida en dos paginas.
+   * La cola AGRUPADA POR CLIENTE y, dentro, POR PROFORMA: una tarjeta por
+   * cliente con sus proformas, cada una con sus paquetes en ruta y los conteos
+   * de la proforma entera (para avisar si algo sigue en bodega). Cada proforma
+   * se entrega por separado; un paquete en ruta sin proforma (anterior al
+   * modulo) es su propia entrada dentro del cliente. Mismo filtro y mismo orden
+   * que la cola por paquete; se pagina por CLIENTE, para que ni un cliente ni
+   * una proforma queden partidos en dos paginas.
    */
   async stops(query: ListDeliveryQueueQuery) {
     const page = await this.queue({ ...query, page: 1, pageSize: STOPS_LIMIT });
-    const groups = new Map<string, { proformaId: string | null; proformaNumber: number | null; shipments: typeof page.items }>();
-    for (const item of page.items) {
-      const key = item.proformaId ?? `shipment:${item.id}`;
-      const group = groups.get(key) ?? { proformaId: item.proformaId, proformaNumber: item.proformaNumber, shipments: [] };
-      group.shipments.push(item);
-      groups.set(key, group);
+    type Item = (typeof page.items)[number];
+    interface Stop {
+      proformaId: string | null;
+      proformaNumber: number | null;
+      shipments: Item[];
     }
-    const all = [...groups.values()];
+    const clientsById = new Map<string, { clientId: string; stops: Map<string, Stop> }>();
+    for (const item of page.items) {
+      let client = clientsById.get(item.clientId);
+      if (!client) {
+        client = { clientId: item.clientId, stops: new Map() };
+        clientsById.set(item.clientId, client);
+      }
+      const key = item.proformaId ?? `shipment:${item.id}`;
+      let stop = client.stops.get(key);
+      if (!stop) {
+        stop = { proformaId: item.proformaId, proformaNumber: item.proformaNumber, shipments: [] };
+        client.stops.set(key, stop);
+      }
+      stop.shipments.push(item);
+    }
+    const all = [...clientsById.values()].map((c) => ({ clientId: c.clientId, stops: [...c.stops.values()] }));
     const { limit, offset } = toSlice(query);
     const slice = all.slice(offset, offset + limit);
 
-    const ids = slice.map((g) => g.proformaId).filter((id): id is string => id !== null);
+    const ids = slice
+      .flatMap((c) => c.stops.map((s) => s.proformaId))
+      .filter((id): id is string => id !== null);
     const rows = await deliveriesRepo.proformaStateCounts(ids);
     const countsOf = (proformaId: string): DeliveryStopCounts => {
       const own = rows.filter((r) => r.proformaId === proformaId);
@@ -154,17 +173,21 @@ export const deliveriesService = {
       };
     };
 
-    const items = slice.map((g) => ({
-      ...g,
-      counts: g.proformaId ? countsOf(g.proformaId) : null,
+    const items = slice.map((c) => ({
+      clientId: c.clientId,
+      stops: c.stops.map((s) => ({
+        ...s,
+        counts: s.proformaId ? countsOf(s.proformaId) : null,
+      })),
     }));
-    return { ...paged(items, all.length, query), packagesInRoute: page.total };
+    const proformasInRoute = all.reduce((n, c) => n + c.stops.length, 0);
+    return { ...paged(items, all.length, query), packagesInRoute: page.total, proformasInRoute };
   },
 
   /**
    * La hoja de ruta imprimible de la cola: el MISMO filtro de la pantalla
-   * (`DeliveryQueueFilter`) sobre el mismo orden, agrupado por ruta y, dentro de
-   * cada ruta, por proforma (una parada por proforma, como la pantalla).
+   * (`DeliveryQueueFilter`) sobre el mismo orden, agrupado por ruta, dentro de
+   * cada ruta por cliente y, dentro del cliente, por proforma (como la pantalla).
    *
    * Aqui no se pagina: el papel con el que sale el mensajero tiene que traer su
    * recorrido entero. El tope de `REPORT_LIMIT` es el freno de un filtro
@@ -178,7 +201,9 @@ export const deliveriesService = {
     ]);
 
     const routes: DeliveryReportRoute[] = [];
-    /** Parada de cada proforma ya abierta, por ruta y proforma. */
+    /** Cliente ya abierto, por ruta y cliente. */
+    const clientsByKey = new Map<string, DeliveryReportClient>();
+    /** Proforma ya abierta, por ruta, cliente y proforma. */
     const stopsByKey = new Map<string, DeliveryReportStop>();
     for (const { settlement, ...row } of rows) {
       /**
@@ -208,35 +233,44 @@ export const deliveriesService = {
        */
       let route = routes[routes.length - 1];
       if (!route || route.routeNumber !== item.routeNumber) {
-        route = { routeNumber: item.routeNumber, stops: [], packages: 0 };
+        route = { routeNumber: item.routeNumber, clients: [], packages: 0 };
         routes.push(route);
       }
       route.packages += 1;
 
       /**
-       * Dentro de la ruta, una PARADA POR PROFORMA: el mensajero entrega
-       * proformas, no paquetes sueltos (`recordProforma`), y la hoja tiene que
-       * decir lo mismo que la pantalla. Un paquete sin proforma (anterior al
-       * modulo) es su propia parada, igual que en `stops`. El repo ya trae juntos
-       * los paquetes de una proforma; el mapa es para no depender de eso.
+       * Dentro de la ruta, UNA PARADA POR CLIENTE con sus proformas: la visita es
+       * a una puerta, y cada proforma se entrega y se firma por separado
+       * (`recordProforma`), igual que en la pantalla. Un paquete sin proforma
+       * (anterior al modulo) es su propia entrada dentro del cliente. El repo ya
+       * trae juntos al cliente y sus proformas; los mapas son para no depender
+       * de eso.
        */
-      const key = `${item.routeNumber ?? '-'}|${item.proformaId ?? `shipment:${item.id}`}`;
+      const clientKey = `${item.routeNumber ?? '-'}|${item.clientId}`;
+      let client = clientsByKey.get(clientKey);
+      if (!client) {
+        client = { clientId: item.clientId, stops: [] };
+        clientsByKey.set(clientKey, client);
+        route.clients.push(client);
+      }
+      const key = `${clientKey}|${item.proformaId ?? `shipment:${item.id}`}`;
       let stop = stopsByKey.get(key);
       if (!stop) {
         stop = { proformaNumber: item.proformaNumber, rows: [], dueTotals: [] };
         stopsByKey.set(key, stop);
-        route.stops.push(stop);
+        client.stops.push(stop);
       }
       stop.rows.push(item);
     }
 
     /**
-     * El saldo de la parada es lo que se cobra en la puerta, por moneda: se suman
-     * las mismas filas que imprimen cifra (pendiente o en validacion), y cada
-     * total pasa por `roundMoney` (regla M4) para no arrastrar decimales de float.
+     * El saldo de cada proforma es lo que se cobra en la puerta, por moneda: se
+     * suman las mismas filas que imprimen cifra (pendiente o en validacion), y
+     * cada total pasa por `roundMoney` (regla M4) para no arrastrar decimales de
+     * float.
      */
     for (const route of routes) {
-      for (const stop of route.stops) {
+      for (const stop of route.clients.flatMap((c) => c.stops)) {
         const totals = new Map<Currency, number>();
         for (const r of stop.rows) {
           if (r.collection === CollectionStatus.Pagado || r.collection === CollectionStatus.SinFacturar) continue;

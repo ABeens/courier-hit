@@ -468,6 +468,9 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
               <a className="btn btn-ghost" href={`${API_BASE}/api/proformas/${data.id}/export.csv`} target="_blank" rel="noreferrer">
                 Exportar CSV
               </a>
+              <a className="btn btn-ghost" href={`${API_BASE}/api/proformas/${data.id}/export.xlsx`} target="_blank" rel="noreferrer">
+                Descargar Excel
+              </a>
               {canManage && data.status === ProformaStatus.Aprobada && (
                 <button type="button" className="btn btn-ghost" onClick={() => void correct()} disabled={busy}>
                   Corregir

@@ -28,6 +28,7 @@
     "@hono/zod-validator": "^0.4.2",
     "@node-rs/argon2": "^2.0.2",
     "drizzle-orm": "^0.38.3",
+    "exceljs": "^4.4.0",
     "hono": "^4.6.14",
     "postgres": "^3.4.5",
     "zod": "^3.23.8"

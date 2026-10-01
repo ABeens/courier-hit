@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ClientRateKind } from '../tariffs/dto';
-import { billableWeightKg, roundWeightKg } from './shipment';
+import { billableWeightKg, displayedWeightKg, roundWeightKg } from './shipment';
 
 test('tarifa estandar: el kilo se sigue redondeando hacia arriba (1.1 => 2)', () => {
   assert.equal(billableWeightKg(1.1, ClientRateKind.Estandar), 2);
@@ -30,4 +30,17 @@ test('tarifa consolidada: tampoco se redondea un peso de gramos', () => {
 test('el redondeo estandar sigue siendo el del manual', () => {
   assert.equal(roundWeightKg(1.1), 2);
   assert.equal(roundWeightKg(2), 2);
+});
+
+test('peso mostrado: el facturable segun la tarifa', () => {
+  assert.equal(displayedWeightKg(1.1, ClientRateKind.Estandar), 2);
+  assert.equal(displayedWeightKg(1.1, ClientRateKind.Consolidada), 1.1);
+});
+
+test('peso mostrado: sin tarifa (paquete sin dueño) se ve el de bascula', () => {
+  assert.equal(displayedWeightKg(1.1, null), 1.1);
+});
+
+test('peso mostrado: sin peso no hay nada que mostrar', () => {
+  assert.equal(displayedWeightKg(null, ClientRateKind.Estandar), null);
 });

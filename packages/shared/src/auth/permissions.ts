@@ -78,6 +78,13 @@ export enum Resource {
   Routes = 'routes',
   Users = 'users',
   Announcements = 'announcements',
+  /**
+   * Auditoria: el registro de las correcciones administrativas (estado
+   * corregido, proforma devuelta a borrador, cambio de dueño, descartes), cada
+   * una con el comentario obligatorio con que se hizo. Es solo lectura: las
+   * correcciones se hacen en su pantalla, aqui solo se revisan.
+   */
+  Audit = 'audit',
 }
 
 /** Verbo de la accion sobre el recurso. */
@@ -128,6 +135,16 @@ export enum Permission {
    * transporte o agenciamiento es el staff con `tramite.manage`.
    */
   TramiteReadOwn = 'tramite.read.own',
+  /**
+   * Ver las proformas PROPIAS ya emitidas (aprobadas y pagadas), buscarlas por
+   * numero o por factura electronica y abrir su documento. Los borradores quedan
+   * fuera: son trabajo interno del staff y todavia no son un documento que se le
+   * pueda mostrar al cliente.
+   *
+   * Es SOLO LECTURA y va aparte de `proformas.read`, que es la bandeja entera
+   * del staff (todos los clientes, borradores incluidos).
+   */
+  ProformasReadOwn = 'proformas.read.own',
   LockerRead = 'locker.read',
   ProfileWrite = 'profile.write',
   /**
@@ -356,6 +373,12 @@ export enum Permission {
   RoutesManage = 'routes.manage',
   UsersManage = 'users.manage',
   AnnouncementsManage = 'announcements.manage',
+  /**
+   * Ver la pantalla de auditoria. Solo admin: quien corrige es el admin y quien
+   * revisa lo corregido tambien, y las notas pueden nombrar a clientes a los que
+   * se les cargo un paquete por error (lo que el titular tampoco ve).
+   */
+  AuditRead = 'audit.read',
 }
 
 export interface PermissionDef {
@@ -373,6 +396,9 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   // cliente, el mismo modulo que el staff ve como "Tramites". El alcance real de
   // la consulta lo pone la sesion (`ownerScopeFor`), igual que package.read.own.
   [Permission.TramiteReadOwn]: { resource: Resource.Tramite, action: Action.Read, scope: Scope.Own },
+  // Resource.Proformas: la entrada "Mis proformas" del menu del cliente. El
+  // alcance (sus proformas, sin borradores) lo pone la API con la sesion.
+  [Permission.ProformasReadOwn]: { resource: Resource.Proformas, action: Action.Read, scope: Scope.Own },
   [Permission.LockerRead]: { resource: Resource.Locker, action: Action.Read, scope: Scope.Own },
   [Permission.ProfileWrite]: { resource: Resource.Profile, action: Action.Write, scope: Scope.Own },
   [Permission.ApiKeysManage]: { resource: Resource.ApiKeys, action: Action.Manage, scope: Scope.Own },
@@ -424,6 +450,7 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   [Permission.RoutesManage]: { resource: Resource.Routes, action: Action.Manage, scope: Scope.All },
   [Permission.UsersManage]: { resource: Resource.Users, action: Action.Manage, scope: Scope.All },
   [Permission.AnnouncementsManage]: { resource: Resource.Announcements, action: Action.Manage, scope: Scope.All },
+  [Permission.AuditRead]: { resource: Resource.Audit, action: Action.Read, scope: Scope.All },
 };
 
 /** Permisos de staff que hereda `admin` (acceso total). */
@@ -471,6 +498,7 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   Permission.RoutesManage,
   Permission.UsersManage,
   Permission.AnnouncementsManage,
+  Permission.AuditRead,
 ];
 
 /** Relacion Role -> Permission[]. Matriz literal de docs/roles.md §2. */
@@ -480,6 +508,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.PackageReadOwn,
     Permission.PackagePay,
     Permission.TramiteReadOwn,
+    Permission.ProformasReadOwn,
     Permission.LockerRead,
     Permission.ProfileWrite,
     Permission.ApiKeysManage,

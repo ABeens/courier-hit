@@ -67,6 +67,8 @@ function queueQuery(query: DeliveryQueueFilter) {
       hawb: shipments.hawb,
       description: shipments.description,
       shipmentType: shipments.shipmentType,
+      /** Clave del grupo por cliente (pantalla y hoja de ruta). */
+      clientId: clients.id,
       clientName: users.name,
       clientPhone: users.phone,
       provinceCode: clients.provinceCode,
@@ -111,8 +113,11 @@ function queueQuery(query: DeliveryQueueFilter) {
      */
     .orderBy(
       asc(effectiveRouteNumber),
-      // Dentro de la ruta, los paquetes de una misma proforma juntos: se entregan
-      // en la misma visita.
+      // Dentro de la ruta, por cliente (alfabetico, con el id para desempatar
+      // homonimos): sus proformas se agrupan en una sola visita.
+      asc(users.name),
+      asc(clients.id),
+      // Dentro del cliente, los paquetes de una misma proforma juntos.
       sql`(select p.number from proforma_shipments ps join proformas p on p.id = ps.proforma_id where ps.shipment_id = ${shipments.id}) asc nulls last`,
       asc(shipments.updatedAt),
       asc(shipments.id),

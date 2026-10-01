@@ -7,6 +7,7 @@ import { createApp } from './core/http';
 import { createScheduler } from './core/scheduler/jobs';
 import { helgaMockRoutes } from './integrations/helga/helga.mock.routes';
 import { apiKeysRoutes } from './modules/api-keys/api-keys.routes';
+import { auditRoutes } from './modules/audit/audit.routes';
 import { authRoutes } from './modules/auth/auth.routes';
 import { usersRoutes } from './modules/users/users.routes';
 import { costServicesRoutes } from './modules/cost-services/cost-services.routes';
@@ -43,6 +44,7 @@ app.route('/api/reports', reportsRoutes);
 app.route('/api/dashboard', dashboardRoutes);
 app.route('/api/settings', settingsRoutes);
 app.route('/api/api-keys', apiKeysRoutes);
+app.route('/api/audit', auditRoutes);
 
 /**
  * API PUBLICA para clientes (docs/16). Se monta bajo su propia version y no

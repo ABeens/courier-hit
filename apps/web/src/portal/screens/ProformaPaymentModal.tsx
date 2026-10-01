@@ -21,8 +21,10 @@ import {
   Currency,
   FLOW_LABELS,
   PAYMENT_METHOD_LABELS,
+  PROOF_ATTACHMENT,
   PaymentMethod,
   PaymentStatus,
+  attachmentRejection,
   bankAccountOptionLabel,
   formatMoney,
 } from '@courier/shared';
@@ -34,6 +36,7 @@ import type {
   ProformaPaymentQuoteDto,
 } from '@courier/shared';
 import { API_BASE, ApiError, api } from '../lib/api';
+import { FileField } from '../components/FileField';
 import { Icon } from '../components/Icon';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { OnvoCardForm } from '../components/OnvoCardForm';
@@ -145,6 +148,20 @@ export function ProformaPaymentModal({ onClose, onPaid, onProcessing }: Props) {
   function outcome(kind: PaymentResult['kind'], title: string, message: string): PaymentResult {
     const numbers = (quote?.items ?? []).map((i) => i.number).join(', ');
     return { kind, title, message, code: `Proformas ${numbers}`, amount: formatMoney(payable, chargeCurrency) };
+  }
+
+  function pickReceipt(file: File | null) {
+    if (!file) {
+      setReceipt(null);
+      return;
+    }
+    const rejection = attachmentRejection(PROOF_ATTACHMENT, file.type, file.name);
+    if (rejection) {
+      setError(rejection);
+      setReceipt(null);
+      return;
+    }
+    setReceipt(file);
   }
 
   async function submit(e: React.FormEvent) {
@@ -429,10 +446,11 @@ export function ProformaPaymentModal({ onClose, onPaid, onProcessing }: Props) {
                 </div>
               </div>
               {bankAccount && (
-                <div className="pay-sec">
-                  <div className="card-sec-title">Datos de la cuenta</div>
+                <div className="pay-sec is-bank">
+                  <div className="card-sec-title">Información bancaria</div>
                   <dl className="pay-fields">
                     <div className="card-item-field"><dt>Titular</dt><dd>HS Global Services</dd></div>
+                    <div className="card-item-field"><dt>Cédula jurídica</dt><dd className="mono">3-102-869317</dd></div>
                     <div className="card-item-field"><dt>Banco</dt><dd>{BANK_ACCOUNTS[bankAccount].bank}</dd></div>
                     <div className="card-item-field"><dt>Moneda</dt><dd>{CURRENCY_LABELS[BANK_ACCOUNTS[bankAccount].currency]}</dd></div>
                     {BANK_ACCOUNTS[bankAccount].number && (
@@ -447,13 +465,15 @@ export function ProformaPaymentModal({ onClose, onPaid, onProcessing }: Props) {
                   <label className="field-label" htmlFor="pp-receipt-no">Número de comprobante</label>
                   <input id="pp-receipt-no" className="input mono" value={receiptNumber} onChange={(e) => setReceiptNumber(e.target.value)} />
                 </div>
-                <div>
-                  <label className="field-label" htmlFor="pp-receipt">Comprobante (imagen o PDF)</label>
-                  <input
-                    id="pp-receipt" className="input" type="file" accept="image/*,application/pdf"
-                    onChange={(e) => setReceipt(e.target.files?.[0] ?? null)}
-                  />
-                </div>
+                <FileField
+                  id="pp-receipt"
+                  label="Comprobante"
+                  accept={PROOF_ATTACHMENT.accept}
+                  file={receipt}
+                  onPick={pickReceipt}
+                  disabled={saving}
+                  hint={`Se aceptan ${PROOF_ATTACHMENT.label}.`}
+                />
               </div>
             </>
           )}

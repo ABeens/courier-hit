@@ -85,6 +85,8 @@ export interface ProformaListItem {
    * La pantalla ofrece "Enviar a ruta" sobre una aprobada con un aviso explicito.
    */
   paymentGateWaived: boolean;
+  /** Consecutivo de la factura electronica, si ya se emitio. */
+  electronicInvoiceNumber: string | null;
   createdAt: string;
   approvedAt: string | null;
   paidAt: string | null;
@@ -99,7 +101,7 @@ export interface ProformaShipmentDto {
   tracking: string;
   hawb: string | null;
   description: string;
-  /** Peso real de bascula (el que se cobra lo decide la tarifa, ver la linea de flete). */
+  /** Peso FACTURABLE (el que multiplica al flete segun la tarifa), no el de bascula. */
   weightKg: number | null;
   lines: CostLineDto[];
   /** Total de ESTE tramite en la moneda de la proforma. */
@@ -115,7 +117,7 @@ export interface ProformaDetailDto extends ProformaListItem {
    * caen aqui. La pantalla lo marca para que el operador sepa cual es.
    */
   accumulates: boolean;
-  /** Suma del peso real de los paquetes, en kilos. Null si ninguno tiene peso. */
+  /** Suma del peso facturable de los paquetes, en kilos. Null si ninguno tiene peso. */
   totalWeightKg: number | null;
   shipments: ProformaShipmentDto[];
   /** Servicios adicionales cargados a la proforma entera (no a un paquete). */
@@ -125,7 +127,6 @@ export interface ProformaDetailDto extends ProformaListItem {
    * sistema. Null si todavia nadie fijo la tasa.
    */
   exchangeRate: number | null;
-  electronicInvoiceNumber: string | null;
   approvedByName: string | null;
 }
 

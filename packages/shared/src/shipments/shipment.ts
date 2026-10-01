@@ -63,6 +63,18 @@ export interface ShipmentDto {
    */
   weightKg: number | null;
   /**
+   * Tipo de la tarifa con la que se cobra el casillero (la asignada o, si no
+   * tiene, la por defecto). `null` en un paquete sin dueño: sin casillero no hay
+   * tarifa. Viaja para que el formulario anticipe el kilaje que se cobrara.
+   */
+  rateKind: ClientRateKind | null;
+  /**
+   * Peso que se FACTURA, el que se le muestra a quien mira el tramite (tarjetas,
+   * proforma, API publica). Sale de `weightKg` y `rateKind` con
+   * `displayedWeightKg`; `weightKg` queda para capturar y editar.
+   */
+  billableWeightKg: number | null;
+  /**
    * Medidas que reporta el operador de Miami: centimetros y peso volumetrico en
    * kilos. Solo INFORMATIVAS, no entran en la factura (que se calcula con
    * `weightKg`). Nulas mientras el proveedor no las haya reportado; llegan con la
@@ -460,6 +472,19 @@ export function roundWeightKg(weight: number): number {
  */
 export function billableWeightKg(weightKg: number, kind: ClientRateKind): number {
   return billsActualWeight(kind) ? weightKg : roundWeightKg(weightKg);
+}
+
+/**
+ * Peso para MOSTRAR: el facturable cuando se sabe la tarifa y el de bascula
+ * cuando no (paquete sin dueño, que no se cobra). Null si aun no se peso.
+ *
+ * Es la variante tolerante de `billableWeightKg` para las vistas: tarjetas,
+ * proforma, PDF/CSV y API publica tienen que enseñar el mismo kilaje que
+ * multiplica al precio, no el guardado.
+ */
+export function displayedWeightKg(weightKg: number | null, kind: ClientRateKind | null): number | null {
+  if (weightKg == null) return null;
+  return kind == null ? weightKg : billableWeightKg(weightKg, kind);
 }
 
 /**

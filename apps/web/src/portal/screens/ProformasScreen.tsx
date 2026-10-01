@@ -241,11 +241,12 @@ export function ProformasScreen({
   }
 
   /**
-   * Los dos REPORTES del filtro que se esta viendo (estado, tipo y busqueda): el
-   * listado en CSV y el lote de documentos para imprimir. Se abren en otra
+   * Los REPORTES del filtro que se esta viendo (estado, tipo y busqueda): el
+   * listado en CSV, el lote de documentos para imprimir y ese mismo lote en
+   * Excel con el formato del documento. Se abren en otra
    * pestaña: la cookie de sesion viaja igual por ser el mismo origen.
    */
-  function openReport(path: 'export.csv' | 'documents') {
+  function openReport(path: 'export.csv' | 'documents' | 'documents.xlsx') {
     const params = new URLSearchParams();
     if (status) params.set('status', status);
     if (flow) params.set('flow', flow);
@@ -259,7 +260,7 @@ export function ProformasScreen({
   ];
 
   const canSelect = canManage || canDispatch;
-  const columnCount = canSelect ? 9 : 8;
+  const columnCount = canSelect ? 10 : 9;
 
   return (
     <div className="fadeIn">
@@ -282,6 +283,13 @@ export function ProformasScreen({
             onClick={() => openReport('documents')}
           >
             Imprimir todas
+          </button>
+          <button
+            type="button" className="btn btn-ghost" disabled={list.total === 0}
+            title="Todas las proformas del filtro en Excel, una hoja por proforma con el formato del documento"
+            onClick={() => openReport('documents.xlsx')}
+          >
+            Excel de todas
           </button>
           {canSelect && (
             <>
@@ -315,7 +323,7 @@ export function ProformasScreen({
       {warning && <div className="banner warn" style={{ marginBottom: 14 }}>{warning}</div>}
 
       <FilterBar
-        search={{ value: q, onChange: setQ, placeholder: 'Buscar por número de proforma, casillero o cliente…' }}
+        search={{ value: q, onChange: setQ, placeholder: 'Buscar por número de proforma, factura electrónica, casillero o cliente…' }}
         chips={chips}
         onClearAll={() => {
           setStatus('');
@@ -365,6 +373,7 @@ export function ProformasScreen({
                   </th>
                 )}
                 <th>Proforma</th>
+                <th>Factura electrónica</th>
                 <th>Cliente</th>
                 <th>Tipo</th>
                 <th>Estado</th>
@@ -392,6 +401,11 @@ export function ProformasScreen({
                   )}
                   <td>
                     <span className="mono">{row.number ?? 'Sin número'}</span>
+                  </td>
+                  <td>
+                    {row.electronicInvoiceNumber
+                      ? <span className="mono">{row.electronicInvoiceNumber}</span>
+                      : <span className="muted">-</span>}
                   </td>
                   <td>
                     <div className="cell-name">{row.client.name}</div>

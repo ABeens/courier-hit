@@ -48,7 +48,8 @@ function toPublicPackage(shipment: ShipmentDto): PublicPackage {
     store: shipment.store,
     carrier: shipment.carrier,
     hawb: shipment.hawb,
-    weightKg: shipment.weightKg,
+    // El que se factura (lo promete el contrato), no el de bascula.
+    weightKg: shipment.billableWeightKg,
     declaredValueUsd: shipment.declaredValueUsd,
     invoiceTotalCrc: shipment.invoiceTotalCrc,
     invoiceTotalUsd: shipment.invoiceTotalUsd,

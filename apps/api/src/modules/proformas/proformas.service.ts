@@ -46,6 +46,7 @@ import {
   computeTotals,
   convertMoney,
   costLineExchangeRateSchema,
+  displayedWeightKg,
   findCanton,
   findDistrict,
   findProvince,
@@ -182,6 +183,7 @@ function toListItem(row: ListRow, lines: readonly Line[]): ProformaListItem {
     }),
     readyForRouteCount: row.readyForRouteCount,
     paymentGateWaived: paymentGateWaived(p.flow, row.clientPaymentGateExempt),
+    electronicInvoiceNumber: p.electronicInvoiceNumber,
     createdAt: p.createdAt.toISOString(),
     approvedAt: p.approvedAt?.toISOString() ?? null,
     paidAt: p.paidAt?.toISOString() ?? null,
@@ -264,13 +266,21 @@ export const proformasService = {
   },
 
   /**
+   * Las proformas del propio cliente: solo las aprobadas y pagadas. El dueño lo
+   * pone la sesion y no el query, asi que un `clientId` ajeno no abre nada.
+   */
+  async listOwn(clientId: string, query: ListProformasQuery): Promise<Page<ProformaListItem>> {
+    const { rows, total } = await proformasRepo.list({ ...query, clientId }, true);
+    return { items: await toListItems(rows), total, page: query.page, pageSize: query.pageSize };
+  },
+
+  /**
    * REPORTE del listado: el filtro entero de la bandeja en CSV, una fila por
    * proforma. Tope `EXPORT_LIMIT`; si recorta, lo dice en la ultima fila.
    */
-  async exportList(filter: ProformaFilter): Promise<{ items: ProformaListItem[]; total: number; electronicInvoice: Map<string, string | null> }> {
+  async exportList(filter: ProformaFilter): Promise<{ items: ProformaListItem[]; total: number }> {
     const { rows, total } = await proformasRepo.listAll(filter, EXPORT_LIMIT);
-    const electronicInvoice = new Map(rows.map((r) => [r.proforma.id, r.proforma.electronicInvoiceNumber]));
-    return { items: await toListItems(rows), total, electronicInvoice };
+    return { items: await toListItems(rows), total };
   },
 
   /**
@@ -306,23 +316,23 @@ export const proformasService = {
         tracking: s.tracking,
         hawb: s.hawb,
         description: s.description,
-        weightKg: s.weightKg,
+        weightKg: displayedWeightKg(s.weightKg, s.rateKind),
         lines: lines.map(toLineDto),
         total: totalIn(computeTotals(lines), p.currency),
       };
     });
 
-    const weights = shipments.map((s) => s.weightKg).filter((w): w is number => w !== null);
+    const weights = items.map((s) => s.weightKg).filter((w): w is number => w !== null);
     return {
       ...toListItem(header, [...shipmentLines, ...extras]),
       editable: isProformaEditable(p.status),
       accumulates: p.accumulates,
-      // El peso no es un monto: se suma y se deja con tres decimales de bascula.
+      // El peso no es un monto: se suma (el facturable de cada paquete) y se deja
+      // con tres decimales de bascula.
       totalWeightKg: weights.length > 0 ? Math.round(weights.reduce((a, b) => a + b, 0) * 1000) / 1000 : null,
       shipments: items,
       costs: extras.map(toLineDto),
       exchangeRate: p.exchangeRate ?? (await currentRate()),
-      electronicInvoiceNumber: p.electronicInvoiceNumber,
       approvedByName: header.approvedByName,
     };
   },
@@ -736,7 +746,7 @@ export const proformasService = {
         awb: s.hawb ?? s.tracking,
         tracking: s.tracking,
         description: s.description,
-        weightKg: s.weightKg,
+        weightKg: displayedWeightKg(s.weightKg, s.rateKind),
         freight: breakdown.flete,
         // "Otros / Permisos" junta lo trasladado que no es impuesto con los
         // honorarios propios: para el cliente es lo que se cobra aparte.
