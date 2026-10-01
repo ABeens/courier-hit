@@ -93,8 +93,10 @@ export interface HelgaRecipientListItem {
 export interface HelgaCreatePrealertRequest {
   /** Numero de guia del transportista (UPS, Fedex...). Unico del lado de Helga. */
   tracking: string;
-  /** Descripcion del contenido (nuestro `description`). */
+  /** Contenido del paquete: nuestro `content`, o `description` si viene vacio. */
   contenido: string;
+  /** Notas para la bodega (nuestro `notes`). Opcional en v2; se omite si no hay. */
+  notas?: string;
   /** Tienda donde se compro; obligatoria. Default "POR DEFINIR" si no se conoce. */
   tienda: string;
   /** Id del destinatario en Helga (nuestro `clients.helga_client_id`). */
@@ -191,6 +193,11 @@ export interface HelgaPackageStatus {
   /** Ultimo estado. `"NO TIENE ESTADO"` cuando el paquete aun no tiene tracking. */
   Estado_Envio?: string;
   contenido?: string;
+  /**
+   * Notas del paquete. El manual no lo lista en la op. B y no se ha visto en
+   * vivo: se lee por si el proveedor lo devuelve (es el `notas` de la op. C).
+   */
+  notas?: string | null;
   /** Pesos: pueden venir como numero o como cadena ("1.38"). Se normalizan al leer. */
   Peso_kg?: number | string;
   Peso_lb?: number | string;
@@ -233,6 +240,8 @@ export interface HelgaAvailablePackage {
   /** Estado en el vocabulario del proveedor; se homologa con `mapProviderState`. */
   estado?: string;
   contenido?: string;
+  /** Igual que en la op. B: no verificado en vivo, se lee si viene. */
+  notas?: string | null;
   peso?: number;
   peso_kg?: number | string;
   peso_lb?: number | string;

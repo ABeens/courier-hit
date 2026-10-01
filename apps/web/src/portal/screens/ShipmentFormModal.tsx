@@ -3,7 +3,8 @@
  * (docs/manuales/flujo.md L73-121).
  *
  * El TIPO de tramite manda sobre el formulario:
- *   - Paqueteria       -> tienda, transportista, HAWB (LES) y peso.
+ *   - Paqueteria       -> contenido y notas para el proveedor, tienda,
+ *                         transportista, HAWB (LES) y peso.
  *   - Transporte y Ag. -> notas para facturar; almacen y DUA solo al EDITAR,
  *                         porque el manual los pide despues de guardar (L80-83).
  *
@@ -92,6 +93,8 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
   const [clientId, setClientId] = useState(row?.client?.id ?? '');
   const [tracking, setTracking] = useState(row?.tracking ?? '');
   const [description, setDescription] = useState(row?.description ?? '');
+  const [content, setContent] = useState(row?.content ?? '');
+  const [notes, setNotes] = useState(row?.notes ?? '');
   const [store, setStore] = useState(row?.store ?? '');
   const [carrier, setCarrier] = useState(row?.carrier ?? '');
   const [hawb, setHawb] = useState(row?.hawb ?? '');
@@ -157,7 +160,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
   const weightLocked = mode === 'edit' && row != null && row.invoiceTotalUsd != null;
   // Campos visibles del formulario para este tipo; sirve para avisar si alguno quedo bloqueado.
   const relevantFields = isPackage
-    ? [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg, ShipmentField.DeclaredValue, ShipmentField.InsuredValue, ShipmentField.TariffPosition, ShipmentField.Retain, ShipmentField.BillingNotes]
+    ? [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Content, ShipmentField.Notes, ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg, ShipmentField.DeclaredValue, ShipmentField.InsuredValue, ShipmentField.TariffPosition, ShipmentField.Retain, ShipmentField.BillingNotes]
     : [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Warehouse, ShipmentField.Dua, ShipmentField.BillingNotes];
   const someFrozen = editable !== null && (weightLocked || relevantFields.some((f) => !editable.includes(f)));
 
@@ -213,6 +216,8 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
           description,
           ...(isPackage
             ? {
+                content: content.trim() || undefined,
+                notes: notes.trim() || undefined,
                 store: store || undefined,
                 carrier: carrier || undefined,
                 hawb: hawb.trim() || undefined,
@@ -251,6 +256,8 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
       if (tracking.trim().toUpperCase() !== row.tracking) patch.tracking = tracking.trim().toUpperCase();
       if (description.trim() !== row.description) patch.description = description.trim();
       if (isPackage) {
+        put('content', content, row.content);
+        put('notes', notes, row.notes);
         if ((store || null) !== row.store) patch.store = store || null;
         if ((carrier || null) !== row.carrier) patch.carrier = carrier || null;
         put('hawb', hawb, row.hawb);
@@ -367,6 +374,28 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
 
           {isPackage ? (
             <>
+              <div className="col-full">
+                <label className="field-label" htmlFor="t-content">Contenido</label>
+                <input
+                  id="t-content" className="input" autoComplete="off" maxLength={200} value={content}
+                  placeholder="Opcional" disabled={!canEdit(ShipmentField.Content)}
+                  onChange={(e) => setContent(e.target.value)}
+                />
+                <div className="field-hint">
+                  Va como contenido en la prealerta del proveedor (vacío = la descripción). La
+                  sincronización lo actualiza con lo que registre su bodega.
+                </div>
+              </div>
+              <div className="col-full">
+                <label className="field-label" htmlFor="t-provider-notes">Notas para el proveedor</label>
+                <textarea
+                  id="t-provider-notes" className="input" autoComplete="off" rows={2} maxLength={500} value={notes}
+                  placeholder="Opcional" disabled={!canEdit(ShipmentField.Notes)}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+                <div className="field-hint">Viajan en la prealerta; las lee la bodega de Miami.</div>
+              </div>
+
               <div>
                 <label className="field-label" htmlFor="t-store">Tienda</label>
                 <select id="t-store" className="input" value={store} disabled={!canEdit(ShipmentField.Store)} onChange={(e) => setStore(e.target.value)}>

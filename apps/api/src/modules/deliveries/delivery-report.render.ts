@@ -25,6 +25,7 @@ import {
   formatMoney,
 } from '@courier/shared';
 import type { Currency, ShipmentType } from '@courier/shared';
+import { BRAND_LOGO_DATA_URI } from '../../core/brand-logo';
 
 /** Zona del negocio: todos los clientes son de Costa Rica (CLAUDE.md). */
 const TIME_ZONE = 'America/Costa_Rica';
@@ -138,7 +139,8 @@ const STYLES = `
     width: 297mm; min-height: 210mm; margin: 12px auto; padding: 12mm;
     background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.15);
   }
-  .brand { font-size: 20px; font-weight: 700; letter-spacing: .5px; }
+  .brand { display: flex; align-items: center; gap: 14px; font-size: 20px; font-weight: 700; letter-spacing: .5px; }
+  .brand img { width: 96px; height: auto; flex: none; }
   .brand small { display: block; font-size: 11px; font-weight: 400; color: #6b7280; letter-spacing: 0; }
   .head { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
   .meta { text-align: right; font-size: 11px; color: #374151; }
@@ -339,7 +341,10 @@ export function renderDeliveryReport(doc: DeliveryReportDoc): string {
 <div class="toolbar"><button type="button" onclick="window.print()">Imprimir o guardar PDF</button></div>
 <section class="sheet">
   <div class="head">
-    <div class="brand">HS Global Services<small>Hoja de ruta de entregas</small></div>
+    <div class="brand">
+      <img src="${BRAND_LOGO_DATA_URI}" alt="HS Global Services">
+      <div>HS Global Services<small>Hoja de ruta de entregas</small></div>
+    </div>
     <div class="meta">
       <div class="scope">${esc(scope)}</div>
       <div>${doc.total} paquete${doc.total === 1 ? '' : 's'} en ruta</div>

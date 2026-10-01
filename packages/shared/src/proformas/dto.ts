@@ -27,6 +27,8 @@ export interface ShipmentProformaRef {
   status: ProformaStatus;
 }
 
+const instantSchema = z.string().datetime({ offset: true, message: 'Fecha inválida.' });
+
 /**
  * Filtros de la bandeja de proformas, SIN paginacion. Los comparten el listado
  * paginado y las dos salidas del filtro entero (el CSV del listado y el lote de
@@ -38,6 +40,13 @@ export const proformaFilterSchema = z.object({
   clientId: z.string().uuid().optional(),
   /** Busca por numero de proforma, codigo o nombre del cliente. */
   q: z.string().trim().max(100).optional(),
+  /**
+   * Rango por la fecha que muestra la bandeja: la de aprobacion, o la de
+   * creacion si es un borrador. `from` inclusive; `to` exclusivo (la web manda
+   * el inicio del dia siguiente para que el ultimo dia entre completo).
+   */
+  from: instantSchema.optional(),
+  to: instantSchema.optional(),
 });
 export type ProformaFilter = z.infer<typeof proformaFilterSchema>;
 

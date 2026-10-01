@@ -53,10 +53,14 @@ const FONT = 'Segoe UI';
 const COLUMNS = [16, 22, 20, 32, 10, 16];
 const LAST_COL = COLUMNS.length;
 
-/** Formato numerico de un importe: los decimales de SU moneda (regla M4). */
+/**
+ * Formato numerico de un importe: el simbolo y los decimales de SU moneda (regla M4).
+ * La celda sigue siendo un numero; el simbolo es solo presentacion.
+ */
 function moneyFormat(currency: Currency): string {
   const digits = CURRENCY_DECIMALS[currency];
-  return digits > 0 ? `#,##0.${'0'.repeat(digits)}` : '#,##0';
+  const number = digits > 0 ? `#,##0.${'0'.repeat(digits)}` : '#,##0';
+  return `"${CURRENCY_SYMBOLS[currency]}"${number}`;
 }
 
 function font(extra: Partial<ExcelJS.Font> = {}): Partial<ExcelJS.Font> {
@@ -92,14 +96,14 @@ function caption(ws: ExcelJS.Worksheet, row: number, text: string): void {
 }
 
 /** Fila de cabecera de tabla: fondo gris claro, mayusculas, linea inferior. */
-function headerRow(ws: ExcelJS.Worksheet, row: number, cells: Array<[number, number, string, boolean]>): void {
-  for (const [from, to, text, numeric] of cells) {
+function headerRow(ws: ExcelJS.Worksheet, row: number, cells: Array<[number, number, string, ExcelJS.Alignment['horizontal']]>): void {
+  for (const [from, to, text, horizontal] of cells) {
     put(
       ws, row, from, text.toUpperCase(),
       {
         font: font({ size: 9, bold: true, color: { argb: COLOR.head } }),
         fill: fill(COLOR.headFill),
-        alignment: { horizontal: numeric ? 'right' : 'left', vertical: 'middle', wrapText: true },
+        alignment: { horizontal, vertical: 'middle', wrapText: true },
       },
       to,
     );
@@ -181,6 +185,7 @@ function addSheet(wb: ExcelJS.Workbook, logoId: number, doc: ProformaDocument, n
   put(ws, 3, 2, `Proforma · ${PROFORMA_STATUS_LABELS[doc.status]}`, { font: font({ size: 9, color: { argb: COLOR.muted } }) }, 3);
 
   const right: Partial<ExcelJS.Alignment> = { horizontal: 'right' };
+  const center: Partial<ExcelJS.Alignment> = { horizontal: 'center' };
   put(ws, 1, 4, doc.number ? 'PROFORMA N.º' : 'PROFORMA', {
     font: font({ size: 8, color: { argb: COLOR.muted } }),
     alignment: right,
@@ -233,13 +238,13 @@ function addSheet(wb: ExcelJS.Workbook, logoId: number, doc: ProformaDocument, n
   // --- Detalle de conceptos.
   caption(ws, row++, 'Detalle de conceptos');
   headerRow(ws, row++, [
-    [1, 1, 'Cantidad', true],
-    [2, 4, 'Concepto', false],
-    [5, 5, 'Cod sis FE', false],
-    [6, 6, `Monto (${currency})`, true],
+    [1, 1, 'Cantidad', 'center'],
+    [2, 4, 'Concepto', 'left'],
+    [5, 5, 'Cod sis FE', 'left'],
+    [6, 6, `Monto (${currency})`, 'right'],
   ]);
   for (const c of conceptSummary(doc)) {
-    put(ws, row, 1, c.quantity, { alignment: right });
+    put(ws, row, 1, c.quantity, { alignment: center });
     put(ws, row, 2, c.label, {}, 4);
     put(ws, row, 5, c.electronicInvoiceCode ?? '-', c.electronicInvoiceCode ? {} : { font: font({ color: { argb: 'FF9CA3AF' } }) });
     put(ws, row, 6, c.amount, { numFmt: moneyFormat(currency), alignment: right });
@@ -250,12 +255,12 @@ function addSheet(wb: ExcelJS.Workbook, logoId: number, doc: ProformaDocument, n
   // --- Paquetes y tramites.
   caption(ws, row++, `Paquetes y trámites (${doc.items.length}) · montos en ${currency} (${CURRENCY_SYMBOLS[currency]})`);
   headerRow(ws, row++, [
-    [1, 1, 'Trámite', false],
-    [2, 2, 'Tracking Number', false],
-    [3, 3, 'AWB / Guía', false],
-    [4, 4, 'Descripción', false],
-    [5, 5, 'Peso kg', true],
-    [6, 6, 'Total', true],
+    [1, 1, 'Trámite', 'left'],
+    [2, 2, 'Tracking Number', 'left'],
+    [3, 3, 'AWB / Guía', 'left'],
+    [4, 4, 'Descripción', 'left'],
+    [5, 5, 'Peso kg', 'center'],
+    [6, 6, 'Total', 'right'],
   ]);
   const wrap: Partial<ExcelJS.Alignment> = { wrapText: true, vertical: 'top' };
   for (const item of doc.items) {
@@ -263,14 +268,14 @@ function addSheet(wb: ExcelJS.Workbook, logoId: number, doc: ProformaDocument, n
     put(ws, row, 2, item.tracking, { alignment: wrap });
     put(ws, row, 3, item.awb, { alignment: wrap });
     put(ws, row, 4, item.description, { alignment: wrap });
-    put(ws, row, 5, item.weightKg, { alignment: { horizontal: 'right', vertical: 'top' } });
+    put(ws, row, 5, item.weightKg, { alignment: { horizontal: 'center', vertical: 'top' } });
     put(ws, row, 6, item.total, { numFmt: moneyFormat(currency), alignment: { horizontal: 'right', vertical: 'top' } });
     rowBorder(ws, row++);
   }
   const weight = totalWeightKg(doc);
   if (weight !== null) {
     put(ws, row, 1, 'Peso total', { font: font({ bold: true }) }, 4);
-    put(ws, row, 5, weight, { font: font({ bold: true }), alignment: right });
+    put(ws, row, 5, weight, { font: font({ bold: true }), alignment: center });
     rowBorder(ws, row++);
   }
   if (doc.extras.length > 0) {

@@ -1,8 +1,8 @@
 /**
  * Logo de HS Global Services como data URI, para los documentos que la API
- * sirve como HTML imprimible (proforma). Va incrustado y no enlazado porque el
- * documento se abre desde el origen de la API, no del sitio web, y porque asi
- * sale tambien al guardarlo como PDF o abrirlo sin conexion.
+ * sirve como HTML imprimible (proforma, hoja de entregas). Va incrustado y no
+ * enlazado porque el documento se abre desde el origen de la API, no del sitio
+ * web, y porque asi sale tambien al guardarlo como PDF o abrirlo sin conexion.
  *
  * Generado desde apps/web/public/logo.png reducido a 360px de ancho (en la
  * hoja se pinta a unos 110px; el resto es margen para pantallas de alta

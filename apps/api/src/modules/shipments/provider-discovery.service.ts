@@ -470,7 +470,12 @@ export const providerDiscoveryService = {
       shipmentType: ShipmentType.Paqueteria,
       state: initialStateFor(row),
       tracking,
+      // Nadie escribio todavia una descripcion: arranca con el contenido del
+      // proveedor y a partir de aqui cada campo sigue por su lado (la
+      // sincronizacion refresca `content`, nunca `description`).
       description: row.contenido?.trim() || FALLBACK_DESCRIPTION,
+      content: row.contenido?.trim() || null,
+      notes: row.notas?.trim() || null,
       store: row.tienda?.trim() || null,
       hawb: row.hawb?.trim() || null,
       // Peso de bascula del proveedor, tal cual: el redondeo de cobro se aplica

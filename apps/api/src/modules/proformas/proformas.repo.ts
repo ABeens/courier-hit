@@ -92,6 +92,11 @@ function listConditions(query: ProformaFilter, issuedOnly = false): SQL[] {
   if (query.status) conds.push(eq(proformas.status, query.status));
   if (query.flow) conds.push(eq(proformas.flow, query.flow));
   if (query.clientId) conds.push(eq(proformas.clientId, query.clientId));
+  // La misma fecha que pinta la columna "Fecha": la de aprobacion, o la de
+  // creacion mientras es borrador.
+  const shownAt = sql`coalesce(${proformas.approvedAt}, ${proformas.createdAt})`;
+  if (query.from) conds.push(sql`${shownAt} >= ${query.from}::timestamptz`);
+  if (query.to) conds.push(sql`${shownAt} < ${query.to}::timestamptz`);
   if (query.q) {
     const like = `%${query.q}%`;
     const byText = or(

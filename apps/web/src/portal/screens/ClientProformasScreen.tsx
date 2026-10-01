@@ -17,7 +17,7 @@ import {
   FLOW_LABELS,
   Flow,
   PROFORMA_DELIVERY_STATUS_LABELS,
-  PROFORMA_STATUS_LABELS,
+  PROFORMA_CLIENT_STATUS_LABELS,
   ProformaStatus,
 } from '@courier/shared';
 import type { ProformaListItem } from '@courier/shared';
@@ -46,7 +46,7 @@ export function ClientProformasScreen() {
   );
 
   const chips: FilterChip[] = [
-    ...(status ? [{ label: `Estado: ${PROFORMA_STATUS_LABELS[status]}`, onClear: () => setStatus('') }] : []),
+    ...(status ? [{ label: `Estado: ${PROFORMA_CLIENT_STATUS_LABELS[status]}`, onClear: () => setStatus('') }] : []),
     ...(flow ? [{ label: `Tipo: ${FLOW_LABELS[flow]}`, onClear: () => setFlow('') }] : []),
   ];
 
@@ -77,7 +77,7 @@ export function ClientProformasScreen() {
           >
             <option value="">Todos</option>
             {CLIENT_STATUSES.map((s) => (
-              <option key={s} value={s}>{PROFORMA_STATUS_LABELS[s]}</option>
+              <option key={s} value={s}>{PROFORMA_CLIENT_STATUS_LABELS[s]}</option>
             ))}
           </select>
         </div>
@@ -126,7 +126,7 @@ export function ClientProformasScreen() {
                   <td>
                     <span className={proformaStatusPill(row.status)}>
                       <span className="dot" />
-                      {PROFORMA_STATUS_LABELS[row.status]}
+                      {PROFORMA_CLIENT_STATUS_LABELS[row.status]}
                     </span>
                     <div className="cell-sub">{PROFORMA_DELIVERY_STATUS_LABELS[row.deliveryStatus]}</div>
                   </td>

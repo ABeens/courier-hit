@@ -31,7 +31,7 @@ import { IconButton } from '../components/IconButton';
 import { EmptyList, ListBody, TableSkeleton } from '../components/ListLoading';
 import { Pagination } from '../components/Pagination';
 import { API_BASE, ApiError, api } from '../lib/api';
-import { formatDate } from '../lib/datetime';
+import { formatDate, formatDayInput, startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
 import { usePagedList } from '../lib/usePagedList';
 import { ProformaDetailModal } from './ProformaDetailModal';
 
@@ -131,6 +131,9 @@ export function ProformasScreen({
   );
   const [flow, setFlow] = useState<Flow | ''>('');
   const [q, setQ] = useState('');
+  /** Rango de dias (YYYY-MM-DD, calendario local) sobre la columna "Fecha". */
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   /**
    * Lo marcado, con su fila. Se guarda la FILA y no solo el id para que la
    * seleccion sobreviva a una busqueda o a un cambio de pagina: antes se cruzaba
@@ -145,7 +148,14 @@ export function ProformasScreen({
 
   const list = usePagedList<ProformaListItem>(
     '/proformas',
-    { status: status || undefined, flow: flow || undefined, q: q.trim() || undefined },
+    {
+      status: status || undefined,
+      flow: flow || undefined,
+      q: q.trim() || undefined,
+      // El usuario elige dias en su hora local; el rango viaja como instantes UTC.
+      from: from ? startOfLocalDayUtc(from) : undefined,
+      to: to ? startOfNextLocalDayUtc(to) : undefined,
+    },
     { errorMessage: 'No se pudieron cargar las proformas.' },
   );
   const { error, setError } = list;
@@ -241,7 +251,7 @@ export function ProformasScreen({
   }
 
   /**
-   * Los REPORTES del filtro que se esta viendo (estado, tipo y busqueda): el
+   * Los REPORTES del filtro que se esta viendo (estado, tipo, fechas y busqueda): el
    * listado en CSV, el lote de documentos para imprimir y ese mismo lote en
    * Excel con el formato del documento. Se abren en otra
    * pestaña: la cookie de sesion viaja igual por ser el mismo origen.
@@ -251,12 +261,16 @@ export function ProformasScreen({
     if (status) params.set('status', status);
     if (flow) params.set('flow', flow);
     if (q.trim()) params.set('q', q.trim());
+    if (from) params.set('from', startOfLocalDayUtc(from));
+    if (to) params.set('to', startOfNextLocalDayUtc(to));
     window.open(`${API_BASE}/api/proformas/${path}?${params.toString()}`, '_blank');
   }
 
   const chips: FilterChip[] = [
     ...(status ? [{ label: `Estado: ${PROFORMA_STATUS_LABELS[status]}`, onClear: () => setStatus('') }] : []),
     ...(flow ? [{ label: `Tipo: ${FLOW_LABELS[flow]}`, onClear: () => setFlow('') }] : []),
+    ...(from ? [{ label: `Desde: ${formatDayInput(from)}`, onClear: () => setFrom('') }] : []),
+    ...(to ? [{ label: `Hasta: ${formatDayInput(to)}`, onClear: () => setTo('') }] : []),
   ];
 
   const canSelect = canManage || canDispatch;
@@ -328,6 +342,8 @@ export function ProformasScreen({
         onClearAll={() => {
           setStatus('');
           setFlow('');
+          setFrom('');
+          setTo('');
         }}
       >
         <div>
@@ -353,6 +369,16 @@ export function ProformasScreen({
               <option key={f} value={f}>{FLOW_LABELS[f]}</option>
             ))}
           </select>
+        </div>
+        <div className="field-pair">
+          <div>
+            <label className="field-label" htmlFor="pf-from">Desde</label>
+            <input id="pf-from" className="input" type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="pf-to">Hasta</label>
+            <input id="pf-to" className="input" type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
+          </div>
         </div>
       </FilterBar>
 

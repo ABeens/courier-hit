@@ -77,6 +77,8 @@ export interface MockPackage {
   hawb: string;
   recipientId: string;
   content: string;
+  /** `notas` de la prealerta. Opcional: los mundos guardados antes no lo traen. */
+  notes?: string | null;
   store: string;
   commercialValue: number;
   insuredValue: number;
@@ -505,6 +507,7 @@ function opCreatePrealert(body: Record<string, unknown>): Response {
     hawb: `LES${String(48_000_000 + seq)}`,
     recipientId,
     content: String(body.contenido ?? '').trim() || 'SIN DESCRIPCION',
+    notes: String(body.notas ?? '').trim() || null,
     store: String(body.tienda ?? '').trim() || 'POR DEFINIR',
     commercialValue: Number(body.valor_comercial ?? 0),
     insuredValue: Number(body.valor_asegurado ?? 0),
@@ -556,6 +559,7 @@ function opPackageState(search: string): Response {
       tracking: pkg.tracking,
       Estado_Envio: estado,
       contenido: pkg.content,
+      notas: pkg.notes ?? null,
       // Helga a veces manda el peso como cadena; se emite asi a proposito para
       // ejercitar la normalizacion de `toNumber`.
       Peso_kg: String(m.kg),
@@ -605,6 +609,7 @@ function opAvailablePackages(page: number, body: Record<string, unknown>): Respo
           tracking: p.tracking,
           estado: DISCOVERY_STATE,
           contenido: p.content,
+          notas: p.notes ?? null,
           peso: m.kg,
           peso_kg: String(m.kg),
           peso_lb: m.lb,

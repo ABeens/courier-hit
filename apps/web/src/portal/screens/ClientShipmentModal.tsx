@@ -1,7 +1,7 @@
 /**
  * PREALERTA de un paquete por el titular del casillero ("Requerimientos Parte 2 -
- * Portal Cliente", L45-71): tienda, transportista, tracking, descripcion, valor
- * declarado y la ORDEN DE COMPRA de lo que viene en camino a Miami.
+ * Portal Cliente", L45-71): tienda, transportista, tracking, descripcion,
+ * contenido y notas para la bodega, valor declarado y la ORDEN DE COMPRA de lo que viene en camino a Miami.
  *
  * SOLO PAQUETERIA, y por eso no hay selector de tipo. Los tramites de Transporte
  * (aereo, maritimo FCL/LCL) y de Agenciamiento no los prealerta el cliente: nacen
@@ -47,6 +47,8 @@ interface Props {
 export function ClientShipmentModal({ onClose, onCreated }: Props) {
   const [tracking, setTracking] = useState('');
   const [description, setDescription] = useState('');
+  const [content, setContent] = useState('');
+  const [notes, setNotes] = useState('');
   const [store, setStore] = useState('');
   const [carrier, setCarrier] = useState('');
   const [declaredValue, setDeclaredValue] = useState('');
@@ -61,6 +63,8 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
   function resetFields() {
     setTracking('');
     setDescription('');
+    setContent('');
+    setNotes('');
     setStore('');
     setCarrier('');
     setDeclaredValue('');
@@ -98,6 +102,8 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
         shipmentType: ShipmentType.Paqueteria,
         tracking,
         description,
+        content: content.trim() || undefined,
+        notes: notes.trim() || undefined,
         store: store || undefined,
         carrier: carrier || undefined,
         declaredValueUsd: declaredValue ? Number(declaredValue) : undefined,
@@ -128,6 +134,8 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
       form.set('shipmentType', parsed.data.shipmentType);
       form.set('tracking', parsed.data.tracking);
       form.set('description', parsed.data.description);
+      if (parsed.data.content) form.set('content', parsed.data.content);
+      if (parsed.data.notes) form.set('notes', parsed.data.notes);
       if (parsed.data.store) form.set('store', parsed.data.store);
       if (parsed.data.carrier) form.set('carrier', parsed.data.carrier);
       if (parsed.data.declaredValueUsd !== undefined) {
@@ -187,6 +195,16 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
             />
           </div>
 
+          <div>
+            <label className="field-label" htmlFor="p-content">Contenido</label>
+            <input
+              id="p-content" className="input" autoComplete="off" maxLength={200} value={content}
+              placeholder="Opcional"
+              onChange={(e) => setContent(e.target.value)}
+            />
+            <div className="field-hint">Qué trae el paquete. Si lo dejas vacío usamos la descripción.</div>
+          </div>
+
           <div className="field-pair">
             <div>
               <label className="field-label" htmlFor="p-store">Tienda</label>
@@ -212,6 +230,15 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
               onChange={(e) => setDeclaredValue(e.target.value)}
             />
             <div className="field-hint">Lo que pagaste por la compra, en dólares. Es obligatorio para la aduana.</div>
+          </div>
+
+          <div>
+            <label className="field-label" htmlFor="p-notes">Notas para la bodega</label>
+            <textarea
+              id="p-notes" className="input" autoComplete="off" rows={2} maxLength={500} value={notes}
+              placeholder="Opcional"
+              onChange={(e) => setNotes(e.target.value)}
+            />
           </div>
 
           <FileField

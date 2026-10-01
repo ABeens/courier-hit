@@ -68,9 +68,28 @@ export const shipments = pgTable(
     state: shipmentStateEnum('state').notNull(),
     /** Tracking (Paqueteria) o AWB/BL (Transporte y Agenciamiento). */
     tracking: text('tracking').notNull(),
+    /**
+     * Descripcion / REF: con lo que la operacion y el cliente reconocen el
+     * tramite. Es NUESTRA y no viaja al proveedor como tal (ver `content`).
+     */
     description: text('description').notNull(),
 
     // --- Solo Paqueteria ---
+    /**
+     * Contenido del paquete, el `contenido` de Helga. Va aparte de `description`
+     * porque son dos datos con dueño distinto: la descripcion la escribe quien da
+     * de alta el tramite, y el contenido es lo que el proveedor tiene registrado
+     * (su bodega lo corrige al digitar el paquete). Al prealertar se manda este
+     * campo, o la descripcion si viene vacio (`contenido` es obligatorio alla);
+     * la sincronizacion lo refresca con lo que reporte el proveedor.
+     */
+    content: text('content'),
+    /**
+     * Notas para el proveedor, el `notas` de la prealerta de Helga. No son las
+     * notas para facturar (`billingNotes`), que son internas: estas las lee la
+     * bodega de Miami.
+     */
+    notes: text('notes'),
     store: text('store'),
     carrier: text('carrier'),
     hawb: text('hawb'),

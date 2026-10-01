@@ -48,6 +48,10 @@ export const providerSyncRepo = {
         shipmentType: shipments.shipmentType,
         tracking: shipments.tracking,
         description: shipments.description,
+        // Lo que el proveedor tiene registrado del paquete: se refresca en cada
+        // consulta (`providerTextPatch`).
+        content: shipments.content,
+        notes: shipments.notes,
         weightKg: shipments.weightKg,
         lengthCm: shipments.lengthCm,
         widthCm: shipments.widthCm,

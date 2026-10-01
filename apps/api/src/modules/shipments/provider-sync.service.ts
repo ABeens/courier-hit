@@ -220,7 +220,9 @@ export const providerSyncService = {
       // porque de el depende el flete. Las medidas viajan en la misma escritura:
       // son informativas, pero pedirlas de nuevo mas tarde es imposible (la op. B
       // solo responde mientras el paquete esta en el tramo del proveedor).
-      const patch = this.measurementsPatch(shipment, pkg);
+      // El contenido y las notas van en la misma escritura: la bodega del
+      // proveedor los corrige al digitar el paquete, y lo suyo es lo que vale.
+      const patch = { ...this.measurementsPatch(shipment, pkg), ...this.providerTextPatch(shipment, pkg) };
       if (Object.keys(patch).length > 0) {
         await shipmentsRepo.update(shipment.id, patch);
       }
@@ -300,6 +302,25 @@ export const providerSyncService = {
       if (value > 0 && current !== value) patch[field] = value;
     }
 
+    return patch;
+  },
+
+  /**
+   * Contenido y notas que reporta el proveedor, solo lo que CAMBIA (mismo
+   * criterio que `measurementsPatch`). Un valor vacio no borra el nuestro: que
+   * el proveedor no lo mande no significa que el paquete no tenga contenido.
+   *
+   * La descripcion NO se toca: es nuestra (ver `shipments.schema`).
+   */
+  providerTextPatch(
+    shipment: { content: string | null; notes: string | null },
+    pkg: { contenido?: string; notas?: string | null },
+  ): { content?: string; notes?: string } {
+    const patch: { content?: string; notes?: string } = {};
+    const content = pkg.contenido?.trim();
+    if (content && content !== shipment.content) patch.content = content;
+    const notes = pkg.notas?.trim();
+    if (notes && notes !== shipment.notes) patch.notes = notes;
     return patch;
   },
 

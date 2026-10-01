@@ -45,6 +45,15 @@ export const PROFORMA_STATUS_LABELS: Record<ProformaStatus, string> = {
   [ProformaStatus.Pagada]: 'Pagada',
 };
 
+/**
+ * Etiqueta del estado en el portal del CLIENTE: a el una "aprobada" le dice lo
+ * que tiene que hacer, que es pagarla.
+ */
+export const PROFORMA_CLIENT_STATUS_LABELS: Record<ProformaStatus, string> = {
+  ...PROFORMA_STATUS_LABELS,
+  [ProformaStatus.Aprobada]: 'Esperando pago',
+};
+
 /** Valores para el enum de la BD (Drizzle pgEnum), sin repetirlos. */
 export const PROFORMA_STATUS_VALUES = Object.values(ProformaStatus) as [
   ProformaStatus,

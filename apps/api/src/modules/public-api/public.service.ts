@@ -12,12 +12,20 @@
  * Si algun dia una regla vive solo aqui, es un error: significaria que la API
  * publica y el portal pueden divergir.
  */
-import { Principal, Role, STATE_LABELS, ShipmentType, lockerAddressFor } from '@courier/shared';
+import {
+  Principal,
+  Role,
+  STATE_LABELS,
+  ShipmentType,
+  lockerAddressFor,
+  roundWeightKg,
+} from '@courier/shared';
 import type {
   ListShipmentsQuery,
   PublicClient,
   PublicLocker,
   PublicPackage,
+  PublicPackagePhoto,
   PublicPackagesQuery,
   PublicPage,
   PublicPrealertInput,
@@ -38,26 +46,62 @@ import { shipmentsService, toDto } from '../shipments/shipments.service';
  * publicaria solo, y lo que se publica ya no se puede retirar sin romperle la
  * integracion a alguien. Aqui, lo que no se nombra no sale.
  */
-function toPublicPackage(shipment: ShipmentDto): PublicPackage {
+function toPublicPackage(shipment: ShipmentDto, photos: PublicPackagePhoto[]): PublicPackage {
   return {
     code: shipment.code,
     tracking: shipment.tracking,
     description: shipment.description,
     state: shipment.state,
     stateLabel: STATE_LABELS[shipment.state],
+    content: shipment.content,
+    notes: shipment.notes,
     store: shipment.store,
     carrier: shipment.carrier,
     hawb: shipment.hawb,
-    // El que se factura (lo promete el contrato), no el de bascula.
-    weightKg: shipment.billableWeightKg,
+    // Siempre redondeado hacia arriba, sea cual sea la tarifa del casillero: el
+    // de bascula, con decimales, no sale por aqui.
+    weightKg: shipment.weightKg == null ? null : roundWeightKg(shipment.weightKg),
     declaredValueUsd: shipment.declaredValueUsd,
     invoiceTotalCrc: shipment.invoiceTotalCrc,
     invoiceTotalUsd: shipment.invoiceTotalUsd,
     pendingCrc: shipment.pendingCrc,
     settled: shipment.settled,
+    photos,
     createdAt: shipment.createdAt,
     updatedAt: shipment.updatedAt,
   };
+}
+
+/**
+ * Fotos de bodega del paquete, recortadas al contrato publico. Si no se pudieron
+ * consultar (integracion apagada, paquete aun sin llegar, proveedor caido) sale
+ * una lista vacia: las fotos son un extra y no pueden tumbar la respuesta.
+ */
+async function photosOf(shipment: ShipmentDto): Promise<PublicPackagePhoto[]> {
+  const { items } = await shipmentsService.photosOf(shipment);
+  return items.map((photo) => ({ url: photo.url, takenAt: photo.takenAt }));
+}
+
+/**
+ * Cuantas consultas de fotos al proveedor van a la vez al armar un listado. Una
+ * pagina llega a 100 paquetes y dispararlas todas juntas seria un aluvion
+ * contra su API.
+ */
+const PHOTOS_CONCURRENCY = 5;
+
+/** Paquetes publicos con sus fotos, consultadas con concurrencia acotada. */
+async function withPhotos(shipments: ShipmentDto[]): Promise<PublicPackage[]> {
+  const result: PublicPackage[] = new Array(shipments.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < shipments.length) {
+      const i = next++;
+      const shipment = shipments[i]!;
+      result[i] = toPublicPackage(shipment, await photosOf(shipment));
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(PHOTOS_CONCURRENCY, shipments.length) }, worker));
+  return result;
 }
 
 /**
@@ -149,7 +193,7 @@ export const publicApiService = {
     ]);
 
     return {
-      items: rows.map((row) => toPublicPackage(toDto(row))),
+      items: await withPhotos(rows.map(toDto)),
       total,
       page: query.page,
       pageSize: query.pageSize,
@@ -169,7 +213,8 @@ export const publicApiService = {
     const rows = await shipmentsRepo.list(query, apiClient.clientId, tracking.trim().toUpperCase());
     const row = rows[0];
     if (!row) throw PublicApiErrors.packageNotFound();
-    return toPublicPackage(toDto(row));
+    const shipment = toDto(row);
+    return toPublicPackage(shipment, await photosOf(shipment));
   },
 
   /**
@@ -192,12 +237,15 @@ export const publicApiService = {
         shipmentType: ShipmentType.Paqueteria,
         tracking: input.tracking,
         description: input.description,
+        content: input.content,
+        notes: input.notes,
         store: input.store,
         carrier: input.carrier,
         declaredValueUsd: input.declaredValueUsd,
       },
       null,
     );
-    return toPublicPackage(created);
+    // Recien prealertado: la bodega aun no lo tiene, asi que no hay fotos que pedir.
+    return toPublicPackage(created, []);
   },
 };

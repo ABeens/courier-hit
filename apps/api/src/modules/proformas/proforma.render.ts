@@ -19,6 +19,7 @@ import {
   Currency,
   FLOW_LABELS,
   PROFORMA_DELIVERY_STATUS_LABELS,
+  PROFORMA_CLIENT_STATUS_LABELS,
   PROFORMA_STATUS_LABELS,
   ProformaStatus,
   roundMoney,
@@ -103,13 +104,16 @@ export function day(iso: string): string {
   });
 }
 
-/** Importe con los decimales de SU moneda (regla M4: `CURRENCY_DECIMALS`, punto unico). */
+/**
+ * Importe con el simbolo y los decimales de SU moneda (regla M4: `CURRENCY_DECIMALS`,
+ * punto unico): `$1.234,50` o `₡650.000`.
+ */
 function money(amount: number, currency: Currency): string {
   const digits = CURRENCY_DECIMALS[currency];
-  return amount.toLocaleString('es-CR', {
+  return `${CURRENCY_SYMBOLS[currency]}${amount.toLocaleString('es-CR', {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
-  });
+  })}`;
 }
 
 /** La tasa no es un importe: se imprime con dos decimales, sin redondear a colon entero. */
@@ -204,6 +208,7 @@ const STYLES = `
   th, td { padding: 7px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
   th { font-size: 11px; letter-spacing: .5px; text-transform: uppercase; color: #374151; background: #f9fafb; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.num.center, th.num.center { text-align: center; }
   table.wide { table-layout: fixed; font-size: 11px; }
   table.wide th, table.wide td { padding: 6px 5px; overflow-wrap: anywhere; }
   table.wide th { white-space: normal; }
@@ -233,7 +238,7 @@ function itemsTable(doc: ProformaDocument): string {
         <td>${esc(item.tracking)}</td>
         <td>${esc(item.awb)}</td>
         <td>${esc(item.description)}</td>
-        <td class="num">${item.weightKg ?? ''}</td>
+        <td class="num center">${item.weightKg ?? ''}</td>
         <td class="num">${money(item.total, currency)}</td>
       </tr>`,
     )
@@ -244,7 +249,7 @@ function itemsTable(doc: ProformaDocument): string {
     weight !== null
       ? `<tr class="weight">
         <td colspan="4">Peso total</td>
-        <td class="num">${weight}</td>
+        <td class="num center">${weight}</td>
         <td></td>
       </tr>`
       : '';
@@ -266,7 +271,7 @@ function itemsTable(doc: ProformaDocument): string {
       <col style="width:9%"><col style="width:13%">
     </colgroup>
     <thead><tr>
-      <th>Trámite</th><th>Tracking Number</th><th>AWB / Guía</th><th>Descripción</th><th class="num">Peso kg</th>
+      <th>Trámite</th><th>Tracking Number</th><th>AWB / Guía</th><th>Descripción</th><th class="num center">Peso kg</th>
       <th class="num">Total</th>
     </tr></thead>
     <tbody>${rows}${weightRow}${extrasRow}</tbody>
@@ -313,7 +318,7 @@ function linesTable(doc: ProformaDocument): string {
   const rows = conceptSummary(doc)
     .map(
       (c) => `<tr>
-      <td class="num">${c.quantity}</td>
+      <td class="num center">${c.quantity}</td>
       <td>${esc(c.label)}</td>
       <td>${c.electronicInvoiceCode ? esc(c.electronicInvoiceCode) : '<span class="empty">-</span>'}</td>
       <td class="num">${money(c.amount, doc.currency)}</td>
@@ -324,7 +329,7 @@ function linesTable(doc: ProformaDocument): string {
   return `<table>
     <caption>Detalle de conceptos</caption>
     <thead><tr>
-      <th class="num">Cantidad</th><th>Concepto</th><th>Cod sis FE</th>
+      <th class="num center">Cantidad</th><th>Concepto</th><th>Cod sis FE</th>
       <th class="num">Monto (${esc(doc.currency)})</th>
     </tr></thead>
     <tbody>${rows}</tbody>
@@ -349,7 +354,7 @@ function sheet(doc: ProformaDocument): string {
     <div class="head">
       <div class="brand">
         <img src="${BRAND_LOGO_DATA_URI}" alt="HS Global Services">
-        <div>HS Global Services<small>Proforma · ${esc(PROFORMA_STATUS_LABELS[doc.status])}</small></div>
+        <div>HS Global Services<small>Proforma · ${esc(PROFORMA_CLIENT_STATUS_LABELS[doc.status])}</small></div>
       </div>
       <div class="meta">
         ${number}

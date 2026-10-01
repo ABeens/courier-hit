@@ -18,7 +18,13 @@
 import { z } from 'zod';
 import { paginationQuerySchema } from '../http/pagination';
 import { CARRIERS, STORES } from '../shipments/catalogs';
-import { descriptionSchema, declaredValueUsdSchema, trackingSchema } from '../shipments/dto';
+import {
+  contentSchema,
+  descriptionSchema,
+  declaredValueUsdSchema,
+  providerNotesSchema,
+  trackingSchema,
+} from '../shipments/dto';
 import { State } from '../workflow/states';
 
 /** Version del contrato. Va en la URL: `/api/v1/...`. */
@@ -73,6 +79,10 @@ export type PublicPackagesQuery = z.infer<typeof publicPackagesQuerySchema>;
 export const publicPrealertSchema = z.object({
   tracking: trackingSchema,
   description: descriptionSchema,
+  /** Contenido para la bodega de Miami. Opcional: sin el, viaja la descripcion. */
+  content: contentSchema.optional(),
+  /** Notas para la bodega de Miami (las lee el proveedor al recibir). */
+  notes: providerNotesSchema.optional(),
   store: z.enum(STORES, { errorMap: () => ({ message: 'La tienda no es una de las del catálogo.' }) }),
   carrier: z.enum(CARRIERS, {
     errorMap: () => ({ message: 'El transportista no es uno de los del catálogo.' }),
@@ -119,11 +129,15 @@ export interface PublicPackage {
   state: State;
   /** Etiqueta en español del estado, para pintarla sin traducirla. */
   stateLabel: string;
+  /** Contenido del paquete, el que tiene registrado la bodega de Miami. */
+  content: string | null;
+  /** Notas de la prealerta para la bodega de Miami. */
+  notes: string | null;
   store: string | null;
   carrier: string | null;
   /** Identificador de la bodega de Miami (LES); `null` hasta que llega. */
   hawb: string | null;
-  /** Peso facturable en kg; `null` hasta que se pesa en bodega. */
+  /** Peso en kg redondeado hacia arriba (entero); `null` hasta que se pesa en bodega. */
   weightKg: number | null;
   declaredValueUsd: number | null;
   /** Total facturado en colones; `null` mientras no haya factura aprobada. */
@@ -134,8 +148,23 @@ export interface PublicPackage {
   pendingCrc: number;
   /** True cuando la factura está cubierta por pagos confirmados. */
   settled: boolean;
+  /**
+   * Fotos que la bodega de Miami le tomo al paquete. Vacio si aun no tiene o si
+   * no se pudieron consultar en este momento.
+   */
+  photos: PublicPackagePhoto[];
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Una foto del paquete en la bodega de Miami. La sirve el proveedor: la url
+ * viene firmada y puede caducar, asi que se usa al recibirla y no se guarda.
+ */
+export interface PublicPackagePhoto {
+  url: string;
+  /** Instante UTC en ISO 8601; `null` si la bodega no lo informo. */
+  takenAt: string | null;
 }
 
 /** Sobre de los listados de la API publica. Mismo contrato que el interno. */

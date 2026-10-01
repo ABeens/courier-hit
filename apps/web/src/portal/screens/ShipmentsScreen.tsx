@@ -152,6 +152,15 @@ function originField(row: ShipmentDto): CardField[] {
   return [{ label: 'Cuenta en Miami', value: row.providerAccountDisplayCode, mono: true }];
 }
 
+/**
+ * Titulo del bloque de guias. En Agenciamiento el documento es el conocimiento
+ * de embarque, y asi lo nombra la operacion; se resuelve por fila porque ese
+ * tramite convive con Transporte (y con todos en "Todos") en el mismo tablero.
+ */
+function guideTitle(row: ShipmentDto): string {
+  return row.shipmentType === ShipmentType.Agenciamiento ? 'Conocimiento de embarque' : 'Guías';
+}
+
 function guideFields(row: ShipmentDto): CardField[] {
   return usesPackageFields(row.shipmentType)
     ? [trackingField(row), hawbField(row), ...originField(row)]
@@ -199,8 +208,8 @@ function moneySection(row: ShipmentDto, amounts: BillingAmounts, isOwn: boolean)
 /**
  * Secciones de una ficha, a la medida de lo que necesita cada tablero.
  *
- * No hay un juego unico de campos: Paqueteria se revisa por compra y guia
- * (¿de que tienda viene?, ¿que transportista lo trae?, ¿cuanto pesa?), mientras
+ * No hay un juego unico de campos: Paqueteria se revisa por paquete, detalle y
+ * logistica (¿cuanto pesa?, ¿que trae?, ¿de que tienda viene y quien lo trae?), mientras
  * que Transporte y Agenciamiento se revisan por documentacion aduanal (DUA,
  * almacen). Los tableros mixtos se quedan con lo comun para no inventar
  * columnas que la mitad de las filas no tiene.
@@ -214,12 +223,18 @@ function sectionsFor(row: ShipmentDto, view: ShipmentView, amounts: BillingAmoun
 
   if (view === 'paqueteria') {
     return [
-      { title: 'Guías', fields: guideFields(row) },
-      { title: 'Compra', fields: [{ label: 'Tienda', value: row.store }, { label: 'Transportista', value: row.carrier }] },
+      {
+        title: 'Paquete',
+        fields: [
+          ...guideFields(row),
+          // El peso que se factura, no el de bascula: es el que cuadra con el flete.
+          { label: 'Peso', value: row.billableWeightKg != null ? `${row.billableWeightKg} kg` : null },
+        ],
+      },
+      { title: 'Detalle', fields: [{ label: 'Notas', value: row.notes }, { label: 'Contenido', value: row.content }] },
       {
         title: 'Logística',
-        // El peso que se factura, no el de bascula: es el que cuadra con el flete.
-        fields: [{ label: 'Peso', value: row.billableWeightKg != null ? `${row.billableWeightKg} kg` : null }, entrega],
+        fields: [{ label: 'Tienda', value: row.store }, { label: 'Transportista', value: row.carrier }, entrega],
       },
       ...(money ? [money] : []),
     ];
@@ -227,7 +242,7 @@ function sectionsFor(row: ShipmentDto, view: ShipmentView, amounts: BillingAmoun
 
   if (view === 'transporte') {
     return [
-      { title: 'Guías', fields: guideFields(row) },
+      { title: guideTitle(row), fields: guideFields(row) },
       { title: 'Aduana', fields: [{ label: 'DUA', value: row.dua, mono: true }, { label: 'Almacén', value: row.warehouse }] },
       { title: 'Entrega', fields: [entrega] },
       ...(money ? [money] : []),
@@ -241,7 +256,7 @@ function sectionsFor(row: ShipmentDto, view: ShipmentView, amounts: BillingAmoun
   // Los identificadores SI son comunes: `guideFields` ya resuelve por fila cuál
   // lleva HAWB y cuál no, sin que el tablero tenga que elegir un juego único.
   return [
-    { title: 'Guías', fields: guideFields(row) },
+    { title: guideTitle(row), fields: guideFields(row) },
     { title: 'Entrega', fields: [entrega] },
     ...(money ? [money] : []),
   ];
@@ -265,7 +280,7 @@ interface Props {
 /** Opciones del filtro por proforma del cliente. */
 type ProformaFilter = ProformaStatus.Aprobada | ProformaStatus.Pagada;
 const PROFORMA_FILTER_LABELS: Record<ProformaFilter, string> = {
-  [ProformaStatus.Aprobada]: 'Aprobada (por pagar)',
+  [ProformaStatus.Aprobada]: 'Esperando pago',
   [ProformaStatus.Pagada]: 'Pagada',
 };
 

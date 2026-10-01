@@ -114,15 +114,23 @@ const PACKAGE_EXAMPLE = `{
   "description": "Audifonos inalambricos",
   "state": "en_transito_costa_rica",
   "stateLabel": "En Tránsito a Costa Rica",
+  "content": "2 audifonos bluetooth",
+  "notes": null,
   "store": "AMAZON",
   "carrier": "AMAZON LOGISTICS",
   "hawb": "LES48450141",
-  "weightKg": 1.4,
+  "weightKg": 2,
   "declaredValueUsd": 89.99,
   "invoiceTotalCrc": null,
   "invoiceTotalUsd": null,
   "pendingCrc": 0,
   "settled": false,
+  "photos": [
+    {
+      "url": "https://bodega.example.com/fotos/48450141-1.jpg?firma=...",
+      "takenAt": "2026-08-16T14:02:11.000Z"
+    }
+  ],
   "createdAt": "2026-08-14T18:22:05.331Z",
   "updatedAt": "2026-08-20T13:04:41.902Z"
 }`;
@@ -330,6 +338,24 @@ export const PUBLIC_API_OPERATIONS: readonly ApiOperation[] = [
         example: 'Audifonos inalambricos',
       },
       {
+        name: 'content',
+        in: 'body',
+        type: 'string',
+        required: false,
+        description:
+          'Contenido que se le informa a la bodega de Miami. Hasta 200 caracteres. Si no viene, ' +
+          'se usa la descripcion.',
+        example: '2 audifonos bluetooth',
+      },
+      {
+        name: 'notes',
+        in: 'body',
+        type: 'string',
+        required: false,
+        description: 'Notas para la bodega de Miami. Hasta 500 caracteres.',
+        example: 'Caja fragil',
+      },
+      {
         name: 'store',
         in: 'body',
         type: 'string',
@@ -362,6 +388,8 @@ export const PUBLIC_API_OPERATIONS: readonly ApiOperation[] = [
     requestExample: `{
   "tracking": "TBA305512345678",
   "description": "Audifonos inalambricos",
+  "content": "2 audifonos bluetooth",
+  "notes": "Caja fragil",
   "store": "AMAZON",
   "carrier": "AMAZON LOGISTICS",
   "declaredValueUsd": 89.99
@@ -372,6 +400,8 @@ export const PUBLIC_API_OPERATIONS: readonly ApiOperation[] = [
   "description": "Audifonos inalambricos",
   "state": "prealertado",
   "stateLabel": "Prealertado",
+  "content": "2 audifonos bluetooth",
+  "notes": "Caja fragil",
   "store": "AMAZON",
   "carrier": "AMAZON LOGISTICS",
   "hawb": null,
@@ -381,6 +411,7 @@ export const PUBLIC_API_OPERATIONS: readonly ApiOperation[] = [
   "invoiceTotalUsd": null,
   "pendingCrc": 0,
   "settled": false,
+  "photos": [],
   "createdAt": "2026-08-30T15:11:02.774Z",
   "updatedAt": "2026-08-30T15:11:02.774Z"
 }`,
