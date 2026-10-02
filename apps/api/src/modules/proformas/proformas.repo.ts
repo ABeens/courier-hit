@@ -29,6 +29,9 @@ import {
   proformas,
 } from './proformas.schema';
 
+/** Tope de la columna `integer` de Postgres (int4). */
+const PG_INT_MAX = 2_147_483_647;
+
 /** Columnas de una linea de costo de un tramite. */
 const shipmentLineColumns = {
   id: shipmentCosts.id,
@@ -107,7 +110,10 @@ function listConditions(query: ProformaFilter, issuedOnly = false): SQL[] {
       ilike(proformas.electronicInvoiceNumber, like),
     )!;
     // Un numero se busca EXACTO: "12" no deberia traer la 120, la 1200 y la 312.
-    conds.push(/^\d+$/.test(query.q) ? or(byText, eq(proformas.number, Number(query.q)))! : byText);
+    // Solo si cabe en la columna (integer); uno mas largo (p. ej. un numero de FE)
+    // haria fallar a Postgres con "out of range", y solo puede coincidir por texto.
+    const asNumber = /^\d+$/.test(query.q) ? Number(query.q) : NaN;
+    conds.push(asNumber <= PG_INT_MAX ? or(byText, eq(proformas.number, asNumber))! : byText);
   }
   return conds;
 }
@@ -422,20 +428,28 @@ export const proformasRepo = {
    * reporte). Solo las que tienen numero: un borrador no es un documento emitido.
    */
   async numbersByShipment(shipmentIds: readonly string[]) {
-    const map = new Map<string, { number: number; electronicInvoiceNumber: string | null }>();
+    const map = new Map<
+      string,
+      { number: number; electronicInvoiceNumber: string | null; approvedAt: Date | null }
+    >();
     if (shipmentIds.length === 0) return map;
     const rows = await db
       .select({
         shipmentId: proformaShipments.shipmentId,
         number: proformas.number,
         electronicInvoiceNumber: proformas.electronicInvoiceNumber,
+        approvedAt: proformas.approvedAt,
       })
       .from(proformaShipments)
       .innerJoin(proformas, eq(proformaShipments.proformaId, proformas.id))
       .where(inArray(proformaShipments.shipmentId, [...shipmentIds]));
     for (const row of rows) {
       if (row.number !== null) {
-        map.set(row.shipmentId, { number: row.number, electronicInvoiceNumber: row.electronicInvoiceNumber });
+        map.set(row.shipmentId, {
+          number: row.number,
+          electronicInvoiceNumber: row.electronicInvoiceNumber,
+          approvedAt: row.approvedAt,
+        });
       }
     }
     return map;

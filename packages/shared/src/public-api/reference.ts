@@ -121,9 +121,6 @@ const PACKAGE_EXAMPLE = `{
   "hawb": "LES48450141",
   "weightKg": 2,
   "declaredValueUsd": 89.99,
-  "invoiceTotalCrc": null,
-  "invoiceTotalUsd": null,
-  "pendingCrc": 0,
   "settled": false,
   "photos": [
     {
@@ -387,9 +384,6 @@ export const PUBLIC_API_OPERATIONS: readonly ApiOperation[] = [
   "hawb": null,
   "weightKg": null,
   "declaredValueUsd": 89.99,
-  "invoiceTotalCrc": null,
-  "invoiceTotalUsd": null,
-  "pendingCrc": 0,
   "settled": false,
   "photos": [],
   "createdAt": "2026-08-30T15:11:02.774Z",

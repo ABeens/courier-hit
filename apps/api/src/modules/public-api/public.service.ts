@@ -62,9 +62,6 @@ function toPublicPackage(shipment: ShipmentDto, photos: PublicPackagePhoto[]): P
     // de bascula, con decimales, no sale por aqui.
     weightKg: shipment.weightKg == null ? null : roundWeightKg(shipment.weightKg),
     declaredValueUsd: shipment.declaredValueUsd,
-    invoiceTotalCrc: shipment.invoiceTotalCrc,
-    invoiceTotalUsd: shipment.invoiceTotalUsd,
-    pendingCrc: shipment.pendingCrc,
     settled: shipment.settled,
     photos,
     createdAt: shipment.createdAt,

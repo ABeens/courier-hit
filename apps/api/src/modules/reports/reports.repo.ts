@@ -300,8 +300,9 @@ export const reportsRepo = {
         .groupBy(shipmentEvents.shipmentId, shipmentEvents.state),
 
       /**
-       * Numero y factura electronica de la proforma APROBADA de cada tramite. Un
-       * borrador no es un documento emitido: su tramite sale con la celda vacia.
+       * Numero, factura electronica y fecha de aprobacion de la proforma APROBADA
+       * de cada tramite. Un borrador no es un documento emitido: su tramite sale
+       * con la celda vacia.
        */
       proformasRepo.numbersByShipment(ids),
     ]);
@@ -329,6 +330,7 @@ export const reportsRepo = {
       deliveredAt: milestoneBy.get(row.id)?.deliveredAt ?? null,
       proformaSequence: proformaSeqs.get(row.id)?.number ?? null,
       proformaElectronicInvoiceNumber: proformaSeqs.get(row.id)?.electronicInvoiceNumber ?? null,
+      proformaApprovedAt: proformaSeqs.get(row.id)?.approvedAt ?? null,
     }));
   },
 };

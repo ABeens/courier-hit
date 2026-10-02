@@ -216,6 +216,14 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
      * una pantalla que no existe. El permiso de la API no se toca.
      */
     resources.delete(Resource.Prealert);
+    /**
+     * Mensajeria conserva `proformas.read` porque la API se lo exige para ver la
+     * proforma con sus montos desde Entregas (P7), pero la bandeja de Proformas
+     * no es su trabajo: sin ella la seccion "Costos y tarifas" se queda vacia y
+     * desaparece del menu. Se quita del conjunto para cerrar tambien el
+     * deep-link /app/proformas.
+     */
+    if (me.role === Role.Mensajeria) resources.delete(Resource.Proformas);
     return resources;
   }, [me.role, miamiLink, apiAccess]);
   /**

@@ -204,6 +204,7 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
         hawb: row.hawb,
         weightKg: row.weightKg,
         deliveredAt: row.deliveredAt,
+        proformaApprovedAt: row.proformaApprovedAt,
         // MES sale de la FECHA DE ENTREGA en Paqueteria (campo 13 del mapeo).
         month: monthOf(row.deliveredAt),
         internationalFreightUsd: freight,
@@ -236,6 +237,7 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
       invoicedAt: row.costsApprovedAt,
       month: monthOf(row.costsApprovedAt),
       invoiceTotalCrc: row.invoiceTotalCrc,
+      proformaApprovedAt: row.proformaApprovedAt,
       depositedCrc: deposited,
       differenceCrc: depositDifference(row.invoiceTotalCrc, deposited, Currency.CRC),
       associatedCostsCrc: costs.passThrough,

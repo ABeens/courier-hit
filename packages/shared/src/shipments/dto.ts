@@ -153,13 +153,15 @@ const billingNotesSchema = z.string().trim().min(1).max(500);
  * sistema de facturacion y aqui solo se anota, asi que se acepta tal cual (letras,
  * digitos y separadores) sin imponerle un formato que el proveedor podria cambiar.
  * Se normaliza a mayusculas para que buscar por el no dependa de como se digito.
+ * Tope de 50: en Hacienda (CR) el consecutivo tiene 20 digitos y la clave
+ * numerica 50; asi cabe cualquiera de los dos que se anote.
  */
 export const electronicInvoiceNumberSchema = z
   .string()
   .trim()
   .toUpperCase()
   .min(1, 'El número de factura electrónica no puede ir vacío.')
-  .max(40, 'El número de factura electrónica es demasiado largo.')
+  .max(50,'El número de factura electrónica es demasiado largo.')
   .regex(/^[A-Z0-9][A-Z0-9-]*$/, 'El número solo admite letras, números y guiones.');
 
 /**

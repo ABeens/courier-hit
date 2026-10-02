@@ -280,7 +280,7 @@ interface Props {
 /** Opciones del filtro por proforma del cliente. */
 type ProformaFilter = ProformaStatus.Aprobada | ProformaStatus.Pagada;
 const PROFORMA_FILTER_LABELS: Record<ProformaFilter, string> = {
-  [ProformaStatus.Aprobada]: 'Esperando pago',
+  [ProformaStatus.Aprobada]: 'Pendiente de pago',
   [ProformaStatus.Pagada]: 'Pagada',
 };
 

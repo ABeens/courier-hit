@@ -51,7 +51,7 @@ export const PROFORMA_STATUS_LABELS: Record<ProformaStatus, string> = {
  */
 export const PROFORMA_CLIENT_STATUS_LABELS: Record<ProformaStatus, string> = {
   ...PROFORMA_STATUS_LABELS,
-  [ProformaStatus.Aprobada]: 'Esperando pago',
+  [ProformaStatus.Aprobada]: 'Pendiente de pago',
 };
 
 /** Valores para el enum de la BD (Drizzle pgEnum), sin repetirlos. */

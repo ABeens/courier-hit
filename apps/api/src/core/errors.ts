@@ -6,6 +6,7 @@
  * filtrar detalle.
  */
 import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ZodError } from 'zod';
 
@@ -858,6 +859,17 @@ export function onError(err: Error, c: Context) {
   }
   if (err instanceof ZodError) {
     return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Datos inválidos.' } }, 400);
+  }
+  // Hono lanza HTTPException por su cuenta antes de que corra nuestro codigo: el
+  // validador, con 400, cuando el cuerpo no es JSON (o FormData) parseable. Es
+  // culpa del cliente, no nuestra; dejarlo caer a INTERNAL_ERROR haria que un
+  // integrador que reintenta ante 5xx repita la misma peticion rota sin fin.
+  if (err instanceof HTTPException && err.status < 500) {
+    const message =
+      err.status === 400
+        ? 'El cuerpo de la petición no tiene un formato válido (revisa que sea JSON bien formado).'
+        : 'Petición inválida.';
+    return c.json({ error: { code: 'VALIDATION_ERROR', message } }, err.status);
   }
   console.error('[api] error no controlado:', err);
   return c.json({ error: { code: 'INTERNAL_ERROR', message: 'Error interno.' } }, 500);

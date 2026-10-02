@@ -113,13 +113,15 @@ export function AssignOwnerModal({ row, onClose, onSaved, endpoint }: Props) {
 
           <div>
             <label className="field-label" htmlFor="a-note">
-              {isReassignment ? 'Motivo del cambio' : 'Cómo se identificó al dueño'}
+              {isReassignment ? 'Motivo del cambio' : 'Cómo se identificó al dueño'}{' '}
+              <span className="req" aria-hidden="true">*</span>
             </label>
             <textarea
               id="a-note"
               className="input"
               rows={3}
               maxLength={500}
+              aria-required="true"
               value={note}
               disabled={locked}
               placeholder={

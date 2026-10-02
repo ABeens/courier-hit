@@ -112,7 +112,7 @@ export interface PublicClient {
 
 /**
  * Un paquete visto desde fuera. Las cifras llevan su moneda en el nombre del
- * campo (regla M2): `invoiceTotalCrc` no se puede confundir con dolares.
+ * campo (regla M2): `declaredValueUsd` no se puede confundir con colones.
  */
 export interface PublicPackage {
   /** Consecutivo interno, `HSX-1000`. Es el que citar al escribirnos. */
@@ -137,12 +137,6 @@ export interface PublicPackage {
   /** Peso en kg redondeado hacia arriba (entero); `null` hasta que se pesa en bodega. */
   weightKg: number | null;
   declaredValueUsd: number | null;
-  /** Total facturado en colones; `null` mientras no haya factura aprobada. */
-  invoiceTotalCrc: number | null;
-  /** Total facturado en dólares (Paquetería); `null` si no aplica. */
-  invoiceTotalUsd: number | null;
-  /** Saldo pendiente en colones. 0 cuando está pagado. */
-  pendingCrc: number;
   /** True cuando la factura está cubierta por pagos confirmados. */
   settled: boolean;
   /**

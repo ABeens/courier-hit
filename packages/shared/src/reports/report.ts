@@ -140,7 +140,10 @@ const PAQUETERIA_COLUMNS: readonly ReportColumn[] = [
   { key: 'collectionStatus', label: 'ESTATUS COBRO' }, //          16  derivado de los pagos
   { key: 'bankAccount', label: 'CUENTA' }, //                      17
   { key: 'receipt', label: 'COMPROBANTE' }, //                     18
-  { key: 'paidAt', label: 'FECHA' }, //                            19  derivado del pago
+  { key: 'paidAt', label: 'FECHA DE PAGO' }, //                    19  derivado del pago
+  // Fuera del mapeo original (sin numero, como COSTO NETO): cuando se aprobo la
+  // proforma en la que se facturo el tramite.
+  { key: 'proformaApprovedAt', label: 'FECHA DE APROBACIÓN DE LA PROFORMA' }, // +
   { key: 'billingNotes', label: 'NOTAS P/FACTURAR' }, //           20
   { key: 'internationalFreightUsd', label: 'TRANSPORTE INTL' }, // 21  calculado
   { key: 'taxesUsd', label: 'IMPUESTOS' }, //                      22
@@ -186,6 +189,10 @@ const AGENCIAMIENTO_COLUMNS: readonly ReportColumn[] = [
   { key: 'depositedCrc', label: 'MONTO DEPOSITADO (CRC)' }, //    17  derivado de los abonos
   { key: 'differenceCrc', label: 'DIF (CRC)' }, //                 18  = 12-17
   // --- A partir de aqui, solo el reporte FULL (admin) ---
+  // Fecha de aprobacion de la proforma (fuera del mapeo original: sin numero).
+  // Vacia si el tramite no esta en una proforma aprobada (p. ej. costos
+  // aprobados antes del modulo de proformas).
+  { key: 'proformaApprovedAt', label: 'FECHA DE APROBACIÓN DE LA PROFORMA' }, // +
   { key: 'billingNotes', label: 'NOTAS P/FACTURAR' }, //           19
   { key: 'associatedCostsCrc', label: 'COSTOS ASOCIADOS (CRC)' }, // 20  lineas trasladadas
   // --- Costo neto vs a facturar (fuera del mapeo original: sin numero, para no
