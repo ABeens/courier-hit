@@ -40,6 +40,7 @@ const shipmentLineColumns = {
   source: shipmentCosts.source,
   percentage: shipmentCosts.percentage,
   amount: shipmentCosts.amount,
+  realAmount: shipmentCosts.realAmount,
   currency: shipmentCosts.currency,
   exchangeRate: shipmentCosts.exchangeRate,
   createdAt: shipmentCosts.createdAt,
@@ -58,6 +59,7 @@ const proformaLineColumns = {
   source: proformaCosts.source,
   percentage: proformaCosts.percentage,
   amount: proformaCosts.amount,
+  realAmount: proformaCosts.realAmount,
   currency: proformaCosts.currency,
   exchangeRate: proformaCosts.exchangeRate,
   createdAt: proformaCosts.createdAt,
@@ -266,11 +268,17 @@ export const proformasRepo = {
   /**
    * Fija el importe de servicios de la proforma ya guardados, dentro de `tx`. Lo
    * usa la aprobacion para congelar los porcentajes calculados sobre el subtotal
-   * de ese momento.
+   * de ese momento: el facturado y el real, que tienen cada uno su base.
    */
-  async setProformaLineAmounts(tx: Tx, updates: readonly { id: string; amount: number }[]) {
+  async setProformaLineAmounts(
+    tx: Tx,
+    updates: readonly { id: string; amount: number; realAmount: number | null }[],
+  ) {
     for (const u of updates) {
-      await tx.update(proformaCosts).set({ amount: u.amount }).where(eq(proformaCosts.id, u.id));
+      await tx
+        .update(proformaCosts)
+        .set({ amount: u.amount, realAmount: u.realAmount })
+        .where(eq(proformaCosts.id, u.id));
     }
   },
 

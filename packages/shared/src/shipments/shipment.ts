@@ -54,11 +54,16 @@ export interface ShipmentDto {
 
   // --- Solo Paqueteria ---
   /**
-   * Contenido del paquete: el `contenido` del proveedor. Independiente de
-   * `description`; lo refresca la sincronizacion con lo que reporte el proveedor.
+   * Contenido del paquete: el `contenido` del proveedor. SOLO LECTURA: lo
+   * escribe la sincronizacion con Helga, nunca un usuario. Independiente de
+   * `description`; null mientras el proveedor no lo haya reportado.
    */
   content: string | null;
-  /** Notas para el proveedor (`notas` de su prealerta). No son las de facturar. */
+  /**
+   * Notas del paquete que reporta el proveedor (`notas`). SOLO LECTURA, igual
+   * que `content`: las escribe la sincronizacion con Helga. No son las de
+   * facturar (`billingNotes`).
+   */
   notes: string | null;
   store: string | null;
   carrier: string | null;
@@ -425,10 +430,6 @@ export enum ShipmentField {
    */
   ElectronicInvoiceNumber = 'electronicInvoiceNumber',
   // Solo Paqueteria
-  /** Contenido del paquete (`contenido` del proveedor). */
-  Content = 'content',
-  /** Notas para el proveedor (`notas` de su prealerta). */
-  Notes = 'notes',
   Store = 'store',
   Carrier = 'carrier',
   Hawb = 'hawb',

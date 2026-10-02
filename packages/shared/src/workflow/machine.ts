@@ -77,13 +77,12 @@ const F = ShipmentField;
 // se fijan en la prealerta y el staff los corrige hasta la recepcion; despues son
 // historicos, como la tienda y el transportista.
 const PKG_DECLARED = [F.DeclaredValue, F.InsuredValue, F.TariffPosition, F.Retain];
-// El contenido y las notas para el proveedor son descriptivos: siguen la ventana de
-// la descripcion.
-const PKG_DESCRIPTIVE = [F.Description, F.Content, F.Notes];
-const PKG_PREALERT = [F.Tracking, ...PKG_DESCRIPTIVE, F.Store, F.Carrier, F.Hawb, F.WeightKg, F.BillingNotes, ...PKG_DECLARED];
-const PKG_RECEIVED = [...PKG_DESCRIPTIVE, F.Store, F.Carrier, F.Hawb, F.WeightKg, F.BillingNotes, ...PKG_DECLARED]; // tracking congelado
-const PKG_IN_TRANSIT = [...PKG_DESCRIPTIVE, F.Hawb, F.WeightKg, F.BillingNotes]; // tienda/transportista ya son historicos
-const PKG_BILLING = [...PKG_DESCRIPTIVE, F.WeightKg, F.BillingNotes]; // ultimo tramo para el peso (antes de aprobar la proforma)
+// El contenido y las notas del proveedor no aparecen en ninguna ventana: solo los
+// escribe la sincronizacion con el proveedor, nunca un usuario.
+const PKG_PREALERT = [F.Tracking, F.Description, F.Store, F.Carrier, F.Hawb, F.WeightKg, F.BillingNotes, ...PKG_DECLARED];
+const PKG_RECEIVED = [F.Description, F.Store, F.Carrier, F.Hawb, F.WeightKg, F.BillingNotes, ...PKG_DECLARED]; // tracking congelado
+const PKG_IN_TRANSIT = [F.Description, F.Hawb, F.WeightKg, F.BillingNotes]; // tienda/transportista ya son historicos
+const PKG_BILLING = [F.Description, F.WeightKg, F.BillingNotes]; // ultimo tramo para el peso (antes de aprobar la proforma)
 
 // Transporte / Agenciamiento. El AWB/BL se congela al salir de la prealerta; almacen,
 // DUA y notas de facturacion se completan durante el proceso; tras aprobar costos solo

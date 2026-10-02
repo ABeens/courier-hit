@@ -639,6 +639,14 @@ select.input { cursor: pointer; padding-right: 30px; }
    con el alto de captura la fila crece mas que con cualquier otra cosa. */
 .table .input { height: 32px; padding: 0 10px; font-size: 13px; }
 .table .picker-field { height: 32px; padding: 0 6px 0 10px; font-size: 13px; }
+/* Tabla de lineas de costo: la ayuda bajo un campo ("+ $5 vs neto") alarga su
+   celda, y centrado en vertical ese campo se subia respecto del vecino. Arriba,
+   todos los campos de la fila quedan en la misma linea; el texto suelto toma el
+   alto de un campo para no quedar pegado al borde. */
+.table-costs tbody td { vertical-align: top; }
+.table-costs tbody td > span.muted,
+.table-costs tbody td > strong:first-child { display: inline-flex; align-items: center; min-height: 32px; }
+.table-costs tbody td > strong:first-child + .field-hint { margin-top: 0; }
 /* Fila recien agregada: destella al nacer y queda con una marca al costado
    hasta la siguiente alta o hasta guardar. Sin esto, una linea nueva al final de
    una tabla larga no se nota: aparece fuera de la vista y todas las filas se
@@ -699,6 +707,11 @@ select.input { cursor: pointer; padding-right: 30px; }
   padding: 22px 24px; display: grid; gap: 14px; align-content: start;
 }
 .modal-foot { flex: none; padding: 16px 24px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px; }
+/* Pie con botones chicos (editor de costos): la tabla ya ocupa el modal, y con
+   el boton de alto completo, y estirado a todo el ancho en movil, el pie pesaba
+   mas que el contenido. La doble clase gana a la regla movil `.modal-foot .btn`. */
+.modal-foot.modal-foot-compact { padding-top: 12px; padding-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+.modal-foot.modal-foot-compact .btn { flex: none; }
 
 /* Cuerpo repartido en dos columnas cuando el modal es lo bastante ancho.
    Los campos que necesitan la fila entera (textarea, avisos, buscadores)

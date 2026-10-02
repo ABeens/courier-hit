@@ -8,10 +8,11 @@
  * mismo numero que el CSV, y con la resta escrita en dos sitios tarde o temprano
  * no lo da.
  *
- * Todas las cifras van en USD. Es deliberado: el mapeo de Paqueteria cotiza en
- * dolares de punta a punta (MONTO FACTURA, IMPUESTOS, TRANSPORTE INTL) y mezclar
- * monedas dentro de una misma resta es justo lo que la regla M2 existe para
- * evitar. Quien necesite colones convierte el resultado con `convertMoney`.
+ * Paqueteria va en USD: su mapeo cotiza en dolares de punta a punta (MONTO
+ * FACTURA, IMPUESTOS, TRANSPORTE INTL). Agenciamiento y transporte va en CRC,
+ * la moneda en que se le cobra (`chargeCurrencyFor`). Lo que no cambia es que
+ * cada resta se hace con los dos lados en LA MISMA moneda (regla M2): por eso
+ * las funciones que restan dinero reciben la moneda explicita.
  */
 import { Currency, roundMoney } from '../money/currency';
 import { KG_TO_LB } from '../settings/freight-rate-dto';
@@ -58,19 +59,23 @@ export function totalCostUsd(
 
 /**
  * GROSS PROFIT / PROFIT (campo 25 de Paqueteria, 21 de Agenciamiento): lo
- * facturado menos lo que costo. Puede ser NEGATIVO, y por eso no pasa por
+ * facturado menos lo que costo. En Paqueteria es COSTO A FACTURAR menos TOTAL
+ * (transporte intl + impuestos + otros); en Agenciamiento, MONTO FACTURA menos COSTOS ASOCIADOS.
+ * Puede ser NEGATIVO, y por eso no pasa por
  * `Math.max(0, ...)` como el saldo de un cliente: un tramite que se vendio por
  * debajo del costo es exactamente lo que este reporte existe para encontrar.
  *
  * Null si falta cualquiera de los dos lados: sin factura aprobada no hay nada que
- * comparar, y sin costo completo la resta mentiria.
+ * comparar, y sin costo completo la resta mentiria. Los dos lados tienen que
+ * venir en `currency`.
  */
-export function grossProfitUsd(
-  invoiceTotalUsd: number | null,
+export function grossProfit(
+  invoiceTotal: number | null,
   totalCost: number | null,
+  currency: Currency,
 ): number | null {
-  if (invoiceTotalUsd == null || totalCost == null) return null;
-  return roundMoney(invoiceTotalUsd - totalCost, Currency.USD);
+  if (invoiceTotal == null || totalCost == null) return null;
+  return roundMoney(invoiceTotal - totalCost, currency);
 }
 
 /**
@@ -80,15 +85,17 @@ export function grossProfitUsd(
  * abre el CSV. Redondeado a dos decimales: no es dinero, asi que no pasa por
  * `roundMoney` (que aplica la politica de la moneda, y aqui no hay moneda).
  *
+ * Profit y factura en la misma moneda (cualquiera: el cociente no la lleva).
+ *
  * Null si no hay factura o si es cero: dividir entre cero daria Infinity, y un
  * tramite facturado en cero no tiene margen que expresar en porcentaje.
  */
 export function marginPercentage(
   profit: number | null,
-  invoiceTotalUsd: number | null,
+  invoiceTotal: number | null,
 ): number | null {
-  if (profit == null || !invoiceTotalUsd) return null;
-  return Math.round((profit / invoiceTotalUsd) * 10_000) / 100;
+  if (profit == null || !invoiceTotal) return null;
+  return Math.round((profit / invoiceTotal) * 10_000) / 100;
 }
 
 /**

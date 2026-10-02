@@ -36,14 +36,7 @@ import { Condition } from './automation';
  * los dos flujos (el reporte las pide en ambos, campo 20). Tampoco
  * `ElectronicInvoiceNumber`, por lo mismo.
  */
-const PACKAGE_ONLY = [
-  ShipmentField.Content,
-  ShipmentField.Notes,
-  ShipmentField.Store,
-  ShipmentField.Carrier,
-  ShipmentField.Hawb,
-  ShipmentField.WeightKg,
-];
+const PACKAGE_ONLY = [ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg];
 const TRANSPORT_ONLY = [ShipmentField.Warehouse, ShipmentField.Dua];
 
 /** Estados de bodega/entrega: tras el congelamiento de factura no se editan datos. */
@@ -75,8 +68,6 @@ test('Paqueteria: en transito solo descriptivos y peso (tienda/transportista ya 
       f,
       set([
         ShipmentField.Description,
-        ShipmentField.Content,
-        ShipmentField.Notes,
         ShipmentField.Hawb,
         ShipmentField.WeightKg,
         ShipmentField.BillingNotes,

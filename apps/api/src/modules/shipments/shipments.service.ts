@@ -678,8 +678,6 @@ export const shipmentsService = {
           shipmentType: input.shipmentType,
           tracking: input.tracking,
           description: input.description,
-          content: input.content ?? null,
-          notes: input.notes ?? null,
           store: input.store ?? null,
           carrier: input.carrier ?? null,
           // El cliente solo declara el valor comercial; el asegurado, el arancel y el
@@ -742,8 +740,6 @@ export const shipmentsService = {
         helgaClientId: link.helgaClientId,
         tracking: shipment.tracking,
         description: shipment.description,
-        content: shipment.content,
-        notes: shipment.notes,
         store: shipment.store,
         commercialValue: shipment.declaredValueUsd,
         insuredValue: shipment.insuredValueUsd,
@@ -809,8 +805,6 @@ export const shipmentsService = {
           helgaClientId: s.helgaClientId,
           tracking: s.tracking,
           description: s.description,
-          content: s.content,
-          notes: s.notes,
           store: s.store,
           commercialValue: s.declaredValueUsd,
           insuredValue: s.insuredValueUsd,
@@ -876,8 +870,6 @@ export const shipmentsService = {
           shipmentType: input.shipmentType,
           tracking: input.tracking,
           description: input.description,
-          content: input.content ?? null,
-          notes: input.notes ?? null,
           store: input.store ?? null,
           carrier: input.carrier ?? null,
           hawb: input.hawb ?? null,
@@ -977,7 +969,7 @@ export const shipmentsService = {
     // listas: son comunes a los dos flujos (el reporte los pide en ambos).
     const notForThisType = isPackage
       ? (['warehouse', 'dua'] as const)
-      : (['content', 'notes', 'store', 'carrier', 'hawb', 'weightKg', 'declaredValueUsd', 'insuredValueUsd', 'tariffPosition', 'retain'] as const);
+      : (['store', 'carrier', 'hawb', 'weightKg', 'declaredValueUsd', 'insuredValueUsd', 'tariffPosition', 'retain'] as const);
     for (const field of notForThisType) {
       if (patch[field] !== undefined && patch[field] !== null) throw ShipmentErrors.fieldNotForType();
     }
@@ -1008,8 +1000,6 @@ export const shipmentsService = {
     await shipmentsRepo.update(id, {
       ...(patch.tracking !== undefined ? { tracking: patch.tracking } : {}),
       ...(patch.description !== undefined ? { description: patch.description } : {}),
-      ...(patch.content !== undefined ? { content: patch.content } : {}),
-      ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
       ...(patch.store !== undefined ? { store: patch.store } : {}),
       ...(patch.carrier !== undefined ? { carrier: patch.carrier } : {}),
       ...(patch.hawb !== undefined ? { hawb: patch.hawb } : {}),
@@ -1101,7 +1091,6 @@ export const shipmentsService = {
         state: UNASSIGNED_INITIAL_STATE,
         tracking,
         description: input.description,
-        content: input.content ?? null,
         store: input.store ?? null,
         carrier: input.carrier ?? null,
         hawb: input.hawb ?? null,
@@ -1153,7 +1142,6 @@ export const shipmentsService = {
     await shipmentsRepo.update(id, {
       ...(patch.tracking !== undefined ? { tracking: patch.tracking } : {}),
       ...(patch.description !== undefined ? { description: patch.description } : {}),
-      ...(patch.content !== undefined ? { content: patch.content } : {}),
       ...(patch.store !== undefined ? { store: patch.store } : {}),
       ...(patch.carrier !== undefined ? { carrier: patch.carrier } : {}),
       ...(patch.hawb !== undefined ? { hawb: patch.hawb } : {}),

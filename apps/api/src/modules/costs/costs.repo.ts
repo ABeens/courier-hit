@@ -24,6 +24,7 @@ const columns = {
   source: shipmentCosts.source,
   percentage: shipmentCosts.percentage,
   amount: shipmentCosts.amount,
+  realAmount: shipmentCosts.realAmount,
   currency: shipmentCosts.currency,
   exchangeRate: shipmentCosts.exchangeRate,
   createdAt: shipmentCosts.createdAt,

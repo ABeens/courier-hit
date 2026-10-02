@@ -440,8 +440,6 @@ export const shipmentsRepo = {
         code: shipments.code,
         tracking: shipments.tracking,
         description: shipments.description,
-        content: shipments.content,
-        notes: shipments.notes,
         store: shipments.store,
         declaredValueUsd: shipments.declaredValueUsd,
         insuredValueUsd: shipments.insuredValueUsd,

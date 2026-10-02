@@ -50,7 +50,13 @@ export const costLineInputSchema = z
       .max(100, 'El porcentaje debe estar entre 0 y 100.')
       .nullable()
       .optional(),
+    /** COSTO FACTURADO: lo que se le cobra al cliente. */
     amount: amountSchema.optional(),
+    /**
+     * COSTO REAL. Opcional: sin el, el real es el facturado (el caso normal). En
+     * las de porcentaje se ignora, igual que `amount`: lo calcula la API.
+     */
+    realAmount: amountSchema.optional(),
     currency: currencySchema,
     exchangeRate: costLineExchangeRateSchema,
   })
@@ -92,7 +98,10 @@ export interface CostLineDto {
   electronicInvoiceCode: string | null;
   source: CostLineSource;
   percentage: number | null;
+  /** COSTO A FACTURAR: el que ve el cliente y suman los totales. */
   amount: number;
+  /** COSTO NETO (lo que costo). Siempre resuelto: sin uno guardado, igual al costo a facturar. */
+  realAmount: number;
   currency: Currency;
   exchangeRate: number;
   createdAt: string;
@@ -140,7 +149,10 @@ export interface ShipmentCostsDto {
   lines: CostLineDto[];
   /** Sugerencias para agregar (vacio si ya esta aprobado). */
   suggestions: SuggestedCostLine[];
+  /** Total FACTURADO (lo que paga el cliente). */
   totals: { usd: number; crc: number };
+  /** Total de los costos REALES de las mismas lineas. */
+  realTotals: { usd: number; crc: number };
   /**
    * Solo en el editor de servicios de una PROFORMA: lo que suman sus paquetes
    * (sin porcentajes), en cada moneda. Es parte de la base de los porcentajes de
@@ -148,6 +160,8 @@ export interface ShipmentCostsDto {
    * servicios. En un tramite no viene.
    */
   packagesSubtotal?: { usd: number; crc: number };
+  /** El mismo subtotal de los paquetes, con sus costos REALES. */
+  packagesRealSubtotal?: { usd: number; crc: number };
   /** Aprobado = congelado. Ya no admite edicion. */
   approved: boolean;
   approvedAt: string | null;

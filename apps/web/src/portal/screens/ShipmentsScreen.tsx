@@ -153,12 +153,12 @@ function originField(row: ShipmentDto): CardField[] {
 }
 
 /**
- * Titulo del bloque de guias. En Agenciamiento el documento es el conocimiento
- * de embarque, y asi lo nombra la operacion; se resuelve por fila porque ese
- * tramite convive con Transporte (y con todos en "Todos") en el mismo tablero.
+ * Titulo del bloque de guias. Fuera de Paqueteria (aereo, maritimo y
+ * agenciamiento) el documento es el conocimiento de embarque, y asi lo nombra la
+ * operacion; se resuelve por fila porque en "Todos" conviven ambos mundos.
  */
 function guideTitle(row: ShipmentDto): string {
-  return row.shipmentType === ShipmentType.Agenciamiento ? 'Conocimiento de embarque' : 'Guías';
+  return row.shipmentType === ShipmentType.Paqueteria ? 'Guías' : 'Conocimiento de embarque';
 }
 
 function guideFields(row: ShipmentDto): CardField[] {

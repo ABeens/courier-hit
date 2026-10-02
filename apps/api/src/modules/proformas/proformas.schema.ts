@@ -183,7 +183,10 @@ export const proformaCosts = pgTable(
     electronicInvoiceCode: text('electronic_invoice_code'),
     source: costLineSourceEnum('source').notNull(),
     percentage: doublePrecision('percentage'),
+    /** COSTO FACTURADO (el que imprime la proforma). */
     amount: doublePrecision('amount').notNull(),
+    /** COSTO REAL; null = igual al facturado. Igual que en `shipment_costs`. */
+    realAmount: doublePrecision('real_amount'),
     currency: currencyEnum('currency').notNull(),
     exchangeRate: doublePrecision('exchange_rate').notNull(),
     /**
@@ -200,6 +203,7 @@ export const proformaCosts = pgTable(
       .on(t.proformaId, t.paymentId)
       .where(sql`${t.paymentId} is not null`),
     check('proforma_costs_amount_nonneg', sql`${t.amount} >= 0`),
+    check('proforma_costs_real_amount_nonneg', sql`${t.realAmount} is null or ${t.realAmount} >= 0`),
     check('proforma_costs_rate_positive', sql`${t.exchangeRate} > 0`),
     check(
       'proforma_costs_percentage_range',

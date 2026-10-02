@@ -368,10 +368,6 @@ export async function createHelgaPrealert(params: {
   helgaClientId: string;
   tracking: string;
   description: string;
-  /** Contenido para el proveedor. Vacio -> viaja la descripcion (`contenido` es obligatorio). */
-  content?: string | null;
-  /** Notas para la bodega. Vacias -> no se manda el campo. */
-  notes?: string | null;
   store?: string | null;
   /** Valor comercial declarado (USD). Ausente/null -> 0. */
   commercialValue?: number | null;
@@ -386,8 +382,9 @@ export async function createHelgaPrealert(params: {
 }): Promise<string | null> {
   const body: HelgaCreatePrealertRequest = {
     tracking: params.tracking,
-    contenido: params.content?.trim() || params.description,
-    ...(params.notes?.trim() ? { notas: params.notes.trim() } : {}),
+    // Nuestro `content` no viaja: es justo lo que el proveedor nos devuelve por la
+    // sincronizacion. Al prealertar aun no existe, y `contenido` es obligatorio.
+    contenido: params.description,
     // El proveedor exige `tienda`; cuando no se conoce usa este mismo centinela.
     tienda: params.store?.trim() || 'POR DEFINIR',
     destinatario_id: params.helgaClientId,

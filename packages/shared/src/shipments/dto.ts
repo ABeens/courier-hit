@@ -143,23 +143,6 @@ const carrierSchema = z.enum(CARRIERS, {
 const warehouseSchema = z.string().trim().min(1).max(100);
 
 /**
- * Contenido del paquete, el `contenido` del proveedor. Mismo largo que la
- * descripcion: hasta hoy viajaba ella en ese campo.
- */
-export const contentSchema = z
-  .string()
-  .trim()
-  .min(1, 'El contenido no puede ir vacío.')
-  .max(200, 'El contenido es demasiado largo.');
-
-/** Notas para el proveedor (`notas` de su prealerta). Las lee la bodega de Miami. */
-export const providerNotesSchema = z
-  .string()
-  .trim()
-  .min(1, 'Las notas no pueden ir vacías.')
-  .max(500, 'Las notas son demasiado largas.');
-
-/**
  * Notas para facturar. Comunes a los DOS flujos: el reporte las pide igual en
  * Paqueteria (campo 20) que en Agenciamiento (campo 19).
  */
@@ -222,8 +205,6 @@ const tariffPositionSchema = z.string().trim().min(1).max(30);
 function refineTypeFieldCoherence(
   data: {
     shipmentType: ShipmentType;
-    content?: unknown;
-    notes?: unknown;
     store?: unknown;
     carrier?: unknown;
     hawb?: unknown;
@@ -239,8 +220,6 @@ function refineTypeFieldCoherence(
 ): void {
   const isPackage = usesPackageFields(data.shipmentType);
   const packageOnly = [
-    'content',
-    'notes',
     'store',
     'carrier',
     'hawb',
@@ -300,9 +279,6 @@ export const prealertShipmentSchema = z
     }),
     tracking: trackingSchema,
     description: descriptionSchema,
-    /** Contenido para el proveedor. Opcional: sin el, la prealerta manda la descripcion. */
-    content: contentSchema.optional(),
-    notes: providerNotesSchema.optional(),
     store: storeSchema.optional(),
     carrier: carrierSchema.optional(),
     /** Valor comercial declarado (USD). Obligatorio en Paqueteria: lo pide la prealerta del proveedor. */
@@ -346,8 +322,6 @@ export const createShipmentSchema = z
     tracking: trackingSchema,
     description: descriptionSchema,
     // Paqueteria
-    content: contentSchema.optional(),
-    notes: providerNotesSchema.optional(),
     store: storeSchema.optional(),
     carrier: carrierSchema.optional(),
     hawb: hawbSchema.optional(),
@@ -393,8 +367,6 @@ export const updateShipmentSchema = z
   .object({
     tracking: trackingSchema.optional(),
     description: descriptionSchema.optional(),
-    content: contentSchema.nullable().optional(),
-    notes: providerNotesSchema.nullable().optional(),
     store: storeSchema.nullable().optional(),
     carrier: carrierSchema.nullable().optional(),
     hawb: hawbSchema.nullable().optional(),
@@ -435,7 +407,6 @@ export type UpdateShipmentInput = z.infer<typeof updateShipmentSchema>;
  */
 export const registerUnassignedShipmentSchema = z.object({
   description: descriptionSchema,
-  content: contentSchema.optional(),
   tracking: trackingSchema.optional(),
   hawb: hawbSchema.optional(),
   store: storeSchema.optional(),
@@ -463,7 +434,6 @@ export type RegisterUnassignedShipmentInput = z.infer<typeof registerUnassignedS
 export const correctUnassignedShipmentSchema = z
   .object({
     description: descriptionSchema.optional(),
-    content: contentSchema.nullable().optional(),
     tracking: trackingSchema.optional(),
     hawb: hawbSchema.nullable().optional(),
     store: storeSchema.nullable().optional(),

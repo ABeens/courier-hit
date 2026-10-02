@@ -19,10 +19,8 @@ import { z } from 'zod';
 import { paginationQuerySchema } from '../http/pagination';
 import { CARRIERS, STORES } from '../shipments/catalogs';
 import {
-  contentSchema,
   descriptionSchema,
   declaredValueUsdSchema,
-  providerNotesSchema,
   trackingSchema,
 } from '../shipments/dto';
 import { State } from '../workflow/states';
@@ -79,10 +77,6 @@ export type PublicPackagesQuery = z.infer<typeof publicPackagesQuerySchema>;
 export const publicPrealertSchema = z.object({
   tracking: trackingSchema,
   description: descriptionSchema,
-  /** Contenido para la bodega de Miami. Opcional: sin el, viaja la descripcion. */
-  content: contentSchema.optional(),
-  /** Notas para la bodega de Miami (las lee el proveedor al recibir). */
-  notes: providerNotesSchema.optional(),
   store: z.enum(STORES, { errorMap: () => ({ message: 'La tienda no es una de las del catálogo.' }) }),
   carrier: z.enum(CARRIERS, {
     errorMap: () => ({ message: 'El transportista no es uno de los del catálogo.' }),
@@ -129,9 +123,12 @@ export interface PublicPackage {
   state: State;
   /** Etiqueta en español del estado, para pintarla sin traducirla. */
   stateLabel: string;
-  /** Contenido del paquete, el que tiene registrado la bodega de Miami. */
+  /**
+   * Contenido del paquete, el que tiene registrado la bodega de Miami. Solo
+   * lectura: lo reporta el proveedor, y es `null` hasta que lo hace.
+   */
   content: string | null;
-  /** Notas de la prealerta para la bodega de Miami. */
+  /** Notas del paquete que reporta la bodega de Miami. Solo lectura; `null` si no hay. */
   notes: string | null;
   store: string | null;
   carrier: string | null;

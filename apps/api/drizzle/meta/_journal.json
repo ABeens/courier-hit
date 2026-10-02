@@ -351,6 +351,13 @@
       "when": 1790880949483,
       "tag": "0049_shipment_content_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1790897538064,
+      "tag": "0050_real_cost",
+      "breakpoints": true
     }
   ]
 }

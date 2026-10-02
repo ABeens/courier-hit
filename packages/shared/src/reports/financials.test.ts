@@ -12,10 +12,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Currency } from '../money/currency';
 import { CostCategory } from '../costs/cost-service';
-import { CostLineSource, breakdownByCategory, categoryForLine } from '../costs/shipment-cost';
+import {
+  CostLineSource,
+  asRealCosts,
+  breakdownByCategory,
+  categoryForLine,
+  computeTotals,
+  realAmountOf,
+} from '../costs/shipment-cost';
 import {
   depositDifference,
-  grossProfitUsd,
+  grossProfit,
   internationalFreightUsd,
   marginPercentage,
   monthOf,
@@ -59,12 +66,12 @@ test('sin transporte internacional el TOTAL es null: un total incompleto infla e
 
 test('el GROSS PROFIT puede ser NEGATIVO (vender por debajo del costo se tiene que ver)', () => {
   // El propio ejemplo de proforma da negativo: se cobra 17.13 y cuesta 18.36.
-  assert.equal(grossProfitUsd(17.13, 18.36), -1.23);
+  assert.equal(grossProfit(17.13, 18.36, Currency.USD), -1.23);
 });
 
 test('sin factura aprobada o sin costo completo no hay profit que reportar', () => {
-  assert.equal(grossProfitUsd(null, 19.86), null);
-  assert.equal(grossProfitUsd(100, null), null);
+  assert.equal(grossProfit(null, 19.86, Currency.USD), null);
+  assert.equal(grossProfit(100, null, Currency.USD), null);
 });
 
 // ---------------------------------------------------------------------------
@@ -109,18 +116,18 @@ test('COSTOS ASOCIADOS deja fuera el flete y los honorarios propios', () => {
   assert.equal(breakdown.passThrough, 505);
 });
 
-test('el PROFIT de Agenciamiento es lo que se factura menos lo trasladado', () => {
+test('el PROFIT de Agenciamiento es lo que se factura menos lo trasladado, en colones', () => {
   const lines = [
-    line(420, CostCategory.Impuestos),
-    line(85, CostCategory.Otros),
-    line(150, CostCategory.Propio),
+    line(210_000, CostCategory.Impuestos, Currency.CRC, 500),
+    line(42_500, CostCategory.Otros, Currency.CRC, 500),
+    line(75_000, CostCategory.Propio, Currency.CRC, 500),
   ];
-  const { passThrough } = breakdownByCategory(lines, Currency.USD);
-  const invoiced = 655; // la suma de las tres lineas
+  const { passThrough } = breakdownByCategory(lines, Currency.CRC);
+  const invoiced = 327_500; // la suma de las tres lineas
 
-  // Sin la clasificacion, COSTOS ASOCIADOS seria 655 y el PROFIT exactamente 0.
-  assert.equal(grossProfitUsd(invoiced, passThrough), 150);
-  assert.equal(marginPercentage(150, invoiced), 22.9);
+  // Sin la clasificacion, COSTOS ASOCIADOS seria 327 500 y el PROFIT exactamente 0.
+  assert.equal(grossProfit(invoiced, passThrough, Currency.CRC), 75_000);
+  assert.equal(marginPercentage(75_000, invoiced), 22.9);
 });
 
 test('cada linea se convierte con SU propia tasa, no con una global', () => {
@@ -165,4 +172,32 @@ test('el MES sale como YYYY-MM para poder agrupar y ordenar', () => {
 test('sin fecha no hay mes', () => {
   assert.equal(monthOf(null), null);
   assert.equal(monthOf('no es una fecha'), null);
+});
+
+test('Costo real: sin uno guardado, el real es el facturado', () => {
+  assert.equal(realAmountOf({ amount: 40, realAmount: null }), 40);
+  assert.equal(realAmountOf({ amount: 40 }), 40);
+  assert.equal(realAmountOf({ amount: 40, realAmount: 25 }), 25);
+});
+
+test('GROSS PROFIT de Paqueteria: costo a facturar menos TOTAL', () => {
+  // Caso real (HSX000001057): flete 70/67.25, asesoria 100/50, permisos 17/11.73,
+  // comision de tarjeta 7.96 sin costo real (vale lo facturado). 5 kg a 3.66/lb.
+  const lines = [
+    { ...line(70, CostCategory.Flete), realAmount: 67.25 },
+    { ...line(100, CostCategory.Propio), realAmount: 50 },
+    { ...line(17, CostCategory.Otros), realAmount: 11.73 },
+    { ...line(7.96, CostCategory.Otros), realAmount: null },
+  ];
+  const billed = computeTotals(lines).usd;
+  const costs = breakdownByCategory(asRealCosts(lines), Currency.USD);
+  assert.equal(billed, 194.96);
+  assert.equal(costs.otros, 19.69);
+
+  const total = totalCostUsd(internationalFreightUsd(5, 3.66), costs.impuestos, costs.otros);
+  assert.equal(total, 60.02);
+
+  const profit = grossProfit(billed, total, Currency.USD);
+  assert.equal(profit, 134.94);
+  assert.equal(marginPercentage(profit, billed), 69.21);
 });

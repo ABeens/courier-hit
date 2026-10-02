@@ -26,13 +26,15 @@ import {
   SHIPMENT_TYPE_LABELS,
   STATE_LABELS,
   ShipmentType,
+  asRealCosts,
   breakdownByCategory,
   can,
   chargeBasisFor,
   collectionStatus,
+  computeTotals,
   depositDifference,
   formatProformaNumber,
-  grossProfitUsd,
+  grossProfit,
   internationalFreightUsd,
   marginPercentage,
   monthOf,
@@ -144,6 +146,11 @@ function collectionColumns(row: ServiceRow) {
  * columnas declaradas, que es la barrera unica. Calcular de mas y proyectar de
  * menos es a proposito; la alternativa —dos caminos de calculo— es como se
  * acaban filtrando columnas que no debian salir.
+ *
+ * COSTO REAL Y FACTURADO. Las columnas de costo (IMPUESTOS, OTROS, COSTOS
+ * ASOCIADOS) se desglosan con el costo REAL de cada linea, y MONTO FACTURA sigue
+ * siendo lo facturado. En Paqueteria el GROSS PROFIT es COSTO A FACTURAR menos
+ * TOTAL.
  */
 async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
   const rows = await reportsRepo.serviceReportRows(query);
@@ -151,7 +158,9 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
     query.kind === ReportKind.PaqueteriaFull || query.kind === ReportKind.PaqueteriaOperativo;
 
   return rows.map((row) => {
-    const costs = breakdownByCategory(row.costs, Currency.USD);
+    const realLines = asRealCosts(row.costs);
+    const realTotals = computeTotals(realLines);
+    const billedTotals = computeTotals(row.costs);
     const collection = collectionColumns(row);
     const common = {
       code: row.code,
@@ -165,7 +174,6 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
        * emitido.
        */
       proforma: row.proformaSequence === null ? null : formatProformaNumber(row.proformaSequence),
-      invoiceTotalUsd: row.invoiceTotalUsd,
       billingNotes: row.billingNotes,
       /**
        * FE: con el modulo de proformas la factura electronica es una por proforma
@@ -176,13 +184,20 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
     };
 
     if (isPaqueteria) {
+      const costs = breakdownByCategory(realLines, Currency.USD);
+      const billedCostsUsd = billedTotals.usd;
       const freight = internationalFreightUsd(row.weightKg, row.freightRateUsdPerLb);
       const total = totalCostUsd(freight, costs.impuestos, costs.otros);
-      const profit = grossProfitUsd(row.invoiceTotalUsd, total);
+      // GROSS PROFIT = COSTO A FACTURAR - TOTAL (transporte intl + impuestos +
+      // otros). Sin TOTAL (falta peso o tarifa) el profit sale vacio, no inflado.
+      const profit = grossProfit(billedCostsUsd, total, Currency.USD);
 
       return project(query.kind, {
         ...common,
         service: SHIPMENT_TYPE_LABELS[ShipmentType.Paqueteria],
+        invoiceTotalUsd: row.invoiceTotalUsd,
+        realCostsUsd: realTotals.usd,
+        billedCostsUsd,
         store: row.store,
         carrier: row.carrier,
         miamiArrivalAt: row.miamiArrivalAt,
@@ -200,8 +215,16 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
       });
     }
 
-    const deposited = settledAmount(row.payments, Currency.USD);
-    const profit = grossProfitUsd(row.invoiceTotalUsd, costs.passThrough);
+    /**
+     * Agenciamiento y transporte se reporta en COLONES, la moneda en que se le
+     * cobra (`chargeCurrencyFor`). Todo sale en CRC desde el origen (factura
+     * congelada en CRC, desglose y abonos convertidos con SU tasa) en vez de
+     * convertir el resultado en USD: asi DIF cuadra con el saldo que ve el
+     * modulo de pagos, que tambien liquida en colones.
+     */
+    const costs = breakdownByCategory(realLines, Currency.CRC);
+    const deposited = settledAmount(row.payments, Currency.CRC);
+    const profit = grossProfit(row.invoiceTotalCrc, costs.passThrough, Currency.CRC);
 
     return project(query.kind, {
       ...common,
@@ -212,11 +235,14 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
       // factura queda emitida y congelada. De ahi sale el MES (campo 10).
       invoicedAt: row.costsApprovedAt,
       month: monthOf(row.costsApprovedAt),
-      depositedUsd: deposited,
-      differenceUsd: depositDifference(row.invoiceTotalUsd, deposited, Currency.USD),
-      associatedCostsUsd: costs.passThrough,
-      profitUsd: profit,
-      marginPct: marginPercentage(profit, row.invoiceTotalUsd),
+      invoiceTotalCrc: row.invoiceTotalCrc,
+      depositedCrc: deposited,
+      differenceCrc: depositDifference(row.invoiceTotalCrc, deposited, Currency.CRC),
+      associatedCostsCrc: costs.passThrough,
+      realCostsCrc: realTotals.crc,
+      billedCostsCrc: billedTotals.crc,
+      profitCrc: profit,
+      marginPct: marginPercentage(profit, row.invoiceTotalCrc),
     });
   });
 }

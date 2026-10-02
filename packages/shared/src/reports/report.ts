@@ -146,7 +146,11 @@ const PAQUETERIA_COLUMNS: readonly ReportColumn[] = [
   { key: 'taxesUsd', label: 'IMPUESTOS' }, //                      22
   { key: 'othersUsd', label: 'OTROS / COMPRAS' }, //               23
   { key: 'totalCostUsd', label: 'TOTAL' }, //                      24  = 21+22+23
-  { key: 'grossProfitUsd', label: 'GROSS PROFIT' }, //             25  = 15-24
+  // --- Costo neto vs a facturar (fuera del mapeo original: sin numero, para no
+  // mover la numeracion del documento del negocio) ---
+  { key: 'realCostsUsd', label: 'COSTO NETO' }, //                  +   lineas, costo neto
+  { key: 'billedCostsUsd', label: 'COSTO A FACTURAR' }, //          +   lineas, costo a facturar
+  { key: 'grossProfitUsd', label: 'GROSS PROFIT' }, //             25  = a facturar - 24
   { key: 'marginPct', label: '%' }, //                             26  = 25/15
   { key: 'electronicInvoiceNumber', label: 'FE' }, //              27
 ];
@@ -157,6 +161,10 @@ const PAQUETERIA_OPERATIONAL_FIELDS = 15;
 /**
  * AGENCIAMIENTO y transporte, los 23 campos del mapeo, en su orden. Mismo trato
  * que Paqueteria: el operativo es el prefijo (campos 1 al 18).
+ *
+ * Los montos van en COLONES: es la moneda en que se le cobra a este flujo
+ * (`chargeCurrencyFor`), y la del deposito que se compara contra la factura en
+ * DIF. El encabezado lo dice para que el CSV no dependa de saberlo.
  */
 const AGENCIAMIENTO_COLUMNS: readonly ReportColumn[] = [
   { key: 'code', label: 'Consecutivo Interno HS' }, //              1
@@ -170,17 +178,21 @@ const AGENCIAMIENTO_COLUMNS: readonly ReportColumn[] = [
   { key: 'invoicedAt', label: 'FECHA FACTURACIÓN' }, //             9
   { key: 'month', label: 'MES' }, //                               10  derivado de 9
   { key: 'proforma', label: 'PROFORMA' }, //                       11  consecutivo propio
-  { key: 'invoiceTotalUsd', label: 'MONTO FACTURA' }, //           12
+  { key: 'invoiceTotalCrc', label: 'MONTO FACTURA (CRC)' }, //     12
   { key: 'collectionStatus', label: 'ESTATUS COBRO' }, //          13  derivado de los pagos
   { key: 'bankAccount', label: 'CUENTA' }, //                      14
   { key: 'receipt', label: 'COMPROBANTE DEPOSITO' }, //            15
   { key: 'paidAt', label: 'FECHA DEPOSITO' }, //                   16  derivado del pago
-  { key: 'depositedUsd', label: 'MONTO DEPOSITADO' }, //           17  derivado de los abonos
-  { key: 'differenceUsd', label: 'DIF' }, //                       18  = 12-17
+  { key: 'depositedCrc', label: 'MONTO DEPOSITADO (CRC)' }, //    17  derivado de los abonos
+  { key: 'differenceCrc', label: 'DIF (CRC)' }, //                 18  = 12-17
   // --- A partir de aqui, solo el reporte FULL (admin) ---
   { key: 'billingNotes', label: 'NOTAS P/FACTURAR' }, //           19
-  { key: 'associatedCostsUsd', label: 'COSTOS ASOCIADOS' }, //     20  lineas trasladadas
-  { key: 'profitUsd', label: 'PROFIT' }, //                        21  = 12-20
+  { key: 'associatedCostsCrc', label: 'COSTOS ASOCIADOS (CRC)' }, // 20  lineas trasladadas
+  // --- Costo neto vs a facturar (fuera del mapeo original: sin numero, para no
+  // mover la numeracion del documento del negocio) ---
+  { key: 'realCostsCrc', label: 'COSTO NETO (CRC)' }, //            +   lineas, costo neto
+  { key: 'billedCostsCrc', label: 'COSTO A FACTURAR (CRC)' }, //    +   lineas, costo a facturar
+  { key: 'profitCrc', label: 'PROFIT (CRC)' }, //                  21  = 12-20
   { key: 'marginPct', label: '%' }, //                             22  = 21/12
   { key: 'electronicInvoiceNumber', label: 'FE' }, //              23
 ];

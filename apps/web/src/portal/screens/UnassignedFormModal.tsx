@@ -49,7 +49,6 @@ const orNull = (value: string) => (value.trim() ? value.trim() : null);
 
 export function UnassignedFormModal({ mode, initialHawb, row, onClose, onSaved }: Props) {
   const [description, setDescription] = useState(row?.description ?? '');
-  const [content, setContent] = useState(row?.content ?? '');
   // En la ficha el tracking sembrado se muestra vacío: no es una guía real.
   const [tracking, setTracking] = useState(row ? (knownTracking(row) ?? '') : '');
   const [hawb, setHawb] = useState(row?.hawb ?? initialHawb ?? '');
@@ -81,7 +80,6 @@ export function UnassignedFormModal({ mode, initialHawb, row, onClose, onSaved }
       if (mode === 'create') {
         const parsed = registerUnassignedShipmentSchema.safeParse({
           description,
-          content: orUndefined(content),
           tracking: orUndefined(tracking),
           hawb: orUndefined(hawb),
           store: orUndefined(store),
@@ -100,7 +98,6 @@ export function UnassignedFormModal({ mode, initialHawb, row, onClose, onSaved }
       if (!row) throw new Error('No hay paquete que corregir.');
       const parsed = correctUnassignedShipmentSchema.safeParse({
         description,
-        content: orNull(content),
         // El tracking no admite `null`: la columna es obligatoria. Vaciarlo aquí
         // significa "sigo sin conocerlo", así que no se manda.
         ...(tracking.trim() ? { tracking: tracking.trim() } : {}),
@@ -152,19 +149,6 @@ export function UnassignedFormModal({ mode, initialHawb, row, onClose, onSaved }
             <div className="field-hint">
               Obligatorio: es con lo que se va a reconocer la caja en la estantería.
             </div>
-          </div>
-
-          <div className="col-full">
-            <label className="field-label" htmlFor="u-content">Contenido</label>
-            <input
-              id="u-content"
-              className="input"
-              maxLength={200}
-              value={content}
-              placeholder="Opcional"
-              onChange={(e) => setContent(e.target.value)}
-            />
-            <div className="field-hint">Lo que trae la caja, si se sabe.</div>
           </div>
 
           <div>

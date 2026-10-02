@@ -76,18 +76,19 @@ export const shipments = pgTable(
 
     // --- Solo Paqueteria ---
     /**
-     * Contenido del paquete, el `contenido` de Helga. Va aparte de `description`
-     * porque son dos datos con dueño distinto: la descripcion la escribe quien da
-     * de alta el tramite, y el contenido es lo que el proveedor tiene registrado
-     * (su bodega lo corrige al digitar el paquete). Al prealertar se manda este
-     * campo, o la descripcion si viene vacio (`contenido` es obligatorio alla);
-     * la sincronizacion lo refresca con lo que reporte el proveedor.
+     * Contenido del paquete, el `contenido` de Helga. SOLO lo escribe la
+     * integracion con el proveedor (sincronizacion op. B y descubrimiento op. E);
+     * ninguna puerta de usuario lo acepta. Va aparte de `description` porque son
+     * dos datos con dueño distinto: la descripcion es nuestra y el contenido es
+     * lo que la bodega del proveedor registro al digitar el paquete. Null
+     * mientras el proveedor no lo haya reportado.
      */
     content: text('content'),
     /**
-     * Notas para el proveedor, el `notas` de la prealerta de Helga. No son las
-     * notas para facturar (`billingNotes`), que son internas: estas las lee la
-     * bodega de Miami.
+     * Notas del paquete, el `notas` de Helga. Mismo regimen que `content`: SOLO
+     * las escribe la integracion con el proveedor, ninguna puerta de usuario las
+     * acepta y no se mandan al prealertar. No son las notas para facturar
+     * (`billingNotes`), que son internas y si se editan.
      */
     notes: text('notes'),
     store: text('store'),

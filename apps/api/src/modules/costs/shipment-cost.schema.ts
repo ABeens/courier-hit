@@ -61,8 +61,17 @@ export const shipmentCosts = pgTable(
     source: costLineSourceEnum('source').notNull(),
     /** Porcentaje aplicado (0-100) cuando source = percentage; null en el resto. */
     percentage: doublePrecision('percentage'),
-    /** Importe ya resuelto de la linea. Siempre >= 0 (lo acota el servicio, regla M3). */
+    /**
+     * COSTO FACTURADO: importe ya resuelto de la linea, el que ve y paga el
+     * cliente. Siempre >= 0 (lo acota el servicio, regla M3).
+     */
     amount: doublePrecision('amount').notNull(),
+    /**
+     * COSTO REAL de la linea, misma moneda y tasa que `amount`. Null = igual al
+     * facturado (`realAmountOf`): asi las lineas viejas y las que asienta el
+     * sistema no necesitan repetir el importe. Solo lo leen los reportes.
+     */
+    realAmount: doublePrecision('real_amount'),
     /** Moneda del importe, explicita (regla M2). */
     currency: currencyEnum('currency').notNull(),
     /** Colones por 1 USD al cargar el costo (regla M5). Obligatoria, siempre > 0. */
@@ -98,6 +107,7 @@ export const shipmentCosts = pgTable(
      * ultima linea, la unica que tambien cubre un script o una correccion manual.
      */
     check('shipment_costs_amount_nonneg', sql`${t.amount} >= 0`),
+    check('shipment_costs_real_amount_nonneg', sql`${t.realAmount} is null or ${t.realAmount} >= 0`),
     check('shipment_costs_rate_positive', sql`${t.exchangeRate} > 0`),
     check(
       'shipment_costs_percentage_range',

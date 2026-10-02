@@ -39,6 +39,7 @@ import {
   State,
   allocateProformaInvoices,
   applyPercentage,
+  asRealCosts,
   breakdownByCategory,
   canSetExchangeRate,
   canTransition,
@@ -57,6 +58,7 @@ import {
   paymentGateWaived,
   percentageBase,
   proformaDeliveryStatus,
+  realAmountOf,
   roundMoney,
   sumInvoices,
   totalIn,
@@ -111,6 +113,7 @@ function toLineDto(row: Line): CostLineDto {
     source: row.source,
     percentage: row.percentage,
     amount: row.amount,
+    realAmount: realAmountOf(row),
     currency: row.currency,
     exchangeRate: row.exchangeRate,
     createdAt: row.createdAt.toISOString(),
@@ -142,13 +145,19 @@ function percentageBaseLines(shipmentLines: readonly ShipmentLine[], proformaLin
  * Los servicios de la proforma con sus porcentajes calculados sobre el subtotal
  * de AHORA. En un borrador el subtotal cambia (entran, salen o cambian paquetes)
  * y el importe guardado puede estar viejo: se recalcula al leer, y la aprobacion
- * congela el resultado.
+ * congela el resultado. El facturado y el real se recalculan cada uno sobre su
+ * propia base, igual que al guardar (`resolveLines`).
  */
 function withLivePercentages(proformaLines: readonly ProformaLine[], shipmentLines: readonly ShipmentLine[]): ProformaLine[] {
   const base = percentageBaseLines(shipmentLines, proformaLines);
+  const realBase = asRealCosts(base);
   return proformaLines.map((l) =>
     l.source === CostLineSource.Percentage && l.percentage !== null
-      ? { ...l, amount: applyPercentage(percentageBase(base, l.currency), l.percentage, l.currency) }
+      ? {
+          ...l,
+          amount: applyPercentage(percentageBase(base, l.currency), l.percentage, l.currency),
+          realAmount: applyPercentage(percentageBase(realBase, l.currency), l.percentage, l.currency),
+        }
       : l,
   );
 }
@@ -357,6 +366,7 @@ export const proformasService = {
     // Lo que los paquetes aportan a la base de los porcentajes, para que la
     // vista previa del editor calcule igual que la API.
     const packagesBase = percentageBaseLines(shipmentLines, []);
+    const packagesRealBase = asRealCosts(packagesBase);
     return {
       shipmentId: id,
       lines: lines.map(toLineDto),
@@ -364,8 +374,13 @@ export const proformasService = {
         usd: percentageBase(packagesBase, Currency.USD),
         crc: percentageBase(packagesBase, Currency.CRC),
       },
+      packagesRealSubtotal: {
+        usd: percentageBase(packagesRealBase, Currency.USD),
+        crc: percentageBase(packagesRealBase, Currency.CRC),
+      },
       suggestions: editable ? suggestions : [],
       totals: computeTotals(lines),
+      realTotals: computeTotals(asRealCosts(lines)),
       approved: !editable,
       approvedAt: p.approvedAt?.toISOString() ?? null,
       approvedByName: header.approvedByName,
@@ -487,7 +502,9 @@ export const proformasService = {
        */
       await proformasRepo.setProformaLineAmounts(
         tx,
-        extras.filter((l) => l.source === CostLineSource.Percentage).map((l) => ({ id: l.id, amount: l.amount })),
+        extras
+          .filter((l) => l.source === CostLineSource.Percentage)
+          .map((l) => ({ id: l.id, amount: l.amount, realAmount: l.realAmount })),
       );
       const invoices = allocateProformaInvoices(
         shipments.map((s) => computeTotals(linesByShipment.get(s.id) ?? [])),

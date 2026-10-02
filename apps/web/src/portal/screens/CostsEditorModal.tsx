@@ -11,6 +11,11 @@
  *     no se guarda, y quien no puede fijarla tiene que pedirsela a un admin.
  *   - Las lineas de PORCENTAJE no llevan monto: el importe lo calcula la API
  *     sobre el subtotal de las demas. Aqui solo se muestra la estimacion.
+ *   - Cada linea tiene COSTO NETO (en codigo, `realAmount`) y COSTO A FACTURAR
+ *     (`amount`). El costo a facturar nace igual al neto y lo sigue mientras
+ *     nadie lo edite; editarlo factura otro valor. La proforma y los totales
+ *     usan el costo a facturar; el neto solo lo leen los reportes, y la
+ *     diferencia queda en el margen.
  *   - AQUI NO SE APRUEBA. Aprobar es un acto sobre la PROFORMA (numero, factura
  *     congelada y avance a cobro), y se hace desde su detalle. Con la proforma
  *     aprobada este editor queda en solo lectura; para cambiarla se corrige.
@@ -73,7 +78,15 @@ interface DraftLine {
   source: CostLineSource;
   /** Texto crudo del input: se convierte a numero solo al guardar. */
   percentage: string;
+  /** COSTO REAL (texto crudo): del catalogo, de la tarifa o digitado. */
   amount: string;
+  /**
+   * COSTO FACTURADO digitado (texto crudo). Solo cuenta si `billedTouched`: si
+   * no, el facturado es el real (`billedOf`).
+   */
+  billed: string;
+  /** True si el operador fijo el facturado a mano; si no, sigue al real. */
+  billedTouched: boolean;
   currency: Currency;
   /**
    * Lo elegido en el desplegable de concepto: id del servicio del catalogo,
@@ -102,6 +115,16 @@ function isAmountEditable(line: DraftLine): boolean {
   return line.source === CostLineSource.Freight || line.valueType === ServiceValueType.Manual;
 }
 
+/** Costo facturado efectivo de la linea: el digitado, o el real si no se toco. */
+function billedOf(line: DraftLine): string {
+  return line.billedTouched ? line.billed : line.amount;
+}
+
+/** True si la linea se factura por un valor distinto a su costo real. */
+function isBilledAdjusted(line: DraftLine): boolean {
+  return line.billedTouched && Number(line.billed) !== Number(line.amount);
+}
+
 let keySeq = 0;
 const nextKey = () => `l${++keySeq}`;
 
@@ -114,6 +137,8 @@ function fromSuggestion(s: SuggestedCostLine): DraftLine {
     source: s.source,
     percentage: s.percentage !== null ? String(s.percentage) : '',
     amount: s.amount !== null ? String(s.amount) : '',
+    billed: '',
+    billedTouched: false,
     currency: s.currency,
     pick: s.costServiceId ?? CUSTOM_PICK,
     valueType: s.valueType,
@@ -150,7 +175,11 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
         label: l.label,
         source: l.source,
         percentage: l.percentage !== null ? String(l.percentage) : '',
-        amount: String(l.amount),
+        // La linea guardada trae los dos: `amount` es el facturado y
+        // `realAmount` el real. Si coinciden, el facturado vuelve a seguir al real.
+        amount: String(l.realAmount),
+        billed: String(l.amount),
+        billedTouched: l.realAmount !== l.amount,
         currency: l.currency,
         pick: l.costServiceId ?? CUSTOM_PICK,
         valueType: l.source === CostLineSource.Freight ? null : valueTypeOf(l.costServiceId),
@@ -248,12 +277,18 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
    * proforma ese subtotal incluye sus paquetes (`packagesSubtotal`), no solo
    * los servicios que se editan aqui.
    */
-  const preview = (() => {
+  /**
+   * Se calcula dos veces con la misma cuenta: con el costo FACTURADO (el total
+   * que paga el cliente) y con el REAL, cada uno con su propia base de porcentajes.
+   */
+  const previewWith = (
+    amountOf: (l: DraftLine) => string,
+    packages: { usd: number; crc: number },
+  ) => {
     if (!rateOk) return null;
     const fixed = lines
       .filter((l) => l.source !== CostLineSource.Percentage)
-      .map((l) => ({ amount: Number(l.amount) || 0, currency: l.currency, exchangeRate: parsedRate, source: l.source }));
-    const packages = data?.packagesSubtotal ?? { usd: 0, crc: 0 };
+      .map((l) => ({ amount: Number(amountOf(l)) || 0, currency: l.currency, exchangeRate: parsedRate, source: l.source }));
     const percentages = lines
       .filter((l) => l.source === CostLineSource.Percentage)
       .map((l) => {
@@ -269,7 +304,13 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
         };
       });
     return computeTotals([...fixed, ...percentages]);
-  })();
+  };
+  const noPackages = { usd: 0, crc: 0 };
+  const preview = previewWith(billedOf, data?.packagesSubtotal ?? noPackages);
+  const realPreview = previewWith(
+    (l) => l.amount,
+    data?.packagesRealSubtotal ?? data?.packagesSubtotal ?? noPackages,
+  );
 
   function patchLine(key: string, patch: Partial<DraftLine>) {
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -292,6 +333,8 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
         source: CostLineSource.Service,
         percentage: '',
         amount: '',
+        billed: '',
+        billedTouched: false,
         currency: defaultCurrency,
         pick: '',
         // Sin concepto elegido no hay nada que digitar todavia.
@@ -319,6 +362,8 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
         source: CostLineSource.Service,
         percentage: '',
         amount: '',
+        billed: '',
+        billedTouched: false,
         // La moneda vuelve a la que propone el catalogo del tramite: la que habia
         // era del servicio que se acaba de soltar, y aqui ya no significa nada.
         currency: defaultCurrency,
@@ -338,6 +383,9 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
       source: service.source,
       percentage: service.percentage !== null ? String(service.percentage) : '',
       amount: service.amount !== null ? String(service.amount) : '',
+      // Concepto nuevo, facturado nuevo: vuelve a seguir al costo real.
+      billed: '',
+      billedTouched: false,
       currency: service.currency,
       valueType: service.valueType,
     });
@@ -375,7 +423,10 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
         source: l.source,
         percentage: l.source === CostLineSource.Percentage ? Number(l.percentage) : null,
         // En porcentaje el importe lo calcula la API; mandarlo seria ruido.
-        ...(l.source === CostLineSource.Percentage ? {} : { amount: Number(l.amount) }),
+        // `amount` es el facturado y `realAmount` el real.
+        ...(l.source === CostLineSource.Percentage
+          ? {}
+          : { amount: Number(billedOf(l)), realAmount: Number(l.amount) }),
         currency: l.currency,
         exchangeRate: parsedRate,
       })),
@@ -467,11 +518,12 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
           )}
 
           <div className="table-wrap">
-            <table className="table">
+            <table className="table table-costs">
               <thead>
                 <tr>
                   <th>Concepto</th>
-                  <th style={{ width: 130 }}>Monto</th>
+                  <th style={{ width: 130 }}>Costo neto</th>
+                  <th style={{ width: 150 }}>Costo a facturar</th>
                   <th style={{ width: 130 }}>Moneda</th>
                   <th style={{ width: 60 }} />
                 </tr>
@@ -535,6 +587,35 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
                       )}
                     </td>
                     <td>
+                      {/* El facturado nace igual al real y lo sigue hasta que
+                          se edita. Vaciarlo lo devuelve a seguir al real. */}
+                      {line.source === CostLineSource.Percentage ? (
+                        <span className="muted">Calculado</span>
+                      ) : line.pick === '' && line.source !== CostLineSource.Freight ? (
+                        <span className="muted">-</span>
+                      ) : (
+                        <>
+                          <input
+                            className="input" type="number" min="0" step="0.01"
+                            value={billedOf(line)} disabled={approved}
+                            onChange={(e) =>
+                              patchLine(line.key, {
+                                billed: e.target.value,
+                                billedTouched: e.target.value.trim() !== '',
+                              })
+                            }
+                            aria-label={`Costo a facturar de ${line.label || 'la línea'}`}
+                          />
+                          {isBilledAdjusted(line) && (
+                            <div className="field-hint">
+                              {Number(line.billed) > Number(line.amount) ? '+' : '-'}
+                              {formatMoney(Math.abs(Number(line.billed) - Number(line.amount)), line.currency)} vs neto
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </td>
+                    <td>
                       {line.source === CostLineSource.Percentage ? (
                         <span className="muted">
                           {target.kind === 'proforma' ? '% del subtotal de la proforma' : '% del subtotal'}
@@ -578,9 +659,15 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
           <div className="banner ok" style={{ background: 'var(--paper-2)', color: 'var(--ink)' }}>
             {preview ? (
               <>
-                <strong>Total:</strong> {formatMoney(preview.usd, Currency.USD)} ·{' '}
+                <strong>Total a facturar:</strong> {formatMoney(preview.usd, Currency.USD)} ·{' '}
                 {formatMoney(preview.crc, Currency.CRC)}
                 {!approved && <span className="muted"> (estimado hasta guardar)</span>}
+                {realPreview && (realPreview.usd !== preview.usd || realPreview.crc !== preview.crc) && (
+                  <div className="muted">
+                    Costo neto: {formatMoney(realPreview.usd, Currency.USD)} ·{' '}
+                    {formatMoney(realPreview.crc, Currency.CRC)}
+                  </div>
+                )}
               </>
             ) : (
               canEditRate
@@ -590,12 +677,14 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
           </div>
         </div>
 
-        <div className="modal-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
-            {approved ? 'Cerrar' : 'Cancelar'}
+        <div className="modal-foot modal-foot-compact">
+          {/* "Cerrar" y no "Cancelar": lo guardado ya quedo guardado, salir no
+              deshace nada. */}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} disabled={busy}>
+            Cerrar
           </button>
           {!approved && (
-            <button type="button" className="btn btn-primary" onClick={onSave} disabled={busy}>
+            <button type="button" className="btn btn-primary btn-sm" onClick={onSave} disabled={busy}>
               {busy ? 'Guardando…' : 'Guardar'}
             </button>
           )}

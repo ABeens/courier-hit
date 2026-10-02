@@ -15,6 +15,11 @@
  *    sistema la SUGIERE (referencia publicada) pero el operador es quien la digita.
  * 3. LOS TOTALES SE DERIVAN, NO SE DIGITAN. `computeTotals` es el unico lugar
  *    donde se suma una factura, y devuelve el total en ambas monedas.
+ * 4. COSTO REAL Y COSTO FACTURADO. `amount` es lo que se le FACTURA al cliente:
+ *    es lo que imprime la proforma y lo que suman todos los totales y cobros.
+ *    `realAmount` es lo que de verdad cuesta la linea; nace igual al facturado
+ *    y el operador puede facturar otro valor. Solo los reportes lo leen, y la
+ *    diferencia entre los dos queda en el margen (ver `asRealCosts`).
  */
 import { Currency, convertMoney, roundMoney } from '../money/currency';
 import { CostCategory, isPassThroughCost } from './cost-service';
@@ -57,13 +62,42 @@ export interface ShipmentCostLine {
   source: CostLineSource;
   /** Porcentaje aplicado (0-100) cuando `source` es Percentage; null en el resto. */
   percentage: number | null;
-  /** Importe de la linea, ya resuelto. Siempre >= 0 (regla M3). */
+  /**
+   * COSTO FACTURADO: importe de la linea que ve y paga el cliente, ya resuelto.
+   * Siempre >= 0 (regla M3). Es el que suman la proforma, los totales y el cobro.
+   */
   amount: number;
+  /**
+   * COSTO REAL de la linea, en la misma moneda y con la misma tasa que `amount`.
+   * Null = igual al facturado (lineas anteriores a la columna y las que asienta
+   * el sistema, como la comision de la tarjeta). Ver `realAmountOf`.
+   */
+  realAmount: number | null;
   /** Moneda del importe, explicita (regla M2). */
   currency: Currency;
   /** Colones por 1 USD al momento de cargar el costo (regla M5). Siempre > 0. */
   exchangeRate: number;
   createdAt: Date;
+}
+
+/**
+ * Costo real de una linea. Punto UNICO de la regla "sin costo real guardado, el
+ * real es el facturado": nadie lee `realAmount` a secas.
+ */
+export function realAmountOf(line: { amount: number; realAmount?: number | null }): number {
+  return line.realAmount ?? line.amount;
+}
+
+/**
+ * Las mismas lineas con el COSTO REAL en `amount`. Existe para reutilizar
+ * `computeTotals` y `breakdownByCategory` sobre lo que costo, sin escribir una
+ * segunda version de cada suma: los reportes desglosan costos con esto, y la
+ * factura (que sigue usando el facturado) no cambia.
+ */
+export function asRealCosts<T extends { amount: number; realAmount?: number | null }>(
+  lines: readonly T[],
+): T[] {
+  return lines.map((l) => ({ ...l, amount: realAmountOf(l) }));
 }
 
 /** Total de una factura, expresado en las dos monedas del negocio. */

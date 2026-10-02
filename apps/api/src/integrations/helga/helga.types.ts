@@ -93,9 +93,15 @@ export interface HelgaRecipientListItem {
 export interface HelgaCreatePrealertRequest {
   /** Numero de guia del transportista (UPS, Fedex...). Unico del lado de Helga. */
   tracking: string;
-  /** Contenido del paquete: nuestro `content`, o `description` si viene vacio. */
+  /**
+   * Nuestro `description`. Lo que la bodega del proveedor registre como contenido
+   * vuelve por la sincronizacion a nuestro `content`.
+   */
   contenido: string;
-  /** Notas para la bodega (nuestro `notes`). Opcional en v2; se omite si no hay. */
+  /**
+   * Opcional en v2 y NO lo mandamos: nuestro `notes` es lo que el proveedor nos
+   * devuelve por la sincronizacion, no algo que escribamos nosotros.
+   */
   notas?: string;
   /** Tienda donde se compro; obligatoria. Default "POR DEFINIR" si no se conoce. */
   tienda: string;

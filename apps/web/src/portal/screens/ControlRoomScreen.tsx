@@ -382,6 +382,7 @@ export function ControlRoomScreen({ role }: { role: Role }) {
                       }
                     />
                     <Field label="Contenido" value={row.content} />
+                    <Field label="Notas del proveedor" value={row.notes} />
                     <Field label="Notas de bodega" value={row.billingNotes} />
                   </dl>
                 </section>

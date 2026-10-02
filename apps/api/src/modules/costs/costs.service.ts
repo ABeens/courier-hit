@@ -31,6 +31,7 @@ import {
   ServiceValueType,
   State,
   applyPercentage,
+  asRealCosts,
   can,
   canSetExchangeRate,
   categoryForLine,
@@ -41,6 +42,7 @@ import {
   formatMoney,
   percentageBase,
   permissionFor,
+  realAmountOf,
   roundMoney,
 } from '@courier/shared';
 import type {
@@ -103,6 +105,7 @@ function toLineDto(row: Awaited<ReturnType<typeof costsRepo.listLines>>[number])
     source: row.source,
     percentage: row.percentage,
     amount: row.amount,
+    realAmount: realAmountOf(row),
     currency: row.currency,
     exchangeRate: row.exchangeRate,
     createdAt: row.createdAt.toISOString(),
@@ -260,16 +263,23 @@ async function resolveExchangeRate(
  * usa para que el porcentaje de un servicio suyo se calcule sobre el subtotal de
  * la proforma entera (sus paquetes mas sus servicios fijos), no solo sobre sus
  * propios servicios.
+ *
+ * COSTO REAL Y FACTURADO. Cada linea sale con los dos: el facturado es `amount`
+ * (lo que se cobra) y el real es `realAmount`, o el mismo facturado si no vino.
+ * Un porcentaje tiene DOS bases y se resuelve sobre cada una: el facturado sobre
+ * lo facturado y el real sobre lo real. Asi, si el operador factura un costo por
+ * encima de lo que costo, el porcentaje que se cobra sobre el sigue la factura.
  */
 export function resolveLines(
   input: CostLineInput[],
-  extraBase: Parameters<typeof percentageBase>[0] = [],
+  extraBase: (Parameters<typeof percentageBase>[0][number] & { realAmount?: number | null })[] = [],
 ): {
   costServiceId: string | null;
   label: string;
   source: CostLineSource;
   percentage: number | null;
   amount: number;
+  realAmount: number;
   currency: Currency;
   exchangeRate: number;
 }[] {
@@ -282,10 +292,13 @@ export function resolveLines(
       percentage: null,
       // El esquema Zod ya garantizo que las lineas no-porcentaje traen importe.
       amount: roundMoney(l.amount!, l.currency),
+      realAmount: roundMoney(l.realAmount ?? l.amount!, l.currency),
       currency: l.currency,
       exchangeRate: l.exchangeRate,
     }));
 
+  const billedBase = [...base, ...extraBase];
+  const realBase = asRealCosts(billedBase);
   const percentages = input
     .filter((l) => l.source === CostLineSource.Percentage)
     .map((l) => {
@@ -295,7 +308,8 @@ export function resolveLines(
         label: l.label,
         source: CostLineSource.Percentage,
         percentage: pct,
-        amount: applyPercentage(percentageBase([...base, ...extraBase], l.currency), pct, l.currency),
+        amount: applyPercentage(percentageBase(billedBase, l.currency), pct, l.currency),
+        realAmount: applyPercentage(percentageBase(realBase, l.currency), pct, l.currency),
         currency: l.currency,
         exchangeRate: l.exchangeRate,
       };
@@ -342,6 +356,7 @@ export const costsService = {
       // Aprobado = congelado: no tiene sentido sugerir nada mas.
       suggestions: approved ? [] : await buildSuggestions(shipment),
       totals: computeTotals(rows),
+      realTotals: computeTotals(asRealCosts(rows)),
       approved,
       approvedAt: approval?.approvedAt?.toISOString() ?? null,
       approvedByName: approval?.approvedByName ?? null,

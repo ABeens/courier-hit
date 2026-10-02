@@ -270,6 +270,7 @@ export const reportsRepo = {
         .select({
           shipmentId: shipmentCosts.shipmentId,
           amount: shipmentCosts.amount,
+          realAmount: shipmentCosts.realAmount,
           currency: shipmentCosts.currency,
           exchangeRate: shipmentCosts.exchangeRate,
           category: shipmentCosts.category,

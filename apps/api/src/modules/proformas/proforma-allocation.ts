@@ -12,16 +12,20 @@
  * Mismo criterio que la aprobacion: en proporcion a lo que cobra cada tramite
  * con sus lineas propias, en la moneda de la proforma, con `splitAmount` (ni se
  * pierde ni se inventa un centimo). Se reparte LINEA POR LINEA para conservar la
- * categoria de cada servicio.
+ * categoria de cada servicio. El costo real se reparte aparte, con los mismos
+ * pesos: cada porcion conserva su par facturado/real.
  */
-import { CostCategory, splitAmount, totalIn, computeTotals } from '@courier/shared';
+import { CostCategory, realAmountOf, splitAmount, totalIn, computeTotals } from '@courier/shared';
 import type { Currency } from '@courier/shared';
 import { proformasRepo } from './proformas.repo';
 
 /** Una porcion de servicio de la proforma atribuida a un tramite. */
 export interface AllocatedCostLine {
   shipmentId: string;
+  /** Porcion del costo facturado. */
   amount: number;
+  /** Porcion del costo real. */
+  realAmount: number;
   currency: Currency;
   exchangeRate: number;
   category: CostCategory;
@@ -56,11 +60,13 @@ export async function allocatedProformaCosts(shipmentIds: readonly string[]): Pr
 
     for (const extra of ownExtras) {
       const shares = splitAmount(extra.amount, weights, extra.currency);
+      const realShares = splitAmount(realAmountOf(extra), weights, extra.currency);
       shipments.forEach((shipmentId, i) => {
-        if (!wanted.has(shipmentId) || !shares[i]) return;
+        if (!wanted.has(shipmentId) || (!shares[i] && !realShares[i])) return;
         out.push({
           shipmentId,
-          amount: shares[i]!,
+          amount: shares[i] ?? 0,
+          realAmount: realShares[i] ?? 0,
           currency: extra.currency,
           exchangeRate: extra.exchangeRate,
           category: extra.category,

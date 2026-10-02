@@ -456,33 +456,33 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
           )}
         </div>
 
-        <div className="modal-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
+        <div className="modal-foot modal-foot-compact">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             Cerrar
           </button>
           {data && (
             <>
-              <button type="button" className="btn btn-ghost" onClick={() => openProformaDocument(data.id)}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => openProformaDocument(data.id)}>
                 {data.status === ProformaStatus.Borrador ? 'Vista previa' : 'Documento (PDF)'}
               </button>
-              <a className="btn btn-ghost" href={`${API_BASE}/api/proformas/${data.id}/export.csv`} target="_blank" rel="noreferrer">
+              <a className="btn btn-ghost btn-sm" href={`${API_BASE}/api/proformas/${data.id}/export.csv`} target="_blank" rel="noreferrer">
                 Exportar CSV
               </a>
-              <a className="btn btn-ghost" href={`${API_BASE}/api/proformas/${data.id}/export.xlsx`} target="_blank" rel="noreferrer">
+              <a className="btn btn-ghost btn-sm" href={`${API_BASE}/api/proformas/${data.id}/export.xlsx`} target="_blank" rel="noreferrer">
                 Descargar Excel
               </a>
               {canManage && data.status === ProformaStatus.Aprobada && (
-                <button type="button" className="btn btn-ghost" onClick={() => void correct()} disabled={busy}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => void correct()} disabled={busy}>
                   Corregir
                 </button>
               )}
               {canRecord && data.status === ProformaStatus.Aprobada && (
-                <button type="button" className="btn btn-ghost" onClick={() => setDepositing(true)} disabled={busy}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDepositing(true)} disabled={busy}>
                   Registrar depósito
                 </button>
               )}
               {canDispatch && isDispatchable(data) && (
-                <button type="button" className="btn btn-primary" onClick={() => void dispatch()} disabled={busy}>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => void dispatch()} disabled={busy}>
                   {busy
                     ? 'Procesando…'
                     : dispatchesUnpaid(data)
@@ -491,7 +491,7 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
                 </button>
               )}
               {editable && (
-                <button type="button" className="btn btn-primary" onClick={() => void approve()} disabled={busy}>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => void approve()} disabled={busy}>
                   {busy ? 'Procesando…' : 'Aprobar'}
                 </button>
               )}

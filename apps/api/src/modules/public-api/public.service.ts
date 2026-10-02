@@ -237,8 +237,6 @@ export const publicApiService = {
         shipmentType: ShipmentType.Paqueteria,
         tracking: input.tracking,
         description: input.description,
-        content: input.content,
-        notes: input.notes,
         store: input.store,
         carrier: input.carrier,
         declaredValueUsd: input.declaredValueUsd,
