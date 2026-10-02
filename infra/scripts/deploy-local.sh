@@ -96,6 +96,30 @@ run_on_instance() {
   fi
 }
 
+# Docker Desktop en Windows guarda las credenciales en el Administrador de
+# credenciales ("credsStore": "desktop"), que rechaza el token de ECR por largo
+# ("The stub received bad data"). Se usa una configuracion temporal sin
+# credsStore: el token queda en un archivo que se borra al terminar. Ojo: si la
+# configuracion no tiene ninguna credencial, docker detecta solo
+# docker-credential-wincred y vuelve al mismo error; por eso el registro va ya
+# declarado en "auths". Se copian los contextos y builders para seguir usando
+# el mismo motor y buildx.
+use_temp_docker_config() {
+  local registry="$1" source="${DOCKER_CONFIG:-$HOME/.docker}" context=""
+  DOCKER_CONFIG_TMP=$(mktemp -d)
+  trap 'rm -rf "$DOCKER_CONFIG_TMP"' EXIT
+  [ -d "$source/contexts" ] && cp -r "$source/contexts" "$DOCKER_CONFIG_TMP/"
+  [ -d "$source/buildx" ] && cp -r "$source/buildx" "$DOCKER_CONFIG_TMP/"
+  [ -f "$source/config.json" ] \
+    && context=$(sed -n 's/.*"currentContext": *"\([^"]*\)".*/\1/p' "$source/config.json")
+  if [ -n "$context" ]; then
+    printf '{"auths":{"%s":{}},"currentContext":"%s"}\n' "$registry" "$context" > "$DOCKER_CONFIG_TMP/config.json"
+  else
+    printf '{"auths":{"%s":{}}}\n' "$registry" > "$DOCKER_CONFIG_TMP/config.json"
+  fi
+  export DOCKER_CONFIG="$DOCKER_CONFIG_TMP"
+}
+
 deploy_api() {
   local repository tag instance
   repository=$(output "$BASE_STACK" EcrRepositoryUri)
@@ -106,6 +130,7 @@ deploy_api() {
   tag=$(git -C "$REPO_ROOT" rev-parse HEAD)
 
   say "Publicando ${repository}:${tag:0:7}"
+  use_temp_docker_config "${repository%%/*}"
   aws ecr get-login-password --region "$REGION" \
     | docker login --username AWS --password-stdin "${repository%%/*}"
 
