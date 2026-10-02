@@ -118,6 +118,24 @@ export const HELGA_OPERATIONAL_STATES: readonly string[] = [
  */
 export const HELGA_INCIDENT_STATES: readonly string[] = ['NOVEDAD', 'EN ABANDONO', 'INDEMNIZADO'];
 
+/**
+ * Combinaciones `estado` + `estadoAlt` homologadas una por una.
+ *
+ * Cada evento del historial de Helga trae `estado` (codigo interno) y
+ * `estadoAlt` (lo que su pantalla le muestra a la gente). Casi siempre son
+ * iguales; cuando no, el `estado` solo no basta para saber donde esta el
+ * paquete. Aqui va SOLO lo que HS Global homologo de forma explicita: un
+ * `estadoAlt` que no este en esta tabla no mueve nada, aunque su nombre se
+ * parezca a uno de los nuestros.
+ *
+ * Clave: `ESTADO|ESTADOALT`, en mayusculas, como los devuelve su API.
+ */
+export const HELGA_ALT_STATE_MAP: Record<string, State> = {
+  // Visto en vivo el 2026-10-02 (LES48549613): su pantalla lo muestra como
+  // "EN ADUANAS".
+  'NOVEDAD|EN ADUANAS': State.EnAduanas,
+};
+
 /** Que hacer con un estado que llega del proveedor. */
 export type ProviderStateMapping =
   | { kind: 'advance'; state: State }
@@ -133,9 +151,16 @@ export type ProviderStateMapping =
  * devuelve como tal para que quede registrado. Si el proveedor agrega un estado
  * nuevo, preferimos enterarnos por un aviso a que los paquetes se queden
  * callados en un estado viejo.
+ *
+ * `alt` es el `estadoAlt` del evento actual, cuando se conoce. Solo cuenta si la
+ * pareja esta en `HELGA_ALT_STATE_MAP`, y en ese caso manda sobre el `estado`.
  */
-export function mapProviderState(raw: string): ProviderStateMapping {
+export function mapProviderState(raw: string, alt?: string | null): ProviderStateMapping {
   const key = raw.trim().toUpperCase();
+
+  const altKey = alt?.trim().toUpperCase();
+  const byPair = altKey ? HELGA_ALT_STATE_MAP[`${key}|${altKey}`] : undefined;
+  if (byPair) return { kind: 'advance', state: byPair };
 
   const mapped = HELGA_STATE_MAP[key];
   if (mapped) return { kind: 'advance', state: mapped };

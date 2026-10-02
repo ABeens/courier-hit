@@ -69,7 +69,14 @@ export const providerSyncRepo = {
         providerAccountCode: shipments.providerAccountCode,
       })
       .from(shipments)
-      .innerJoin(clients, eq(shipments.clientId, clients.id))
+      /**
+       * LEFT JOIN: los tramites SIN DUEÑO (descubiertos en Helga sin casillero
+       * nuestro) tambien entran. No para avanzarlos, que sin dueño no avanzan
+       * (ver `run`), sino para refrescar sus datos: la op. E puede traer el
+       * paquete antes de que la bodega digite contenido y notas, y las notas
+       * suelen decir justo de quien es. Con INNER JOIN se quedaban vacios.
+       */
+      .leftJoin(clients, eq(shipments.clientId, clients.id))
       .where(
         and(
           sql`${shipments.shipmentType} in ${PACKAGE_TYPES}`,

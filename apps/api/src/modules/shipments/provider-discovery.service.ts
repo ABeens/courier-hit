@@ -397,9 +397,9 @@ export const providerDiscoveryService = {
        * avanzaba y no habia forma de recuperarlo: se perdia.
        *
        * Nace sin dueño y cae en la cola de la sala de control. Ahi no avanza de
-       * estado (la sincronizacion con el proveedor hace INNER JOIN contra el
-       * casillero, y sin dueño no hay casillero), no se cotiza y no se cobra,
-       * hasta que un Admin le asigne dueño o lo descarte.
+       * estado (la sincronizacion con el proveedor solo le refresca peso,
+       * medidas, contenido y notas), no se cotiza y no se cobra, hasta que un
+       * Admin le asigne dueño o lo descarte.
        */
       try {
         await this.createFromProvider(session, owner?.id ?? null, tracking, row, target.code);

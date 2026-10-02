@@ -143,6 +143,12 @@ export interface HelgaPrealertResponse {
 export interface HelgaTrackingEvent {
   /** Estado en el vocabulario del proveedor; se homologa con `mapProviderState`. */
   estado?: string;
+  /**
+   * El nombre que la pantalla de Helga muestra para ese estado. Casi siempre es
+   * igual a `estado`. Solo cuenta para las parejas homologadas en
+   * `HELGA_ALT_STATE_MAP` (p. ej. `NOVEDAD` + `EN ADUANAS`).
+   */
+  estadoAlt?: string;
   lugar?: string;
   fecha?: string;
   observacion?: string;

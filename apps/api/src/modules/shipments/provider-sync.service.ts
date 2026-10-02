@@ -193,7 +193,23 @@ export const providerSyncService = {
 
       report.checked += 1;
 
-      const mapping = mapProviderState(rawState);
+      // El peso que reporta el proveedor (kg explicito) es mejor que el que
+      // declaro el cliente al prealertar: se refresca aunque el estado no avance,
+      // porque de el depende el flete. Las medidas viajan en la misma escritura:
+      // son informativas, pero pedirlas de nuevo mas tarde es imposible (la op. B
+      // solo responde mientras el paquete esta en el tramo del proveedor).
+      // El contenido y las notas van en la misma escritura: la bodega del
+      // proveedor los corrige al digitar el paquete, y lo suyo es lo que vale.
+      //
+      // VA ANTES DE INTERPRETAR EL ESTADO. Los datos no dependen de que el estado
+      // se entienda: con la escritura despues, un estado nuevo de Helga o una
+      // incidencia dejaban el paquete sin peso, contenido ni notas para siempre.
+      const patch = { ...this.measurementsPatch(shipment, pkg), ...this.providerTextPatch(shipment, pkg) };
+      if (Object.keys(patch).length > 0) {
+        await shipmentsRepo.update(shipment.id, patch);
+      }
+
+      const mapping = mapProviderState(rawState, this.currentAltState(rawState, pkg));
       if (mapping.kind === 'unknown') {
         report.unknownStates.push(mapping.providerState);
         console.warn(`[helga] estado no homologado: "${mapping.providerState}" (${shipment.tracking}).`);
@@ -215,17 +231,9 @@ export const providerSyncService = {
       // aviso falso por cada paquete.
       if (!target?.consolidatedClientId) this.checkLockerMatch(shipment, pkg, report);
 
-      // El peso que reporta el proveedor (kg explicito) es mejor que el que
-      // declaro el cliente al prealertar: se refresca aunque el estado no avance,
-      // porque de el depende el flete. Las medidas viajan en la misma escritura:
-      // son informativas, pero pedirlas de nuevo mas tarde es imposible (la op. B
-      // solo responde mientras el paquete esta en el tramo del proveedor).
-      // El contenido y las notas van en la misma escritura: la bodega del
-      // proveedor los corrige al digitar el paquete, y lo suyo es lo que vale.
-      const patch = { ...this.measurementsPatch(shipment, pkg), ...this.providerTextPatch(shipment, pkg) };
-      if (Object.keys(patch).length > 0) {
-        await shipmentsRepo.update(shipment.id, patch);
-      }
+      // Sin dueño solo se refrescan los datos: el estado no avanza hasta que un
+      // Admin le asigne casillero (decision 4 del descubrimiento).
+      if (!shipment.clientId) continue;
 
       if (isBeyondProvider(shipment.state)) continue;
       if (mapping.state === shipment.state) continue;
@@ -236,6 +244,16 @@ export const providerSyncService = {
     }
 
     return report;
+  },
+
+  /**
+   * `estadoAlt` del estado actual: el del evento mas reciente del historial con
+   * ese mismo `estado` (Helga lo devuelve del mas nuevo al mas viejo). Solo se
+   * usa para las parejas homologadas en `HELGA_ALT_STATE_MAP`.
+   */
+  currentAltState(rawState: string, pkg: HelgaPackageStatus): string | undefined {
+    const key = rawState.toUpperCase();
+    return pkg.Seguimiento?.find((e) => e.estado?.trim().toUpperCase() === key)?.estadoAlt;
   },
 
   /**

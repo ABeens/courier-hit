@@ -158,7 +158,10 @@ export const notificationsService = {
       const report: Report = {
         name: client.name,
         email: client.email,
-        items: client.rows.map((r) => ({ label: `Trámite: ${r.code} - ${r.description}`, state: r.state })),
+        items: client.rows.map((r) => ({
+          label: `Trámite: ${r.code} - Tracking: ${r.tracking} - ${r.description}`,
+          state: r.state,
+        })),
       };
       const { body, html } = render(report, 'Le compartimos el estado actualizado de todos sus envíos:');
       await mailer.send({ to: client.email, subject: TRAMITES_SUBJECT, body, html });
@@ -173,7 +176,9 @@ export const notificationsService = {
         name: client.name,
         email: client.email,
         items: client.rows.map((r) => ({
-          label: `${r.code} - ${r.hawb ?? r.tracking} - ${r.description}`,
+          label: [r.code, `Tracking: ${r.tracking}`, r.hawb && `HAWB: ${r.hawb}`, r.description]
+            .filter(Boolean)
+            .join(' - '),
           state: r.state,
         })),
       };

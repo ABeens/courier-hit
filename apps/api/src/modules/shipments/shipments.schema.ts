@@ -54,10 +54,12 @@ export const shipments = pgTable(
      * a mantener dos altas, dos correcciones y dos historiales del mismo paquete.
      *
      * El precio es que TODO lector debe tolerar el hueco. Lo pagan casi todos sin
-     * escribir una linea: las consultas del panel, las entregas, los reportes, la
-     * sincronizacion con el proveedor y las notificaciones cruzan contra
-     * `clients` con INNER JOIN, asi que una fila sin casillero se queda fuera
-     * sola. Los que si lo miran de frente estan enumerados en `ShipmentDto.client`.
+     * escribir una linea: las consultas del panel, las entregas, los reportes y
+     * las notificaciones cruzan contra `clients` con INNER JOIN, asi que una fila
+     * sin casillero se queda fuera sola. Los que si lo miran de frente estan
+     * enumerados en `ShipmentDto.client`, mas la sincronizacion con el proveedor
+     * (`providerSyncRepo.shipmentsInProviderTramo`), que le refresca los datos
+     * sin avanzarle el estado.
      */
     clientId: uuid('client_id').references(() => clients.id),
     shipmentType: shipmentTypeEnum('shipment_type').notNull(),
