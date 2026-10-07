@@ -112,30 +112,33 @@ export interface ReportColumn {
 }
 
 /**
- * PAQUETERIA, los 27 campos del mapeo, EN SU ORDEN. El orden no es cosmetico:
- * el reporte operativo se define mas abajo como el prefijo de este ("Solo puede
- * ver del Campo 1 al Campo 15"), asi que mover una columna de sitio cambia que
- * ve el personal no administrador.
+ * PAQUETERIA, los 27 campos del mapeo. El orden lo pidio el negocio (cliente,
+ * HAWB, peso, tracking, ref, estatus, consecutivo, servicio, fecha de arribo,
+ * factura y luego el resto) y no coincide con la numeracion del mapeo. El orden
+ * no es cosmetico: el reporte operativo se define mas abajo como el prefijo de
+ * este ("Solo puede ver del Campo 1 al Campo 15"), asi que los campos 1 a 15
+ * deben quedar SIEMPRE en las primeras 15 posiciones, en el orden que sea.
  *
- * Los comentarios numerados son el puente con el documento del negocio: sin
- * ellos, cuadrar 27 columnas contra una tabla en Word se hace a ojo.
+ * Los comentarios numerados son el puente con el documento del negocio (numero
+ * de campo del mapeo, no posicion): sin ellos, cuadrar 27 columnas contra una
+ * tabla en Word se hace a ojo.
  */
 const PAQUETERIA_COLUMNS: readonly ReportColumn[] = [
-  { key: 'service', label: 'SERVICIO' }, //                        1  constante
-  { key: 'code', label: 'Consecutivo Interno HS' }, //              2
   { key: 'clientName', label: 'CLIENTE' }, //                       3
-  { key: 'tracking', label: 'TRACKING' }, //                        4
-  { key: 'store', label: 'TIENDA' }, //                             5
-  { key: 'carrier', label: 'CARRIER' }, //                          6
-  { key: 'description', label: 'REF' }, //                          7
-  { key: 'miamiArrivalAt', label: 'FECHA DE ARRIBO A MIAMI' }, //   8  derivado del historial
   { key: 'hawb', label: 'HAWB' }, //                                9
   { key: 'weightKg', label: 'WEIGHT KG' }, //                      10
+  { key: 'tracking', label: 'TRACKING' }, //                        4
+  { key: 'description', label: 'REF' }, //                          7
   { key: 'state', label: 'ESTATUS' }, //                           11
+  { key: 'code', label: 'Consecutivo Interno HS' }, //              2
+  { key: 'service', label: 'SERVICIO' }, //                        1  constante
+  { key: 'miamiArrivalAt', label: 'FECHA DE ARRIBO A MIAMI' }, //   8  derivado del historial
+  { key: 'invoiceTotalUsd', label: 'MONTO FACTURA' }, //           15
+  { key: 'store', label: 'TIENDA' }, //                             5
+  { key: 'carrier', label: 'CARRIER' }, //                          6
   { key: 'deliveredAt', label: 'FECHA ENTREGA' }, //               12  derivado del historial
   { key: 'month', label: 'MES' }, //                               13  derivado de 12
   { key: 'proforma', label: 'PROFORMA' }, //                       14  consecutivo propio
-  { key: 'invoiceTotalUsd', label: 'MONTO FACTURA' }, //           15
   // --- A partir de aqui, solo el reporte FULL (admin) ---
   { key: 'collectionStatus', label: 'ESTATUS COBRO' }, //          16  derivado de los pagos
   { key: 'bankAccount', label: 'CUENTA' }, //                      17
@@ -158,30 +161,37 @@ const PAQUETERIA_COLUMNS: readonly ReportColumn[] = [
   { key: 'electronicInvoiceNumber', label: 'FE' }, //              27
 ];
 
-/** Ultimo campo que ve el reporte operativo de Paqueteria (MONTO FACTURA). */
+/** Cuantas columnas ve el reporte operativo de Paqueteria (campos 1 al 15 del mapeo). */
 const PAQUETERIA_OPERATIONAL_FIELDS = 15;
 
 /**
- * AGENCIAMIENTO y transporte, los 23 campos del mapeo, en su orden. Mismo trato
- * que Paqueteria: el operativo es el prefijo (campos 1 al 18).
+ * AGENCIAMIENTO y transporte, los 23 campos del mapeo. El orden lo pidio el
+ * negocio (cliente, AWB/BL, servicio, ref, DUA, estatus, consecutivo, almacen,
+ * mes, fecha facturacion, proforma, monto, notas p/facturar y luego el resto) y
+ * no coincide con la numeracion del mapeo, que se conserva en los comentarios.
+ *
+ * A diferencia de Paqueteria, el operativo NO es un prefijo: NOTAS P/FACTURAR
+ * (solo FULL) va en medio de los campos operativos. El operativo se arma
+ * quitando las claves de `AGENCIAMIENTO_FULL_ONLY_KEYS` (campos 1 al 18).
  *
  * Los montos van en COLONES: es la moneda en que se le cobra a este flujo
  * (`chargeCurrencyFor`), y la del deposito que se compara contra la factura en
  * DIF. El encabezado lo dice para que el CSV no dependa de saberlo.
  */
 const AGENCIAMIENTO_COLUMNS: readonly ReportColumn[] = [
-  { key: 'code', label: 'Consecutivo Interno HS' }, //              1
-  { key: 'shipmentType', label: 'SERVICIO' }, //                    2
-  { key: 'warehouse', label: 'ALMACEN' }, //                        3
   { key: 'clientName', label: 'CLIENTE' }, //                       4
   { key: 'tracking', label: 'AWB / BL' }, //                        5
+  { key: 'shipmentType', label: 'SERVICIO' }, //                    2
   { key: 'description', label: 'REF' }, //                          6
   { key: 'dua', label: 'DUA' }, //                                  7
   { key: 'state', label: 'ESTATUS' }, //                            8
-  { key: 'invoicedAt', label: 'FECHA FACTURACIÓN' }, //             9
+  { key: 'code', label: 'Consecutivo Interno HS' }, //              1
+  { key: 'warehouse', label: 'ALMACEN' }, //                        3
   { key: 'month', label: 'MES' }, //                               10  derivado de 9
+  { key: 'invoicedAt', label: 'FECHA FACTURACIÓN' }, //             9
   { key: 'proforma', label: 'PROFORMA' }, //                       11  consecutivo propio
   { key: 'invoiceTotalCrc', label: 'MONTO FACTURA (CRC)' }, //     12
+  { key: 'billingNotes', label: 'NOTAS P/FACTURAR' }, //           19  solo FULL
   { key: 'collectionStatus', label: 'ESTATUS COBRO' }, //          13  derivado de los pagos
   { key: 'bankAccount', label: 'CUENTA' }, //                      14
   { key: 'receipt', label: 'COMPROBANTE DEPOSITO' }, //            15
@@ -193,7 +203,6 @@ const AGENCIAMIENTO_COLUMNS: readonly ReportColumn[] = [
   // Vacia si el tramite no esta en una proforma aprobada (p. ej. costos
   // aprobados antes del modulo de proformas).
   { key: 'proformaApprovedAt', label: 'FECHA DE APROBACIÓN DE LA PROFORMA' }, // +
-  { key: 'billingNotes', label: 'NOTAS P/FACTURAR' }, //           19
   { key: 'associatedCostsCrc', label: 'COSTOS ASOCIADOS (CRC)' }, // 20  lineas trasladadas
   // --- Costo neto vs a facturar (fuera del mapeo original: sin numero, para no
   // mover la numeracion del documento del negocio) ---
@@ -204,8 +213,20 @@ const AGENCIAMIENTO_COLUMNS: readonly ReportColumn[] = [
   { key: 'electronicInvoiceNumber', label: 'FE' }, //              23
 ];
 
-/** Ultimo campo que ve el reporte operativo de Agenciamiento (DIF). */
-const AGENCIAMIENTO_OPERATIONAL_FIELDS = 18;
+/**
+ * Columnas de Agenciamiento que solo ve el FULL (campos 19 al 23 y los "+").
+ * Todo lo demas (campos 1 al 18) lo ve tambien el operativo.
+ */
+const AGENCIAMIENTO_FULL_ONLY_KEYS: ReadonlySet<string> = new Set([
+  'billingNotes',
+  'proformaApprovedAt',
+  'associatedCostsCrc',
+  'realCostsCrc',
+  'billedCostsCrc',
+  'profitCrc',
+  'marginPct',
+  'electronicInvoiceNumber',
+]);
 
 /**
  * Columnas de cada reporte, en orden. El Basico es un SUBCONJUNTO estricto del
@@ -269,16 +290,18 @@ export const REPORT_COLUMNS: Record<ReportKind, readonly ReportColumn[]> = {
   ],
 
   /**
-   * El operativo es el PREFIJO del FULL, no una lista paralela. Se corta con
-   * `slice` en vez de repetir 15 (o 18) columnas por el mismo motivo por el que
-   * el Basico es subconjunto del Completo: el corte del mapeo es literalmente
-   * "del campo 1 al 15", y dos listas escritas a mano acabarian divergiendo el
-   * dia que alguien renombre una columna en una sola de ellas.
+   * El operativo se DERIVA del FULL, no es una lista paralela: dos listas
+   * escritas a mano acabarian divergiendo el dia que alguien renombre una
+   * columna en una sola de ellas. En Paqueteria es el prefijo (`slice`); en
+   * Agenciamiento se filtra por clave porque una columna solo FULL (NOTAS
+   * P/FACTURAR) va en medio de las operativas.
    */
   [ReportKind.PaqueteriaFull]: PAQUETERIA_COLUMNS,
   [ReportKind.PaqueteriaOperativo]: PAQUETERIA_COLUMNS.slice(0, PAQUETERIA_OPERATIONAL_FIELDS),
   [ReportKind.AgenciamientoFull]: AGENCIAMIENTO_COLUMNS,
-  [ReportKind.AgenciamientoOperativo]: AGENCIAMIENTO_COLUMNS.slice(0, AGENCIAMIENTO_OPERATIONAL_FIELDS),
+  [ReportKind.AgenciamientoOperativo]: AGENCIAMIENTO_COLUMNS.filter(
+    (column) => !AGENCIAMIENTO_FULL_ONLY_KEYS.has(column.key),
+  ),
 };
 
 /** Fila de un reporte: valores ya listos para mostrar (la API los serializa). */
