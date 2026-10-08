@@ -7,8 +7,9 @@
  *     proforma, juntar tramites, reasignar un paquete a otro cliente), se mira la
  *     vista previa y se aprueba.
  *   - APROBADA: se descarga el documento, se anota la factura electronica, se
- *     registra un deposito y, si hace falta y no hay pagos, se corrige (vuelve a
- *     borrador conservando su numero).
+ *     registra un deposito, el administrador valida el pago que espera
+ *     validacion y, si hace falta y no hay pagos, se corrige (vuelve a borrador
+ *     conservando su numero).
  *   - PAGADA: solo consulta.
  *
  * Cada accion la vuelve a validar la API; la pantalla solo evita ofrecer lo que
@@ -43,6 +44,7 @@ import { AssignOwnerModal } from './AssignOwnerModal';
 import { CostsEditorModal } from './CostsEditorModal';
 import type { CostsTarget } from './CostsEditorModal';
 import { ProformaDepositModal } from './ProformaDepositModal';
+import { ProformaPendingPayments } from './ProformaPendingPayments';
 import {
   deliveryPill,
   dispatchSummary,
@@ -70,6 +72,8 @@ function money(value: number, currency: Currency): string {
 export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
   const canManage = can(role, Permission.ProformasManage);
   const canRecord = can(role, Permission.PaymentsRecord);
+  /** Ve los pagos en validacion: quien registra y quien valida. */
+  const canSeePayments = canRecord || can(role, Permission.PaymentsValidate);
   /** Sacar a ruta es el permiso de despacho (Administrador, Operativo y Mensajeria). */
   const canDispatch = can(role, Permission.DeliveryDispatch);
 
@@ -86,6 +90,13 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
   const [drafts, setDrafts] = useState<ProformaListItem[]>([]);
   const [moveTarget, setMoveTarget] = useState<string>('nueva');
   const [depositing, setDepositing] = useState(false);
+  /**
+   * Hay un pago esperando validacion. Mientras tanto no se ofrece registrar otro
+   * deposito: la API lo rechazaria, y el operador lo veria como un error.
+   */
+  const [inValidation, setInValidation] = useState(false);
+  /** Sube al registrar un deposito: la seccion de validacion se vuelve a pedir. */
+  const [paymentsVersion, setPaymentsVersion] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -430,6 +441,26 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
                 )}
               </div>
 
+              {canSeePayments && data.status !== ProformaStatus.Borrador && (
+                <ProformaPendingPayments
+                  key={`${data.id}:${data.status}:${paymentsVersion}`}
+                  proformaId={data.id}
+                  proformaNumber={data.number}
+                  role={role}
+                  onLoaded={setInValidation}
+                  onResolved={(message, ok) => {
+                    if (ok) {
+                      setWarning(null);
+                      setNotice(message);
+                    } else {
+                      setNotice(null);
+                      setWarning(message);
+                    }
+                    void load();
+                  }}
+                />
+              )}
+
               {data.status !== ProformaStatus.Borrador && (
                 <div className="pay-sec">
                   <div className="card-sec-title">Factura electrónica</div>
@@ -476,7 +507,7 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
                   Corregir
                 </button>
               )}
-              {canRecord && data.status === ProformaStatus.Aprobada && (
+              {canRecord && data.status === ProformaStatus.Aprobada && !inValidation && (
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDepositing(true)} disabled={busy}>
                   Registrar depósito
                 </button>
@@ -536,6 +567,7 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
           onSaved={(message) => {
             setDepositing(false);
             setNotice(message);
+            setPaymentsVersion((v) => v + 1);
             void load();
           }}
         />

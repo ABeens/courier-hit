@@ -70,7 +70,7 @@ export const dashboardService = {
           total: at(State.DevueltoBodega),
         },
       ],
-      /** Depositos esperando validacion del staff. */
+      /** Proformas con un pago esperando validacion del administrador. */
       pendingPayments,
       byType,
       byState,

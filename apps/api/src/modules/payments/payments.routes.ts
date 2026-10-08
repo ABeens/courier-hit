@@ -147,6 +147,19 @@ paymentsRoutes.post(
   },
 );
 
+/**
+ * Pagos de una proforma que esperan validacion, para resolverlos desde su
+ * detalle. Solo staff: el Operativo los ve (para no registrar el mismo deposito
+ * dos veces) y el Administrador ademas los aprueba con `/groups/:id/resolve`.
+ */
+paymentsRoutes.get(
+  '/proformas/:proformaId/pending',
+  requireAnyPermission(Permission.PaymentsRecord, Permission.PaymentsValidate),
+  async (c) => {
+    return c.json({ items: await proformaPaymentsService.pendingForProforma(c.req.param('proformaId')) });
+  },
+);
+
 /** Un cobro ya creado. */
 paymentsRoutes.get('/groups/:groupId', canRead, async (c) => {
   const groupId = c.req.param('groupId');

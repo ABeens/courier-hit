@@ -461,7 +461,12 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
           ) : current === Resource.Proformas || current === Resource.Costs ? (
             // `costos` era la cola por tramite: un enlace viejo a esa pantalla cae
             // en la bandeja de proformas, que es donde ahora se factura.
-            <ProformasScreen key={nav?.key} role={me.role} initialStatus={nav?.intent.proformaStatus} />
+            <ProformasScreen
+              key={nav?.key}
+              role={me.role}
+              initialStatus={nav?.intent.proformaStatus}
+              initialPendingValidation={nav?.intent.pendingValidation}
+            />
           ) : current === Resource.Config ? (
             // El recurso `config` es hoy el enlace con el operador de Miami: es lo
             // único que un Admin necesita administrar aquí. Cuando entren más
@@ -491,7 +496,6 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
               initialView={nav?.intent.view ?? (isClient ? 'propios' : 'paqueteria')}
               initialState={nav?.intent.state}
               initialQuery={nav?.intent.q}
-              initialPendingDeposit={nav?.intent.pendingDeposit}
             />
           ) : current === Resource.Tramite ? (
             // Mismo modulo, dos lecturas: el staff opera la cola de Transporte y
@@ -502,7 +506,6 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
               initialView={isClient ? 'propios-tramites' : 'transporte'}
               initialState={nav?.intent.state}
               initialQuery={nav?.intent.q}
-              initialPendingDeposit={nav?.intent.pendingDeposit}
             />
           ) : current === Resource.Dashboard ? (
             <DashboardScreen allowed={allowed} onNavigate={selectResource} />

@@ -13,7 +13,7 @@
  */
 import { and, asc, count, desc, eq, ilike, inArray, max, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
-import { ProformaStatus, toSlice } from '@courier/shared';
+import { PaymentStatus, ProformaStatus, toSlice } from '@courier/shared';
 import type { Currency, Flow, ListProformasQuery, ProformaFilter } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
@@ -68,6 +68,14 @@ const proformaLineColumns = {
   createdAt: proformaCosts.createdAt,
 };
 
+/**
+ * La proforma tiene un abono `pendiente` en alguno de sus tramites: un pago que
+ * espera la validacion del administrador. Lo usan la columna del listado y su
+ * filtro, para que la marca y la cola digan lo mismo. Se apoya en
+ * `payments_shipment_idx`.
+ */
+const hasPendingPayment = sql<boolean>`exists (select 1 from proforma_shipments ps join payments pa on pa.shipment_id = ps.shipment_id where ps.proforma_id = ${proformas.id} and pa.status = ${PaymentStatus.Pendiente})`;
+
 /** Cabecera con el cliente: la forma comun del listado y del detalle. */
 const headerColumns = {
   proforma: proformas,
@@ -84,6 +92,7 @@ const headerColumns = {
   finishedCount: sql<number>`(select count(*)::int from proforma_shipments ps join shipments s on s.id = ps.shipment_id where ps.proforma_id = ${proformas.id} and s.state = 'tramite_finalizado')`,
   /** Paquetes en bodega esperando salir a ruta (lo que "Enviar a ruta" mueve). */
   readyForRouteCount: sql<number>`(select count(*)::int from proforma_shipments ps join shipments s on s.id = ps.shipment_id where ps.proforma_id = ${proformas.id} and s.state = 'en_bodega_pendiente_pago')`,
+  pendingValidation: hasPendingPayment,
 };
 
 /**
@@ -97,6 +106,7 @@ function listConditions(query: ProformaFilter, issuedOnly = false): SQL[] {
   if (query.status) conds.push(eq(proformas.status, query.status));
   if (query.flow) conds.push(eq(proformas.flow, query.flow));
   if (query.clientId) conds.push(eq(proformas.clientId, query.clientId));
+  if (query.pendingValidation) conds.push(hasPendingPayment);
   // La misma fecha que pinta la columna "Fecha": la de aprobacion, o la de
   // creacion mientras es borrador.
   const shownAt = sql`coalesce(${proformas.approvedAt}, ${proformas.createdAt})`;

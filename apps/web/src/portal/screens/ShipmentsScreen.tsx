@@ -273,8 +273,6 @@ interface Props {
    */
   initialState?: State;
   initialQuery?: string;
-  /** Solo trámites con un depósito por validar: el cuadro de tesorería del Resumen. */
-  initialPendingDeposit?: boolean;
 }
 
 /** Opciones del filtro por proforma del cliente. */
@@ -289,12 +287,10 @@ export function ShipmentsScreen({
   initialView,
   initialState,
   initialQuery,
-  initialPendingDeposit,
 }: Props) {
   const [view, setView] = useState<ShipmentView>(initialView);
   const [q, setQ] = useState(initialQuery ?? '');
   const [state, setState] = useState<string>(initialState ?? '');
-  const [pendingDeposit, setPendingDeposit] = useState(initialPendingDeposit ?? false);
   /**
    * Estado de la proforma en la que estan (portal del cliente): aprobada es lo
    * que tiene por pagar, pagada lo ya cubierto. Vacio no filtra.
@@ -313,7 +309,7 @@ export function ShipmentsScreen({
    * acto del portal que merece una respuesta que haya que cerrar a proposito.
    */
   const [paid, setPaid] = useState<PaymentResult | null>(null);
-  /** Trámite cuyos abonos está mirando el staff (registrar depósito / aprobar). */
+  /** Trámite cuyos abonos está consultando el staff. */
   const [collecting, setCollecting] = useState<ShipmentDto | null>(null);
   /**
    * Cuantas proformas tiene el titular por pagar. Con el modulo de proformas el
@@ -333,10 +329,9 @@ export function ShipmentsScreen({
   const canWrite = can(role, Permission.PackageWrite) || can(role, Permission.TramiteManage);
   const canPay = can(role, Permission.PackagePay);
   /**
-   * El staff abre los pagos del trámite: el Operativo para registrar el depósito
-   * que el cliente le envió, el Administrador además para aprobarlo. Los dos
-   * permisos abren la MISMA pantalla; lo que cambia dentro son los botones, y la
-   * API aplica la misma separación.
+   * El staff abre los pagos del trámite para CONSULTARLOS (abonos, comprobante,
+   * quién los registró y quién los aprobó). Registrar y validar un depósito se
+   * hace en el detalle de la proforma: el cobro es por proforma completa.
    */
   const canCollect =
     can(role, Permission.PaymentsRecord) || can(role, Permission.PaymentsValidate);
@@ -399,7 +394,6 @@ export function ShipmentsScreen({
       q: q.trim() || undefined,
       state: state || undefined,
       shipmentType: TYPES_BY_VIEW[view].join(',') || undefined,
-      pendingDeposit: pendingDeposit ? 'true' : undefined,
       proformaStatus: proformaStatus || undefined,
       // El usuario elige dias en su hora local; el rango viaja como instantes UTC.
       from: from ? startOfLocalDayUtc(from) : undefined,
@@ -419,9 +413,6 @@ export function ShipmentsScreen({
     ...(proformaStatus
       ? [{ label: `Proforma: ${PROFORMA_FILTER_LABELS[proformaStatus]}`, onClear: () => setProformaStatus('') }]
       : []),
-    ...(pendingDeposit
-      ? [{ label: 'Pago: depósito por validar', onClear: () => setPendingDeposit(false) }]
-      : []),
     ...(from ? [{ label: `Desde: ${formatDayInput(from)}`, onClear: () => setFrom('') }] : []),
     ...(to ? [{ label: `Hasta: ${formatDayInput(to)}`, onClear: () => setTo('') }] : []),
   ];
@@ -429,7 +420,6 @@ export function ShipmentsScreen({
   /** Deja el listado sin recortar. El buscador no entra: se ve y se limpia solo. */
   function clearFilters() {
     setState('');
-    setPendingDeposit(false);
     setProformaStatus('');
     setFrom('');
     setTo('');
@@ -540,21 +530,8 @@ export function ShipmentsScreen({
           </select>
         </div>
 
-        {/* Cola de tesorería: los trámites con un comprobante subido que nadie
-            ha validado. Solo para staff: el titular no valida nada, y desde el
-            Resumen se llega aquí con el filtro ya puesto. */}
-        {canCollect && !isOwn && (
-          <div>
-            <label className="field-label" htmlFor="f-pay">Pago</label>
-            <select
-              id="f-pay" className="input" value={pendingDeposit ? 'pending' : ''}
-              onChange={(e) => setPendingDeposit(e.target.value === 'pending')}
-            >
-              <option value="">Todos</option>
-              <option value="pending">Con depósito por validar</option>
-            </select>
-          </div>
-        )}
+        {/* La cola de tesorería (pagos por validar) ya no vive aquí: el cobro
+            es por proforma completa y se valida en la bandeja de Proformas. */}
 
         {/* Por proforma: lo que el cliente tiene por pagar (aprobada) y lo que
             ya pagó. Solo en sus tableros: el staff sigue con la cola de
@@ -751,19 +728,13 @@ export function ShipmentsScreen({
                   que busca por consecutivo, guia, casillero o cliente.
                 */}
                 {/*
-                  Pagos del trámite (staff). Aparece con la FACTURA APROBADA y no
-                  con un estado concreto: el cobro nace al congelarse el monto y
-                  sigue vivo despues (el pago no mueve el trámite, así que uno ya
-                  despachado puede seguir con saldo). Atarlo a "En bodega -
-                  Pendiente pago" dejaba sin registrar el depósito que llega
-                  tarde, que es justo el caso que se cobra a mano.
-
-                  Con el trámite ya cobrado el botón sigue: es la única vía para
-                  consultar los abonos, su comprobante y quien los registró.
+                  Pagos del trámite (staff), solo consulta. Aparece con la
+                  FACTURA APROBADA: antes no hay cobro que mirar. El depósito se
+                  registra y se valida en el detalle de la proforma.
                 */}
                 {canCollect && !isOwn && row.invoiceTotalCrc != null && (
                   <IconButton
-                    label={row.settled ? 'Ver los pagos del trámite' : 'Registrar pago del trámite'}
+                    label="Ver los pagos del trámite"
                     icon="receipt"
                     onClick={() => setCollecting(row)}
                   />

@@ -57,6 +57,7 @@ import type {
   BankAccount,
   ChargeBasis,
   PaymentGroupDto,
+  PendingProformaPaymentDto,
   ProformaPaymentItem,
   ProformaPaymentQuoteDto,
   RecordProformaPaymentInput,
@@ -70,6 +71,7 @@ import { isOnvoEnabled, isOnvoSimulated, onvoClient } from '../../integrations/o
 import type { GatewayOutcome } from '../../integrations/onvo/onvo.client';
 import { costsService } from '../costs/costs.service';
 import { proformaSettlement } from '../proformas/proforma-settlement';
+import { proformasRepo } from '../proformas/proformas.repo';
 import { settingsRepo } from '../settings/settings.repo';
 import { settingsService } from '../settings/settings.service';
 import { paymentGroupsRepo } from './payment-groups.repo';
@@ -555,6 +557,59 @@ export const proformaPaymentsService = {
       createdAt: group.createdAt.toISOString(),
       createdByName: group.createdByName,
     };
+  },
+
+  /**
+   * Los pagos que esperan validacion en una proforma, para que el administrador
+   * los resuelva desde su detalle. Uno por COBRO, con el total y las proformas
+   * del cobro entero: el comprobante es del deposito completo, y aprobarlo paga
+   * todas las proformas que cubre, no solo esta. Los abonos sueltos (sin grupo)
+   * van cada uno por su lado.
+   */
+  async pendingForProforma(proformaId: string): Promise<PendingProformaPaymentDto[]> {
+    const proforma = await proformasRepo.findById(proformaId);
+    if (!proforma) throw ProformaErrors.notFound();
+
+    const rows = await paymentGroupsRepo.pendingForProforma(proformaId);
+    const seen = new Set<string>();
+    const result: PendingProformaPaymentDto[] = [];
+    for (const row of rows) {
+      const base = {
+        paymentId: row.id,
+        method: row.method,
+        bankAccount: row.bankAccount,
+        receiptNumber: row.receiptNumber,
+        hasReceipt: row.receiptFileKey !== null,
+        depositedAt: row.depositedAt?.toISOString() ?? null,
+        note: row.note,
+        createdAt: row.createdAt.toISOString(),
+        createdByName: row.createdByName,
+      };
+      if (!row.groupId) {
+        result.push({
+          ...base,
+          groupId: null,
+          amount: row.amount,
+          currency: row.currency,
+          proformaNumbers: proforma.number === null ? [] : [formatProformaNumber(proforma.number)],
+          shipmentCount: 1,
+        });
+        continue;
+      }
+      if (seen.has(row.groupId)) continue;
+      seen.add(row.groupId);
+      const group = await this.get(row.groupId);
+      result.push({
+        ...base,
+        groupId: group.id,
+        // El total y la moneda son los del cobro: lo que dice el comprobante.
+        amount: group.amount,
+        currency: group.currency,
+        proformaNumbers: group.proformaNumbers,
+        shipmentCount: group.itemCount,
+      });
+    }
+    return result;
   },
 
   /**

@@ -6,7 +6,9 @@
  * paquetes, las proformas aprobadas esperando pago y las pagadas. Desde aqui se
  * aprueba (una o varias a la vez), se envian a ruta las pagadas de Paqueteria
  * (permiso de entregas) y se entra al detalle, donde se ajusta el borrador, se
- * corrige una aprobada o se registra un deposito.
+ * corrige una aprobada, se registra un deposito o se valida el que esta en
+ * validacion. Tambien es la cola de tesoreria: el filtro "Con pago por validar"
+ * deja solo las que esperan al administrador.
  *
  * Reemplaza a la antigua cola de "Costos" por tramite: con el modulo de
  * proformas lo que se revisa y se aprueba es la proforma, no el tramite suelto.
@@ -117,18 +119,26 @@ export function openProformaDocument(id: string): void {
 export function ProformasScreen({
   role,
   initialStatus,
+  initialPendingValidation,
 }: {
   role: Role;
   /** Estado de arranque (lo fija el Resumen al llegar desde un cuadro). */
   initialStatus?: ProformaStatus;
+  /** Arranca en la cola de pagos por validar (cuadro del Resumen). */
+  initialPendingValidation?: boolean;
 }) {
   const canManage = can(role, Permission.ProformasManage);
+  /** Ve la cola de pagos por validar: quien registra depositos y quien los valida. */
+  const canSeePayments = can(role, Permission.PaymentsRecord) || can(role, Permission.PaymentsValidate);
   /** Sacar a ruta es el permiso de despacho (Administrador, Operativo y Mensajeria). */
   const canDispatch = can(role, Permission.DeliveryDispatch);
   // Quien arma proformas arranca en los borradores; quien solo reparte, en las pagadas.
+  // Desde la cola de pagos se arranca sin estado: lo que filtra es el pago.
   const [status, setStatus] = useState<ProformaStatus | ''>(
-    initialStatus ?? (canManage ? ProformaStatus.Borrador : canDispatch ? ProformaStatus.Pagada : ''),
+    initialStatus ??
+      (initialPendingValidation ? '' : canManage ? ProformaStatus.Borrador : canDispatch ? ProformaStatus.Pagada : ''),
   );
+  const [pendingValidation, setPendingValidation] = useState(initialPendingValidation ?? false);
   const [flow, setFlow] = useState<Flow | ''>('');
   const [q, setQ] = useState('');
   /** Rango de dias (YYYY-MM-DD, calendario local) sobre la columna "Fecha". */
@@ -155,6 +165,7 @@ export function ProformasScreen({
       // El usuario elige dias en su hora local; el rango viaja como instantes UTC.
       from: from ? startOfLocalDayUtc(from) : undefined,
       to: to ? startOfNextLocalDayUtc(to) : undefined,
+      pendingValidation: pendingValidation ? 'true' : undefined,
     },
     { errorMessage: 'No se pudieron cargar las proformas.' },
   );
@@ -263,6 +274,7 @@ export function ProformasScreen({
     if (q.trim()) params.set('q', q.trim());
     if (from) params.set('from', startOfLocalDayUtc(from));
     if (to) params.set('to', startOfNextLocalDayUtc(to));
+    if (pendingValidation) params.set('pendingValidation', 'true');
     window.open(`${API_BASE}/api/proformas/${path}?${params.toString()}`, '_blank');
   }
 
@@ -271,6 +283,7 @@ export function ProformasScreen({
     ...(flow ? [{ label: `Tipo: ${FLOW_LABELS[flow]}`, onClear: () => setFlow('') }] : []),
     ...(from ? [{ label: `Desde: ${formatDayInput(from)}`, onClear: () => setFrom('') }] : []),
     ...(to ? [{ label: `Hasta: ${formatDayInput(to)}`, onClear: () => setTo('') }] : []),
+    ...(pendingValidation ? [{ label: 'Pago por validar', onClear: () => setPendingValidation(false) }] : []),
   ];
 
   const canSelect = canManage || canDispatch;
@@ -344,6 +357,7 @@ export function ProformasScreen({
           setFlow('');
           setFrom('');
           setTo('');
+          setPendingValidation(false);
         }}
       >
         <div>
@@ -380,6 +394,18 @@ export function ProformasScreen({
             <input id="pf-to" className="input" type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
           </div>
         </div>
+        {canSeePayments && (
+          <div>
+            <label className="field-label" htmlFor="pf-pay">Pago</label>
+            <select
+              id="pf-pay" className="input" value={pendingValidation ? 'pending' : ''}
+              onChange={(e) => setPendingValidation(e.target.value === 'pending')}
+            >
+              <option value="">Todos</option>
+              <option value="pending">Con pago por validar</option>
+            </select>
+          </div>
+        )}
       </FilterBar>
 
       <ListBody refreshing={list.refreshing}>
@@ -446,6 +472,11 @@ export function ProformasScreen({
                     {row.status !== ProformaStatus.Borrador && (
                       <div className="cell-sub">{PROFORMA_DELIVERY_STATUS_LABELS[row.deliveryStatus]}</div>
                     )}
+                    {canSeePayments && row.pendingValidation && (
+                      <div className="cell-sub" style={{ color: 'var(--warn)', fontWeight: 600 }}>
+                        Pago por validar
+                      </div>
+                    )}
                     {isDispatchable(row) && (
                       <div className="cell-sub">
                         {row.readyForRouteCount} en bodega para salir a ruta
@@ -491,9 +522,11 @@ export function ProformasScreen({
       </ListBody>
 
       <EmptyList loading={list.loading} empty={list.items.length === 0}>
-        {status === ProformaStatus.Borrador
-          ? 'No hay borradores por revisar.'
-          : 'No hay proformas con ese filtro.'}
+        {pendingValidation
+          ? 'No hay pagos por validar.'
+          : status === ProformaStatus.Borrador
+            ? 'No hay borradores por revisar.'
+            : 'No hay proformas con ese filtro.'}
       </EmptyList>
 
       {opened && (

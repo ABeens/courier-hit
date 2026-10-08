@@ -19,8 +19,8 @@ export interface NavIntent {
   state?: State;
   /** Búsqueda precargada (consecutivo, tracking, cliente…). */
   q?: string;
-  /** Solo trámites con un depósito por validar (cola de tesorería). */
-  pendingDeposit?: boolean;
   /** Estado inicial de la bandeja de Proformas. */
   proformaStatus?: ProformaStatus;
+  /** Proformas con un pago por validar (cola de tesorería). */
+  pendingValidation?: boolean;
 }

@@ -191,6 +191,32 @@ export const paymentGroupsRepo = {
       .where(eq(payments.groupId, groupId));
   },
 
+  /**
+   * Abonos `pendientes` de los tramites de una proforma: los pagos que esperan
+   * la validacion del administrador. Crudos; el servicio los junta por cobro.
+   */
+  async pendingForProforma(proformaId: string) {
+    return db
+      .select({
+        id: payments.id,
+        groupId: payments.groupId,
+        method: payments.method,
+        amount: payments.amount,
+        currency: payments.currency,
+        bankAccount: payments.bankAccount,
+        receiptNumber: payments.receiptNumber,
+        receiptFileKey: payments.receiptFileKey,
+        depositedAt: payments.depositedAt,
+        note: payments.note,
+        createdAt: payments.createdAt,
+        createdByName: sql<string | null>`(select u.name from users u where u.id = ${payments.createdBy})`,
+      })
+      .from(proformaShipments)
+      .innerJoin(payments, eq(payments.shipmentId, proformaShipments.shipmentId))
+      .where(and(eq(proformaShipments.proformaId, proformaId), eq(payments.status, PaymentStatus.Pendiente)))
+      .orderBy(asc(payments.createdAt));
+  },
+
   /** Numeros de las proformas que cubre un grupo (por sus tramites). */
   async groupProformaNumbers(groupId: string): Promise<number[]> {
     const rows = await db

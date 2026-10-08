@@ -98,6 +98,41 @@ export interface PaymentGroupDto {
 }
 
 /**
+ * Un pago que espera validacion, visto desde UNA proforma. Es lo que el
+ * administrador revisa en el detalle de la proforma antes de aprobarlo o
+ * rechazarlo.
+ *
+ * Casi siempre es un COBRO (`groupId`): un solo deposito que puede cubrir varias
+ * proformas, y por eso trae el total del cobro y todas las proformas que cubre,
+ * no solo la parte de esta. Sin `groupId` es un abono suelto, anterior al cobro
+ * por proforma, y se resuelve por su cuenta.
+ */
+export interface PendingProformaPaymentDto {
+  /** El cobro; null si es un abono suelto. */
+  groupId: string | null;
+  /**
+   * Un abono del cobro. El comprobante se adjunta a todos los abonos del grupo,
+   * asi que con cualquiera se abre (`/payments/:id/receipt`).
+   */
+  paymentId: string;
+  method: PaymentMethod;
+  /** Total del cobro completo, en su moneda. */
+  amount: number;
+  currency: Currency;
+  /** Numeros de TODAS las proformas que cubre el cobro (esta incluida). */
+  proformaNumbers: string[];
+  /** Cuantos tramites cubre el cobro. */
+  shipmentCount: number;
+  bankAccount: BankAccount | null;
+  receiptNumber: string | null;
+  hasReceipt: boolean;
+  depositedAt: string | null;
+  note: string | null;
+  createdAt: string;
+  createdByName: string | null;
+}
+
+/**
  * Situacion de un grupo a partir de la de sus abonos. Punto UNICO de esa
  * derivacion.
  *
@@ -195,9 +230,23 @@ export const recordProformaPaymentSchema = z.object({
 });
 export type RecordProformaPaymentInput = z.infer<typeof recordProformaPaymentSchema>;
 
-/** El administrador confirma o rechaza un cobro entero (todos sus abonos a la vez). */
-export const resolvePaymentGroupSchema = z.object({
-  confirm: z.boolean(),
-  note: noteSchema.optional(),
-});
+/**
+ * El administrador confirma o rechaza un cobro entero (todos sus abonos a la
+ * vez). Rechazar pide el motivo, igual que con un abono suelto: el cliente tiene
+ * que saber por que su deposito no se dio por recibido.
+ */
+export const resolvePaymentGroupSchema = z
+  .object({
+    confirm: z.boolean(),
+    note: noteSchema.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.confirm && !data.note?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['note'],
+        message: 'Indica por qué se rechaza el pago.',
+      });
+    }
+  });
 export type ResolvePaymentGroupInput = z.infer<typeof resolvePaymentGroupSchema>;

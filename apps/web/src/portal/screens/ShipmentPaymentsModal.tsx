@@ -1,12 +1,12 @@
 /**
- * Pagos de un trámite vistos por el STAFF: los abonos que tiene, su comprobante
- * y, para quien puede (`payments.validate`, solo Administrador), aprobarlos o
- * rechazarlos.
+ * Pagos de un trámite vistos por el STAFF: los abonos que tiene, su comprobante,
+ * quién los registró y quién los resolvió. Es CONSULTA.
  *
- * Con el modulo de proformas los depositos ya NO se registran aqui: todo se
- * cobra por proforma completa, y el registro vive en el detalle de la proforma.
- * Un abono que es parte de un COBRO DE PROFORMAS se aprueba o rechaza con su
- * cobro entero (fue un solo deposito por varias proformas).
+ * Con el modulo de proformas los depositos ya NO se registran ni se validan
+ * aqui: todo se cobra por proforma completa, y el registro y la validacion viven
+ * en el detalle de la proforma, donde se ve el cobro entero (un deposito puede
+ * cubrir varias proformas). Solo un abono SUELTO, anterior al cobro por
+ * proforma, se sigue resolviendo aqui: no tiene un cobro al que pertenecer.
  */
 import { useEffect, useState } from 'react';
 import {
@@ -182,18 +182,9 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
     setError(null);
     setSaving(true);
     try {
-      /**
-       * Un abono de un COBRO DE PROFORMAS se valida con su cobro entero: fue un
-       * solo deposito por varias proformas, y aprobarlo a medias dejaria unas
-       * proformas pagadas y otras no con el mismo comprobante.
-       */
-      const payment = payments.find((p) => p.id === paymentId);
+      // Solo abonos sueltos: los de un cobro se validan en la proforma.
       const body = { confirm, ...(rejectNote.trim() ? { note: rejectNote.trim() } : {}) };
-      if (payment?.groupId) {
-        await api.post(`/payments/groups/${payment.groupId}/resolve`, body);
-      } else {
-        await api.post<PaymentDto>(`/payments/${paymentId}/resolve`, body);
-      }
+      await api.post<PaymentDto>(`/payments/${paymentId}/resolve`, body);
       const items = await reload();
       setRejecting(null);
       setRejectNote('');
@@ -434,7 +425,23 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
                       La API aplica la misma regla (`payments.validate`), así que
                       esconderlos es comodidad, no la barrera.
                     */}
-                    {canValidate && payment.status === PaymentStatus.Pendiente && (
+                    {/* Abono de un COBRO DE PROFORMAS: se valida con su cobro
+                        entero en el detalle de la proforma, donde se ve el total
+                        del deposito y todas las proformas que cubre. */}
+                    {payment.groupId && payment.status === PaymentStatus.Pendiente && (
+                      <div className="field-hint">
+                        En validación. Se aprueba o se rechaza desde el detalle de la proforma
+                        {shipment.proforma?.number && (
+                          <>
+                            {' '}
+                            <strong>{shipment.proforma.number}</strong>
+                          </>
+                        )}{' '}
+                        en <strong>Proformas</strong>.
+                      </div>
+                    )}
+
+                    {canValidate && !payment.groupId && payment.status === PaymentStatus.Pendiente && (
                       <div className="pay-row-actions">
                         {rejecting === payment.id ? (
                           <>

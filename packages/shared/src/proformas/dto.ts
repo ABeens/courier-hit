@@ -47,6 +47,14 @@ export const proformaFilterSchema = z.object({
    */
   from: instantSchema.optional(),
   to: instantSchema.optional(),
+  /**
+   * Solo las proformas con un pago esperando validacion: la cola de tesoreria.
+   * El Resumen llega aqui con `true` desde el cuadro "Depositos por validar".
+   */
+  pendingValidation: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
 });
 export type ProformaFilter = z.infer<typeof proformaFilterSchema>;
 
@@ -94,6 +102,11 @@ export interface ProformaListItem {
    * La pantalla ofrece "Enviar a ruta" sobre una aprobada con un aviso explicito.
    */
   paymentGateWaived: boolean;
+  /**
+   * Tiene un pago (deposito o tarjeta sin resolver) esperando que el
+   * administrador lo valide. Se valida desde el detalle de la proforma.
+   */
+  pendingValidation: boolean;
   /** Consecutivo de la factura electronica, si ya se emitio. */
   electronicInvoiceNumber: string | null;
   createdAt: string;

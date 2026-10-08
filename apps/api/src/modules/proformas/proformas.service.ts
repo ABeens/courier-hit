@@ -192,6 +192,7 @@ function toListItem(row: ListRow, lines: readonly Line[]): ProformaListItem {
     }),
     readyForRouteCount: row.readyForRouteCount,
     paymentGateWaived: paymentGateWaived(p.flow, row.clientPaymentGateExempt),
+    pendingValidation: row.pendingValidation,
     electronicInvoiceNumber: p.electronicInvoiceNumber,
     createdAt: p.createdAt.toISOString(),
     approvedAt: p.approvedAt?.toISOString() ?? null,

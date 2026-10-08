@@ -11,6 +11,7 @@ import { PaymentStatus, State } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { payments } from '../payments/payments.schema';
+import { proformaShipments } from '../proformas/proformas.schema';
 import { shipments } from '../shipments/shipments.schema';
 
 export const dashboardRepo = {
@@ -54,18 +55,19 @@ export const dashboardRepo = {
   },
 
   /**
-   * Tramites con un deposito subido por el cliente que el staff aun no valida.
+   * PROFORMAS con un pago que el administrador aun no valida.
    *
-   * Se cuentan TRAMITES y no abonos: es la misma cifra que da el listado con
-   * `pendingDeposit=true`, que es a donde lleva el cuadro. Un tramite con dos
-   * comprobantes sin revisar es una sola fila que atender.
+   * Se cuentan proformas y no abonos ni tramites: el pago se valida desde el
+   * detalle de la proforma, y el cuadro lleva a la bandeja de Proformas con
+   * `pendingValidation=true`. Es el mismo EXISTS que ese filtro, para que el
+   * cuadro y la pantalla de destino digan la misma cifra.
    */
   async pendingPaymentCount() {
     const [row] = await db
-      .select({ total: countDistinct(payments.shipmentId) })
-      .from(payments)
-      .innerJoin(shipments, eq(payments.shipmentId, shipments.id))
-      .where(and(eq(payments.status, PaymentStatus.Pendiente), isNull(shipments.discardedAt)));
+      .select({ total: countDistinct(proformaShipments.proformaId) })
+      .from(proformaShipments)
+      .innerJoin(payments, eq(payments.shipmentId, proformaShipments.shipmentId))
+      .where(eq(payments.status, PaymentStatus.Pendiente));
     return row?.total ?? 0;
   },
 
