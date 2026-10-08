@@ -311,6 +311,12 @@ export enum Permission {
   ClientsRead = 'clients.read',
   ClientsWrite = 'clients.write',
   /**
+   * Abrir un casillero desde el panel (cliente que no se registra solo). Va
+   * aparte de `clients.write` para que el Operativo pueda dar de alta sin poder
+   * tocar tarifa ni limite de credito, que siguen siendo decision comercial.
+   */
+  ClientsCreate = 'clients.create',
+  /**
    * Bloquear (y reactivar) el ACCESO de un casillero: conmuta el `status` del
    * usuario dueño entre activo e inactivo. Es el equivalente de `users.manage`
    * para la otra poblacion, la de clientes.
@@ -436,6 +442,7 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   [Permission.ProformasManage]: { resource: Resource.Proformas, action: Action.Manage, scope: Scope.All },
   [Permission.ClientsRead]: { resource: Resource.Clients, action: Action.Read, scope: Scope.All },
   [Permission.ClientsWrite]: { resource: Resource.Clients, action: Action.Write, scope: Scope.All },
+  [Permission.ClientsCreate]: { resource: Resource.Clients, action: Action.Create, scope: Scope.All },
   // Action.Manage y no Write: no edita el casillero, decide si su dueño entra.
   [Permission.ClientsSuspend]: { resource: Resource.Clients, action: Action.Manage, scope: Scope.All },
   // Resource.Clients: se opera desde la ficha del casillero, no desde un modulo
@@ -484,6 +491,7 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   Permission.ProformasManage,
   Permission.ClientsRead,
   Permission.ClientsWrite,
+  Permission.ClientsCreate,
   // Solo admin: cerrarle la puerta a un cliente no es editar su ficha.
   Permission.ClientsSuspend,
   // Solo admin: la API de un cliente se enciende una vez y a conciencia.
@@ -557,6 +565,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ReportsOperationalBasic,
     Permission.ReportsOperational,
     Permission.ClientsRead,
+    // Abre casilleros a quien no se registra solo; la ficha comercial no la toca.
+    Permission.ClientsCreate,
   ],
 
   // Financiero consulta y descarga proformas pero NO las opera ni ve el reporte

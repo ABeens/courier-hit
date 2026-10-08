@@ -100,11 +100,14 @@ const CLIENT_STATUS_LABEL: Record<ClientReviewStatus, string> = {
 
 export function ClientsScreen({
   canWrite,
+  canCreate,
   canSuspend,
   canManageApiAccess,
   canManagePaymentExempt,
 }: {
   canWrite: boolean;
+  /** Permiso `clients.create`: abrir un casillero nuevo (Admin y Operativo). */
+  canCreate: boolean;
   /** Permiso `clients.suspend`: bloquear o reactivar el acceso del titular. */
   canSuspend: boolean;
   /** Permiso `clients.api_access`: habilitar o deshabilitar la API del casillero. */
@@ -234,7 +237,7 @@ export function ClientsScreen({
             </div>
           )}
         </div>
-        {canWrite && (
+        {canCreate && (
           <button className="btn btn-primary" onClick={() => setCreating(true)}>
             + Nuevo cliente
           </button>

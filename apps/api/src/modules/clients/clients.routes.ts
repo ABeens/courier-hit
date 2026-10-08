@@ -135,12 +135,12 @@ clientsRoutes.get(
 );
 
 /**
- * Alta de un casillero por el staff (`clients.write`, solo Admin). El titular
+ * Alta de un casillero por el staff (`clients.create`: Admin y Operativo). El titular
  * recibe una invitacion por correo para definir su contrasena.
  */
 clientsRoutes.post(
   '/',
-  requirePermission(Permission.ClientsWrite),
+  requirePermission(Permission.ClientsCreate),
   zValidator('json', createClientSchema),
   async (c) => {
     return c.json(await clientsService.create(c.req.valid('json')), 201);

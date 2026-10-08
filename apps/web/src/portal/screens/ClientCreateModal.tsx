@@ -1,5 +1,5 @@
 /**
- * Alta de un casillero por el staff (permiso clients.write, solo Admin).
+ * Alta de un casillero por el staff (permiso clients.create: Admin y Operativo).
  *
  * Es para el cliente que no se registra solo desde el sitio (llama, escribe o
  * viene a la oficina). Nace igual que uno del autoregistro: cuenta principal,
