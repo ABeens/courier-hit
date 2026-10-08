@@ -51,7 +51,10 @@ export const deliveryAddressShape = {
   addressLine: z
     .string()
     .trim()
-    .min(5, 'Indica las otras señas de la dirección de entrega.')
+    // Vacio y corto son dos errores distintos: a quien escribio algo no se le
+    // puede pedir que "indique" las señas.
+    .min(1, 'Indica las otras señas de la dirección de entrega.')
+    .min(5, 'Las otras señas deben tener al menos 5 caracteres.')
     .max(500, 'Las otras señas no pueden superar 500 caracteres.'),
 };
 

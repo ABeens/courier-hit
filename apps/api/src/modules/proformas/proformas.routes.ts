@@ -166,7 +166,7 @@ proformasRoutes.get('/:id/export.csv', read, async (c) => {
 });
 
 /**
- * El documento en Excel, con su formato (logo, cliente, SINPE, conceptos,
+ * El documento en Excel, con su formato (logo, cliente, conceptos,
  * paquetes y totales). Solo staff: el cliente tiene el documento imprimible.
  */
 proformasRoutes.get('/:id/export.xlsx', read, async (c) => {

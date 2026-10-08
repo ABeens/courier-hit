@@ -12,7 +12,14 @@
 import { z } from 'zod';
 import { Currency } from '../money/currency';
 import { ClientReviewStatus, UserStatus } from '../auth/user';
-import { emailSchema, idNumberSchema, nameSchema, phoneSchema } from '../auth/dto';
+import {
+  checkLocation,
+  deliveryAddressShape,
+  emailSchema,
+  idNumberSchema,
+  nameSchema,
+  phoneSchema,
+} from '../auth/dto';
 import { paginationQuerySchema } from '../http/pagination';
 
 /**
@@ -39,6 +46,34 @@ export const listClientsQuerySchema = z
   })
   .merge(paginationQuerySchema);
 export type ListClientsQuery = z.infer<typeof listClientsQuerySchema>;
+
+/**
+ * Alta de un casillero por un administrador (permiso `clients.write`), para el
+ * cliente que no se registra solo desde el sitio (llama, escribe, viene a la
+ * oficina).
+ *
+ * Pide lo mismo que el autoregistro menos la contrasena y la aceptacion de
+ * terminos: el administrador nunca fija la contrasena (se le manda una
+ * invitacion al titular) y los terminos los acepta el titular, no el staff.
+ */
+export const createClientSchema = z
+  .object({
+    name: nameSchema,
+    idNumber: idNumberSchema,
+    email: emailSchema,
+    phone: phoneSchema,
+    ...deliveryAddressShape,
+  })
+  .superRefine(checkLocation);
+export type CreateClientInput = z.infer<typeof createClientSchema>;
+
+/** Respuesta del alta. `inviteLink` solo viene en desarrollo (en produccion va por correo). */
+export interface CreateClientResultDto {
+  id: string;
+  code: string;
+  name: string;
+  inviteLink?: string;
+}
 
 /**
  * Bloqueo / reactivacion del acceso de un casillero (permiso `clients.suspend`).

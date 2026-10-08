@@ -25,6 +25,7 @@ import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
 import { Pagination } from '../components/Pagination';
 import { ApiError, api } from '../lib/api';
 import { usePagedList } from '../lib/usePagedList';
+import { ClientCreateModal } from './ClientCreateModal';
 import { ClientEditModal } from './ClientEditModal';
 
 export interface ClientRow {
@@ -116,6 +117,7 @@ export function ClientsScreen({
   const [status, setStatus] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<ClientRow | null>(null);
+  const [creating, setCreating] = useState(false);
 
   /**
    * Los DOS filtros van a la API. El de "nuevos" se resolvia antes en el
@@ -232,6 +234,11 @@ export function ClientsScreen({
             </div>
           )}
         </div>
+        {canWrite && (
+          <button className="btn btn-primary" onClick={() => setCreating(true)}>
+            + Nuevo cliente
+          </button>
+        )}
       </div>
 
       {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
@@ -434,6 +441,18 @@ export function ClientsScreen({
       <EmptyList loading={list.loading} empty={list.items.length === 0}>
         No hay casilleros que coincidan.
       </EmptyList>
+
+      {creating && (
+        <ClientCreateModal
+          onClose={() => setCreating(false)}
+          onSaved={(message) => {
+            setCreating(false);
+            setNotice(message);
+            setError(null);
+            void load();
+          }}
+        />
+      )}
 
       {editing && (
         <ClientEditModal

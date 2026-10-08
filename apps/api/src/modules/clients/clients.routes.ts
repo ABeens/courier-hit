@@ -15,6 +15,7 @@ import { Hono } from 'hono';
 import { zValidator } from '../../core/validator';
 import {
   Permission,
+  createClientSchema,
   deliveryAddressSchema,
   listClientsQuerySchema,
   listProviderLinksSchema,
@@ -130,6 +131,19 @@ clientsRoutes.get(
   zValidator('query', listClientsQuerySchema),
   async (c) => {
     return c.json(await clientsService.list(c.req.valid('query')));
+  },
+);
+
+/**
+ * Alta de un casillero por el staff (`clients.write`, solo Admin). El titular
+ * recibe una invitacion por correo para definir su contrasena.
+ */
+clientsRoutes.post(
+  '/',
+  requirePermission(Permission.ClientsWrite),
+  zValidator('json', createClientSchema),
+  async (c) => {
+    return c.json(await clientsService.create(c.req.valid('json')), 201);
   },
 );
 

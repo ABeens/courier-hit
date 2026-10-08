@@ -1,7 +1,11 @@
 /**
- * Aceptar invitación de staff (pagina publica /invitacion). Lee el token del
+ * Aceptar invitación (pagina publica /invitacion). Lee el token del
  * querystring, valida con el esquema compartido y fija la contrasena via
  * POST /api/auth/accept-invite. Al terminar, la cuenta queda lista para entrar.
+ *
+ * La usan el staff y los clientes a los que un administrador les abrio el
+ * casillero. El enlace de estos ultimos trae `tipo=cliente`, que solo cambia el
+ * texto: el token y el endpoint son los mismos.
  */
 import { useState } from 'react';
 import { acceptInviteSchema } from '@courier/shared';
@@ -17,11 +21,37 @@ const POINTS = [
   { title: 'Tu cuenta, tu contraseña', sub: 'La defines tú; nadie más la conoce.' },
 ];
 
+/** Ganchos para el titular de un casillero que abrió un administrador. */
+const CLIENT_POINTS = [
+  { title: 'Tu casillero en Miami', sub: 'Compra en línea y envía a tu dirección de casillero.' },
+  { title: 'Sigue tus paquetes', sub: 'Mira en qué estado va cada uno desde el portal.' },
+  { title: 'Tu cuenta, tu contraseña', sub: 'La defines tú; nadie más la conoce.' },
+];
+
+/** Textos de la pantalla según quién recibe la invitación. */
+const COPY = {
+  staff: {
+    points: POINTS,
+    title: 'Bienvenido al equipo de HS Global',
+    lead: 'Define tu contraseña y entra al portal para empezar a operar.',
+    sub: 'Fue creada tu cuenta de staff. Define una contraseña para ingresar.',
+    doneTitle: 'Bienvenido al equipo',
+    doneLead: 'Tu cuenta de staff ya quedó activa.',
+  },
+  client: {
+    points: CLIENT_POINTS,
+    title: 'Bienvenido(a) a HS Global',
+    lead: 'Define tu contraseña y entra al portal para ver tu casillero.',
+    sub: 'Abrimos un casillero a tu nombre. Define una contraseña para ingresar.',
+    doneTitle: 'Bienvenido(a) a HS Global',
+    doneLead: 'Tu casillero ya quedó activo.',
+  },
+};
+
 export default function AcceptInvite() {
-  const token =
-    typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('token') ?? ''
-      : '';
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const token = params?.get('token') ?? '';
+  const copy = params?.get('tipo') === 'cliente' ? COPY.client : COPY.staff;
 
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -60,7 +90,7 @@ export default function AcceptInvite() {
 
   if (done) {
     return (
-      <AuthShell title="Bienvenido al equipo" lead="Tu cuenta de staff ya quedó activa." points={POINTS}>
+      <AuthShell title={copy.doneTitle} lead={copy.doneLead} points={copy.points}>
         <div className="login-card fadeUp">
           <h1>¡Listo!</h1>
           <p className="sub">Tu contraseña quedó configurada. Ya puedes ingresar al portal.</p>
@@ -74,13 +104,13 @@ export default function AcceptInvite() {
 
   return (
     <AuthShell
-      title="Bienvenido al equipo de HS Global"
-      lead="Define tu contraseña y entra al portal para empezar a operar."
-      points={POINTS}
+      title={copy.title}
+      lead={copy.lead}
+      points={copy.points}
     >
       <form className="login-card fadeUp" onSubmit={submit}>
         <h1>Configura tu contraseña</h1>
-        <p className="sub">Fue creada tu cuenta de staff. Define una contraseña para ingresar.</p>
+        <p className="sub">{copy.sub}</p>
 
         {!token && <div className="banner err">El enlace no trae un token. Pídele al administrador uno nuevo.</div>}
         {error && <div className="banner err">{error}</div>}

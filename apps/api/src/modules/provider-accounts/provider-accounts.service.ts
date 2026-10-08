@@ -288,7 +288,7 @@ export const providerAccountsService = {
       createdBy: session.userId,
     });
 
-    const inviteLink = await authService.issueInvitation(user.id, user.email);
+    const inviteLink = await authService.issueInvitation(user.id, user.email, 'client');
 
     const refreshed = await providerAccountsRepo.findById(accountId);
     return {

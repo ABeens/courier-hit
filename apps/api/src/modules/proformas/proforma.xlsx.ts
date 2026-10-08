@@ -1,7 +1,7 @@
 /**
  * Documento de la proforma en Excel (.xlsx), con el MISMO formato que el
  * documento imprimible (`proforma.render.ts`): logo, encabezado con numero y
- * fecha, datos del cliente, recuadro SINPE Movil, detalle de conceptos, tabla de
+ * fecha, datos del cliente, detalle de conceptos, tabla de
  * paquetes y las dos filas de total.
  *
  * No es el CSV con otra extension: el CSV es un archivo para que otra
@@ -21,7 +21,6 @@ import {
 } from '@courier/shared';
 import { BRAND_LOGO_DATA_URI } from '../../core/brand-logo';
 import {
-  SINPE_MOVIL,
   conceptSummary,
   day,
   extrasTotal,
@@ -41,10 +40,6 @@ const COLOR = {
   strong: 'FF111827',
   draft: 'FF92400E',
   draftBorder: 'FFB45309',
-  sinpeFill: 'FFEFF6FF',
-  sinpeTitle: 'FF1E3A8A',
-  sinpeHolder: 'FF1E40AF',
-  sinpePhone: 'FFDC2626',
 } as const;
 
 const FONT = 'Segoe UI';
@@ -208,8 +203,7 @@ function addSheet(wb: ExcelJS.Workbook, logoId: number, doc: ProformaDocument, n
     row += 2;
   }
 
-  // --- Datos del cliente (izquierda) y recuadro SINPE Movil (derecha).
-  const clientStart = row;
+  // --- Datos del cliente.
   put(ws, row++, 1, 'DATOS DEL CLIENTE', { font: font({ size: 9, color: { argb: COLOR.muted } }) }, 3);
   put(ws, row++, 1, doc.client.name, { font: font({ size: 12, bold: true }) }, 3);
   put(ws, row++, 1, `Cédula: ${doc.client.idNumber}`, {}, 3);
@@ -217,23 +211,7 @@ function addSheet(wb: ExcelJS.Workbook, logoId: number, doc: ProformaDocument, n
   put(ws, row++, 1, doc.client.address, { alignment: { wrapText: true, vertical: 'top' } }, 3);
   put(ws, row++, 1, doc.client.email, {}, 3);
 
-  const sinpe = [
-    { text: 'SINPE MÓVIL', f: font({ size: 13, bold: true, color: { argb: COLOR.sinpeTitle } }) },
-    { text: SINPE_MOVIL.holder.toUpperCase(), f: font({ size: 12, color: { argb: COLOR.sinpeHolder } }) },
-    { text: `Tel: ${SINPE_MOVIL.phone}`, f: font({ size: 13, bold: true, color: { argb: COLOR.sinpePhone } }) },
-  ];
-  const accent: Partial<ExcelJS.Border> = { style: 'thick', color: { argb: COLOR.sinpeTitle } };
-  sinpe.forEach((line, i) => {
-    const r = clientStart + 1 + i;
-    put(ws, r, 4, line.text, {
-      font: line.f,
-      fill: fill(COLOR.sinpeFill),
-      alignment: { indent: 1, vertical: 'middle' },
-      border: { left: accent },
-    }, LAST_COL);
-    ws.getRow(r).height = 20;
-  });
-  row = Math.max(row, clientStart + 1 + sinpe.length) + 1;
+  row += 1;
 
   // --- Detalle de conceptos.
   caption(ws, row++, 'Detalle de conceptos');

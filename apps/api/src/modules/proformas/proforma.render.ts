@@ -30,9 +30,6 @@ import { BRAND_LOGO_DATA_URI } from '../../core/brand-logo';
 /** Zona del negocio: todos los clientes son de Costa Rica (CLAUDE.md). */
 const TIME_ZONE = 'America/Costa_Rica';
 
-/** Cuenta SINPE Móvil donde el cliente paga la proforma. */
-export const SINPE_MOVIL = { holder: 'Jennifer Sanchez', phone: '7019-6535' } as const;
-
 /** Un concepto cobrado, ya en la moneda del documento. */
 export interface DocumentLine {
   label: string;
@@ -191,13 +188,6 @@ const STYLES = `
   .client-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin: 22px 0 18px; }
   .who { min-width: 0; }
   tr.weight td { font-weight: 700; }
-  .sinpe {
-    flex: none; min-width: 210px; padding: 10px 16px; border-left: 4px solid #1e3a8a;
-    background: #eff6ff; border-radius: 4px;
-  }
-  .sinpe .title { font-size: 16px; font-weight: 700; letter-spacing: .5px; color: #1e3a8a; text-transform: uppercase; }
-  .sinpe .holder { font-size: 15px; color: #1e40af; text-transform: uppercase; }
-  .sinpe .phone { font-size: 16px; font-weight: 700; color: #dc2626; }
   .who h2 { margin: 0 0 6px; font-size: 11px; letter-spacing: 1px; color: #6b7280; text-transform: uppercase; }
   .who .name { font-weight: 600; font-size: 15px; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
@@ -372,11 +362,6 @@ function sheet(doc: ProformaDocument): string {
         ${doc.client.phone ? `<div>Tel: ${esc(doc.client.phone)}</div>` : ''}
         <div>${esc(doc.client.address)}</div>
         <div>${esc(doc.client.email)}</div>
-      </div>
-      <div class="sinpe">
-        <div class="title">SINPE Móvil</div>
-        <div class="holder">${esc(SINPE_MOVIL.holder)}</div>
-        <div class="phone">Tel: ${esc(SINPE_MOVIL.phone)}</div>
       </div>
     </div>
 

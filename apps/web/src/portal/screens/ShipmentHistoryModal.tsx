@@ -22,7 +22,7 @@
  * lo que se le cuenta al cliente.
  */
 import { useEffect, useState } from 'react';
-import { STATE_LABELS } from '@courier/shared';
+import { STATE_LABELS, State } from '@courier/shared';
 import type {
   ShipmentDto,
   ShipmentEventDto,
@@ -185,6 +185,21 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
             <h3>Historial</h3>
             <p>
               {row.code} · {row.description}
+            </p>
+            {/* El LES (HAWB) va arriba del recorrido: es el numero que la bodega
+                de Miami imprime en la etiqueta y con el que se rastrea el bulto.
+                Vacio se dice "pendiente" siempre, pero el motivo solo cuando el
+                estado lo confirma: hay paquetes ya avanzados que quedaron sin LES,
+                y de esos no se puede decir que no han llegado a Miami. */}
+            <p>
+              LES:{' '}
+              {row.hawb ? (
+                <span className="mono">{row.hawb}</span>
+              ) : row.state === State.Prealertado ? (
+                'pendiente (aún no llega a Miami)'
+              ) : (
+                'pendiente'
+              )}
             </p>
           </div>
 

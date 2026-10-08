@@ -91,6 +91,28 @@ export const authService = {
   async register(
     input: RegisterInput,
   ): Promise<{ userId: string; code: string; verificationCode?: string }> {
+    const passwordHash = await hash(input.password);
+    const { user, code } = await this.createClientAccount(input, passwordHash, 'Registro');
+
+    // En dev se devuelve el codigo para mostrarlo en la UI (sin SMTP). En prod
+    // issueVerificationCode devuelve null: el codigo solo viaja por correo.
+    const verificationCode = await this.issueVerificationCode(user.id, user.email);
+    return { userId: user.id, code, verificationCode: verificationCode ?? undefined };
+  },
+
+  /**
+   * Alta de un casillero en la cuenta principal: la comparten el autoregistro y
+   * el alta que hace un administrador desde "Clientes". Lo unico que cambia entre
+   * las dos es como el titular llega a tener contrasena (la escribe el, o se le
+   * manda una invitacion), asi que eso lo resuelve cada llamador.
+   *
+   * `origin` solo queda en la bitacora del enlace, para saber por donde nacio.
+   */
+  async createClientAccount(
+    input: Omit<RegisterInput, 'password' | 'acceptsTerms'>,
+    passwordHash: string,
+    origin: string,
+  ): Promise<{ user: UserRow; code: string; clientId: string }> {
     const existing = await authRepo.findUserByEmail(input.email);
     if (existing) throw AuthErrors.emailInUse();
 
@@ -109,7 +131,6 @@ export const authService = {
       email: input.email,
     });
 
-    const passwordHash = await hash(input.password);
     const user = await authRepo.insertUser({
       email: input.email,
       passwordHash,
@@ -144,11 +165,13 @@ export const authService = {
 
     // Primer evento de la bitacora del enlace. Sin el, un casillero que nace
     // 'failed' no tendria rastro del motivo original: solo del ultimo reintento.
+    const outcome =
+      link.error ?? (link.recipient ? `Destinatario ${link.recipient.id}.` : 'Integración apagada.');
     await providerLinkRepo.addEvent({
       clientId: clientRow.id,
       source: ProviderLinkSource.Registro,
       status: link.status,
-      detail: link.error ?? (link.recipient ? `Destinatario ${link.recipient.id}.` : 'Integración apagada.'),
+      detail: origin === 'Registro' ? outcome : `${origin}. ${outcome}`,
     });
 
     // Rechazo del dato: puede ser que el destinatario ya exista y sea de este
@@ -158,10 +181,7 @@ export const authService = {
       await this.tryAdoptExisting(clientRow.id, ProviderLinkSource.Registro);
     }
 
-    // En dev se devuelve el codigo para mostrarlo en la UI (sin SMTP). En prod
-    // issueVerificationCode devuelve null: el codigo solo viaja por correo.
-    const verificationCode = await this.issueVerificationCode(user.id, user.email);
-    return { userId: user.id, code, verificationCode: verificationCode ?? undefined };
+    return { user, code, clientId: clientRow.id };
   },
 
   /**
@@ -392,17 +412,28 @@ export const authService = {
    * Emite un token de invitacion para que un staff recien creado fije su
    * contrasena (docs/roles.md §1.3.4). El admin nunca ve ni digita la clave.
    */
-  async issueInvitation(userId: string, email: string): Promise<string | null> {
+  async issueInvitation(
+    userId: string,
+    email: string,
+    audience: 'staff' | 'client' = 'staff',
+  ): Promise<string | null> {
     const token = newToken();
     const expiresAt = new Date(Date.now() + config.INVITE_TTL_HOURS * 3_600_000);
     await authRepo.insertPasswordReset({ userId, tokenHash: sha256(token), purpose: 'invite', expiresAt });
 
-    const link = `${config.WEB_ORIGIN}/invitacion?token=${token}`;
+    // El token es el mismo para los dos; `tipo=cliente` solo cambia el texto de
+    // la pagina (un titular de casillero no es "el equipo").
+    const isClient = audience === 'client';
+    const link = `${config.WEB_ORIGIN}/invitacion?token=${token}${isClient ? '&tipo=cliente' : ''}`;
     await mailer.send({
       to: email,
-      subject: 'Tu acceso al panel de HS Global Services',
+      subject: isClient
+        ? 'Tu casillero en HS Global Services'
+        : 'Tu acceso al panel de HS Global Services',
       body: [
-        'Se creó una cuenta para ti en el panel de HS Global Services.',
+        isClient
+          ? 'Abrimos un casillero a tu nombre en HS Global Services.'
+          : 'Se creó una cuenta para ti en el panel de HS Global Services.',
         '',
         'Define tu contraseña en el siguiente enlace:',
         link,

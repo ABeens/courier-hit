@@ -26,7 +26,11 @@
  *    `updateAddress`.
  */
 import { ClientReviewStatus, UserStatus, lockerAddressFor, paged } from '@courier/shared';
+import { randomBytes } from 'node:crypto';
+import { hash } from '@node-rs/argon2';
 import type {
+  CreateClientInput,
+  CreateClientResultDto,
   DeliveryAddressInput,
   ListClientsQuery,
   Page,
@@ -36,8 +40,7 @@ import type {
 } from '@courier/shared';
 import { AuthErrors, ClientErrors, ShipmentErrors } from '../../core/errors';
 import { authRepo } from '../auth/auth.repo';
-// TODO(correo): vuelve al reactivar el cambio de correo (reemite el codigo).
-// import { authService } from '../auth/auth.service';
+import { authService } from '../auth/auth.service';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { settingsService } from '../settings/settings.service';
 import { clientsRepo } from './clients.repo';
@@ -96,6 +99,24 @@ export const clientsService = {
     ]);
     const items = rows.map(({ createdAt: _createdAt, ...item }) => item);
     return { ...paged(items, total, query), pendingReview };
+  },
+
+  /**
+   * Alta de un casillero por un administrador. Nace igual que uno del
+   * autoregistro (cuenta principal, tarifa por defecto, flag "Nuevo", enlace con
+   * el proveedor) salvo la contrasena: se guarda un hash inutilizable y se le
+   * manda al titular una invitacion para que la defina. Aceptarla verifica el
+   * correo, igual que con el staff.
+   */
+  async create(input: CreateClientInput): Promise<CreateClientResultDto> {
+    const placeholderHash = await hash(randomBytes(32).toString('hex'));
+    const { user, code, clientId } = await authService.createClientAccount(
+      input,
+      placeholderHash,
+      'Alta por administrador',
+    );
+    const inviteLink = await authService.issueInvitation(user.id, user.email, 'client');
+    return { id: clientId, code, name: user.name, ...(inviteLink ? { inviteLink } : {}) };
   },
 
   async get(id: string): Promise<ClientListItem> {
