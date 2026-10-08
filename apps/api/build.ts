@@ -41,16 +41,18 @@ const banner = {
 
 await build({
   /**
-   * Cinco entry points, no uno: la imagen tiene que poder hacer cinco cosas con
+   * Varios entry points, no uno: la imagen tiene que poder hacer varias cosas con
    * el mismo codigo. `main` es el servidor, `migrate` es el paso de migraciones
    * del despliegue, `seed` siembra el primer administrador (que no puede
    * autoregistrarse ni recibir invitacion, ver `src/seed.ts`) y `clean-shipments`
    * vacia los tramites, que en la nube solo se puede hacer desde dentro de la VPC
    * (la base no es alcanzable desde fuera). `backfill-proformas` pone en
    * proformas los tramites facturados antes del modulo, por la misma razon. Los
+   * `reset-db` vacia la base entera antes de volver a sembrar el admin, e
+   * `import-clients` hace la carga inicial de clientes desde el Excel. Los
    * otros seeds son de desarrollo y no entran.
    */
-  entryPoints: ['src/main.ts', 'src/migrate.ts', 'src/seed.ts', 'src/clean-shipments.ts', 'src/backfill-proformas.ts'],
+  entryPoints: ['src/main.ts', 'src/migrate.ts', 'src/seed.ts', 'src/clean-shipments.ts', 'src/backfill-proformas.ts', 'src/reset-db.ts', 'src/import-clients.ts'],
   outdir: 'dist',
   bundle: true,
   platform: 'node',

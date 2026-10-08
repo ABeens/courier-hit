@@ -50,3 +50,7 @@ CLAUDE.md
 # Scripts operativos ad-hoc (locales, no van al repo)
 /scripts/
 infra/scripts/domain.ps1
+
+# Excel de carga de clientes (scripts/cargar-clientes.ps1): cedulas, correos y
+# contrasenas de Helga. Vive solo en disco.
+/*.xlsx

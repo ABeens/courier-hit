@@ -8,8 +8,12 @@
  * sale de SEED_ADMIN_PASSWORD; si no se define, se genera una ROBUSTA y se
  * imprime una sola vez. El admin nace verificado y activo (docs/roles.md §1.2).
  *
+ * Con --admin-only (o SEED_ADMIN_ONLY=1) siembra SOLO el administrador y no las
+ * tarifas de cliente (lo usa `scripts/reset-db.ps1`).
+ *
  * Uso: pnpm --filter @courier/api db:seed
- *      pnpm --filter @courier/api db:seed -- --force   (resetea la clave)
+ *      pnpm --filter @courier/api db:seed -- --force        (resetea la clave)
+ *      pnpm --filter @courier/api db:seed -- --admin-only   (sin tarifas)
  *   Variables opcionales: SEED_ADMIN_EMAIL, SEED_ADMIN_NAME, SEED_ADMIN_PASSWORD
  */
 import { randomBytes } from 'node:crypto';
@@ -87,7 +91,8 @@ function printCreds(email: string, id: string | undefined, password: string, pro
 }
 
 async function main(): Promise<void> {
-  await seedClientRates();
+  const adminOnly = process.argv.includes('--admin-only') || process.env.SEED_ADMIN_ONLY === '1';
+  if (!adminOnly) await seedClientRates();
 
   const email = (process.env.SEED_ADMIN_EMAIL ?? 'admin@hsglobal-services.com').trim().toLowerCase();
   const name = process.env.SEED_ADMIN_NAME ?? 'Administrador HS';

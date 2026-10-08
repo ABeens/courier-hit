@@ -17,6 +17,8 @@
     "db:seed:bulk": "tsx --env-file=.env src/seed-bulk.ts",
     "db:diagnose-mail": "tsx --env-file=.env src/diagnose-mail.ts",
     "db:clean": "tsx --env-file=.env src/clean-shipments.ts",
+    "db:reset": "tsx --env-file=.env src/reset-db.ts",
+    "db:import-clients": "tsx --env-file=.env src/import-clients.ts",
     "db:backfill-proformas": "tsx --env-file=.env src/backfill-proformas.ts",
     "db:preview-mail": "tsx --env-file=.env src/preview-daily-mail.ts"
   },
