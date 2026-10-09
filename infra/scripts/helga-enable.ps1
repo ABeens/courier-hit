@@ -62,7 +62,7 @@ if (-not $Origin) { $Origin = $BaseUrl }
 # hasta que se resuelva el suyo; mientras tanto no pueden dar de alta
 # destinatarios, que hoy da igual porque solo opera la principal.
 $Cuentas = @(
-  @{ code = 'SJO008835'; name = 'HS GLOBAL'; username = 'servicioalcliente1@hsglobal-services.com'; clientId = 7536 },
+  @{ code = 'SJO008835'; name = 'HS GLOBAL'; username = 'casillero-hs@hsglobal-services.com'; clientId = 7536 },
   @{ code = 'SJO009623'; name = 'ZUCA'; username = 'servicioalcliente2@hsglobal-services.com'; clientId = $null },
   @{ code = 'SJO00609300'; name = 'ZUCA ZF'; username = 'zucazf@hsglobal-services.com'; clientId = $null },
   @{ code = 'SJO009805'; name = 'ACTIVE SHOP'; username = 'activeshop@hsglobal-services.com'; clientId = $null },
