@@ -41,6 +41,7 @@ import type { HelgaAccount } from '../../core/config';
 import { helgaPrincipalAccount } from '../../core/config';
 import { AuthErrors, ProviderAccountErrors } from '../../core/errors';
 import { decryptSecret, encryptSecret, secretsKeyConfigured } from '../../core/secrets';
+import { invalidateToken } from '../../integrations/helga/helga.auth';
 import { authRepo } from '../auth/auth.repo';
 import { authService } from '../auth/auth.service';
 import { providerLinkRepo } from '../clients/provider-link.repo';
@@ -193,6 +194,12 @@ export const providerAccountsService = {
         : {}),
       ...(input.active !== undefined ? { active: input.active } : {}),
     });
+
+    // Un token en cache se emitio con las credenciales viejas: sin esto la cuenta
+    // seguiria usandolas hasta que venza (hasta una hora).
+    const credentialsChanged = [input.username, input.password, input.oauthClientId, input.oauthClientSecret, input.appId]
+      .some((v) => v !== undefined);
+    if (credentialsChanged) invalidateToken({ code: current.account.code });
 
     const updated = await providerAccountsRepo.findById(id);
     if (!updated) throw ProviderAccountErrors.notFound();

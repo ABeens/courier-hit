@@ -49,8 +49,14 @@ async function requestToken(account: HelgaAccount): Promise<string> {
   // despliegue. Lo normal es lo segundo (`client_id`/`client_secret` son de la
   // app y se comparten); una cuenta EXCLUSIVA es de otra empresa y puede tener
   // las suyas. Ver `HelgaAccountSchema` en core/config.
-  const clientId = account.oauthClientId ?? config.HELGA_CLIENT_ID;
-  const clientSecret = account.oauthClientSecret ?? config.HELGA_CLIENT_SECRET;
+  //
+  // Van en PAREJA: un secreto propio con el client_id del despliegue (o al reves)
+  // nunca es valido y Helga responde 401. Paso el 2026-10-09: el navegador
+  // autocompleto la contrasena en el campo client_secret del panel y cuatro
+  // cuentas quedaron sin importar.
+  const ownApp = Boolean(account.oauthClientId && account.oauthClientSecret);
+  const clientId = ownApp ? account.oauthClientId : config.HELGA_CLIENT_ID;
+  const clientSecret = ownApp ? account.oauthClientSecret : config.HELGA_CLIENT_SECRET;
 
   /**
    * El token tambien es una peticion al proveedor y tambien cuenta para su
@@ -124,6 +130,6 @@ export async function getAccessToken(account?: HelgaAccount): Promise<string> {
 }
 
 /** Invalida el token de una cuenta (la principal por defecto), tras un 401. */
-export function invalidateToken(account?: HelgaAccount): void {
-  cached.delete(resolveAccount(account).code);
+export function invalidateToken(account?: Pick<HelgaAccount, 'code'>): void {
+  cached.delete(account?.code ?? resolveAccount().code);
 }
