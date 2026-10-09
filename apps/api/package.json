@@ -19,6 +19,7 @@
     "db:clean": "tsx --env-file=.env src/clean-shipments.ts",
     "db:reset": "tsx --env-file=.env src/reset-db.ts",
     "db:import-clients": "tsx --env-file=.env src/import-clients.ts",
+    "db:send-invitations": "tsx --env-file=.env src/send-invitations.ts",
     "db:backfill-proformas": "tsx --env-file=.env src/backfill-proformas.ts",
     "db:preview-mail": "tsx --env-file=.env src/preview-daily-mail.ts"
   },

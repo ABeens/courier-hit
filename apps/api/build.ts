@@ -49,10 +49,11 @@ await build({
    * (la base no es alcanzable desde fuera). `backfill-proformas` pone en
    * proformas los tramites facturados antes del modulo, por la misma razon. Los
    * `reset-db` vacia la base entera antes de volver a sembrar el admin, e
-   * `import-clients` hace la carga inicial de clientes desde el Excel. Los
+   * `import-clients` hace la carga inicial de clientes desde el Excel y
+   * `send-invitations` les manda despues la invitacion para fijar contrasena. Los
    * otros seeds son de desarrollo y no entran.
    */
-  entryPoints: ['src/main.ts', 'src/migrate.ts', 'src/seed.ts', 'src/clean-shipments.ts', 'src/backfill-proformas.ts', 'src/reset-db.ts', 'src/import-clients.ts'],
+  entryPoints: ['src/main.ts', 'src/migrate.ts', 'src/seed.ts', 'src/clean-shipments.ts', 'src/backfill-proformas.ts', 'src/reset-db.ts', 'src/import-clients.ts', 'src/send-invitations.ts'],
   outdir: 'dist',
   bundle: true,
   platform: 'node',
