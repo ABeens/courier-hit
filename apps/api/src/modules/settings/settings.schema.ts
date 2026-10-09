@@ -38,14 +38,14 @@ export const appSettings = pgTable(
 
     /**
      * Tarifa de transporte internacional vigente: lo que a HS Global le cuesta
-     * mover una LIBRA desde Miami, en dolares. Alimenta el campo 21 del reporte
+     * mover un KILO desde Miami, en dolares. Alimenta el campo 21 del reporte
      * de Paqueteria.
      *
      * Nullable por lo mismo que la tasa: antes de que alguien la fije NO hay
      * tarifa, y eso es distinto de que sea cero. El reporte deja la columna vacia
      * en vez de calcular con un cero que diria que traer el paquete fue gratis.
      */
-    freightRateUsdPerLb: doublePrecision('freight_rate_usd_per_lb'),
+    freightRateUsdPerKg: doublePrecision('freight_rate_usd_per_kg'),
     freightRateSetBy: uuid('freight_rate_set_by').references(() => users.id, {
       onDelete: 'set null',
     }),
@@ -113,7 +113,7 @@ export const appSettings = pgTable(
     check('app_settings_rate_positive', sql`${t.exchangeRate} IS NULL OR ${t.exchangeRate} > 0`),
     check(
       'app_settings_freight_rate_positive',
-      sql`${t.freightRateUsdPerLb} IS NULL OR ${t.freightRateUsdPerLb} > 0`,
+      sql`${t.freightRateUsdPerKg} IS NULL OR ${t.freightRateUsdPerKg} > 0`,
     ),
     /**
      * Rango del porcentaje (regla M3), con el mismo techo que el esquema Zod. El
@@ -163,17 +163,17 @@ export const freightRateHistory = pgTable(
   'freight_rate_history',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    /** USD por libra que quedo vigente con este cambio. */
-    usdPerLb: doublePrecision('usd_per_lb').notNull(),
+    /** USD por kg que quedo vigente con este cambio. */
+    usdPerKg: doublePrecision('usd_per_kg').notNull(),
     /** La que estaba antes; null en el primer registro. */
-    previousUsdPerLb: doublePrecision('previous_usd_per_lb'),
+    previousUsdPerKg: doublePrecision('previous_usd_per_kg'),
     note: text('note'),
     setBy: uuid('set_by').references(() => users.id, { onDelete: 'set null' }),
     setAt: timestamp('set_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('freight_rate_history_set_at_idx').on(t.setAt),
-    check('freight_rate_history_positive', sql`${t.usdPerLb} > 0`),
+    check('freight_rate_history_positive', sql`${t.usdPerKg} > 0`),
   ],
 );
 

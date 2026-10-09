@@ -235,7 +235,7 @@ export const reportsRepo = {
         electronicInvoiceNumber: shipments.electronicInvoiceNumber,
         invoiceTotalUsd: shipments.invoiceTotalUsd,
         invoiceTotalCrc: shipments.invoiceTotalCrc,
-        freightRateUsdPerLb: shipments.freightRateUsdPerLb,
+        freightRateUsdPerKg: shipments.freightRateUsdPerKg,
         costsApprovedAt: shipments.costsApprovedAt,
         createdAt: shipments.createdAt,
         clientCode: clients.code,

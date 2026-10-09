@@ -54,9 +54,9 @@ function formatRate(rate: number): string {
   return `${formatRateAmount(rate)} por 1 USD`;
 }
 
-/** La tarifa de flete son dólares por libra: dinero en dólares, por unidad de peso. */
-function formatFreight(usdPerLb: number): string {
-  return `${formatMoney(usdPerLb, Currency.USD)} por libra`;
+/** La tarifa de flete son dólares por kg: dinero en dólares, por unidad de peso. */
+function formatFreight(usdPerKg: number): string {
+  return `${formatMoney(usdPerKg, Currency.USD)} por kg`;
 }
 
 /**
@@ -115,7 +115,7 @@ export function SettingsScreen({
 
       const freightDto = await api.get<FreightRateSettingDto>('/settings/freight-rate');
       setFreight(freightDto);
-      setFreightRate(freightDto.usdPerLb != null ? String(freightDto.usdPerLb) : '');
+      setFreightRate(freightDto.usdPerKg != null ? String(freightDto.usdPerKg) : '');
 
       const surchargeDto = await api.get<CardSurchargeSettingDto>('/settings/card-surcharge');
       setSurcharge(surchargeDto);
@@ -162,20 +162,20 @@ export function SettingsScreen({
 
   const parsedFreight = Number(freightRate);
   const freightOk = freightRate.trim() !== '' && Number.isFinite(parsedFreight) && parsedFreight > 0;
-  const freightUnchanged = freight?.usdPerLb != null && parsedFreight === freight.usdPerLb;
+  const freightUnchanged = freight?.usdPerKg != null && parsedFreight === freight.usdPerKg;
 
   async function saveFreight(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setNotice(null);
     if (!freightOk) {
-      setError('Digita la tarifa de transporte internacional (dólares por libra).');
+      setError('Digita la tarifa de transporte internacional (dólares por kg).');
       return;
     }
     setSavingFreight(true);
     try {
       await api.put<FreightRateSettingDto>('/settings/freight-rate', {
-        usdPerLb: parsedFreight,
+        usdPerKg: parsedFreight,
         ...(freightNote.trim() ? { note: freightNote.trim() } : {}),
       });
       setFreightNote('');
@@ -343,18 +343,18 @@ export function SettingsScreen({
       </div>
 
       {/* Tarifa de transporte internacional: el otro valor general del sistema.
-          Es lo que a HS Global le CUESTA traer una libra, no lo que cobra, y de
+          Es lo que a HS Global le CUESTA traer un kilo, no lo que cobra, y de
           ahí sale el margen del reporte de Paquetería. */}
       <div className="card form-stack" style={{ marginTop: 18 }}>
         <div>
           <div className="field-label" style={{ marginBottom: 6 }}>
-            Transporte internacional (costo por libra)
+            Transporte por kg
           </div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 26, color: 'var(--ink)' }}>
-            {freight?.usdPerLb != null ? formatFreight(freight.usdPerLb) : 'Sin definir'}
+            {freight?.usdPerKg != null ? formatFreight(freight.usdPerKg) : 'Sin definir'}
           </div>
           <div className="field-hint">
-            {freight?.usdPerLb != null
+            {freight?.usdPerKg != null
               ? `Fijada por ${freight.updatedByName ?? 'un administrador'}${
                   freight.updatedAt ? ` el ${formatDateTime(freight.updatedAt)}` : ''
                 }.`
@@ -367,7 +367,7 @@ export function SettingsScreen({
             <div className="field-pair">
               <div>
                 <label className="field-label" htmlFor="s-freight">
-                  Nueva tarifa (dólares por libra)
+                  Nueva tarifa (dólares por kg)
                 </label>
                 <input
                   id="s-freight" className="input" type="number" min="0" step="0.01"

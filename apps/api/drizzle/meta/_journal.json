@@ -358,6 +358,13 @@
       "when": 1790897538064,
       "tag": "0050_real_cost",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1790897598064,
+      "tag": "0051_freight_rate_per_kg",
+      "breakpoints": true
     }
   ]
 }

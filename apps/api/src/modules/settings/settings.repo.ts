@@ -172,13 +172,13 @@ export const settingsRepo = {
   },
 
   /**
-   * Tarifa de transporte internacional vigente (USD por libra), o null si nadie
+   * Tarifa de transporte internacional vigente (USD por kg), o null si nadie
    * la fijo. Camino caliente igual que la tasa: la consulta cada aprobacion de
    * costos de Paqueteria, asi que toca una fila por clave primaria.
    */
   async currentFreightRate(): Promise<number | null> {
     const [row] = await db
-      .select({ rate: appSettings.freightRateUsdPerLb })
+      .select({ rate: appSettings.freightRateUsdPerKg })
       .from(appSettings)
       .where(eq(appSettings.id, SETTINGS_ROW_ID))
       .limit(1);
@@ -189,7 +189,7 @@ export const settingsRepo = {
   async freightRateSetting() {
     const [row] = await db
       .select({
-        usdPerLb: appSettings.freightRateUsdPerLb,
+        usdPerKg: appSettings.freightRateUsdPerKg,
         setAt: appSettings.freightRateSetAt,
         setByName: users.name,
       })
@@ -197,7 +197,7 @@ export const settingsRepo = {
       .leftJoin(users, eq(users.id, appSettings.freightRateSetBy))
       .where(eq(appSettings.id, SETTINGS_ROW_ID))
       .limit(1);
-    return row ?? { usdPerLb: null, setAt: null, setByName: null };
+    return row ?? { usdPerKg: null, setAt: null, setByName: null };
   },
 
   /**
@@ -206,24 +206,24 @@ export const settingsRepo = {
    * su registro de auditoria es justo lo que el historial existe para evitar.
    */
   async setFreightRate(input: {
-    usdPerLb: number;
+    usdPerKg: number;
     note: string | null;
     userId: string;
-  }): Promise<{ previousUsdPerLb: number | null }> {
+  }): Promise<{ previousUsdPerKg: number | null }> {
     return db.transaction(async (tx) => {
       const [existing] = await tx
-        .select({ rate: appSettings.freightRateUsdPerLb })
+        .select({ rate: appSettings.freightRateUsdPerKg })
         .from(appSettings)
         .where(eq(appSettings.id, SETTINGS_ROW_ID))
         .limit(1);
-      const previousUsdPerLb = existing?.rate ?? null;
+      const previousUsdPerKg = existing?.rate ?? null;
       const now = new Date();
 
       await tx
         .insert(appSettings)
         .values({
           id: SETTINGS_ROW_ID,
-          freightRateUsdPerLb: input.usdPerLb,
+          freightRateUsdPerKg: input.usdPerKg,
           freightRateSetBy: input.userId,
           freightRateSetAt: now,
           updatedAt: now,
@@ -231,7 +231,7 @@ export const settingsRepo = {
         .onConflictDoUpdate({
           target: appSettings.id,
           set: {
-            freightRateUsdPerLb: input.usdPerLb,
+            freightRateUsdPerKg: input.usdPerKg,
             freightRateSetBy: input.userId,
             freightRateSetAt: now,
             updatedAt: now,
@@ -239,14 +239,14 @@ export const settingsRepo = {
         });
 
       await tx.insert(freightRateHistory).values({
-        usdPerLb: input.usdPerLb,
-        previousUsdPerLb,
+        usdPerKg: input.usdPerKg,
+        previousUsdPerKg,
         note: input.note,
         setBy: input.userId,
         setAt: now,
       });
 
-      return { previousUsdPerLb };
+      return { previousUsdPerKg };
     });
   },
 

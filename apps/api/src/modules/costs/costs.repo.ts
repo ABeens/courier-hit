@@ -110,14 +110,14 @@ export const costsRepo = {
     shipmentId: string,
     totals: { usd: number; crc: number },
     approvedBy: string,
-    freightRateUsdPerLb: number | null,
+    freightRateUsdPerKg: number | null,
   ) {
     await db
       .update(shipments)
       .set({
         invoiceTotalUsd: totals.usd,
         invoiceTotalCrc: totals.crc,
-        freightRateUsdPerLb,
+        freightRateUsdPerKg,
         costsApprovedAt: new Date(),
         costsApprovedBy: approvedBy,
         updatedAt: new Date(),
@@ -224,7 +224,7 @@ export const costsRepo = {
       .set({
         invoiceTotalUsd: null,
         invoiceTotalCrc: null,
-        freightRateUsdPerLb: null,
+        freightRateUsdPerKg: null,
         costsApprovedAt: null,
         costsApprovedBy: null,
         updatedAt: new Date(),

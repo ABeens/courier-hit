@@ -186,7 +186,7 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
     if (isPaqueteria) {
       const costs = breakdownByCategory(realLines, Currency.USD);
       const billedCostsUsd = billedTotals.usd;
-      const freight = internationalFreightUsd(row.weightKg, row.freightRateUsdPerLb);
+      const freight = internationalFreightUsd(row.weightKg, row.freightRateUsdPerKg);
       const total = totalCostUsd(freight, costs.impuestos, costs.otros);
       // GROSS PROFIT = COSTO A FACTURAR - TOTAL (transporte intl + impuestos +
       // otros). Sin TOTAL (falta peso o tarifa) el profit sale vacio, no inflado.

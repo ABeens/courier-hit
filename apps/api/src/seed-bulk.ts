@@ -612,7 +612,7 @@ async function ensureRates(tx: Tx, adminId: string): Promise<number> {
       exchangeRate: DEFAULT_EXCHANGE_RATE,
       exchangeRateSetBy: adminId,
       exchangeRateSetAt: setAt,
-      freightRateUsdPerLb: DEFAULT_FREIGHT_RATE,
+      freightRateUsdPerKg: DEFAULT_FREIGHT_RATE,
       freightRateSetBy: adminId,
       freightRateSetAt: setAt,
       updatedAt: setAt,
@@ -630,8 +630,8 @@ async function ensureRates(tx: Tx, adminId: string): Promise<number> {
       setAt,
     });
     await tx.insert(freightRateHistory).values({
-      usdPerLb: DEFAULT_FREIGHT_RATE,
-      previousUsdPerLb: null,
+      usdPerKg: DEFAULT_FREIGHT_RATE,
+      previousUsdPerKg: null,
       note: 'Tarifa inicial de la prueba de carga.',
       setBy: adminId,
       setAt,
@@ -1015,7 +1015,7 @@ function buildShipment(args: BuildArgs): void {
     invoiceTotalCrc: approved ? totals!.crc : null,
     // Snapshot de la tarifa de flete, igual que `costsRepo.freezeInvoice`: solo
     // Paqueteria, y solo cuando la factura quedo congelada.
-    freightRateUsdPerLb: approved && isPackage ? DEFAULT_FREIGHT_RATE : null,
+    freightRateUsdPerKg: approved && isPackage ? DEFAULT_FREIGHT_RATE : null,
     costsApprovedAt: approved ? approvedAt : null,
     costsApprovedBy: approved ? pickStaff(staff.financeIds) : null,
     helgaPrealertStatus: prealert,

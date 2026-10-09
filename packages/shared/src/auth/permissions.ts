@@ -216,7 +216,7 @@ export enum Permission {
    */
   ExchangeRateWrite = 'exchange_rate.write',
   /**
-   * Fijar la tarifa de transporte internacional (USD por libra) con la que el
+   * Fijar la tarifa de transporte internacional (USD por kg) con la que el
    * reporte de Paqueteria calcula el campo 21.
    *
    * Es un valor general del sistema, igual que la tasa de cambio, y por eso vive

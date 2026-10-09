@@ -41,9 +41,9 @@ const line = (amount: number, category: CostCategory, currency = Currency.USD, r
 // TRANSPORTE INTL (campo 21)
 // ---------------------------------------------------------------------------
 
-test('el transporte internacional usa el factor del documento: kg × 2.204 × tarifa', () => {
-  // 2 kg = 4.408 lb; 4.408 × 3.66 = 16.13328 -> 16.13
-  assert.equal(internationalFreightUsd(2, 3.66), 16.13);
+test('el transporte internacional es kg × tarifa por kg, sin conversion', () => {
+  // 2 kg × 3.66 = 7.32
+  assert.equal(internationalFreightUsd(2, 3.66), 7.32);
 });
 
 test('sin peso o sin tarifa el transporte internacional es null, NO cero', () => {
@@ -182,7 +182,7 @@ test('Costo real: sin uno guardado, el real es el facturado', () => {
 
 test('GROSS PROFIT de Paqueteria: costo a facturar menos TOTAL', () => {
   // Caso real (HSX000001057): flete 70/67.25, asesoria 100/50, permisos 17/11.73,
-  // comision de tarjeta 7.96 sin costo real (vale lo facturado). 5 kg a 3.66/lb.
+  // comision de tarjeta 7.96 sin costo real (vale lo facturado). 5 kg a 3.66/kg.
   const lines = [
     { ...line(70, CostCategory.Flete), realAmount: 67.25 },
     { ...line(100, CostCategory.Propio), realAmount: 50 },
@@ -195,9 +195,9 @@ test('GROSS PROFIT de Paqueteria: costo a facturar menos TOTAL', () => {
   assert.equal(costs.otros, 19.69);
 
   const total = totalCostUsd(internationalFreightUsd(5, 3.66), costs.impuestos, costs.otros);
-  assert.equal(total, 60.02);
+  assert.equal(total, 37.99);
 
   const profit = grossProfit(billed, total, Currency.USD);
-  assert.equal(profit, 134.94);
-  assert.equal(marginPercentage(profit, billed), 69.21);
+  assert.equal(profit, 156.97);
+  assert.equal(marginPercentage(profit, billed), 80.51);
 });

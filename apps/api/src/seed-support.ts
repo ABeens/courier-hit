@@ -44,9 +44,8 @@ export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 export const DEFAULT_EXCHANGE_RATE = 512.75;
 
 /**
- * Tarifa de transporte internacional, en USD por libra. Es la del mapeo de
- * campos validado con el negocio ("x 3.66"), para que el reporte FULL de
- * Paqueteria de las mismas cifras que la hoja con la que se cuadra.
+ * Tarifa de transporte internacional, en USD por kg (se aplica directo al peso
+ * en kg, sin conversion a libras).
  */
 export const DEFAULT_FREIGHT_RATE = 3.66;
 

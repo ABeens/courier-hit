@@ -327,7 +327,7 @@ export const proformasRepo = {
     shipmentId: string,
     totals: { usd: number; crc: number },
     approvedBy: string,
-    freightRateUsdPerLb: number | null,
+    freightRateUsdPerKg: number | null,
   ) {
     const now = new Date();
     await tx
@@ -335,7 +335,7 @@ export const proformasRepo = {
       .set({
         invoiceTotalUsd: totals.usd,
         invoiceTotalCrc: totals.crc,
-        freightRateUsdPerLb,
+        freightRateUsdPerKg,
         costsApprovedAt: now,
         costsApprovedBy: approvedBy,
         updatedAt: now,
@@ -350,7 +350,7 @@ export const proformasRepo = {
       .set({
         invoiceTotalUsd: null,
         invoiceTotalCrc: null,
-        freightRateUsdPerLb: null,
+        freightRateUsdPerKg: null,
         costsApprovedAt: null,
         costsApprovedBy: null,
         updatedAt: new Date(),

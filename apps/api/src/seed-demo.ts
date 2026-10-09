@@ -852,7 +852,7 @@ async function seed(tx: Tx): Promise<boolean> {
       exchangeRateSetAt: rateSetAt,
       // La tarifa de flete viaja en el mismo upsert: sin ella el reporte FULL de
       // Paqueteria sale sin costo de transporte y, por tanto, sin margen.
-      freightRateUsdPerLb: DEMO_FREIGHT_RATE,
+      freightRateUsdPerKg: DEMO_FREIGHT_RATE,
       freightRateSetBy: adminId,
       freightRateSetAt: rateSetAt,
       updatedAt: rateSetAt,
@@ -868,8 +868,8 @@ async function seed(tx: Tx): Promise<boolean> {
       setAt: rateSetAt,
     });
     await tx.insert(freightRateHistory).values({
-      usdPerLb: DEMO_FREIGHT_RATE,
-      previousUsdPerLb: null,
+      usdPerKg: DEMO_FREIGHT_RATE,
+      previousUsdPerKg: null,
       note: DEMO_FREIGHT_NOTE,
       setBy: adminId,
       setAt: rateSetAt,
@@ -1059,7 +1059,7 @@ async function seed(tx: Tx): Promise<boolean> {
         invoiceTotalCrc: approved ? totals!.crc : null,
         // Snapshot de la tarifa de flete, igual que `costsRepo.freezeInvoice`:
         // solo Paqueteria, y solo cuando la factura quedo congelada.
-        freightRateUsdPerLb: approved && isPackage ? DEMO_FREIGHT_RATE : null,
+        freightRateUsdPerKg: approved && isPackage ? DEMO_FREIGHT_RATE : null,
         costsApprovedAt: approved ? approvedAt : null,
         costsApprovedBy: approved ? financeId : null,
         helgaPrealertStatus: isPackage

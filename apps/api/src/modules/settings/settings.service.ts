@@ -138,7 +138,7 @@ export const settingsService = {
   },
 
   /**
-   * Tarifa de transporte internacional vigente (USD por libra).
+   * Tarifa de transporte internacional vigente (USD por kg).
    *
    * A diferencia de la tasa de cambio no lleva referencia externa: nadie publica
    * un indicador del flete. El valor sale de lo que la naviera le cobre a HS
@@ -147,7 +147,7 @@ export const settingsService = {
   async freightRate(): Promise<FreightRateSettingDto> {
     const setting = await settingsRepo.freightRateSetting();
     return {
-      usdPerLb: setting.usdPerLb,
+      usdPerKg: setting.usdPerKg,
       updatedAt: setting.setAt?.toISOString() ?? null,
       updatedByName: setting.setByName,
     };
@@ -156,7 +156,7 @@ export const settingsService = {
   /**
    * Fija la tarifa vigente. Solo afecta a los tramites que se FACTUREN a partir
    * de ahora: los ya aprobados llevan su tarifa congelada en la fila
-   * (`shipments.freight_rate_usd_per_lb`), justamente para que este cambio no
+   * (`shipments.freight_rate_usd_per_kg`), justamente para que este cambio no
    * reescriba el margen de meses cerrados.
    */
   async setFreightRate(
@@ -164,7 +164,7 @@ export const settingsService = {
     input: SetFreightRateInput,
   ): Promise<FreightRateSettingDto> {
     await settingsRepo.setFreightRate({
-      usdPerLb: input.usdPerLb,
+      usdPerKg: input.usdPerKg,
       note: input.note?.trim() || null,
       userId: session.userId,
     });

@@ -87,7 +87,7 @@ settingsRoutes.put(
 );
 
 /**
- * Tarifa de transporte internacional (USD por libra).
+ * Tarifa de transporte internacional (USD por kg).
  *
  * La LEE, ademas de quien la fija, quien aprueba costos: al aprobar se congela en
  * el tramite, asi que el operador tiene que poder ver con que numero va a quedar

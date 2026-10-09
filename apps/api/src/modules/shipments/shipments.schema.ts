@@ -195,7 +195,7 @@ export const shipments = pgTable(
     invoiceTotalUsd: doublePrecision('invoice_total_usd'),
     invoiceTotalCrc: doublePrecision('invoice_total_crc'),
     /**
-     * Tarifa de transporte internacional (USD por libra) VIGENTE al aprobar los
+     * Tarifa de transporte internacional (USD por kg) VIGENTE al aprobar los
      * costos. Solo Paqueteria; null en el resto y mientras no se apruebe.
      *
      * Es un snapshot por la misma razon que el total de factura: el campo 21 del
@@ -208,7 +208,7 @@ export const shipments = pgTable(
      * lleva moneda por columna (va en el nombre, regla M2) ni tasa de cambio
      * (M5 no aplica), igual que `client_rates.price_per_kg`.
      */
-    freightRateUsdPerLb: doublePrecision('freight_rate_usd_per_lb'),
+    freightRateUsdPerKg: doublePrecision('freight_rate_usd_per_kg'),
     costsApprovedAt: timestamp('costs_approved_at', { withTimezone: true }),
     costsApprovedBy: uuid('costs_approved_by').references(() => users.id, { onDelete: 'set null' }),
 

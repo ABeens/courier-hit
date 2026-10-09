@@ -15,12 +15,11 @@
  * las funciones que restan dinero reciben la moneda explicita.
  */
 import { Currency, roundMoney } from '../money/currency';
-import { KG_TO_LB } from '../settings/freight-rate-dto';
 
 /**
  * TRANSPORTE INTL (campo 21 de Paqueteria): lo que nos cuesta traer el paquete.
  *
- *     (peso en kg × 2.204) × tarifa USD por libra
+ *     peso en kg × tarifa USD por kg
  *
  * Es el unico costo del reporte que NO sale de las lineas cargadas: la linea de
  * flete de `shipment_costs` es lo que se le COBRA al cliente (peso × tarifa del
@@ -32,10 +31,10 @@ import { KG_TO_LB } from '../settings/freight-rate-dto';
  */
 export function internationalFreightUsd(
   weightKg: number | null,
-  usdPerLb: number | null,
+  usdPerKg: number | null,
 ): number | null {
-  if (weightKg == null || usdPerLb == null) return null;
-  return roundMoney(weightKg * KG_TO_LB * usdPerLb, Currency.USD);
+  if (weightKg == null || usdPerKg == null) return null;
+  return roundMoney(weightKg * usdPerKg, Currency.USD);
 }
 
 /**
