@@ -21,10 +21,13 @@
  *    pero sin invitacion y con la tarifa Consolidada). La fila PRINCIPAL vive en
  *    la configuracion del despliegue (`HELGA_ACCOUNTS`) y no se carga.
  *
- * Contra Helga se compara lo unico que alli es real: sub-casillero, cedula y
- * nombre. Correo, telefono y direccion de Helga son los ofuscados, asi que no se
- * comparan. Las credenciales de cada cuenta mayorista se prueban pidiendo un
- * token; si Helga las rechaza, la cuenta se carga APAGADA.
+ * Contra Helga se enlaza por sub-casillero. Cedula y nombre distintos solo avisan
+ * (muchas cedulas de Helga son de relleno; manda la del Excel). Correo, telefono
+ * y direccion de Helga son los ofuscados, asi que no se comparan. Las
+ * credenciales de cada cuenta mayorista nueva se prueban pidiendo un token; si
+ * Helga las rechaza, la cuenta se carga APAGADA. Una cuenta que ya existe en
+ * "Cuentas del proveedor" sin cliente se reutiliza: solo se le enlaza el
+ * consolidado.
  *
  * NO SE ENVIA NINGUN CORREO. Los clientes quedan con una contrasena inutilizable
  * hasta que se les mande la invitacion (paso aparte).
@@ -45,7 +48,7 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { hash } from '@node-rs/argon2';
 import ExcelJS from 'exceljs';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import {
   ClientRateKind,
   ClientReviewStatus,
@@ -206,6 +209,8 @@ interface Row {
   skip?: string;
   /** Solo existentes: el destinatario que Helga tiene con ese sub-casillero. */
   helgaClientId?: string | null;
+  /** Solo consolidados: la cuenta ya estaba en "Cuentas del proveedor" sin cliente. */
+  existingAccountId?: string;
 }
 
 const label = (r: Row) => `${r.sheet} fila ${r.line} ${r.subLocker ?? '(sin sub-casillero)'} ${r.name}`;
@@ -352,11 +357,18 @@ async function checkDatabase(row: Row): Promise<void> {
   }
   if (row.account) {
     const [byCode] = await db
-      .select({ id: providerAccounts.id })
+      .select({ id: providerAccounts.id, linkedTo: clients.code })
       .from(providerAccounts)
+      .leftJoin(clients, eq(clients.id, providerAccounts.consolidatedClientId))
       .where(eq(providerAccounts.code, row.account.code))
       .limit(1);
-    if (byCode) row.errors.push(`la cuenta ${row.account.code} ya existe en "Cuentas del proveedor"`);
+    // La cuenta ya dada de alta se reutiliza tal cual (credenciales incluidas):
+    // solo se le enlaza el cliente consolidado. Si ya tiene uno, es otro cliente.
+    if (byCode?.linkedTo) row.errors.push(`la cuenta ${row.account.code} ya está enlazada al casillero ${byCode.linkedTo}`);
+    else if (byCode) {
+      row.existingAccountId = byCode.id;
+      row.warnings.push(`la cuenta ${row.account.code} ya existe en "Cuentas del proveedor": solo se enlaza (no se tocan sus credenciales)`);
+    }
   }
 }
 
@@ -381,9 +393,12 @@ async function checkHelga(row: Row): Promise<void> {
     }
     const recipient = found[0]!;
     if (!recipient.active) return void row.errors.push(`el destinatario ${recipient.id} está INACTIVO en Helga`);
+    // Muchos destinatarios se dieron de alta en Helga con una cedula de relleno
+    // (2555727, 000000000...). Manda la del Excel: se enlaza por sub-casillero y
+    // se guarda la nuestra.
     const helgaId = (recipient.idNumber ?? '').replace(/\D/g, '');
     if (helgaId !== row.idNumber) {
-      return void row.errors.push(`la cédula no coincide: Excel ${row.idNumber}, Helga ${helgaId || '(vacía)'} (destinatario ${recipient.id})`);
+      row.warnings.push(`la cédula en Helga es ${helgaId || '(vacía)'}: se enlaza igual y se guarda la del Excel (${row.idNumber})`);
     }
     if (recipient.name && !sameName(recipient.name, row.name)) {
       row.warnings.push(`el nombre en Helga es "${recipient.name}"`);
@@ -406,8 +421,9 @@ async function checkHelga(row: Row): Promise<void> {
   }
 
   // Consolidado: se prueba la credencial pidiendo un token. En simulado el mock
-  // acepta cualquier cosa, asi que probarla no diria nada.
-  if (SKIP_HELGA || isHelgaSimulated()) return;
+  // acepta cualquier cosa, asi que probarla no diria nada. Si la cuenta ya existe
+  // tampoco: sus credenciales no se tocan.
+  if (SKIP_HELGA || isHelgaSimulated() || row.existingAccountId) return;
   const account: HelgaAccount = {
     code: row.account!.code,
     name: row.account!.name,
@@ -542,16 +558,27 @@ async function insertConsolidated(row: Row, rateId: string, adminId: string | nu
         helgaSyncAttempts: 0,
       })
       .returning({ id: clients.id });
-    await tx.insert(providerAccounts).values({
-      code: account.code,
-      name: account.name,
-      username: account.username,
-      passwordEncrypted: encryptSecret(account.password),
-      consolidatedClientId: client!.id,
-      active: account.active,
-      lastImportError: account.active ? null : 'Helga rechazó las credenciales en la carga inicial.',
-      createdBy: adminId,
-    });
+    if (row.existingAccountId) {
+      // `isNull` como guarda: si entre la validacion y ahora alguien la enlazo,
+      // no se le pisa el cliente y la transaccion entera se deshace.
+      const linked = await tx
+        .update(providerAccounts)
+        .set({ consolidatedClientId: client!.id, updatedAt: new Date() })
+        .where(and(eq(providerAccounts.id, row.existingAccountId), isNull(providerAccounts.consolidatedClientId)))
+        .returning({ id: providerAccounts.id });
+      if (linked.length === 0) throw new Error(`la cuenta ${account.code} ya quedó enlazada a otro cliente`);
+    } else {
+      await tx.insert(providerAccounts).values({
+        code: account.code,
+        name: account.name,
+        username: account.username,
+        passwordEncrypted: encryptSecret(account.password),
+        consolidatedClientId: client!.id,
+        active: account.active,
+        lastImportError: account.active ? null : 'Helga rechazó las credenciales en la carga inicial.',
+        createdBy: adminId,
+      });
+    }
     await tx.insert(clientProviderLinkEvents).values({
       clientId: client!.id,
       source: ProviderLinkSource.Manual,
@@ -609,7 +636,9 @@ async function main() {
         ? `enlazar destinatario ${row.helgaClientId ?? '?'}`
         : row.kind === 'nuevo'
           ? 'alta nueva en Helga'
-          : `cuenta ${row.account?.code} + cliente consolidado${row.account?.active === false ? ' (cuenta APAGADA)' : ''}`;
+          : row.existingAccountId
+            ? `cliente consolidado enlazado a la cuenta existente ${row.account?.code}`
+            : `cuenta ${row.account?.code} + cliente consolidado${row.account?.active === false ? ' (cuenta APAGADA)' : ''}`;
     console.log(`  ${tag} ${label(row)}${row.errors.length === 0 && !row.skip ? `: ${plan}` : ''}`);
     for (const e of row.errors) console.log(`             x ${e}`);
     for (const w of row.warnings) console.log(`             ! ${w}`);
