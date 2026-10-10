@@ -181,6 +181,23 @@ export const authRepo = {
       );
   },
 
+  /** Si el usuario tiene un enlace vigente (no usado y sin expirar) de ese proposito. */
+  async hasValidPasswordReset(userId: string, purpose: string) {
+    const [row] = await db
+      .select({ id: passwordResets.id })
+      .from(passwordResets)
+      .where(
+        and(
+          eq(passwordResets.userId, userId),
+          eq(passwordResets.purpose, purpose),
+          isNull(passwordResets.usedAt),
+          gt(passwordResets.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
+    return row != null;
+  },
+
   /** Token vigente: no usado y sin expirar. */
   async findValidPasswordReset(tokenHash: string) {
     const [row] = await db

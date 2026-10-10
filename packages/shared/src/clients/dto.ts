@@ -3,11 +3,12 @@
  *
  * Dos ediciones distintas sobre la misma fila, con dueños distintos:
  *   - EL CLIENTE edita su contacto (Parte 2, "Editar Perfil": nombre, cedula,
- *     telefono, correo). No toca tarifa ni limite de credito: son decisiones
- *     comerciales de HS Global.
- *   - EL ADMINISTRADOR edita lo comercial (Parte 3, "Editar Cliente": tarifa y
- *     limite de credito). El flag "Nuevo" no viaja en el cuerpo: se apaga solo
- *     al guardar, porque haber editado ES la revision.
+ *     telefono; el correo hoy esta bloqueado). No toca tarifa ni limite de
+ *     credito: son decisiones comerciales de HS Global.
+ *   - EL ADMINISTRADOR edita la ficha entera (Parte 3, "Editar Cliente"): lo
+ *     comercial (tarifa y limite de credito) y los datos del titular, correo
+ *     incluido. El flag "Nuevo" no viaja en el cuerpo: se apaga solo al guardar,
+ *     porque haber editado ES la revision.
  */
 import { z } from 'zod';
 import { Currency } from '../money/currency';
@@ -137,16 +138,37 @@ export const creditLimitSchema = z
   .nonnegative('El límite de crédito no puede ser negativo.')
   .max(1_000_000_000, 'El límite de crédito es demasiado grande.');
 
+/** Campos de la direccion de entrega: viajan los cuatro juntos o ninguno. */
+const ADDRESS_KEYS = ['provinceCode', 'cantonCode', 'districtCode', 'addressLine'] as const;
+
 /**
- * Edicion comercial por el administrador. Todos los campos son opcionales pero
- * al menos uno debe venir. La moneda es obligatoria SIEMPRE que venga un limite
- * distinto de null: un techo sin moneda no significa nada (regla M2).
+ * Edicion de la ficha completa por el administrador (permiso `clients.write`):
+ * lo comercial (tarifa, limite de credito) y tambien los datos del titular
+ * (nombre, cedula, correo, telefono y direccion de entrega).
+ *
+ * Todos los campos son opcionales pero al menos uno debe venir. La moneda es
+ * obligatoria SIEMPRE que venga un limite distinto de null: un techo sin moneda
+ * no significa nada (regla M2). La direccion, igual que en el perfil del
+ * cliente, solo se acepta COMPLETA y validada contra el catalogo: un PATCH
+ * parcial podria dejar un canton que no cuelga de la provincia guardada.
+ *
+ * Correo y cedula son los dos datos delicados (el correo es el usuario de login;
+ * la cedula identifica al casillero ante el proveedor): la web pide confirmarlos
+ * aparte y la API revisa que no los tenga otra cuenta. Ver `clientsService.update`.
  */
 export const updateClientSchema = z
   .object({
     clientRateId: z.string().uuid('Elige una tarifa válida.').optional(),
     creditLimit: creditLimitSchema.nullable().optional(),
     creditLimitCurrency: z.nativeEnum(Currency).nullable().optional(),
+    name: nameSchema.optional(),
+    idNumber: idNumberSchema.optional(),
+    email: emailSchema.optional(),
+    phone: phoneSchema.optional(),
+    provinceCode: deliveryAddressShape.provinceCode.optional(),
+    cantonCode: deliveryAddressShape.cantonCode.optional(),
+    districtCode: deliveryAddressShape.districtCode.optional(),
+    addressLine: deliveryAddressShape.addressLine.optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No hay cambios que aplicar.' })
   .superRefine((data, ctx) => {
@@ -156,6 +178,20 @@ export const updateClientSchema = z
         path: ['creditLimitCurrency'],
         message: 'Elige la moneda del límite de crédito.',
       });
+    }
+
+    const present = ADDRESS_KEYS.filter((k) => data[k] !== undefined);
+    if (present.length > 0 && present.length < ADDRESS_KEYS.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['districtCode'],
+        message: 'La dirección de entrega se guarda completa: provincia, cantón, distrito y señas.',
+      });
+    } else if (present.length === ADDRESS_KEYS.length) {
+      checkLocation(
+        { provinceCode: data.provinceCode!, cantonCode: data.cantonCode!, districtCode: data.districtCode! },
+        ctx,
+      );
     }
   });
 export type UpdateClientInput = z.infer<typeof updateClientSchema>;

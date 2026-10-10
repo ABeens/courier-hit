@@ -148,16 +148,22 @@ clientsRoutes.post(
 );
 
 clientsRoutes.get('/:id', requirePermission(Permission.ClientsRead), async (c) => {
-  return c.json(await clientsService.get(c.req.param('id')));
+  return c.json(await clientsService.detail(c.req.param('id')));
 });
 
-/** Edicion comercial. Apaga el flag "Nuevo" como efecto del acto de editar. */
+/**
+ * Edicion de la ficha (comercial y datos del titular). Apaga el flag "Nuevo"
+ * como efecto del acto de editar. Ver `clientsService.update` para lo que
+ * arrastra un cambio de correo o de cedula.
+ */
 clientsRoutes.patch(
   '/:id',
   requirePermission(Permission.ClientsWrite),
   zValidator('json', updateClientSchema),
   async (c) => {
-    return c.json(await clientsService.update(c.req.param('id'), c.req.valid('json')));
+    return c.json(
+      await clientsService.update(c.get('session'), c.req.param('id'), c.req.valid('json')),
+    );
   },
 );
 

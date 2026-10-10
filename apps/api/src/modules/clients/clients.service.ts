@@ -25,7 +25,13 @@
  *    la ruta de reparto y la operacion lee la direccion en vivo. Ver
  *    `updateAddress`.
  */
-import { ClientReviewStatus, UserStatus, lockerAddressFor, paged } from '@courier/shared';
+import {
+  ClientReviewStatus,
+  ProviderLinkSource,
+  UserStatus,
+  lockerAddressFor,
+  paged,
+} from '@courier/shared';
 import { randomBytes } from 'node:crypto';
 import { hash } from '@node-rs/argon2';
 import type {
@@ -44,6 +50,7 @@ import { authService } from '../auth/auth.service';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { settingsService } from '../settings/settings.service';
 import { clientsRepo } from './clients.repo';
+import { providerLinkRepo } from './provider-link.repo';
 
 /** Casillero tal como lo ve el panel administrador. */
 export interface ClientListItem {
@@ -84,6 +91,15 @@ export interface ClientListItem {
 export interface ClientListResponse extends Page<ClientListItem> {
   /** Casilleros por revisar dentro de la busqueda, al margen del filtro de revision. */
   pendingReview: number;
+}
+
+/**
+ * Lo que el cambio de correo le reenvio al titular, para que el panel lo diga.
+ * `inviteLink` solo viene en desarrollo (en produccion va por correo).
+ */
+export interface UpdateClientAccessNotice {
+  accessEmail?: 'invitation' | 'verification';
+  inviteLink?: string;
 }
 
 export const clientsService = {
@@ -127,12 +143,65 @@ export const clientsService = {
   },
 
   /**
-   * Edicion comercial por el staff (tarifa y limite de credito). Apaga el flag
-   * "Nuevo" en la misma operacion: haber entrado a editar ES la revision.
+   * Ficha para el modal de edicion: el casillero mas sus tramites en curso. Con
+   * ese numero la web avisa ANTES de mover la direccion de un casillero con
+   * paquetes en camino, en vez de dejar que el administrador lo descubra en ruta.
    */
-  async update(id: string, input: UpdateClientInput): Promise<ClientListItem> {
+  async detail(id: string): Promise<ClientListItem & { activeShipmentCount: number }> {
+    const [item, activeShipmentCount] = await Promise.all([
+      this.get(id),
+      shipmentsRepo.countActiveByClient(id),
+    ]);
+    return { ...item, activeShipmentCount };
+  },
+
+  /**
+   * Edicion de la ficha por el administrador: lo comercial (tarifa y limite de
+   * credito) y los datos del titular (nombre, cedula, correo, telefono y
+   * direccion). Apaga el flag "Nuevo" en la misma operacion: haber entrado a
+   * editar ES la revision.
+   *
+   * A diferencia del perfil del cliente, aqui el correo SI se cambia: el bloqueo
+   * de `updateProfile` existe porque el cliente no puede verificar una direccion
+   * nueva, y el administrador es justo el camino que ese error le indica
+   * ("contacta a soporte"). Lo que arrastra cada dato delicado:
+   *
+   *   - CORREO (usuario de login). Debe estar libre en toda la poblacion, staff
+   *     incluido. La contrasena y las sesiones siguen igual: el titular entra con
+   *     el correo nuevo y la clave de siempre. Los enlaces de invitacion o de
+   *     restablecimiento que salieron a la direccion vieja se anulan (si el cambio
+   *     es porque la vieja no era suya, esos enlaces son una llave en manos
+   *     ajenas). Si el titular estaba a medio camino, se le reenvia a la nueva lo
+   *     que necesita: la invitacion si tenia una vigente, o el codigo de
+   *     verificacion si se autoregistro y no lo habia confirmado.
+   *   - CEDULA. Debe estar libre (una cedula = un casillero). NO se resincroniza
+   *     con Helga: el destinatario enlazado conserva la cedula con que se creo, y
+   *     el cambio queda en la bitacora del enlace para que se vea la diferencia.
+   *     Si el casillero aun no esta enlazado, el robot ya usara la nueva.
+   *   - DIRECCION. El administrador la mueve aunque haya tramites en curso (el
+   *     candado de `updateAddress` es para el autoservicio); la web le avisa
+   *     antes, porque la ruta de reparto y la hoja del mensajero la leen en vivo.
+   */
+  async update(
+    session: Session,
+    id: string,
+    input: UpdateClientInput,
+  ): Promise<ClientListItem & UpdateClientAccessNotice> {
     const current = await clientsRepo.findById(id);
     if (!current) throw ShipmentErrors.clientNotFound();
+
+    const emailChanged = input.email !== undefined && input.email !== current.email;
+    const idNumberChanged = input.idNumber !== undefined && input.idNumber !== current.idNumber;
+
+    // Unicidad ANTES de escribir nada: un choque a mitad dejaria la ficha a medias.
+    if (emailChanged) {
+      const clash = await authRepo.findUserByEmail(input.email!);
+      if (clash && clash.id !== current.userId) throw AuthErrors.emailInUse();
+    }
+    if (idNumberChanged) {
+      const clash = await authRepo.findClientByIdNumber(input.idNumber!);
+      if (clash && clash.id !== id) throw AuthErrors.idNumberInUse();
+    }
 
     await clientsRepo.update(id, {
       ...(input.clientRateId !== undefined ? { clientRateId: input.clientRateId } : {}),
@@ -140,10 +209,71 @@ export const clientsService = {
       ...(input.creditLimitCurrency !== undefined
         ? { creditLimitCurrency: input.creditLimitCurrency }
         : {}),
+      ...(idNumberChanged ? { idNumber: input.idNumber } : {}),
+      // El esquema garantiza que la direccion viene completa o no viene.
+      ...(input.provinceCode !== undefined
+        ? {
+            provinceCode: input.provinceCode,
+            cantonCode: input.cantonCode,
+            districtCode: input.districtCode,
+            addressLine: input.addressLine,
+          }
+        : {}),
       reviewStatus: ClientReviewStatus.Revisado,
     });
 
-    return this.get(id);
+    if (input.name !== undefined || input.phone !== undefined || emailChanged) {
+      await authRepo.updateUser(current.userId, {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.phone !== undefined ? { phone: input.phone } : {}),
+        ...(emailChanged ? { email: input.email } : {}),
+      });
+    }
+
+    if (idNumberChanged) {
+      const link = await providerLinkRepo.findByClientId(id);
+      if (link) {
+        await providerLinkRepo.addEvent({
+          clientId: id,
+          source: ProviderLinkSource.Manual,
+          status: link.status,
+          detail: link.helgaClientId
+            ? `Cédula cambiada por un administrador. El destinatario ${link.helgaClientId} en el operador conserva la anterior.`
+            : 'Cédula cambiada por un administrador antes del enlace con el operador.',
+          changes: { idNumber: { from: current.idNumber, to: input.idNumber! } },
+          createdBy: session.userId,
+        });
+      }
+    }
+
+    const notice = emailChanged ? await this.redirectPendingAccess(current.userId, input.email!) : {};
+    return { ...(await this.get(id)), ...notice };
+  },
+
+  /**
+   * Tras cambiar el correo: anula los enlaces que salieron a la direccion vieja y
+   * reenvia a la nueva lo que el titular tuviera pendiente para entrar.
+   *
+   * Se mira ANTES de anular si habia una invitacion vigente: despues ya no se
+   * distinguiria "nunca lo invitaron" (carga inicial; `send-invitations` lo
+   * recogera con el correo nuevo) de "lo invitaron y no la uso".
+   */
+  async redirectPendingAccess(userId: string, email: string): Promise<UpdateClientAccessNotice> {
+    const hadInvite = await authRepo.hasValidPasswordReset(userId, 'invite');
+    await authRepo.invalidatePasswordResets(userId, 'invite');
+    await authRepo.invalidatePasswordResets(userId, 'reset');
+
+    if (hadInvite) {
+      const inviteLink = await authService.issueInvitation(userId, email, 'client');
+      return { accessEmail: 'invitation', ...(inviteLink ? { inviteLink } : {}) };
+    }
+
+    const user = await authRepo.findUserById(userId);
+    if (user && !user.emailVerifiedAt && (await authRepo.latestVerification(userId))) {
+      await authService.issueVerificationCode(userId, email);
+      return { accessEmail: 'verification' };
+    }
+    return {};
   },
 
   /**
