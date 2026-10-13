@@ -18,6 +18,7 @@ import {
   STATE_LABELS,
   ShipmentType,
   lockerAddressFor,
+  parentLockerOf,
   roundWeightKg,
 } from '@courier/shared';
 import type {
@@ -33,6 +34,7 @@ import type {
   ShipmentDto,
   State,
 } from '@courier/shared';
+import { helgaPrincipalAccountCode } from '../../core/config';
 import { PublicApiErrors, ShipmentErrors } from '../../core/errors';
 import type { ApiClient } from '../../core/http';
 import { clientsRepo } from '../clients/clients.repo';
@@ -171,7 +173,12 @@ export const publicApiService = {
     return {
       clientCode: row.code,
       subLocker: row.helgaSubLocker,
-      lines: lockerAddressFor(row.name, row.code, warehouse),
+      lines: lockerAddressFor(
+        row.name,
+        row.code,
+        warehouse,
+        parentLockerOf(row.helgaSubLocker) ?? helgaPrincipalAccountCode,
+      ),
     };
   },
 

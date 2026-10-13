@@ -30,6 +30,7 @@ import {
   ProviderLinkSource,
   UserStatus,
   lockerAddressFor,
+  parentLockerOf,
   paged,
 } from '@courier/shared';
 import { randomBytes } from 'node:crypto';
@@ -44,6 +45,7 @@ import type {
   UpdateClientInput,
   UpdateProfileInput,
 } from '@courier/shared';
+import { helgaPrincipalAccountCode } from '../../core/config';
 import { AuthErrors, ClientErrors, ShipmentErrors } from '../../core/errors';
 import { authRepo } from '../auth/auth.repo';
 import { authService } from '../auth/auth.service';
@@ -373,7 +375,12 @@ export const clientsService = {
       clientCode: row.code,
       /** Sub-casillero del proveedor; `null` si el casillero aun no se sincronizo. */
       subLocker: row.helgaSubLocker,
-      lines: lockerAddressFor(row.name, row.code, warehouse),
+      lines: lockerAddressFor(
+        row.name,
+        row.code,
+        warehouse,
+        parentLockerOf(row.helgaSubLocker) ?? helgaPrincipalAccountCode,
+      ),
     };
   },
 

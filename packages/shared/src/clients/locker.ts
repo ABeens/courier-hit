@@ -117,23 +117,69 @@ export function warehouseAddressLines(warehouse: MiamiWarehouse = MIAMI_WAREHOUS
 }
 
 /**
+ * Casillero de la CUENTA PADRE del cliente ante el proveedor, deducido de su
+ * sub-casillero:
+ *
+ * - Cliente de la cuenta principal: `SJO008835S033` -> `SJO008835` (se quita el
+ *   consecutivo `S...` del destinatario).
+ * - Cliente consolidado de una cuenta exclusiva: su sub-casillero ya ES el codigo
+ *   de la cuenta (`SJO009623`), asi que se devuelve tal cual.
+ *
+ * `null` si no hay sub-casillero o no tiene la forma esperada: quien llama decide
+ * el respaldo (la cuenta principal).
+ */
+export function parentLockerOf(subLocker: string | null | undefined): string | null {
+  const match = subLocker?.trim().toUpperCase().match(/^([A-Z]{3}\d{6,7})(?:S\d{1,4})?$/);
+  return match ? match[1]! : null;
+}
+
+/**
+ * Codigo de casillero como lo lee el cliente: el prefijo separado del numero
+ * (`SJO008835` -> `SJO 008835`), igual que en la suite de la bodega. Un codigo
+ * que no tenga esa forma se devuelve sin tocar.
+ */
+export function formatParentLocker(code: string): string {
+  const match = code.trim().toUpperCase().match(/^([A-Z]+)\s*(\d+)$/);
+  return match ? `${match[1]} ${match[2]}` : code.trim();
+}
+
+/**
+ * Linea "Apto / Suite" del cliente: la suite configurada de la bodega con el
+ * casillero de SU cuenta padre al final (`Suite 700 SJO 008835`).
+ *
+ * La suite configurada ya trae incrustado el casillero maestro (asi la dicta el
+ * negocio y asi la ve la web publica). Se quita ese codigo del final y se pone el
+ * de la cuenta del cliente: para la mayoria es el mismo, pero un cliente
+ * consolidado recibe en Miami bajo su propia cuenta y es ese numero el que debe
+ * pegar en el checkout.
+ */
+function suiteFor(addressLine2: string, parentLocker: string): string {
+  const base = addressLine2.replace(/\s*[A-Z]{3}\s?\d{6,7}\s*$/i, '').trim();
+  const locker = formatParentLocker(parentLocker);
+  return base ? `${base} ${locker}` : locker;
+}
+
+/**
  * Direccion completa de envio del cliente, en el orden en que se llena un
  * formulario de compra en USA. Punto UNICO donde se arma esa direccion: la usan
  * la pantalla de Casillero y cualquier correo que la incluya.
+ *
+ * `parentLocker` es el casillero de la cuenta padre del cliente (ver
+ * `parentLockerOf`); sin el, se usa el maestro de HS Global.
  */
 export function lockerAddressFor(
   clientName: string,
   clientCode: string,
   warehouse: MiamiWarehouse = MIAMI_WAREHOUSE,
+  parentLocker: string = MASTER_LOCKER_ID,
 ): LockerAddressLine[] {
   const locker = lockerIdFor(clientCode);
   return [
     { label: 'Nombre', value: `${clientName} ${locker}` },
     { label: 'Dirección', value: warehouse.addressLine1 },
-    // La suite NO lleva el codigo del cliente: el negocio la define igual para
-    // todos (hoy "Suite 700 SJO 008835"). Lo unico que distingue al
-    // destinatario es la linea de Nombre.
-    { label: 'Apto / Suite', value: warehouse.addressLine2 },
+    // La suite lleva el casillero de la CUENTA PADRE del cliente (separado
+    // "SJO 008835"), no su codigo HS: ese va en la linea de Nombre.
+    { label: 'Apto / Suite', value: suiteFor(warehouse.addressLine2, parentLocker) },
     { label: 'Ciudad', value: warehouse.city },
     { label: 'Estado', value: warehouse.state },
     { label: 'Código postal', value: warehouse.zipCode },
