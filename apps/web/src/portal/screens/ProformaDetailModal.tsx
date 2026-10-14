@@ -278,7 +278,7 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
 
   return (
     <ModalOverlay onClose={onClose}>
-      <div className="modal modal-wide fadeUp" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal modal-wide proforma-detail fadeUp" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>{data ? (data.number ? `Proforma ${data.number}` : 'Proforma en borrador') : 'Proforma'}</h3>
           {data && (
@@ -302,7 +302,7 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
 
           {data && (
             <>
-              <div className="pay-sec is-money">
+              <div className="pay-sec is-money proforma-summary">
                 <div className="card-sec-title">Resumen</div>
                 <dl className="pay-fields">
                   <div className="card-item-field">
@@ -372,11 +372,6 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
                     </div>
                   )}
                 </dl>
-                {data.status === ProformaStatus.Borrador && data.accumulates && (
-                  <div className="field-hint">
-                    Es el borrador abierto del cliente: los paquetes que se reciban entran aquí hasta que se apruebe.
-                  </div>
-                )}
               </div>
 
               <div className="pay-sec">

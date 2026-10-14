@@ -24,6 +24,7 @@ import { isHelgaEnabled } from '../../integrations/helga/helga.client';
 import { users } from '../../modules/auth/auth.schema';
 import { authService } from '../../modules/auth/auth.service';
 import { notificationsService } from '../../modules/notifications/notifications.service';
+import { proformaDraftsService } from '../../modules/proformas/proforma-drafts.service';
 import { providerDiscoveryService } from '../../modules/shipments/provider-discovery.service';
 import { providerSyncService } from '../../modules/shipments/provider-sync.service';
 import { shipmentsService } from '../../modules/shipments/shipments.service';
@@ -42,6 +43,7 @@ const JobLock = {
   PrealertReconcile: 4803,
   ProviderDiscovery: 4804,
   DailyDigest: 4805,
+  DraftFreightReconcile: 4806,
 } as const;
 
 /** Definicion de una tarea de sincronizacion, tal como se registra. */
@@ -184,6 +186,29 @@ export function registerJobs(scheduler: Scheduler): void {
       },
     });
   }
+
+  // --- Flete faltante en borradores de proforma ---
+  // No depende de Helga. El flete se calcula al entrar a facturacion; si en ese
+  // momento faltaba peso, tarifa o tasa, el paquete quedaba en $0 hasta que
+  // alguien guardara sus costos a mano. Esta tarea lo reintenta.
+  registerSyncJob(scheduler, {
+    name: 'draft-freight-reconcile',
+    every: config.ROBOT_DRAFT_FREIGHT_EVERY,
+    lockKey: JobLock.DraftFreightReconcile,
+    run: async () => {
+      const session = await resolveSystemSession();
+      if (!session) {
+        console.warn('[scheduler] draft-freight-reconcile: no hay staff activo; se omite.');
+        return;
+      }
+      const r = await proformaDraftsService.reconcileMissingFreight(session);
+      if (r.checked === 0) return;
+      console.log(
+        `[scheduler] draft-freight-reconcile: revisados=${r.checked} con_flete=${r.priced} ` +
+          `sin_peso=${r.sin_peso} sin_tarifa=${r.sin_tarifa} sin_tasa=${r.sin_tasa}`,
+      );
+    },
+  });
 
   // --- Correo diario al cliente (decision P16 del SOW de proformas) ---
   // No depende de Helga: corre siempre que el robot este encendido. Pregunta cada

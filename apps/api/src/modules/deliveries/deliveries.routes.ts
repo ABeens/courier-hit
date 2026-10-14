@@ -1,7 +1,8 @@
 /**
  * Rutas del modulo de entregas. TODO el modulo exige sesion + delivery.manage:
- * es el unico recurso del sistema con una sola poblacion (Mensajeria, y el
- * administrador por herencia), asi que la barrera puede ir en el router.
+ * todo el que entra (Mensajeria, Operativo para las entregas desde bodega, y el
+ * administrador por herencia) puede todo el modulo, asi que la barrera puede ir
+ * en el router.
  *
  * El registro del intento va como multipart porque lleva las fotos; el resto del
  * modulo es JSON.

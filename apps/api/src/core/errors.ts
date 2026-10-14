@@ -500,17 +500,6 @@ export const ShipmentErrors = {
   /** Se pidio restaurar algo que no estaba descartado. */
   notDiscarded: () =>
     new AppError('SHIPMENT_NOT_DISCARDED', 'El paquete no está descartado.', 409),
-  /**
-   * Descartar es la salida de un paquete que nunca tuvo dueño. Uno que ya lo
-   * tiene es un tramite normal y se enmienda por el flujo (corregir estado,
-   * reversar costos), no archivandolo por la puerta de atras.
-   */
-  discardOnlyUnassigned: () =>
-    new AppError(
-      'SHIPMENT_DISCARD_ONLY_UNASSIGNED',
-      'Solo se pueden descartar paquetes sin dueño. Este ya tiene casillero asignado.',
-      409,
-    ),
 };
 
 /**

@@ -11,9 +11,17 @@
  *   - NUMERO SIN HUECOS: el contador se lee y se avanza con bloqueo de fila en la
  *     misma transaccion que aprueba (`takeNumbers`).
  */
-import { and, asc, count, desc, eq, ilike, inArray, max, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, max, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
-import { PaymentStatus, ProformaStatus, toSlice } from '@courier/shared';
+import {
+  CostLineSource,
+  Flow as FlowKind,
+  PaymentStatus,
+  ProformaStatus,
+  ShipmentType,
+  flowForType,
+  toSlice,
+} from '@courier/shared';
 import type { Currency, Flow, ListProformasQuery, ProformaFilter } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
@@ -529,6 +537,45 @@ export const proformasRepo = {
   },
 
   /** La proforma en la que esta el tramite, o null si no esta en ninguna. */
+  /**
+   * Paquetes de Paqueteria que estan en un BORRADOR sin linea de flete, con lo
+   * que `proformaDraftsService.refreshFreight` necesita para cotizarlos. Los mas
+   * antiguos primero: si el lote se corta, los que esperan hace mas no se quedan
+   * siempre atras.
+   */
+  async draftPackagesWithoutFreight(limit: number) {
+    const packageTypes = Object.values(ShipmentType).filter(
+      (t) => flowForType(t) === FlowKind.Paqueteria,
+    );
+    return db
+      .select({
+        id: shipments.id,
+        clientId: shipments.clientId,
+        shipmentType: shipments.shipmentType,
+        weightKg: shipments.weightKg,
+        costsApprovedAt: shipments.costsApprovedAt,
+      })
+      .from(proformaShipments)
+      .innerJoin(proformas, eq(proformaShipments.proformaId, proformas.id))
+      .innerJoin(shipments, eq(proformaShipments.shipmentId, shipments.id))
+      .where(
+        and(
+          eq(proformas.status, ProformaStatus.Borrador),
+          inArray(shipments.shipmentType, packageTypes),
+          isNotNull(shipments.clientId),
+          isNull(shipments.costsApprovedAt),
+          isNull(shipments.discardedAt),
+          sql`not exists (
+            select 1 from ${shipmentCosts}
+            where ${shipmentCosts.shipmentId} = ${shipments.id}
+              and ${shipmentCosts.source} = ${CostLineSource.Freight}
+          )`,
+        ),
+      )
+      .orderBy(asc(proformaShipments.addedAt))
+      .limit(limit);
+  },
+
   async findByShipment(shipmentId: string) {
     const [row] = await db
       .select({ proforma: proformas })

@@ -23,10 +23,9 @@
  *
  * Las acciones que ofrece cada ficha dependen de en cuál de las dos está, y no
  * por estética: un paquete sin dueño no puede moverse de estado (todo lo que
- * viene después pregunta por el casillero), y uno que ya lo tiene no se puede
- * descartar (eso se enmienda por el flujo, no archivándolo por la puerta de
- * atrás). La API aplica las dos reglas; aquí solo se dejan de ofrecer los botones
- * que iba a rechazar.
+ * viene después pregunta por el casillero). Descartar sí se ofrece en las dos.
+ * La API aplica la regla; aquí solo se deja de ofrecer el botón que iba a
+ * rechazar.
  */
 import { useState } from 'react';
 import {
@@ -76,8 +75,7 @@ const DEFAULT_VIEW: ControlRoomView = 'todos';
 const VIEW_PARAMS: Record<ControlRoomView, Record<string, string>> = {
   'sin-dueno': { owner: 'unassigned' },
   todos: { owner: 'all' },
-  // Solo se descartan paquetes sin dueño, así que `owner=all` no ensancha nada
-  // hoy; se deja explícito para que la pila siga completa si eso cambiara.
+  // Se descartan paquetes con y sin dueño: `owner=all` trae los dos.
   descartados: { owner: 'all', discarded: 'true' },
 };
 
@@ -307,17 +305,12 @@ export function ControlRoomScreen({ role }: { role: Role }) {
                       {!unassigned && canCorrectState && (
                         <IconButton label="Corregir estado" icon="undo" onClick={() => setCorrecting(row)} />
                       )}
-                      {/* Descartar es la salida del que nunca tuvo dueño. Uno que
-                          ya lo tiene es un trámite normal y se enmienda por el
-                          flujo, no archivándolo. */}
-                      {unassigned && (
-                        <IconButton
-                          label="Descartar paquete"
-                          icon="trash"
-                          tone="danger"
-                          onClick={() => setDiscarding(row)}
-                        />
-                      )}
+                      <IconButton
+                        label="Descartar paquete"
+                        icon="trash"
+                        tone="danger"
+                        onClick={() => setDiscarding(row)}
+                      />
                       <IconButton
                         label={unassigned ? 'Asignar dueño' : 'Cambiar dueño'}
                         icon="userSwap"

@@ -266,16 +266,14 @@ export interface ShipmentDto {
   paymentGateWaived: boolean;
 
   /**
-   * Descarte de un paquete sin dueño: el instante en que un administrador decidio
+   * Descarte de un paquete: el instante en que un administrador decidio
    * que ese bulto no da para mas (llego destrozado, era basura de relleno, se
    * devolvio al operador de Miami). Null en todo tramite vivo.
    *
    * Es un ARCHIVADO, no un DELETE. La fila se queda porque documenta que ese
    * paquete estuvo fisicamente en la bodega, que es justo lo que alguien va a
-   * preguntar dentro de seis meses; lo que desaparece es de las pantallas. Solo
-   * se puede descartar mientras el paquete no tiene dueño: en cuanto se le asigna
-   * uno pasa a ser un tramite normal, y esos se enmiendan por el flujo (corregir
-   * estado, reversar costos), no borrandolos.
+   * preguntar dentro de seis meses; lo que desaparece es de las pantallas. Se
+   * puede descartar con o sin dueño.
    */
   discardedAt: string | null;
   /** Motivo del descarte, obligatorio al descartar. Null si el tramite esta vivo. */

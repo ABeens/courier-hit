@@ -647,6 +647,25 @@ select.input { cursor: pointer; padding-right: 30px; }
 .table-costs tbody td > span.muted,
 .table-costs tbody td > strong:first-child { display: inline-flex; align-items: center; min-height: 32px; }
 .table-costs tbody td > strong:first-child + .field-hint { margin-top: 0; }
+
+/* ---- Editor de costos (tramite y proforma): densidad ----
+   Lo que se trabaja son las lineas: cabecera y controles se aprietan para
+   dejarles el alto del modal. */
+.costs-editor .modal-head { padding: 12px 20px; }
+.costs-editor .modal-head h3 { font-size: 16px; }
+.costs-editor .modal-head p { font-size: 12.5px; margin-top: 1px; }
+.costs-editor .modal-body { padding: 12px 20px; gap: 10px; }
+.costs-editor .table-costs .field-hint { margin-top: 2px; font-size: 11.5px; line-height: 1.3; }
+/* Tasa, moneda y "Agregar línea" en una sola fila; la etiqueta va al lado del
+   campo y no encima. En pantallas angostas saltan de linea. */
+.costs-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
+.costs-bar-field { display: inline-flex; align-items: center; gap: 8px; cursor: help; }
+.costs-bar-field > span { font-size: 12.5px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.costs-bar-field .input { height: 32px; padding: 0 10px; font-size: 13px; width: auto; }
+.costs-bar-field input.input { width: 110px; }
+.costs-bar-field input#c-proforma-currency { width: 140px; }
+.costs-bar-field select.input { padding-right: 30px; }
+.costs-bar-add { margin-left: auto; }
 /* Fila recien agregada: destella al nacer y queda con una marca al costado
    hasta la siguiente alta o hasta guardar. Sin esto, una linea nueva al final de
    una tabla larga no se nota: aparece fuera de la vista y todas las filas se
@@ -782,6 +801,25 @@ select.input { cursor: pointer; padding-right: 30px; }
 /* Botones de la pasarela simulada dentro de su panel. No reutiliza
    `.modal-foot`: ese es el pie del modal, con borde superior y pegado al fondo. */
 .pay-sec-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+/* ---- Detalle de proforma: densidad ----
+   Lo que se trabaja aqui son los costos de los tramites, que crecen hacia abajo.
+   Cabecera, paneles y resumen se aprietan para dejarles el alto del modal. */
+.proforma-detail .modal-head { padding: 12px 20px; }
+.proforma-detail .modal-head h3 { font-size: 16px; }
+.proforma-detail .modal-head p { font-size: 12.5px; margin-top: 1px; }
+.proforma-detail .modal-body { padding: 12px 20px; gap: 10px; }
+.proforma-detail .pay-sec { padding: 9px 12px; gap: 7px; }
+/* Resumen en una sola franja: el titulo va a la izquierda de los campos y no
+   encima, y las cifras bajan a la escala del resto. */
+.proforma-detail .proforma-summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 7px 12px;
+}
+.proforma-detail .proforma-summary .pay-fields { gap: 6px 20px; align-items: center; }
+.proforma-detail .proforma-summary .card-item-field dd.pay-due { font-size: 15px; }
+.proforma-detail .proforma-summary .spill { font-size: 11.5px; padding: 2px 8px 2px 7px; gap: 6px; }
+.proforma-detail .proforma-summary .spill .dot { width: 6px; height: 6px; }
+.proforma-detail .proforma-summary .input { height: 28px; padding: 0 28px 0 8px; font-size: 12.5px; }
 
 /* ---- Historial de abonos (vista de staff) ----
    Cada abono es un movimiento con su propia historia: quien lo registro, quien

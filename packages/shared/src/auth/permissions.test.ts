@@ -43,14 +43,14 @@ test('el Operativo puede sacar a ruta un paquete pagado', () => {
 });
 
 /**
- * Despachar no es entregar: sacar a ruta no le abre al Operativo el modulo de
- * Entregas (ni el menu, ni confirmar, ni devolver).
+ * Desde la bodega tambien se entrega directo a algunos clientes: el Operativo
+ * ve el modulo de Entregas (menu, confirmar y devolver a bodega).
  */
-test('el Operativo no ve el modulo de Entregas', () => {
-  assert.equal(can(Role.Operativo, Permission.DeliveryManage), false);
-  assert.equal(resourcesFor(Role.Operativo).has(Resource.Delivery), false);
-  assert.equal(can(Role.Operativo, permissionFor(Flow.Paqueteria, State.Entregado)!), false);
-  assert.equal(can(Role.Operativo, permissionFor(Flow.Paqueteria, State.DevueltoBodega)!), false);
+test('el Operativo entra al modulo de Entregas', () => {
+  assert.equal(can(Role.Operativo, Permission.DeliveryManage), true);
+  assert.equal(resourcesFor(Role.Operativo).has(Resource.Delivery), true);
+  assert.equal(can(Role.Operativo, permissionFor(Flow.Paqueteria, State.Entregado)!), true);
+  assert.equal(can(Role.Operativo, permissionFor(Flow.Paqueteria, State.DevueltoBodega)!), true);
 });
 
 test('Mensajeria sigue despachando y entregando', () => {

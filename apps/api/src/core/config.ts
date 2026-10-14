@@ -448,6 +448,16 @@ const EnvSchema = z.object({
     .refine(isValidDuration, {
       message: 'ROBOT_DAILY_DIGEST_CHECK_EVERY debe ser una duracion valida (p. ej. "5m", "10m").',
     }),
+  /**
+   * Reintentar el flete de los paquetes que quedaron en un borrador de proforma
+   * sin el (faltaba peso, tarifa o tasa al entrar a facturacion).
+   */
+  ROBOT_DRAFT_FREIGHT_EVERY: z
+    .string()
+    .default('15m')
+    .refine(isValidDuration, {
+      message: 'ROBOT_DRAFT_FREIGHT_EVERY debe ser una duracion valida (p. ej. "15m", "1h").',
+    }),
   /** Preguntarle a Helga el estado de cada paquete y avanzar los tramites. */
   ROBOT_PROVIDER_SYNC_EVERY: z
     .string()

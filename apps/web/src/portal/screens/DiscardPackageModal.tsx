@@ -1,5 +1,5 @@
 /**
- * Descartar un paquete sin dueño — permiso control_room.manage.
+ * Descartar un paquete, tenga dueño o no. Permiso control_room.manage.
  *
  * «Descartar» y no «borrar»: la fila se archiva con su motivo en vez de
  * desaparecer. El bulto estuvo físicamente en la bodega, y esa evidencia es justo
@@ -79,6 +79,13 @@ export function DiscardPackageModal({ row, onClose, onSaved }: Props) {
             El registro no se borra: se archiva. Sale de la cola de trabajo y libera su guía, y
             puedes deshacerlo desde la pestaña «Descartados».
           </div>
+
+          {row.client !== null && (
+            <div className="banner" style={{ background: 'var(--paper-2)', color: 'var(--muted)' }}>
+              Este paquete tiene dueño: dejará de verse en el portal del cliente, en entregas y en
+              reportes mientras esté descartado.
+            </div>
+          )}
         </div>
 
         <div className="modal-foot">

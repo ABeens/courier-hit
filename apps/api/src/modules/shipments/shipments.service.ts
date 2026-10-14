@@ -1323,23 +1323,22 @@ export const shipmentsService = {
   },
 
   /**
-   * Archiva un paquete sin dueño: llego destrozado, era relleno de la carga, se
-   * devolvio al operador de Miami o simplemente no da para mas.
+   * Archiva un paquete, tenga dueño o no: llego destrozado, era relleno de la
+   * carga, se devolvio al operador de Miami o simplemente no da para mas.
    *
    * NO borra la fila. El bulto estuvo fisicamente en la bodega y esa evidencia es
    * justo lo que alguien va a reclamar dentro de seis meses; lo que desaparece es
    * de las pantallas y del indice de trackings activos, para que un desconocido
    * mal digitado no bloquee el alta del envio legitimo que traiga esa guia.
    *
-   * Solo aplica a paquetes SIN dueño. Uno que ya tiene casillero es un tramite
-   * normal, y esos se enmiendan por el flujo (corregir estado, reversar costos),
-   * no archivandolos por la puerta de atras.
+   * Con dueño, el tramite deja de verse tambien en el portal del cliente, en las
+   * entregas y en los reportes, y una proforma en borrador que lo incluya ya no
+   * se puede aprobar hasta quitarlo o restaurarlo.
    */
   async discard(session: Session, id: string, input: DiscardShipmentInput): Promise<ShipmentDto> {
     const current = await shipmentsRepo.findById(id);
     if (!current) throw ShipmentErrors.notFound();
     if (current.discardedAt !== null) throw ShipmentErrors.discarded();
-    if (current.clientId !== null) throw ShipmentErrors.discardOnlyUnassigned();
 
     await shipmentsRepo.setDiscarded(
       id,

@@ -466,7 +466,7 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
   /** Aprobar guarda primero: nunca se congela un total distinto al que se ve. */
   return (
     <ModalOverlay onClose={onClose}>
-      <div className="modal modal-wide fadeUp" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal modal-wide costs-editor fadeUp" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           {target.kind === 'shipment' ? (
             <>
@@ -494,77 +494,79 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
             </div>
           )}
 
-          <div>
-            <label className="field-label" htmlFor="c-rate">
-              Tasa de cambio (colones por 1 dólar)
-            </label>
-            <input
-              id="c-rate" className="input" type="number" min="0" step="0.01"
-              value={rate} disabled={approved || !canEditRate} placeholder="512.75"
-              onChange={(e) => setRate(e.target.value)}
-            />
+          {/* Tasa, moneda y "Agregar línea" en una sola barra: el alto del modal
+              es para las lineas. Las explicaciones van como tooltip. */}
+          <div className="costs-bar">
             {/* La vigente es la que manda; la publicada se nombra como lo que es,
                 una referencia, para que nadie la lea como "la tasa del sistema". */}
-            <div className="field-hint">
-              {!canEditRate
-                ? 'La tasa de cambio es un valor general del sistema: solo un administrador puede modificarla, en Configuración.'
-                : `Viene de la tasa vigente del sistema${
-                    data?.globalExchangeRate != null ? ` (${data.globalExchangeRate})` : ''
-                  }; puedes ajustarla solo para ${target.kind === 'shipment' ? 'este trámite' : 'esta proforma'}.${
-                    data?.referenceExchangeRate != null
-                      ? ` Referencia del BCCR hoy: ${data.referenceExchangeRate}.`
-                      : ''
-                  }`}
-            </div>
-          </div>
-
-          {/* Moneda de cobro: en Transporte y Agenciamiento la elige el operador
-              mientras la proforma es borrador. En Paqueteria (siempre dolares) o
-              con la proforma aprobada solo se informa. */}
-          {data?.proformaCurrency && (
-            <div>
-              <label className="field-label" htmlFor="c-proforma-currency">
-                Moneda de la proforma
-              </label>
-              {proformaCurrency !== null && !approved ? (
-                <select
-                  id="c-proforma-currency" className="input" value={proformaCurrency}
-                  onChange={(e) => setProformaCurrency(e.target.value as Currency)}
-                >
-                  {/* Solo llega aqui una moneda elegible (Transporte y
-                      Agenciamiento), que admite las dos. */}
-                  {Object.values(Currency).map((c) => (
-                    <option key={c} value={c}>{CURRENCY_LABELS[c]}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  id="c-proforma-currency" className="input" disabled
-                  value={CURRENCY_LABELS[data.proformaCurrency.currency]}
-                />
-              )}
-              <div className="field-hint">
-                {proformaCurrency !== null && !approved
-                  ? `Es la moneda en que se le cobra al cliente${
-                      data.proformaCurrency.shipmentCount > 1
-                        ? `, para los ${data.proformaCurrency.shipmentCount} trámites de la proforma`
+            <label
+              className="costs-bar-field"
+              title={
+                !canEditRate
+                  ? 'La tasa de cambio es un valor general del sistema: solo un administrador puede modificarla, en Configuración.'
+                  : `Viene de la tasa vigente del sistema${
+                      data?.globalExchangeRate != null ? ` (${data.globalExchangeRate})` : ''
+                    }; puedes ajustarla solo para ${target.kind === 'shipment' ? 'este trámite' : 'esta proforma'}.${
+                      data?.referenceExchangeRate != null
+                        ? ` Referencia del BCCR hoy: ${data.referenceExchangeRate}.`
                         : ''
-                    }. Cada línea conserva su propia moneda; el total se convierte con la tasa de cambio.`
-                  : 'Es la moneda en que se le cobra al cliente.'}
-              </div>
-            </div>
-          )}
+                    }`
+              }
+            >
+              <span>Tasa (₡ por $1)</span>
+              <input
+                id="c-rate" className="input" type="number" min="0" step="0.01"
+                value={rate} disabled={approved || !canEditRate} placeholder="512.75"
+                onChange={(e) => setRate(e.target.value)}
+              />
+            </label>
 
-          {/* El boton va ARRIBA porque la fila nueva aparece arriba: el gesto y
-              su resultado quedan juntos. El concepto se elige dentro de la fila,
-              asi que aqui afuera no hay catalogo que mostrar. */}
-          {!approved && (
-            <div className="actions">
-              <button type="button" className="btn btn-ghost btn-sm" onClick={addLine}>
+            {/* Moneda de cobro: en Transporte y Agenciamiento la elige el operador
+                mientras la proforma es borrador. En Paqueteria (siempre dolares) o
+                con la proforma aprobada solo se informa. */}
+            {data?.proformaCurrency && (
+              <label
+                className="costs-bar-field"
+                title={
+                  proformaCurrency !== null && !approved
+                    ? `Es la moneda en que se le cobra al cliente${
+                        data.proformaCurrency.shipmentCount > 1
+                          ? `, para los ${data.proformaCurrency.shipmentCount} trámites de la proforma`
+                          : ''
+                      }. Cada línea conserva su propia moneda; el total se convierte con la tasa de cambio.`
+                    : 'Es la moneda en que se le cobra al cliente.'
+                }
+              >
+                <span>Moneda de la proforma</span>
+                {proformaCurrency !== null && !approved ? (
+                  <select
+                    id="c-proforma-currency" className="input" value={proformaCurrency}
+                    onChange={(e) => setProformaCurrency(e.target.value as Currency)}
+                  >
+                    {/* Solo llega aqui una moneda elegible (Transporte y
+                        Agenciamiento), que admite las dos. */}
+                    {Object.values(Currency).map((c) => (
+                      <option key={c} value={c}>{CURRENCY_LABELS[c]}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="c-proforma-currency" className="input" disabled
+                    value={CURRENCY_LABELS[data.proformaCurrency.currency]}
+                  />
+                )}
+              </label>
+            )}
+
+            {/* El boton va ARRIBA porque la fila nueva aparece arriba: el gesto y
+                su resultado quedan juntos. El concepto se elige dentro de la fila,
+                asi que aqui afuera no hay catalogo que mostrar. */}
+            {!approved && (
+              <button type="button" className="btn btn-ghost btn-sm costs-bar-add" onClick={addLine}>
                 + Agregar línea
               </button>
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="table-wrap">
             <table className="table table-costs">

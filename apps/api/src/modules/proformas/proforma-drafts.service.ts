@@ -54,6 +54,22 @@ export interface DraftSubject {
   costsApprovedAt: Date | null;
 }
 
+/** Por que no se pudo calcular el flete de un paquete en borrador. */
+export type FreightMissing = 'sin_peso' | 'sin_tarifa' | 'sin_tasa';
+
+/**
+ * Resultado de `refreshFreight`: `priced` si quedo con flete, el motivo si no se
+ * pudo, y `not_applicable` si el paquete no lleva flete recalculable (otro flujo,
+ * sin dueño, factura congelada o fuera de un borrador).
+ */
+export type FreightOutcome = 'priced' | FreightMissing | 'not_applicable';
+
+/** Resumen de una corrida de `reconcileMissingFreight`. */
+export type FreightReconcileReport = { checked: number; priced: number } & Record<FreightMissing, number>;
+
+/** Paquetes por corrida del robot: acota la pasada si se acumularan muchos. */
+const RECONCILE_BATCH = 200;
+
 /**
  * Tasa con la que se guarda la linea de flete: la que ya tienen las demas
  * lineas del tramite (todas comparten una, ver `costsService.save`) o, si es la
@@ -114,23 +130,42 @@ export const proformaDraftsService = {
    * a mano se quedan. Sin peso (o sin tarifa) se quita el flete: un monto que ya
    * no se puede justificar no deberia seguir en el borrador.
    */
-  async refreshFreight(session: Session, shipment: DraftSubject): Promise<void> {
-    if (flowForType(shipment.shipmentType) !== Flow.Paqueteria) return;
-    if (shipment.clientId === null || shipment.costsApprovedAt !== null) return;
+  async refreshFreight(
+    session: Session,
+    shipment: DraftSubject,
+    options: { quiet?: boolean } = {},
+  ): Promise<FreightOutcome> {
+    if (flowForType(shipment.shipmentType) !== Flow.Paqueteria) return 'not_applicable';
+    if (shipment.clientId === null || shipment.costsApprovedAt !== null) return 'not_applicable';
 
     const proforma = await proformasRepo.findByShipment(shipment.id);
-    if (!proforma || !isProformaEditable(proforma.status)) return;
+    if (!proforma || !isProformaEditable(proforma.status)) return 'not_applicable';
+
+    /**
+     * Las tres faltas dejan el paquete en el borrador con $0, y antes lo hacian
+     * en silencio: nadie se enteraba hasta abrir los costos y guardar a mano. Se
+     * avisan en el log con su motivo. `quiet` lo usa el robot, que repasa los
+     * mismos paquetes cada corrida y resume los motivos en una sola linea.
+     */
+    const missing = (reason: FreightMissing): FreightMissing => {
+      if (!options.quiet) {
+        console.warn(`[proformas] flete sin calcular (${reason}) para el trámite ${shipment.id}.`);
+      }
+      return reason;
+    };
 
     const freight = await buildFreight({ clientId: shipment.clientId, weightKg: shipment.weightKg });
     if (!freight) {
       await costsRepo.replaceFreightLine(shipment.id, null);
-      return;
+      // `buildFreight` devuelve null por falta de peso o de tarifa: el peso se
+      // mira aqui para poder decir cual de las dos fue.
+      return missing(shipment.weightKg ? 'sin_tarifa' : 'sin_peso');
     }
 
     const exchangeRate = await freightExchangeRate(shipment.id);
     // Sin tasa valida el flete no se puede guardar (M5). El borrador sigue, sin
     // flete, y el operador lo completa cuando haya tasa.
-    if (exchangeRate === null) return;
+    if (exchangeRate === null) return missing('sin_tasa');
 
     await costsRepo.replaceFreightLine(shipment.id, {
       shipmentId: shipment.id,
@@ -145,6 +180,35 @@ export const proformaDraftsService = {
       exchangeRate,
       createdBy: session.userId,
     });
+    return 'priced';
+  },
+
+  /**
+   * Red de seguridad del robot: recalcula el flete de los paquetes que estan en
+   * un borrador SIN linea de flete.
+   *
+   * El flete se calcula al entrar a facturacion y cuando cambia el peso o el
+   * dueño. Si en ese momento faltaba algo (peso, tarifa o tasa), el paquete
+   * quedaba en $0 hasta que alguien abriera sus costos y guardara a mano, aunque
+   * el dato faltante llegara despues por otro camino. Aqui se reintenta: los que
+   * ya se pueden cotizar quedan con su flete, y los demas se cuentan por motivo.
+   *
+   * Solo toca paquetes SIN flete: uno con flete (calculado o ajustado a mano por
+   * el operador) se respeta tal cual.
+   */
+  async reconcileMissingFreight(session: Session): Promise<FreightReconcileReport> {
+    const report: FreightReconcileReport = { checked: 0, priced: 0, sin_peso: 0, sin_tarifa: 0, sin_tasa: 0 };
+    for (const shipment of await proformasRepo.draftPackagesWithoutFreight(RECONCILE_BATCH)) {
+      report.checked += 1;
+      try {
+        const outcome = await this.refreshFreight(session, shipment, { quiet: true });
+        if (outcome !== 'not_applicable') report[outcome] += 1;
+      } catch (err) {
+        // Un paquete con problemas no frena a los demas.
+        console.error(`[proformas] no se pudo recalcular el flete del trámite ${shipment.id}:`, err);
+      }
+    }
+    return report;
   },
 
   /**

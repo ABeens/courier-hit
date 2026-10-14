@@ -264,8 +264,9 @@ export enum Permission {
    * VA APARTE DE `delivery.manage` PORQUE NO ES EL MISMO TRABAJO. Despachar
    * cierra la operacion de bodega: lo hace quien cobro y preparo el paquete.
    * Gestionar la entrega es el trabajo de la calle (dashboard de ruta, confirmar
-   * con foto, devolver a bodega) y es un modulo propio del menu. Con un solo
-   * permiso, dejar despachar al Operativo le abria de paso el modulo de Entregas.
+   * con foto, devolver a bodega) y es un modulo propio del menu. Hoy el
+   * Operativo lleva los dos (tambien entrega desde la bodega), pero siguen
+   * siendo permisos separados para poder repartirlos distinto por rol.
    *
    * Cuelga de Resource.Proformas y no de Resource.Delivery por eso mismo: el menu
    * se deriva de los recursos (`resourcesFor`), y el despacho se hace desde la
@@ -545,9 +546,12 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   // Operativo que cobro la proforma tenia que esperar a un administrador para
   // despacharla.
   //
-  // Lo que NO lleva, y por eso no aparece aqui: el modulo de Entregas
-  // (`delivery.manage`, confirmar y devolver es trabajo de Mensajeria) y la
-  // APROBACION de esos depositos (`payments.validate`). Antes tampoco facturaba Agenciamiento
+  // Y lleva el modulo de Entregas (`delivery.manage`): desde la bodega tambien
+  // se le entrega directo a algunos clientes, y esa entrega la confirma (o la
+  // devuelve) el mismo Operativo, sin pasar por Mensajeria.
+  //
+  // Lo que NO lleva, y por eso no aparece aqui: la APROBACION de esos depositos
+  // (`payments.validate`). Antes tampoco facturaba Agenciamiento
   // (`costs.tramite.manage` era solo del administrador); con el modulo de
   // proformas factura las tres verticales.
   [Role.Operativo]: [
@@ -562,6 +566,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ProformasManage,
     Permission.PaymentsRecord,
     Permission.DeliveryDispatch,
+    Permission.DeliveryManage,
     Permission.ReportsOperationalBasic,
     Permission.ReportsOperational,
     Permission.ClientsRead,

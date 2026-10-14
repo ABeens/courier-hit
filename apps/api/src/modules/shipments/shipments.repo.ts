@@ -396,7 +396,7 @@ export const shipmentsRepo = {
   },
 
   /**
-   * Archiva (o desarchiva) un paquete sin dueño, con su asiento en el historial.
+   * Archiva (o desarchiva) un paquete, con su asiento en el historial.
    * `reason` null = restaurar: se limpian las tres columnas del descarte para que
    * el tramite vuelva a ser indistinguible de uno que nunca se archivo.
    */

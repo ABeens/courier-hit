@@ -248,10 +248,17 @@ function formatAddress(row: {
     .join(', ');
 }
 
+/**
+ * Concepto con el que el cliente ve el flete en sus documentos. La etiqueta
+ * guardada nombra la tarifa concreta (uso interno); al cliente, cualquiera que
+ * sea la tarifa, se le imprime siempre este concepto.
+ */
+const FREIGHT_DOCUMENT_LABEL = 'Flete internacional';
+
 /** Una linea convertida a la moneda del documento, con SU propia tasa (M5). */
 function toDocumentLine(line: Line, currency: Currency): DocumentLine {
   return {
-    label: line.label,
+    label: line.source === CostLineSource.Freight ? FREIGHT_DOCUMENT_LABEL : line.label,
     electronicInvoiceCode: line.electronicInvoiceCode,
     amount: convertMoney(line.amount, line.currency, currency, line.exchangeRate),
   };

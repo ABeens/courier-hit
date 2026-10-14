@@ -487,7 +487,7 @@ export const assignShipmentOwnerSchema = z.object({
 export type AssignShipmentOwnerInput = z.infer<typeof assignShipmentOwnerSchema>;
 
 /**
- * Descartar un paquete sin dueño. Archiva la fila con su motivo en vez de
+ * Descartar un paquete, tenga dueño o no. Archiva la fila con su motivo en vez de
  * borrarla: el bulto existio en la bodega y esa evidencia no se tira.
  */
 export const discardShipmentSchema = z.object({
