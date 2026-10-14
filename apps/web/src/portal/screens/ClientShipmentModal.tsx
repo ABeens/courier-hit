@@ -17,7 +17,8 @@
  * El dueño del tramite NO se elige: lo pone la API desde la sesion.
  *
  * La orden de compra es OBLIGATORIA y viaja en la MISMA peticion que los datos,
- * en multipart. Antes eran dos peticiones y el documento era opcional, que es lo
+ * en multipart, junto con lo que la acompañe (factura de la tienda, comprobantes):
+ * hasta `MAX_SHIPMENT_DOCUMENTS` documentos. Antes eran dos peticiones y el documento era opcional, que es lo
  * unico que podia ser: el alta se resolvia primero, asi que un fallo al subir el
  * archivo dejaba igualmente el tramite registrado y solo cabia ofrecer un
  * reintento. Juntas, o entra todo o no entra nada, y no hay prealerta sin
@@ -27,15 +28,16 @@ import { useState } from 'react';
 import {
   CARRIERS,
   DOCUMENT_ATTACHMENT,
+  MAX_SHIPMENT_DOCUMENTS,
   STORES,
   ShipmentType,
-  attachmentRejection,
   prealertShipmentSchema,
 } from '@courier/shared';
 import type { ShipmentDto } from '@courier/shared';
-import { FileField } from '../components/FileField';
+import { FilesField } from '../components/FilesField';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { ApiError, api } from '../lib/api';
+import { mergeDocuments } from '../lib/documents';
 import { useErrorToast } from '../lib/toast';
 
 interface Props {
@@ -50,9 +52,10 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
   const [store, setStore] = useState('');
   const [carrier, setCarrier] = useState('');
   const [declaredValue, setDeclaredValue] = useState('');
-  // `documentFile` y no `document`: ese nombre ya es el del DOM y esconderlo
-  // dentro del componente se paga caro el dia que alguien lo necesite.
-  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [cnee, setCnee] = useState('');
+  // `documentFiles` y no `documents`: `document` ya es el del DOM y un nombre
+  // tan cercano dentro del componente se confunde facil con el.
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const setError = useErrorToast();
   const [created, setCreated] = useState<ShipmentDto | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,28 +67,20 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
     setStore('');
     setCarrier('');
     setDeclaredValue('');
-    setDocumentFile(null);
+    setCnee('');
+    setDocumentFiles([]);
   }
 
   /**
-   * Filtra el archivo elegido con el MISMO catalogo que aplica la API, para que
-   * el rechazo llegue al elegirlo y no despues de mandar el tramite. El
-   * `accept` del input ya orienta el selector, pero no obliga: se puede soltar
-   * ahi cualquier cosa.
+   * Filtra lo elegido con el MISMO catalogo que aplica la API, para que el
+   * rechazo llegue al elegirlo y no despues de mandar el tramite. El `accept`
+   * del input ya orienta el selector, pero no obliga: se puede soltar ahi
+   * cualquier cosa. Lo que pasa el filtro se suma a la lista sin pasar del tope.
    */
-  function pickDocument(file: File | null) {
-    if (!file) {
-      setDocumentFile(null);
-      return;
-    }
-    const rejection = attachmentRejection(DOCUMENT_ATTACHMENT, file.type, file.name);
-    if (rejection) {
-      setError(rejection);
-      setDocumentFile(null);
-      return;
-    }
-    setError(null);
-    setDocumentFile(file);
+  function addDocuments(picked: File[]) {
+    const { files, error } = mergeDocuments(documentFiles, picked);
+    setError(error);
+    setDocumentFiles(files);
   }
 
   async function submit(e: React.FormEvent) {
@@ -101,6 +96,7 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
         store: store || undefined,
         carrier: carrier || undefined,
         declaredValueUsd: declaredValue ? Number(declaredValue) : undefined,
+        cnee: cnee.trim() || undefined,
       });
       if (!parsed.success) {
         setError(parsed.error.issues[0]?.message ?? 'Datos inválidos.');
@@ -112,7 +108,7 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
        * el mismo orden en que estan los campos: el archivo es el ultimo. La API
        * repite la exigencia; esto solo evita el viaje.
        */
-      if (!documentFile) {
+      if (documentFiles.length === 0) {
         setError('Adjunta la orden de compra: sin ella no podemos registrar la prealerta.');
         setBusy(false);
         return;
@@ -133,7 +129,10 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
       if (parsed.data.declaredValueUsd !== undefined) {
         form.set('declaredValueUsd', String(parsed.data.declaredValueUsd));
       }
-      form.set('document', documentFile);
+      if (parsed.data.cnee) form.set('cnee', parsed.data.cnee);
+      // Un `append` por archivo con el MISMO nombre de campo: es como viaja una
+      // lista en multipart, y la API la lee con `parseBody({ all: true })`.
+      for (const file of documentFiles) form.append('document', file);
 
       const result = await api.postForm<ShipmentDto>('/shipments/prealert', form);
       setCreated(result);
@@ -214,14 +213,26 @@ export function ClientShipmentModal({ onClose, onCreated }: Props) {
             <div className="field-hint">Lo que pagaste por la compra, en dólares. Es obligatorio para la aduana.</div>
           </div>
 
-          <FileField
+          <div>
+            <label className="field-label" htmlFor="p-cnee">CNEE</label>
+            <input
+              id="p-cnee" className="input" autoComplete="off" value={cnee}
+              placeholder="Opcional"
+              onChange={(e) => setCnee(e.target.value)}
+            />
+            <div className="field-hint">Consignatario del paquete. Texto libre.</div>
+          </div>
+
+          <FilesField
             id="p-document"
             label="Orden de compra"
             accept={DOCUMENT_ATTACHMENT.accept}
-            file={documentFile}
-            onPick={pickDocument}
+            files={documentFiles}
+            max={MAX_SHIPMENT_DOCUMENTS}
+            onAdd={addDocuments}
+            onRemove={(index) => setDocumentFiles((current) => current.filter((_, i) => i !== index))}
             disabled={busy}
-            hint={`Obligatoria: adjunta la orden de compra o la factura de la tienda. Se aceptan ${DOCUMENT_ATTACHMENT.label}; las fotos y capturas de pantalla no sirven, tiene que ser el documento.`}
+            hint={`Obligatoria: adjunta la orden de compra o la factura de la tienda (hasta ${MAX_SHIPMENT_DOCUMENTS} documentos). Se aceptan ${DOCUMENT_ATTACHMENT.label}; las fotos y capturas de pantalla no sirven, tiene que ser el documento.`}
           />
         </div>
 

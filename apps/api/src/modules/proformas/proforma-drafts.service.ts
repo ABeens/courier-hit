@@ -32,12 +32,14 @@ import {
   categoryForLine,
   costLineExchangeRateSchema,
   flowForType,
+  canChooseProformaCurrency,
   groupsAutomatically,
+  initialProformaCurrency,
   isProformaEditable,
-  proformaCurrencyFor,
 } from '@courier/shared';
 import type { Session, ShipmentType } from '@courier/shared';
 import { costsRepo } from '../costs/costs.repo';
+import { catalogCurrency } from '../costs/costs.service';
 import { buildFreight } from '../costs/freight';
 import { settingsRepo } from '../settings/settings.repo';
 import { proformasRepo } from './proformas.repo';
@@ -81,10 +83,16 @@ export const proformaDraftsService = {
     if (await proformasRepo.findByShipment(shipment.id)) return;
 
     const flow = flowForType(shipment.shipmentType);
+    /**
+     * Moneda con la que nace: en Transporte y Agenciamiento, la que propone su
+     * catalogo de servicios; el operador la cambia al cargar los costos. En
+     * Paqueteria no se consulta nada: es dolares siempre.
+     */
+    const proposed = canChooseProformaCurrency(flow) ? await catalogCurrency(flow) : null;
     const key = {
       clientId: shipment.clientId,
       flow,
-      currency: proformaCurrencyFor(shipment.shipmentType),
+      currency: initialProformaCurrency(shipment.shipmentType, proposed),
     };
 
     const draft = groupsAutomatically(flow)

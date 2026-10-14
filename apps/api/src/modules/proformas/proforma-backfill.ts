@@ -26,9 +26,9 @@ import {
   ProformaStatus,
   Role,
   State,
+  defaultChargeCurrencyFor,
   exchangeRateSchema,
   flowForType,
-  proformaCurrencyFor,
 } from '@courier/shared';
 import type { Session } from '@courier/shared';
 import { db } from '../../core/db';
@@ -97,7 +97,8 @@ export async function backfillProformas(
         .values({
           clientId: s.clientId!,
           flow: flowForType(s.shipmentType),
-          currency: proformaCurrencyFor(s.shipmentType),
+          // Lo historico se cobro con la moneda de su flujo: es la que se le respeta.
+          currency: defaultChargeCurrencyFor(s.shipmentType),
           status: ProformaStatus.Aprobada,
           accumulates: false,
           number: number!,

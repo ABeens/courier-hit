@@ -174,6 +174,28 @@ export function isCurrencyAllowed(kind: ServiceKind, currency: Currency): boolea
   return allowedCurrencies(kind).includes(currency);
 }
 
+/**
+ * Moneda que PROPONE un catalogo: la de la mayoria de sus servicios con moneda
+ * (los de monto fijo; el porcentaje y el manual no tienen). Null si no hay
+ * ninguno o si las dos monedas empatan: ahi el catalogo no propone nada y quien
+ * pregunta usa la suya por defecto.
+ *
+ * Es la moneda con la que nace la proforma de Transporte y Agenciamiento
+ * (`initialProformaCurrency`). Se cuenta en vez de tomar "el primero" porque el
+ * orden del catalogo es el de alta, y la moneda de una factura no puede depender
+ * de cual servicio se creo ultimo.
+ */
+export function proposedCurrency(services: readonly Pick<CostService, 'currency'>[]): Currency | null {
+  let usd = 0;
+  let crc = 0;
+  for (const s of services) {
+    if (s.currency === Currency.USD) usd += 1;
+    else if (s.currency === Currency.CRC) crc += 1;
+  }
+  if (usd === crc) return null;
+  return usd > crc ? Currency.USD : Currency.CRC;
+}
+
 /** Servicio de costo (vista publica; forma equivalente a la fila de BD). */
 export interface CostService {
   id: string;

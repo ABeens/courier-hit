@@ -6,7 +6,7 @@
 import { and, asc, count, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { State, toSlice } from '@courier/shared';
-import type { DeliveryQueueFilter, ListDeliveryQueueQuery } from '@courier/shared';
+import type { Currency, DeliveryQueueFilter, ListDeliveryQueueQuery } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { settlementColumn } from '../payments/settlement';
@@ -78,11 +78,13 @@ function queueQuery(query: DeliveryQueueFilter) {
       routeNumber: effectiveRouteNumber,
       /**
        * Los DOS totales congelados. El de dolares no se pinta en la cola: hace
-       * falta para saber si el paquete esta pagado, porque la Paqueteria se
-       * cobra y se salda en dolares (`chargeBasisFor`).
+       * falta para saber si el paquete esta pagado, porque se cobra y se salda
+       * en la moneda de su proforma (`chargeBasisFor`), que puede ser dolares.
        */
       invoiceTotalUsd: shipments.invoiceTotalUsd,
       invoiceTotalCrc: shipments.invoiceTotalCrc,
+      /** Moneda de cobro de la proforma del paquete; null si no esta en ninguna. */
+      proformaCurrency: sql<Currency | null>`(select p.currency from proforma_shipments ps join proformas p on p.id = ps.proforma_id where ps.shipment_id = ${shipments.id})`,
       /**
        * Abonos del tramite: el mensajero tiene que ver si sale con un paquete
        * sin cobrar. Crudos, como en el listado de tramites; la suma la hace el

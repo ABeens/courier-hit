@@ -189,6 +189,16 @@ export const insuredValueUsdSchema = z
 /** Posicion arancelaria (codigo aduanero del contenido). Texto corto; solo staff. */
 const tariffPositionSchema = z.string().trim().min(1).max(30);
 
+/**
+ * CNEE (consignatario) del paquete. Campo LIBRE: no se le impone formato porque
+ * cada operacion lo anota a su manera (nombre, codigo, cedula). Solo Paqueteria.
+ */
+export const cneeSchema = z
+  .string()
+  .trim()
+  .min(1, 'El CNEE no puede ir vacío.')
+  .max(200, 'El CNEE es demasiado largo.');
+
 // ---------------------------------------------------------------------------
 // Coherencia tipo <-> campos
 // ---------------------------------------------------------------------------
@@ -215,6 +225,7 @@ function refineTypeFieldCoherence(
     insuredValueUsd?: unknown;
     tariffPosition?: unknown;
     retain?: unknown;
+    cnee?: unknown;
     warehouse?: unknown;
     dua?: unknown;
   },
@@ -230,6 +241,7 @@ function refineTypeFieldCoherence(
     'insuredValueUsd',
     'tariffPosition',
     'retain',
+    'cnee',
   ] as const;
   const transportOnly = ['warehouse', 'dua'] as const;
 
@@ -285,6 +297,8 @@ export const prealertShipmentSchema = z
     carrier: carrierSchema.optional(),
     /** Valor comercial declarado (USD). Obligatorio en Paqueteria: lo pide la prealerta del proveedor. */
     declaredValueUsd: declaredValueUsdSchema.optional(),
+    /** CNEE (consignatario), texto libre y opcional. */
+    cnee: cneeSchema.optional(),
   })
   .superRefine((data, ctx) => {
     if (!data.store) {
@@ -334,6 +348,7 @@ export const createShipmentSchema = z
     insuredValueUsd: insuredValueUsdSchema.optional(),
     tariffPosition: tariffPositionSchema.optional(),
     retain: z.boolean().optional(),
+    cnee: cneeSchema.optional(),
     // Comun a los dos flujos
     billingNotes: billingNotesSchema.optional(),
   })
@@ -377,6 +392,7 @@ export const updateShipmentSchema = z
     insuredValueUsd: insuredValueUsdSchema.nullable().optional(),
     tariffPosition: tariffPositionSchema.nullable().optional(),
     retain: z.boolean().nullable().optional(),
+    cnee: cneeSchema.nullable().optional(),
     warehouse: warehouseSchema.nullable().optional(),
     dua: duaSchema.nullable().optional(),
     billingNotes: billingNotesSchema.nullable().optional(),
@@ -415,6 +431,7 @@ export const registerUnassignedShipmentSchema = z.object({
   carrier: carrierSchema.optional(),
   weightKg: weightKgSchema.optional(),
   declaredValueUsd: declaredValueUsdSchema.optional(),
+  cnee: cneeSchema.optional(),
   /** Notas de bodega: en que estado llego, donde esta guardado, que dice la caja. */
   billingNotes: billingNotesSchema.optional(),
 });
@@ -442,6 +459,7 @@ export const correctUnassignedShipmentSchema = z
     carrier: carrierSchema.nullable().optional(),
     weightKg: weightKgSchema.nullable().optional(),
     declaredValueUsd: declaredValueUsdSchema.nullable().optional(),
+    cnee: cneeSchema.nullable().optional(),
     billingNotes: billingNotesSchema.nullable().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No hay cambios que aplicar.' });

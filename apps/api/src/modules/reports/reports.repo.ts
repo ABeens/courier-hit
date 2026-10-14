@@ -99,6 +99,7 @@ export const reportsRepo = {
         state: shipments.state,
         tracking: shipments.tracking,
         description: shipments.description,
+        cnee: shipments.cnee,
         store: shipments.store,
         carrier: shipments.carrier,
         hawb: shipments.hawb,
@@ -225,6 +226,7 @@ export const reportsRepo = {
         state: shipments.state,
         tracking: shipments.tracking,
         description: shipments.description,
+        cnee: shipments.cnee,
         store: shipments.store,
         carrier: shipments.carrier,
         hawb: shipments.hawb,
@@ -331,6 +333,12 @@ export const reportsRepo = {
       proformaSequence: proformaSeqs.get(row.id)?.number ?? null,
       proformaElectronicInvoiceNumber: proformaSeqs.get(row.id)?.electronicInvoiceNumber ?? null,
       proformaApprovedAt: proformaSeqs.get(row.id)?.approvedAt ?? null,
+      /**
+       * Moneda de cobro de esa proforma, para el ESTATUS COBRO. Sin numero no
+       * hay factura emitida, y la moneda del flujo da la misma respuesta (nada
+       * que cobrar todavia).
+       */
+      proformaCurrency: proformaSeqs.get(row.id)?.currency ?? null,
     }));
   },
 };

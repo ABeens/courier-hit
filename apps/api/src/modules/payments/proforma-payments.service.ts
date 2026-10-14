@@ -35,7 +35,6 @@ import {
   PaymentStatus,
   ProformaStatus,
   Role,
-  ShipmentType,
   UNRESOLVED_PAYMENT_STATUSES,
   awaitsValidation,
   bankAccountsFor,
@@ -77,13 +76,6 @@ import { settingsService } from '../settings/settings.service';
 import { paymentGroupsRepo } from './payment-groups.repo';
 import type { PayableRow } from './payment-groups.repo';
 import { paymentsRepo } from './payments.repo';
-
-/** Un tipo de tramite representativo de cada flujo, para las cuentas bancarias. */
-const FLOW_SAMPLE_TYPE: Record<Flow, ShipmentType> = {
-  [Flow.Paqueteria]: ShipmentType.Paqueteria,
-  [Flow.Transporte]: ShipmentType.Aereo,
-  [Flow.Agenciamiento]: ShipmentType.Agenciamiento,
-};
 
 /**
  * De que casillero se habla. El cliente solo alcanza el suyo; el staff indica
@@ -320,7 +312,7 @@ export const proformaPaymentsService = {
       cardCharge,
       inValidation: awaitsValidation(totals.settled, totals.pending, totals.basis),
       availableMethods: methods,
-      availableBankAccounts: bankAccountsFor(FLOW_SAMPLE_TYPE[selection.flow]),
+      availableBankAccounts: bankAccountsFor(selection.currency),
     };
   },
 
@@ -360,7 +352,7 @@ export const proformaPaymentsService = {
     if (
       input.method === PaymentMethod.DepositoBancario &&
       input.bankAccount &&
-      !bankAccountsFor(FLOW_SAMPLE_TYPE[selection.flow]).includes(input.bankAccount)
+      !bankAccountsFor(selection.currency).includes(input.bankAccount)
     ) {
       throw PaymentErrors.bankAccountNotAllowed();
     }

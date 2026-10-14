@@ -10,10 +10,19 @@
  * Convencion del repo: nombres de codigo en ingles; etiquetas y valores de enum
  * de dominio en espanol. Ver CLAUDE.md.
  */
+import type { Currency } from '../money/currency';
 import type { ShipmentProformaRef } from '../proformas/dto';
 import type { State } from '../workflow/states';
 import { ClientRateKind, billsActualWeight } from '../tariffs/dto';
 import { Flow, ShipmentType, flowForType } from '../workflow/shipment-type';
+
+/**
+ * Cuantos documentos admite un tramite: de 0 a 10. La prealerta del portal exige
+ * al menos uno (la orden de compra), pero una compra suele traer mas de un
+ * papel (orden, factura, comprobante de la tienda) y obligar a unirlos en un
+ * solo PDF era trabajo que le tocaba al cliente.
+ */
+export const MAX_SHIPMENT_DOCUMENTS = 10;
 
 /**
  * Cliente al que pertenece el tramite, en la forma reducida que necesitan los
@@ -109,15 +118,21 @@ export interface ShipmentDto {
   tariffPosition: string | null;
   /** Retener el paquete en la bodega del proveedor. Solo staff; null/false = no retener. */
   retain: boolean | null;
+  /**
+   * CNEE (consignatario). Texto libre: lo anota el cliente al prealertar o el
+   * staff en el alta/edicion. No viaja al proveedor. null = no indicado.
+   */
+  cnee: string | null;
 
   /**
-   * Clave del documento adjunto (la factura de la compra, tipicamente), o null
-   * si no se adjunto ninguno. Es OPACA: no sirve para construir una URL ni
-   * revela el nombre del archivo original. La UI solo la mira para saber si hay
-   * algo que descargar; el contenido se pide a
-   * `GET /api/shipments/:id/document`, que es quien comprueba el permiso.
+   * Claves de los documentos adjuntos (orden de compra, factura de la tienda),
+   * en el orden en que se subieron; vacio si no hay ninguno. Hasta
+   * `MAX_SHIPMENT_DOCUMENTS`. Son OPACAS: no sirven para construir una URL ni
+   * revelan el nombre del archivo original. La UI solo las cuenta; cada
+   * documento se pide por su posicion a `GET /api/shipments/:id/documents/:index`,
+   * que es quien comprueba el permiso.
    */
-  documentFileKey: string | null;
+  documentFileKeys: string[];
 
   // --- Solo Transporte y Agenciamiento ---
   warehouse: string | null;
@@ -190,6 +205,13 @@ export interface ShipmentDto {
    * tiene dueño.
    */
   proforma: ShipmentProformaRef | null;
+
+  /**
+   * Moneda en que se COBRA el tramite (`chargeCurrencyOf`): la de su proforma, o
+   * la del flujo si todavia no esta en ninguna. Viaja resuelta para que ninguna
+   * pantalla repita la regla; es la que pasa `chargeBasisWith`.
+   */
+  chargeCurrency: Currency;
 
   /**
    * Estado del COBRO, derivado en cada lectura de los pagos confirmados del
@@ -442,6 +464,8 @@ export enum ShipmentField {
   TariffPosition = 'tariffPosition',
   /** Retener en bodega del proveedor: solo staff. */
   Retain = 'retain',
+  /** CNEE (consignatario): texto libre, del cliente o del staff. */
+  Cnee = 'cnee',
   // Solo Transporte y Agenciamiento
   Warehouse = 'warehouse',
   Dua = 'dua',

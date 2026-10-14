@@ -58,6 +58,7 @@ export function UnassignedFormModal({ mode, initialHawb, row, onClose, onSaved }
   const [declaredValue, setDeclaredValue] = useState(
     row?.declaredValueUsd != null ? String(row.declaredValueUsd) : '',
   );
+  const [cnee, setCnee] = useState(row?.cnee ?? '');
   const [notes, setNotes] = useState(row?.billingNotes ?? '');
   const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
@@ -86,6 +87,7 @@ export function UnassignedFormModal({ mode, initialHawb, row, onClose, onSaved }
           carrier: orUndefined(carrier),
           weightKg: weight ? Number(weight) : undefined,
           declaredValueUsd: declaredValue ? Number(declaredValue) : undefined,
+          cnee: orUndefined(cnee),
           billingNotes: orUndefined(notes),
         });
         if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Datos inválidos.');
@@ -106,6 +108,7 @@ export function UnassignedFormModal({ mode, initialHawb, row, onClose, onSaved }
         carrier: orNull(carrier),
         weightKg: weight ? Number(weight) : null,
         declaredValueUsd: declaredValue ? Number(declaredValue) : null,
+        cnee: orNull(cnee),
         billingNotes: orNull(notes),
       });
       if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Datos inválidos.');
@@ -229,6 +232,19 @@ export function UnassignedFormModal({ mode, initialHawb, row, onClose, onSaved }
               onChange={(e) => setDeclaredValue(e.target.value)}
             />
             <div className="field-hint">Si la caja trae factura por fuera.</div>
+          </div>
+
+          <div className="col-full">
+            <label className="field-label" htmlFor="u-cnee">CNEE</label>
+            <input
+              id="u-cnee"
+              className="input"
+              autoComplete="off"
+              value={cnee}
+              placeholder="Opcional"
+              onChange={(e) => setCnee(e.target.value)}
+            />
+            <div className="field-hint">Consignatario que trae la etiqueta, si se alcanza a leer.</div>
           </div>
 
           <div className="col-full">

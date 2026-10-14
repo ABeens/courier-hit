@@ -359,6 +359,7 @@ export function ControlRoomScreen({ role }: { role: Role }) {
                     <Field label="Tracking" value={knownTracking(row)} mono />
                     <Field label="Tienda" value={row.store} />
                     <Field label="Transportista" value={row.carrier} />
+                    <Field label="CNEE" value={row.cnee} />
                   </dl>
                 </section>
                 <section className="card-sec">

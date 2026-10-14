@@ -121,6 +121,7 @@ const PACKAGE_EXAMPLE = `{
   "hawb": "LES48450141",
   "weightKg": 2,
   "declaredValueUsd": 89.99,
+  "cnee": "Maria Rodriguez",
   "settled": false,
   "photos": [
     {
@@ -362,6 +363,14 @@ export const PUBLIC_API_OPERATIONS: readonly ApiOperation[] = [
         description: 'Valor comercial de la compra, en dolares. Mayor que cero.',
         example: '89.99',
       },
+      {
+        name: 'cnee',
+        in: 'body',
+        type: 'string',
+        required: false,
+        description: 'CNEE (consignatario) del paquete. Texto libre, hasta 200 caracteres.',
+        example: 'Maria Rodriguez',
+      },
     ],
     successStatus: 201,
     requestExample: `{
@@ -369,7 +378,8 @@ export const PUBLIC_API_OPERATIONS: readonly ApiOperation[] = [
   "description": "Audifonos inalambricos",
   "store": "AMAZON",
   "carrier": "AMAZON LOGISTICS",
-  "declaredValueUsd": 89.99
+  "declaredValueUsd": 89.99,
+  "cnee": "Maria Rodriguez"
 }`,
     responseExample: `{
   "code": "HSX-1042",
@@ -384,6 +394,7 @@ export const PUBLIC_API_OPERATIONS: readonly ApiOperation[] = [
   "hawb": null,
   "weightKg": null,
   "declaredValueUsd": 89.99,
+  "cnee": "Maria Rodriguez",
   "settled": false,
   "photos": [],
   "createdAt": "2026-08-30T15:11:02.774Z",

@@ -12,7 +12,7 @@
  * facturas de sus tramites: la comision de un cobro con tarjeta sube la factura
  * de cada tramite al confirmarse, y la proforma tiene que subir con ellas.
  */
-import { chargeBasisFor, isSettled, ProformaStatus, sumInvoices } from '@courier/shared';
+import { chargeBasisWith, isSettled, ProformaStatus, sumInvoices } from '@courier/shared';
 import { proformasRepo } from './proformas.repo';
 
 export const proformaSettlement = {
@@ -34,11 +34,11 @@ export const proformaSettlement = {
       rows.map((r) => ({ usd: r.invoiceTotalUsd ?? 0, crc: r.invoiceTotalCrc ?? 0 })),
     );
     /**
-     * Pagada cuando TODOS sus tramites estan saldados, cada uno en la moneda con
-     * la que se le cobra. No hay pago parcial de una proforma (regla 6 del SOW):
-     * mientras falte uno, sigue aprobada.
+     * Pagada cuando TODOS sus tramites estan saldados, en la moneda de cobro de
+     * la proforma (`chargeCurrencyOf`). No hay pago parcial de una proforma
+     * (regla 6 del SOW): mientras falte uno, sigue aprobada.
      */
-    const settled = rows.every((r) => isSettled(r.settlement, chargeBasisFor(r.shipmentType, r)));
+    const settled = rows.every((r) => isSettled(r.settlement, chargeBasisWith(proforma.currency, r)));
 
     await proformasRepo.applySettlement(proformaId, {
       totals,

@@ -42,6 +42,7 @@ import {
   formatMoney,
   percentageBase,
   permissionFor,
+  proposedCurrency,
   realAmountOf,
   roundMoney,
 } from '@courier/shared';
@@ -56,6 +57,8 @@ import type {
 } from '@courier/shared';
 import { AuthErrors, CostErrors, ShipmentErrors } from '../../core/errors';
 import { costServicesRepo } from '../cost-services/cost-services.repo';
+import { applyProformaCurrency, proformaCurrencyView } from '../proformas/proforma-currency';
+import { proformasRepo } from '../proformas/proformas.repo';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { exchangeRateReference } from '../settings/exchange-rate-reference';
 import { settingsRepo } from '../settings/settings.repo';
@@ -180,6 +183,15 @@ export async function catalogSuggestions(flow: Flow): Promise<SuggestedCostLine[
   }
 
   return suggestions;
+}
+
+/**
+ * Moneda que propone el catalogo de un flujo (`proposedCurrency`), contando sus
+ * servicios habilitados. Es con la que nace la proforma de Transporte y
+ * Agenciamiento; null si el catalogo no propone ninguna.
+ */
+export async function catalogCurrency(flow: Flow): Promise<Currency | null> {
+  return proposedCurrency(await costServicesRepo.list({ kind: serviceKindFor(flow), enabled: true }));
 }
 
 /**
@@ -362,6 +374,7 @@ export const costsService = {
       approvedByName: approval?.approvedByName ?? null,
       globalExchangeRate: globalRate,
       referenceExchangeRate: reference?.rate ?? null,
+      proformaCurrency: await proformaCurrencyView(await proformasRepo.findByShipment(shipmentId)),
     };
   },
 
@@ -476,6 +489,14 @@ export const costsService = {
         createdBy: session.userId,
       };
     });
+
+    /**
+     * La moneda de cobro se elige en el mismo guardado (Transporte y
+     * Agenciamiento). Va DESPUES de resolver tasa y lineas: si algo de eso falla
+     * (sin tasa vigente, p. ej.) la proforma no queda con la moneda cambiada y
+     * las lineas sin guardar.
+     */
+    await applyProformaCurrency(await proformasRepo.findByShipment(shipmentId), input.proformaCurrency);
 
     await costsRepo.replaceLines(shipmentId, lines);
     return this.get(session, shipmentId);

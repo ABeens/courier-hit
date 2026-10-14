@@ -365,6 +365,20 @@
       "when": 1790897598064,
       "tag": "0051_freight_rate_per_kg",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1791961934994,
+      "tag": "0052_shipment_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1791962065980,
+      "tag": "0053_shipment_cnee",
+      "breakpoints": true
     }
   ]
 }

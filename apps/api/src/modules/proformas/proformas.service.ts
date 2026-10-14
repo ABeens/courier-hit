@@ -93,6 +93,7 @@ import { settingsRepo } from '../settings/settings.repo';
 import { shipmentsRepo } from '../shipments/shipments.repo';
 import { shipmentsService } from '../shipments/shipments.service';
 import { transitionsService } from '../shipments/transitions.service';
+import { applyProformaCurrency, proformaCurrencyView } from './proforma-currency';
 import type { DocumentItem, DocumentLine, ProformaDocument } from './proforma.render';
 import { proformasRepo } from './proformas.repo';
 
@@ -387,6 +388,7 @@ export const proformasService = {
       approvedByName: header.approvedByName,
       globalExchangeRate: globalRate,
       referenceExchangeRate: reference?.rate ?? null,
+      proformaCurrency: await proformaCurrencyView(p),
     };
   },
 
@@ -397,7 +399,7 @@ export const proformasService = {
    * y categoria y COD SIS FE se copian del catalogo como snapshot.
    */
   async saveCosts(session: Session, id: string, input: SaveProformaCostsInput) {
-    await loadDraft(id);
+    const header = await loadDraft(id);
 
     let lines = input.lines;
     if (lines.length > 0) {
@@ -419,6 +421,10 @@ export const proformasService = {
     const resolved = resolveLines(lines, percentageBaseLines(shipmentLines, []));
     const serviceIds = [...new Set(resolved.map((l) => l.costServiceId).filter((x) => x !== null))];
     const byId = new Map((await costServicesRepo.listByIds(serviceIds)).map((s) => [s.id, s]));
+
+    // La moneda de cobro se elige en el mismo guardado (Transporte y
+    // Agenciamiento), ya con tasa y lineas resueltas: si eso fallaba, no se toca.
+    await applyProformaCurrency(header.proforma, input.proformaCurrency);
 
     await proformasRepo.replaceProformaLines(
       id,
@@ -689,7 +695,11 @@ export const proformasService = {
       if (input.toProformaId === fromId) throw ProformaErrors.sameProforma();
       const target = await proformasRepo.findById(input.toProformaId);
       if (!target) throw ProformaErrors.notFound();
-      const block = joinBlockFor(target, { clientId: shipment.clientId, shipmentType: shipment.shipmentType });
+      const block = joinBlockFor(target, {
+        clientId: shipment.clientId,
+        shipmentType: shipment.shipmentType,
+        currency: from.currency,
+      });
       if (block) throw ProformaErrors.joinBlocked(PROFORMA_JOIN_BLOCK_MESSAGES[block]);
       targetId = target.id;
     }

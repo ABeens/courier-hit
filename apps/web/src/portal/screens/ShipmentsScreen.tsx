@@ -161,9 +161,17 @@ function guideTitle(row: ShipmentDto): string {
   return row.shipmentType === ShipmentType.Paqueteria ? 'Guías' : 'Conocimiento de embarque';
 }
 
+/**
+ * CNEE (consignatario) del paquete. Va con las guias porque tambien es un dato
+ * por el que se pregunta, y asi lo ven por igual el staff y el titular.
+ */
+function cneeField(row: ShipmentDto): CardField {
+  return { label: 'CNEE', value: row.cnee };
+}
+
 function guideFields(row: ShipmentDto): CardField[] {
   return usesPackageFields(row.shipmentType)
-    ? [trackingField(row), hawbField(row), ...originField(row)]
+    ? [trackingField(row), hawbField(row), cneeField(row), ...originField(row)]
     : [trackingField(row)];
 }
 
@@ -172,9 +180,9 @@ function guideFields(row: ShipmentDto): CardField[] {
  * aprobados. El manual pide el monto "($ y ₡)": van como dos campos, no como
  * una cadena, para que cada moneda se lea sola.
  *
- * Esas DOS monedas son para la operación. Al cliente, un paquete se le factura
- * en dólares y no se le convierte a colones (`billingCurrencyFor`), así que ahí
- * el bloque habla en una sola moneda: enseñarle las dos le da dos cifras para la
+ * Esas DOS monedas son para la operación. Al cliente se le factura en la moneda
+ * de cobro de su proforma, sin convertir (`billingCurrencyFor`), así que ahí el
+ * bloque habla en una sola moneda: enseñarle las dos le da dos cifras para la
  * misma deuda y la pregunta de con cuál se le va a cobrar.
  */
 function moneySection(row: ShipmentDto, amounts: BillingAmounts, isOwn: boolean): CardSection | null {
@@ -601,7 +609,7 @@ export function ShipmentsScreen({
            */
           const amounts = billingAmounts(
             row,
-            billingCurrencyFor(row.shipmentType, role),
+            billingCurrencyFor(row.chargeCurrency, role),
             row.settled,
           );
           return (
@@ -661,7 +669,7 @@ export function ShipmentsScreen({
                     busca primero si el trámite se puede mover, y eso depende del
                     cobro. Sin factura aprobada no pinta nada. */}
                 <PayFlag
-                  shipmentType={row.shipmentType}
+                  chargeCurrency={row.chargeCurrency}
                   invoiceTotalUsd={row.invoiceTotalUsd}
                   invoiceTotalCrc={row.invoiceTotalCrc}
                   settledUsd={row.settledUsd}
@@ -691,15 +699,23 @@ export function ShipmentsScreen({
                     "al aire" no. El aside corta la propagación, así que aquí
                     no se abre dos veces. */}
                 <IconButton label="Ver historial" icon="clock" onClick={() => setTracing(row)} />
-                {/* Documento del trámite (la factura que adjuntó el cliente al
-                    prealertar). Es un <a> y no un botón porque la descarga la
-                    resuelve el navegador contra la API, que es quien comprueba
-                    el permiso: la clave del almacén no viaja en la URL. */}
-                {row.documentFileKey && (
+                {/* Documentos del trámite (la orden de compra y la factura que
+                    adjuntó el cliente al prealertar). Con uno solo es un <a>: la
+                    descarga la resuelve el navegador contra la API, que es quien
+                    comprueba el permiso, y la clave del almacén no viaja en la
+                    URL. Con varios abre el historial, que los lista uno a uno. */}
+                {row.documentFileKeys.length === 1 && (
                   <IconLink
                     label="Ver documento"
                     icon="download"
-                    href={`${API_BASE}/api/shipments/${row.id}/document`}
+                    href={`${API_BASE}/api/shipments/${row.id}/documents/0`}
+                  />
+                )}
+                {row.documentFileKeys.length > 1 && (
+                  <IconButton
+                    label={`Ver documentos (${row.documentFileKeys.length})`}
+                    icon="download"
+                    onClick={() => setTracing(row)}
                   />
                 )}
                 {canWrite && !isOwn && (

@@ -21,7 +21,7 @@ import {
   can,
   convertMoney,
   formatMoney,
-  chargeBasisFor,
+  chargeBasisWith,
   isSettled,
   outstanding,
   pendingAmount,
@@ -85,9 +85,9 @@ function figuresOf(payments: readonly PaymentDto[], shipment: ShipmentDto): Figu
   const settledUsd = settledAmount(payments, Currency.USD);
 
   return {
-    // En la moneda con la que se cobra el trámite (`chargeBasisFor`), la misma
-    // con la que responde la API: en Paquetería, dólares.
-    settled: isSettled(payments, chargeBasisFor(shipment.shipmentType, shipment)),
+    // En la moneda con la que se cobra el trámite (`chargeCurrency`), la misma
+    // con la que responde la API: la de su proforma.
+    settled: isSettled(payments, chargeBasisWith(shipment.chargeCurrency, shipment)),
     settledCrc,
     settledUsd,
     pendingCrc: pendingAmount(payments, Currency.CRC),
@@ -190,7 +190,7 @@ export function ShipmentPaymentsModal({ shipment, role, onClose, onSaved }: Prop
       setRejectNote('');
       setNotice({
         text: confirm
-          ? isSettled(items, chargeBasisFor(shipment.shipmentType, shipment))
+          ? isSettled(items, chargeBasisWith(shipment.chargeCurrency, shipment))
             ? 'Abono confirmado. El trámite queda pagado.'
             : 'Abono confirmado. El trámite conserva saldo.'
           : 'Abono rechazado. El trámite conserva su saldo.',

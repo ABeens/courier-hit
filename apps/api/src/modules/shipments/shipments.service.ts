@@ -18,6 +18,7 @@ import {
   DOCUMENT_ATTACHMENT,
   DeliveryOutcome,
   HelgaSyncStatus,
+  MAX_SHIPMENT_DOCUMENTS,
   Permission,
   Role,
   STATE_LABELS,
@@ -31,6 +32,7 @@ import {
   initialState,
   knownTracking,
   chargeBasisFor,
+  chargeCurrencyOf,
   isSettled,
   paged,
   paymentGateWaived,
@@ -319,7 +321,8 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     insuredValueUsd: row.insuredValueUsd,
     tariffPosition: row.tariffPosition,
     retain: row.retain,
-    documentFileKey: row.documentFileKey,
+    cnee: row.cnee,
+    documentFileKeys: row.documentFileKeys,
     warehouse: row.warehouse,
     dua: row.dua,
     billingNotes: row.billingNotes,
@@ -339,7 +342,9 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
             id: row.proformaId,
             number: row.proformaNumber === null ? null : formatProformaNumber(row.proformaNumber),
             status: row.proformaStatus,
+            currency: chargeCurrencyOf(row),
           },
+    chargeCurrency: chargeCurrencyOf(row),
     /**
      * Bandera de cobro, derivada aqui en cada lectura a partir de los abonos que
      * trajo la consulta. Las dos cifras salen de las funciones compartidas, las
@@ -350,10 +355,10 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     settledCrc: settledAmount(row.settlement, Currency.CRC),
     /**
      * Y la bandera se decide en la MONEDA DE COBRO del tramite, no en la columna
-     * de colones que va justo arriba: la Paqueteria se cobra en dolares
-     * (`chargeCurrencyFor`) y es contra esa cifra contra la que se cancela.
+     * de colones que va justo arriba: se cobra en la moneda de su proforma
+     * (`chargeCurrencyOf`) y es contra esa cifra contra la que se cancela.
      */
-    settled: isSettled(row.settlement, chargeBasisFor(row.shipmentType, row)),
+    settled: isSettled(row.settlement, chargeBasisFor(row)),
     pendingCrc: pendingAmount(row.settlement, Currency.CRC),
     /**
      * Los mismos abonos en dolares. Se mandan SIEMPRE, no solo en Paqueteria: la
@@ -404,6 +409,27 @@ const UNASSIGNED_INITIAL_STATE = State.FacturacionEnProceso;
 /** 409 si el tramite esta archivado: primero se restaura, despues se opera. */
 function assertNotDiscarded(row: { discardedAt: Date | null }): void {
   if (row.discardedAt !== null) throw ShipmentErrors.discarded();
+}
+
+/**
+ * Guarda los documentos de un tramite, en orden, y devuelve sus claves. Si uno
+ * se rechaza (formato, tamaño) se borran los que ya habian entrado: o entran
+ * todos o ninguno, y no quedan huerfanos en el almacen.
+ */
+async function storeDocuments(files: File[]): Promise<string[]> {
+  const keys: string[] = [];
+  try {
+    for (const file of files) keys.push(await storage.put('documents', file, DOCUMENT_ATTACHMENT));
+  } catch (err) {
+    await removeFiles(keys);
+    throw err;
+  }
+  return keys;
+}
+
+/** Borra archivos del almacen recien guardados que ya nadie va a alcanzar. */
+async function removeFiles(keys: string[]): Promise<void> {
+  await Promise.all(keys.map((key) => storage.remove(key)));
 }
 
 export const shipmentsService = {
@@ -582,16 +608,18 @@ export const shipmentsService = {
   },
 
   /**
-   * Adjunta (o reemplaza) el DOCUMENTO del tramite: la factura de la compra que
-   * se prealerta, tipicamente.
+   * Adjunta DOCUMENTOS al tramite (la orden de compra, la factura de la tienda)
+   * despues del alta. SUMA a los que ya habia, sin pasar de
+   * `MAX_SHIPMENT_DOCUMENTS` en total; para cambiar uno se quita con
+   * `removeDocument` y se sube el bueno.
    *
-   * Va en una peticion aparte de la prealerta, y no en el mismo cuerpo, por lo
-   * mismo que el comprobante de un deposito: el archivo obliga a multipart y
-   * mezclarlo con el JSON validado por Zod significaria validar datos y archivo
-   * en la misma transaccion. Aqui ademas compra algo: el documento es opcional y
-   * puede llegar despues, sin repetir la prealerta.
+   * Va en una peticion aparte de los datos por lo mismo que el comprobante de
+   * un deposito: el archivo obliga a multipart y mezclarlo con el JSON validado
+   * por Zod significaria validar datos y archivo en la misma transaccion. Aqui
+   * ademas compra algo: el documento puede llegar despues, sin repetir la
+   * prealerta.
    *
-   * El acceso lo resuelve `get`, que ya devuelve 404 —no 403— cuando el tramite
+   * El acceso lo resuelve `get`, que ya devuelve 404 (no 403) cuando el tramite
    * no es del cliente de la sesion: quien no puede verlo tampoco puede saber que
    * existe para adjuntarle nada.
    *
@@ -599,37 +627,65 @@ export const shipmentsService = {
    * catalogo `DOCUMENT_ATTACHMENT`), que es el unico punto por el que un archivo
    * entra al sistema.
    */
-  async attachDocument(session: Session, id: string, file: File): Promise<ShipmentDto> {
+  async attachDocuments(session: Session, id: string, files: File[]): Promise<ShipmentDto> {
     const shipment = await this.get(session, id);
+    if (files.length === 0) throw StorageErrors.fileRequired('el documento del trámite');
+    if (shipment.documentFileKeys.length + files.length > MAX_SHIPMENT_DOCUMENTS) {
+      throw ShipmentErrors.tooManyDocuments(MAX_SHIPMENT_DOCUMENTS);
+    }
 
-    const key = await storage.put('documents', file, DOCUMENT_ATTACHMENT);
-    // Reemplazar el documento borra el anterior: dejarlo huerfano solo acumula
-    // basura en el almacen que ya nadie puede alcanzar (mismo criterio que el
-    // comprobante de pago).
-    if (shipment.documentFileKey) await storage.remove(shipment.documentFileKey);
-    await shipmentsRepo.update(id, { documentFileKey: key });
-
+    const keys = await storeDocuments(files);
+    try {
+      await shipmentsRepo.update(id, { documentFileKeys: [...shipment.documentFileKeys, ...keys] });
+    } catch (err) {
+      await removeFiles(keys);
+      throw err;
+    }
     return this.get(session, id);
   },
 
   /**
-   * Contenido del documento adjunto, para descargarlo. Pasa por la API en vez de
-   * exponer el almacen: la clave es opaca pero no es un permiso, y quien pide el
-   * archivo tiene que superar la misma barrera que para ver el tramite.
+   * Quita UN documento, por su posicion. Borra tambien el archivo: dejarlo
+   * huerfano solo acumula basura en el almacen que ya nadie puede alcanzar
+   * (mismo criterio que el comprobante de pago). Las mismas reglas de acceso que
+   * para adjuntar.
    */
-  async documentFile(session: Session, id: string): Promise<{ body: ArrayBuffer; contentType: string; filename: string }> {
+  async removeDocument(session: Session, id: string, index: number): Promise<ShipmentDto> {
     const shipment = await this.get(session, id);
-    if (!shipment.documentFileKey) throw ShipmentErrors.documentMissing();
+    const key = shipment.documentFileKeys[index];
+    if (!key) throw ShipmentErrors.documentMissing();
 
-    const file = await storage.get(shipment.documentFileKey);
+    await shipmentsRepo.update(id, { documentFileKeys: shipment.documentFileKeys.filter((_, i) => i !== index) });
+    await storage.remove(key);
+    return this.get(session, id);
+  },
+
+  /**
+   * Contenido de un documento adjunto, por su posicion, para descargarlo. Pasa
+   * por la API en vez de exponer el almacen: la clave es opaca pero no es un
+   * permiso, y quien pide el archivo tiene que superar la misma barrera que para
+   * ver el tramite.
+   */
+  async documentFile(
+    session: Session,
+    id: string,
+    index: number,
+  ): Promise<{ body: ArrayBuffer; contentType: string; filename: string }> {
+    const shipment = await this.get(session, id);
+    const key = shipment.documentFileKeys[index];
+    if (!key) throw ShipmentErrors.documentMissing();
+
+    const file = await storage.get(key);
     /**
      * El nombre de la descarga se DERIVA del consecutivo del tramite y de la
      * extension de la clave; no se guarda el nombre original. Asi lo que llega a
      * la cabecera `content-disposition` no lo escribe el usuario, y de paso el
      * archivo cae en el escritorio de quien lo baja ya identificado por tramite.
+     * Con varios, la posicion (desde 1) los distingue.
      */
-    const ext = shipment.documentFileKey.split('.').pop() ?? 'bin';
-    return { ...file, filename: `${shipment.code}.${ext}` };
+    const ext = key.split('.').pop() ?? 'bin';
+    const suffix = shipment.documentFileKeys.length > 1 ? `-${index + 1}` : '';
+    return { ...file, filename: `${shipment.code}${suffix}.${ext}` };
   },
 
   /**
@@ -649,26 +705,27 @@ export const shipmentsService = {
    * util de nuestro lado aunque el proveedor no responda; la sincronizacion lo
    * recuperara despues por tracking.
    *
-   * El DOCUMENTO (la orden de compra) es un parametro explicito y no opcional
-   * para que cada puerta tenga que decidir: el portal del cliente lo exige y lo
-   * pasa siempre (ver la ruta), y la API publica, contrato ya publicado, pasa
-   * `null` a proposito. Con un valor por omision, abrir una puerta nueva dejaria
-   * de exigirlo sin que nada lo delate.
+   * Los DOCUMENTOS (la orden de compra y lo que la acompañe) son un parametro
+   * explicito y no opcional para que cada puerta tenga que decidir: el portal
+   * del cliente exige al menos uno y los pasa siempre (ver la ruta), y la API
+   * publica, contrato ya publicado, pasa `[]` a proposito. Con un valor por
+   * omision, abrir una puerta nueva dejaria de exigirlos sin que nada lo delate.
    *
-   * Cuando viene, el archivo se guarda ANTES del alta: asi un documento con
+   * Cuando vienen, los archivos se guardan ANTES del alta: asi un documento con
    * formato o tamaño no admitido se rechaza sin dejar detras una prealerta que
-   * ya ocupa el tracking. Si lo que falla es el alta, se borra el archivo recien
-   * guardado para no acumular huerfanos en el almacen.
+   * ya ocupa el tracking. Si lo que falla es el alta, se borran los archivos
+   * recien guardados para no acumular huerfanos en el almacen.
    */
   async prealert(
     session: Session,
     input: PrealertShipmentInput,
-    document: File | null,
+    documents: File[],
   ): Promise<ShipmentDto> {
     if (!session.clientId) throw ShipmentErrors.missingClientProfile();
     if (!usesPackageFields(input.shipmentType)) throw AuthErrors.forbidden();
+    if (documents.length > MAX_SHIPMENT_DOCUMENTS) throw ShipmentErrors.tooManyDocuments(MAX_SHIPMENT_DOCUMENTS);
 
-    const documentFileKey = document ? await storage.put('documents', document, DOCUMENT_ATTACHMENT) : null;
+    const documentFileKeys = await storeDocuments(documents);
 
     let created: ShipmentDto;
     try {
@@ -684,14 +741,15 @@ export const shipmentsService = {
           // retener los completa el staff, asi que aqui nacen null.
           declaredValueUsd:
             input.declaredValueUsd === undefined ? null : roundMoney(input.declaredValueUsd, Currency.USD),
-          documentFileKey,
+          cnee: input.cnee ?? null,
+          documentFileKeys,
         },
         session.userId,
       );
     } catch (err) {
       // El tracking repetido es el caso corriente: sin esto, cada reintento del
-      // cliente dejaria una copia mas del documento que ya nadie alcanza.
-      if (documentFileKey) await storage.remove(documentFileKey);
+      // cliente dejaria una copia mas de los documentos que ya nadie alcanza.
+      await removeFiles(documentFileKeys);
       throw err;
     }
 
@@ -850,19 +908,22 @@ export const shipmentsService = {
   /**
    * Alta por un usuario de staff. El permiso depende del tipo de tramite.
    *
-   * El DOCUMENTO es OPCIONAL aqui (a diferencia de la prealerta del portal): el
-   * staff puede adjuntarlo al crear o despues por `attachDocument`. Cuando viene,
-   * se guarda ANTES del alta y se borra si el alta falla, igual que en `prealert`:
-   * un archivo rechazado no deja un tramite ocupando el tracking, y un tracking
-   * repetido no deja un archivo huerfano.
+   * Los DOCUMENTOS son OPCIONALES aqui (a diferencia de la prealerta del
+   * portal): el staff puede adjuntarlos al crear o despues por
+   * `attachDocuments`. Cuando vienen, se guardan ANTES del alta y se borran si
+   * el alta falla, igual que en `prealert`: un archivo rechazado no deja un
+   * tramite ocupando el tracking, y un tracking repetido no deja archivos
+   * huerfanos.
    */
-  async create(session: Session, input: CreateShipmentInput, document: File | null): Promise<ShipmentDto> {
+  async create(session: Session, input: CreateShipmentInput, documents: File[]): Promise<ShipmentDto> {
     assertCanWrite(session, input.shipmentType);
 
     const client = await clientsRepo.findById(input.clientId);
     if (!client) throw ShipmentErrors.clientNotFound();
 
-    const documentFileKey = document ? await storage.put('documents', document, DOCUMENT_ATTACHMENT) : null;
+    if (documents.length > MAX_SHIPMENT_DOCUMENTS) throw ShipmentErrors.tooManyDocuments(MAX_SHIPMENT_DOCUMENTS);
+
+    const documentFileKeys = await storeDocuments(documents);
     try {
       return await this.insert(
         {
@@ -884,13 +945,14 @@ export const shipmentsService = {
             input.insuredValueUsd === undefined ? null : roundMoney(input.insuredValueUsd, Currency.USD),
           tariffPosition: input.tariffPosition ?? null,
           retain: input.retain ?? null,
+          cnee: input.cnee ?? null,
           billingNotes: input.billingNotes ?? null,
-          documentFileKey,
+          documentFileKeys,
         },
         session.userId,
       );
     } catch (err) {
-      if (documentFileKey) await storage.remove(documentFileKey);
+      await removeFiles(documentFileKeys);
       throw err;
     }
   },
@@ -969,7 +1031,7 @@ export const shipmentsService = {
     // listas: son comunes a los dos flujos (el reporte los pide en ambos).
     const notForThisType = isPackage
       ? (['warehouse', 'dua'] as const)
-      : (['store', 'carrier', 'hawb', 'weightKg', 'declaredValueUsd', 'insuredValueUsd', 'tariffPosition', 'retain'] as const);
+      : (['store', 'carrier', 'hawb', 'weightKg', 'declaredValueUsd', 'insuredValueUsd', 'tariffPosition', 'retain', 'cnee'] as const);
     for (const field of notForThisType) {
       if (patch[field] !== undefined && patch[field] !== null) throw ShipmentErrors.fieldNotForType();
     }
@@ -1012,6 +1074,7 @@ export const shipmentsService = {
         : {}),
       ...(patch.tariffPosition !== undefined ? { tariffPosition: patch.tariffPosition } : {}),
       ...(patch.retain !== undefined ? { retain: patch.retain } : {}),
+      ...(patch.cnee !== undefined ? { cnee: patch.cnee } : {}),
       ...(patch.warehouse !== undefined ? { warehouse: patch.warehouse } : {}),
       ...(patch.dua !== undefined ? { dua: patch.dua } : {}),
       ...(patch.billingNotes !== undefined ? { billingNotes: patch.billingNotes } : {}),
@@ -1099,6 +1162,7 @@ export const shipmentsService = {
           input.declaredValueUsd === undefined
             ? null
             : roundMoney(input.declaredValueUsd, Currency.USD),
+        cnee: input.cnee ?? null,
         billingNotes: input.billingNotes ?? null,
         // Ver decision 3 de la cabecera: `null` = no aplica, no 'pending'.
         helgaPrealertStatus: null,
@@ -1154,6 +1218,7 @@ export const shipmentsService = {
                 : roundMoney(patch.declaredValueUsd, Currency.USD),
           }
         : {}),
+      ...(patch.cnee !== undefined ? { cnee: patch.cnee } : {}),
       ...(patch.billingNotes !== undefined ? { billingNotes: patch.billingNotes } : {}),
     });
 

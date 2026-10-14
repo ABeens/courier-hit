@@ -152,6 +152,11 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
   /** Clave de la ultima fila agregada a mano: es la que lleva el destello. */
   const [lastAdded, setLastAdded] = useState<string | null>(null);
   const [rate, setRate] = useState('');
+  /**
+   * Moneda de cobro de la proforma elegida en pantalla. Null si no hay proforma
+   * o si no se puede cambiar: entonces no viaja en el guardado.
+   */
+  const [proformaCurrency, setProformaCurrency] = useState<Currency | null>(null);
   const setError = useErrorToast();
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -203,6 +208,7 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
       // referencia). Es el mismo orden que aplica la API en `resolveExchangeRate`.
       const savedRate = dto.lines[0]?.exchangeRate;
       setRate(String(savedRate ?? dto.globalExchangeRate ?? ''));
+      setProformaCurrency(dto.proformaCurrency?.editable ? dto.proformaCurrency.currency : null);
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudieron cargar los costos.');
@@ -264,8 +270,12 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
    */
   const shownLines = [...lines].reverse();
 
-  /** Moneda con la que arranca una fila nueva: la que propone el catalogo. */
-  const defaultCurrency = data?.suggestions[0]?.currency ?? Currency.USD;
+  /**
+   * Moneda con la que arranca una fila nueva: la de cobro de la proforma si el
+   * operador la puede elegir (Transporte y Agenciamiento), y si no la que
+   * propone el catalogo.
+   */
+  const defaultCurrency = proformaCurrency ?? data?.suggestions[0]?.currency ?? Currency.USD;
   /** De donde sale el flete ("3 kg × 13.45 USD/kg"), para mostrarlo bajo su nombre. */
   const freightDetail =
     data?.suggestions.find((s) => s.source === CostLineSource.Freight)?.detail ?? null;
@@ -430,6 +440,8 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
         currency: l.currency,
         exchangeRate: parsedRate,
       })),
+      // Solo si se puede elegir: en Paqueteria la moneda no es del operador.
+      ...(proformaCurrency !== null ? { proformaCurrency } : {}),
     };
     try {
       await api.put(endpoint, payload);
@@ -505,6 +517,43 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
                   }`}
             </div>
           </div>
+
+          {/* Moneda de cobro: en Transporte y Agenciamiento la elige el operador
+              mientras la proforma es borrador. En Paqueteria (siempre dolares) o
+              con la proforma aprobada solo se informa. */}
+          {data?.proformaCurrency && (
+            <div>
+              <label className="field-label" htmlFor="c-proforma-currency">
+                Moneda de la proforma
+              </label>
+              {proformaCurrency !== null && !approved ? (
+                <select
+                  id="c-proforma-currency" className="input" value={proformaCurrency}
+                  onChange={(e) => setProformaCurrency(e.target.value as Currency)}
+                >
+                  {/* Solo llega aqui una moneda elegible (Transporte y
+                      Agenciamiento), que admite las dos. */}
+                  {Object.values(Currency).map((c) => (
+                    <option key={c} value={c}>{CURRENCY_LABELS[c]}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id="c-proforma-currency" className="input" disabled
+                  value={CURRENCY_LABELS[data.proformaCurrency.currency]}
+                />
+              )}
+              <div className="field-hint">
+                {proformaCurrency !== null && !approved
+                  ? `Es la moneda en que se le cobra al cliente${
+                      data.proformaCurrency.shipmentCount > 1
+                        ? `, para los ${data.proformaCurrency.shipmentCount} trámites de la proforma`
+                        : ''
+                    }. Cada línea conserva su propia moneda; el total se convierte con la tasa de cambio.`
+                  : 'Es la moneda en que se le cobra al cliente.'}
+              </div>
+            </div>
+          )}
 
           {/* El boton va ARRIBA porque la fila nueva aparece arriba: el gesto y
               su resultado quedan juntos. El concepto se elige dentro de la fila,

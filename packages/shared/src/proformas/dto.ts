@@ -7,7 +7,7 @@
  */
 import { z } from 'zod';
 import type { CostLineDto } from '../costs/shipment-cost-dto';
-import { costLineInputSchema } from '../costs/shipment-cost-dto';
+import { costLineInputSchema, proformaCurrencyInputSchema } from '../costs/shipment-cost-dto';
 import { paginationQuerySchema } from '../http/pagination';
 import type { Currency } from '../money/currency';
 import { electronicInvoiceNumberSchema } from '../shipments/dto';
@@ -25,6 +25,8 @@ export interface ShipmentProformaRef {
   /** Numero ya formateado; null si la proforma es un borrador que nunca se aprobo. */
   number: string | null;
   status: ProformaStatus;
+  /** Moneda en que se cobra la proforma, y con ella el tramite (`chargeCurrencyOf`). */
+  currency: Currency;
 }
 
 const instantSchema = z.string().datetime({ offset: true, message: 'Fecha inválida.' });
@@ -155,6 +157,7 @@ export interface ProformaDetailDto extends ProformaListItem {
 /** Guardar los servicios adicionales de la proforma: reemplaza el juego completo. */
 export const saveProformaCostsSchema = z.object({
   lines: z.array(costLineInputSchema).max(50, 'Demasiadas líneas de costo.'),
+  proformaCurrency: proformaCurrencyInputSchema,
 });
 export type SaveProformaCostsInput = z.infer<typeof saveProformaCostsSchema>;
 

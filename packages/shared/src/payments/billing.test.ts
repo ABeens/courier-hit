@@ -3,15 +3,15 @@
  *
  * Se prueba aparte de `awaitsValidation` porque responde otra pregunta: no si el
  * tramite admite otro pago, sino como se LEE lo que debe. La regla de negocio que
- * defiende es que al cliente el saldo de Paqueteria se le dice en dolares y nunca
- * convertido a colones.
+ * defiende es que al cliente el saldo se le dice en la moneda en que se le cobra
+ * y nunca convertido a la otra.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Role } from '../auth/roles';
 import { Currency } from '../money/currency';
 import { ShipmentType } from '../workflow/shipment-type';
-import { billingAmounts, billingCurrencyFor } from './payment';
+import { billingAmounts, billingCurrencyFor, chargeCurrencyOf } from './payment';
 import type { BillingFigures } from './payment';
 
 /** Factura de $100 a 500 colones por dolar, con la mitad abonada. */
@@ -24,17 +24,19 @@ const HALF_PAID: BillingFigures = {
   pendingCrc: 0,
 };
 
-test('al cliente, un paquete se le cobra en dolares', () => {
-  assert.equal(billingCurrencyFor(ShipmentType.Paqueteria, Role.Client), Currency.USD);
+test('al cliente se le habla en la moneda en que se le cobra', () => {
+  assert.equal(billingCurrencyFor(Currency.USD, Role.Client), Currency.USD);
+  assert.equal(billingCurrencyFor(Currency.CRC, Role.Client), Currency.CRC);
 });
 
-test('los demas tramites del cliente siguen en colones', () => {
-  assert.equal(billingCurrencyFor(ShipmentType.Aereo, Role.Client), Currency.CRC);
+test('un transporte cuya proforma se cobra en dolares se le dice en dolares', () => {
+  const charge = chargeCurrencyOf({ shipmentType: ShipmentType.Aereo, proformaCurrency: Currency.USD });
+  assert.equal(billingCurrencyFor(charge, Role.Client), Currency.USD);
 });
 
-test('al staff todo se le presenta en colones, tambien Paqueteria', () => {
+test('al staff todo se le presenta en colones, aunque se cobre en dolares', () => {
   // Es la moneda de cobro local: la que cuadra contra el banco.
-  assert.equal(billingCurrencyFor(ShipmentType.Paqueteria, Role.Admin), Currency.CRC);
+  assert.equal(billingCurrencyFor(Currency.USD, Role.Admin), Currency.CRC);
 });
 
 test('la proyeccion en dolares toma la columna en dolares, sin reconvertir', () => {

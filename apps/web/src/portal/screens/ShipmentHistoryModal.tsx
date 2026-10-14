@@ -239,6 +239,31 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
               </section>
             )}
 
+            {/* Documentos adjuntos (orden de compra, factura de la tienda), uno
+                por enlace. Cada descarga pasa por la API, que comprueba el
+                permiso; sin documentos la seccion no aparece. */}
+            {row.documentFileKeys.length > 0 && (
+              <section className="pkg-docs">
+                <h4 className="pkg-photos-title">
+                  {row.documentFileKeys.length === 1 ? 'Documento adjunto' : 'Documentos adjuntos'}
+                </h4>
+                <ul className="pkg-doc-list">
+                  {row.documentFileKeys.map((key, i) => (
+                    <li key={key}>
+                      <a className="pkg-doc" href={`${API_BASE}/api/shipments/${row.id}/documents/${i}`}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                          <path d="M14 3v5h5" />
+                        </svg>
+                        Documento {i + 1}
+                        <span className="pkg-doc-ext">{key.split('.').pop()?.toUpperCase()}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
             {!events && <div className="empty">{error ? 'No se pudo cargar el historial.' : 'Cargando historial…'}</div>}
 
             {events && events.length === 0 && !error && (

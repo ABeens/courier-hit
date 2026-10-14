@@ -14,7 +14,8 @@
  *    automatica anterior se retiro).
  * 2. UN CLIENTE, UN FLUJO, UNA MONEDA. Monedas distintas, proformas distintas, y
  *    no se mezclan tipos de tramite. Dentro de Transporte si se juntan aereo y
- *    maritimo: la frontera es el FLUJO, no el tipo.
+ *    maritimo: la frontera es el FLUJO, no el tipo. Paqueteria cobra siempre en
+ *    dolares; Transporte y Agenciamiento eligen la moneda de cada proforma.
  * 3. SOLO PAQUETERIA AGRUPA SOLA. Todos los paquetes de un cliente caen en su
  *    borrador abierto mientras no se apruebe. Transporte y Agenciamiento van una
  *    proforma por tramite; juntarlos es una accion manual del operador.
@@ -23,7 +24,7 @@
  */
 import type { CostTotals } from '../costs/shipment-cost';
 import { Currency, roundMoney } from '../money/currency';
-import { chargeCurrencyFor } from '../payments/payment';
+import { defaultChargeCurrencyFor } from '../payments/payment';
 import { splitAmount } from '../payments/surcharge';
 import { Flow, flowForType } from '../workflow/shipment-type';
 import type { ShipmentType } from '../workflow/shipment-type';
@@ -74,15 +75,36 @@ export function groupsAutomatically(flow: Flow): boolean {
 }
 
 /**
- * Moneda de la proforma de un tramite: la moneda en que se COBRA su flujo.
+ * Moneda de la proforma: la moneda en que se COBRA. Es la misma que lee
+ * `chargeCurrencyOf` para cada uno de sus tramites, y tiene que serlo: la
+ * proforma es lo que el cliente paga, y un documento en una moneda cobrado en
+ * otra obligaria a convertir para reconocer el propio cobro.
  *
- * No se elige por proforma. Es la misma de `chargeCurrencyFor`, y tiene que serlo:
- * la proforma es lo que el cliente paga, y un documento en una moneda cobrado en
- * otra obligaria a convertir para reconocer el propio cobro. Por eso "monedas
- * distintas, proformas distintas" no necesita un campo que el operador llene.
+ * Quien la decide depende del flujo:
+ *   - PAQUETERIA: dolares, siempre. Sus costos son USD-only y su borrador
+ *     acumula los paquetes del cliente solo; no hay nada que elegir.
+ *   - TRANSPORTE Y AGENCIAMIENTO: la elige el operador al cargar los costos,
+ *     mientras la proforma sea borrador. Nace con la que propone el catalogo de
+ *     servicios del flujo (`proposedCurrency`).
  */
-export function proformaCurrencyFor(shipmentType: ShipmentType): Currency {
-  return chargeCurrencyFor(shipmentType);
+export function canChooseProformaCurrency(flow: Flow): boolean {
+  return flow !== Flow.Paqueteria;
+}
+
+/** Monedas en las que se puede cobrar una proforma de ese flujo. */
+export function allowedProformaCurrencies(flow: Flow): Currency[] {
+  return canChooseProformaCurrency(flow) ? [Currency.CRC, Currency.USD] : [Currency.USD];
+}
+
+/**
+ * Moneda con la que nace la proforma de un tramite. En Paqueteria es la unica
+ * posible; en los demas flujos, la que propone su catalogo (`catalogCurrency`),
+ * y si el catalogo no propone ninguna, la del flujo.
+ */
+export function initialProformaCurrency(shipmentType: ShipmentType, catalogCurrency: Currency | null): Currency {
+  const fallback = defaultChargeCurrencyFor(shipmentType);
+  if (!canChooseProformaCurrency(flowForType(shipmentType))) return fallback;
+  return catalogCurrency ?? fallback;
 }
 
 /** Lo que identifica a una proforma para decidir si un tramite cabe en ella. */
@@ -93,10 +115,15 @@ export interface ProformaIdentity {
   status: ProformaStatus;
 }
 
-/** Lo que identifica a un tramite para esa misma decision. */
+/**
+ * Lo que identifica a un tramite para esa misma decision. `currency` es la de
+ * la proforma de la que viene: al moverse se cobra en la del destino, y si fueran
+ * distintas el operador primero cambia una de las dos.
+ */
 export interface ProformaCandidate {
   clientId: string;
   shipmentType: ShipmentType;
+  currency: Currency;
 }
 
 /**
@@ -123,8 +150,8 @@ export const PROFORMA_JOIN_BLOCK_MESSAGES: Record<ProformaJoinBlock, string> = {
  *
  * El orden importa solo para el mensaje: se reporta primero lo mas grueso (la
  * proforma ya no se edita), despues el dueño y al final el flujo y la moneda.
- * La moneda se revisa aunque hoy dependa solo del flujo: el dia que un flujo
- * cobre en dos monedas, esta es la linea que tiene que seguir diciendo que no.
+ * La moneda importa en Transporte y Agenciamiento, donde cada proforma elige la
+ * suya: un tramite cotizado en colones no cambia de moneda por moverlo.
  */
 export function joinBlockFor(
   proforma: ProformaIdentity,
@@ -133,9 +160,7 @@ export function joinBlockFor(
   if (!isProformaEditable(proforma.status)) return ProformaJoinBlock.NotDraft;
   if (proforma.clientId !== candidate.clientId) return ProformaJoinBlock.OtherClient;
   if (proforma.flow !== flowForType(candidate.shipmentType)) return ProformaJoinBlock.OtherFlow;
-  if (proforma.currency !== proformaCurrencyFor(candidate.shipmentType)) {
-    return ProformaJoinBlock.OtherCurrency;
-  }
+  if (proforma.currency !== candidate.currency) return ProformaJoinBlock.OtherCurrency;
   return null;
 }
 

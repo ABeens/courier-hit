@@ -114,11 +114,11 @@ function collectionColumns(row: ServiceRow) {
 
   /**
    * El estatus de cobro se decide en la moneda con la que se cobra el tramite
-   * (`chargeCurrencyFor`), la misma que usa la guarda de salida a ruta. Un
-   * reporte que dijera "Pendiente" de un paquete que el sistema deja salir por
-   * pagado seria peor que no tener la columna.
+   * (`chargeCurrencyOf`, la de su proforma), la misma que usa la guarda de
+   * salida a ruta. Un reporte que dijera "Pendiente" de un paquete que el
+   * sistema deja salir por pagado seria peor que no tener la columna.
    */
-  const basis = chargeBasisFor(row.shipmentType, row);
+  const basis = chargeBasisFor(row);
 
   return {
     collectionStatus: COLLECTION_STATUS_LABELS[collectionStatus(row.payments, basis)],
@@ -198,6 +198,7 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
         invoiceTotalUsd: row.invoiceTotalUsd,
         realCostsUsd: realTotals.usd,
         billedCostsUsd,
+        cnee: row.cnee,
         store: row.store,
         carrier: row.carrier,
         miamiArrivalAt: row.miamiArrivalAt,
@@ -217,11 +218,12 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
     }
 
     /**
-     * Agenciamiento y transporte se reporta en COLONES, la moneda en que se le
-     * cobra (`chargeCurrencyFor`). Todo sale en CRC desde el origen (factura
-     * congelada en CRC, desglose y abonos convertidos con SU tasa) en vez de
-     * convertir el resultado en USD: asi DIF cuadra con el saldo que ve el
-     * modulo de pagos, que tambien liquida en colones.
+     * Agenciamiento y transporte se reporta en COLONES, la moneda de lectura del
+     * staff, aunque su proforma se cobre en dolares (`chargeCurrencyOf`). Todo
+     * sale en CRC desde el origen (factura congelada en CRC, desglose y abonos
+     * convertidos con SU tasa) en vez de convertir el resultado. En un tramite
+     * cobrado en dolares, DIF puede dejar unos colones de redondeo aunque el
+     * ESTATUS COBRO (que si usa la moneda de cobro) diga pagado.
      */
     const costs = breakdownByCategory(realLines, Currency.CRC);
     const deposited = settledAmount(row.payments, Currency.CRC);

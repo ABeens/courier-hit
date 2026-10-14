@@ -68,6 +68,7 @@ test('Paqueteria: en transito solo descriptivos y peso (tienda/transportista ya 
       f,
       set([
         ShipmentField.Description,
+        ShipmentField.Cnee,
         ShipmentField.Hawb,
         ShipmentField.WeightKg,
         ShipmentField.BillingNotes,

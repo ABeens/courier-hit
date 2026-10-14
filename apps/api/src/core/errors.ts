@@ -156,6 +156,16 @@ export const ProformaErrors = {
       'La proforma cambió mientras la procesabas. Vuelve a abrirla e inténtalo de nuevo.',
       409,
     ),
+  /**
+   * La moneda de cobro solo la elige el operador en Transporte y Agenciamiento,
+   * y solo con el tramite ya en una proforma (Paqueteria cobra siempre en dolares).
+   */
+  currencyNotChoosable: () =>
+    new AppError(
+      'PROFORMA_CURRENCY_NOT_CHOOSABLE',
+      'La moneda de cobro solo se elige en proformas de Transporte y Agenciamiento. Paquetería se cobra siempre en dólares.',
+      409,
+    ),
   /** "Enviar a ruta" es de Paqueteria: Transporte y Agenciamiento no reparten. */
   notDispatchableFlow: () =>
     new AppError('PROFORMA_NOT_DISPATCHABLE', 'Solo las proformas de Paquetería salen a ruta de entrega.', 409),
@@ -435,6 +445,13 @@ export const ShipmentErrors = {
   /** Se pidio el documento de un tramite que no tiene ninguno adjunto. */
   documentMissing: () =>
     new AppError('SHIPMENT_DOCUMENT_MISSING', 'El trámite no tiene documento adjunto.', 404),
+  /** Se intento pasar del tope de documentos por tramite (`MAX_SHIPMENT_DOCUMENTS`). */
+  tooManyDocuments: (max: number) =>
+    new AppError(
+      'SHIPMENT_TOO_MANY_DOCUMENTS',
+      `Puedes adjuntar como máximo ${max} documentos por trámite.`,
+      400,
+    ),
 
   // --- Sala de control: paquetes sin dueño (docs/06 §9) ---
   /**

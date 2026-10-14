@@ -81,9 +81,18 @@ export const costLineInputSchema = z
   });
 export type CostLineInput = z.infer<typeof costLineInputSchema>;
 
+/**
+ * Moneda de cobro de la proforma, elegida en el mismo guardado que las lineas.
+ * Opcional: sin ella la proforma conserva la que tiene. Solo se admite en
+ * Transporte y Agenciamiento y con la proforma en borrador
+ * (`canChooseProformaCurrency`); la API rechaza el cambio fuera de eso.
+ */
+export const proformaCurrencyInputSchema = currencySchema.optional();
+
 /** Guardar los costos de un tramite: reemplaza el juego completo de lineas. */
 export const saveShipmentCostsSchema = z.object({
   lines: z.array(costLineInputSchema).max(50, 'Demasiadas líneas de costo.'),
+  proformaCurrency: proformaCurrencyInputSchema,
 });
 export type SaveShipmentCostsInput = z.infer<typeof saveShipmentCostsSchema>;
 
@@ -166,6 +175,13 @@ export interface ShipmentCostsDto {
   approved: boolean;
   approvedAt: string | null;
   approvedByName: string | null;
+  /**
+   * Moneda en que se cobra la proforma de estas lineas. Null en un tramite que
+   * todavia no esta en ninguna. `editable` dice si el editor deja cambiarla:
+   * solo en Transporte y Agenciamiento y con la proforma en borrador. El cambio
+   * vale para la proforma entera, con todos sus tramites.
+   */
+  proformaCurrency: { currency: Currency; editable: boolean; shipmentCount: number } | null;
   /**
    * Tasa VIGENTE del sistema, la que fijo quien tiene `exchange_rate.write` en
    * Configuración. Es el valor por defecto del formulario; null si todavia nadie

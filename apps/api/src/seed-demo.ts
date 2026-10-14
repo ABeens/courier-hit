@@ -62,6 +62,7 @@ import {
   flowForType,
   formatShipmentCode,
   chargeBasisFor,
+  defaultChargeCurrencyFor,
   isSettled,
   payableStateOf,
   percentageBase,
@@ -131,7 +132,7 @@ const email = (handle: string): string => `${handle}@${DEMO_DOMAIN}`;
  * de demo cumplan la misma regla que el formulario del cliente.
  */
 const pickAccount = (type: ShipmentType, i: number): BankAccount => {
-  const options = bankAccountsFor(type);
+  const options = bankAccountsFor(defaultChargeCurrencyFor(type));
   return options[i % options.length]!;
 };
 
@@ -1132,7 +1133,10 @@ async function seed(tx: Tx): Promise<boolean> {
     // 5) Pagos. Se cobra en la moneda del tramite: Paqueteria en dolares,
     // Transporte y Agenciamiento en colones (`chargeBasisFor`).
     if (approved && sc.payment !== 'none') {
-      const basis = chargeBasisFor(sc.type, {
+      const basis = chargeBasisFor({
+        shipmentType: sc.type,
+        // La demo arma sus proformas con la moneda del flujo.
+        proformaCurrency: null,
         invoiceTotalUsd: totals!.usd,
         invoiceTotalCrc: totals!.crc,
       });

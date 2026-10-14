@@ -64,6 +64,7 @@ function toPublicPackage(shipment: ShipmentDto, photos: PublicPackagePhoto[]): P
     // de bascula, con decimales, no sale por aqui.
     weightKg: shipment.weightKg == null ? null : roundWeightKg(shipment.weightKg),
     declaredValueUsd: shipment.declaredValueUsd,
+    cnee: shipment.cnee,
     settled: shipment.settled,
     photos,
     createdAt: shipment.createdAt,
@@ -226,7 +227,7 @@ export const publicApiService = {
    * aqui: por la API publica no se puede dar de alta otra cosa, igual que en el
    * portal (los tramites de transporte y agenciamiento los registra HS Global).
    *
-   * SIN DOCUMENTO (`null`), y ahi se separa del portal, donde la orden de compra
+   * SIN DOCUMENTOS (`[]`), y ahi se separa del portal, donde la orden de compra
    * es obligatoria. Este contrato ya esta publicado y es JSON: exigir un archivo
    * romperia a quien hoy prealerta desde su tienda. El documento se adjunta
    * despues, por el portal o por el staff.
@@ -244,8 +245,9 @@ export const publicApiService = {
         store: input.store,
         carrier: input.carrier,
         declaredValueUsd: input.declaredValueUsd,
+        ...(input.cnee !== undefined ? { cnee: input.cnee } : {}),
       },
-      null,
+      [],
     );
     // Recien prealertado: la bodega aun no lo tiene, asi que no hay fotos que pedir.
     return toPublicPackage(created, []);

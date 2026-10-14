@@ -21,6 +21,7 @@ import {
   State,
   CollectionStatus,
   chargeBasisFor,
+  chargeCurrencyOf,
   collectionStatus,
   isSettled,
   outstandingFor,
@@ -102,12 +103,17 @@ export const deliveriesService = {
      * mensajero no necesita (y que incluyen datos del cobro). Se reemplazan por
      * las dos cifras derivadas, las mismas que lleva el listado de tramites.
      */
-    const items = rows.map(({ settlement, ...row }) => ({
+    const items = rows.map(({ settlement, proformaCurrency, ...row }) => ({
       ...row,
       settledCrc: settledAmount(settlement, Currency.CRC),
+      /**
+       * Moneda de cobro, ya resuelta (`chargeCurrencyOf`): la bandera de la
+       * pantalla pregunta en ella si hay un deposito en validacion.
+       */
+      chargeCurrency: chargeCurrencyOf({ shipmentType: row.shipmentType, proformaCurrency }),
       // En la moneda de cobro del tramite, la misma con la que la guarda de
       // salida a ruta responde esa pregunta (`chargeBasisFor`).
-      settled: isSettled(settlement, chargeBasisFor(row.shipmentType, row)),
+      settled: isSettled(settlement, chargeBasisFor({ ...row, proformaCurrency })),
       pendingCrc: pendingAmount(settlement, Currency.CRC),
       /**
        * Los mismos abonos en dolares. Van SIEMPRE, igual que en el listado de
@@ -208,15 +214,15 @@ export const deliveriesService = {
     for (const { settlement, ...row } of rows) {
       /**
        * El cobro se resuelve EN LA MONEDA EN QUE SE COBRA el trámite
-       * (`chargeBasisFor`), no en colones por defecto: la Paqueteria se salda en
-       * dolares, y un saldo de 40 impreso con el simbolo equivocado es el
-       * mensajero cobrando cuarenta colones en la puerta.
+       * (`chargeBasisFor`, la de su proforma), no en colones por defecto: un
+       * saldo de 40 dolares impreso con el simbolo equivocado es el mensajero
+       * cobrando cuarenta colones en la puerta.
        *
        * El estatus sale de `collectionStatus`, el mismo punto unico que usa el
        * reporte del administrador: el papel y la pantalla no pueden discrepar en
        * si un paquete esta pagado.
        */
-      const basis = chargeBasisFor(row.shipmentType, row);
+      const basis = chargeBasisFor(row);
       const settled = settledAmount(settlement, basis.currency);
 
       const item: DeliveryReportRow = {

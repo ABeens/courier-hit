@@ -440,7 +440,7 @@ export const proformasRepo = {
   async numbersByShipment(shipmentIds: readonly string[]) {
     const map = new Map<
       string,
-      { number: number; electronicInvoiceNumber: string | null; approvedAt: Date | null }
+      { number: number; electronicInvoiceNumber: string | null; approvedAt: Date | null; currency: Currency }
     >();
     if (shipmentIds.length === 0) return map;
     const rows = await db
@@ -449,6 +449,7 @@ export const proformasRepo = {
         number: proformas.number,
         electronicInvoiceNumber: proformas.electronicInvoiceNumber,
         approvedAt: proformas.approvedAt,
+        currency: proformas.currency,
       })
       .from(proformaShipments)
       .innerJoin(proformas, eq(proformaShipments.proformaId, proformas.id))
@@ -459,6 +460,7 @@ export const proformasRepo = {
           number: row.number,
           electronicInvoiceNumber: row.electronicInvoiceNumber,
           approvedAt: row.approvedAt,
+          currency: row.currency,
         });
       }
     }
@@ -646,6 +648,21 @@ export const proformasRepo = {
       )
       .returning({ id: proformas.id });
     return deleted.length > 0;
+  },
+
+  /**
+   * Cambia la moneda de cobro de un BORRADOR. La condicion de estado va en el
+   * mismo UPDATE: si otra persona la aprobo entretanto, no se toca y se responde
+   * false. Las lineas no se convierten: cada una conserva su moneda y su tasa
+   * (M2, M5), y el total en la moneda nueva sale de ellas al aprobar.
+   */
+  async setDraftCurrency(proformaId: string, currency: Currency): Promise<boolean> {
+    const updated = await db
+      .update(proformas)
+      .set({ currency, updatedAt: new Date() })
+      .where(and(eq(proformas.id, proformaId), eq(proformas.status, ProformaStatus.Borrador)))
+      .returning({ id: proformas.id });
+    return updated.length > 0;
   },
 
   /** Marca la proforma como modificada (orden del listado). */

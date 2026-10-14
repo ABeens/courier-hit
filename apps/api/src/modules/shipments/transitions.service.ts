@@ -103,10 +103,10 @@ async function assertConditions(
 
       case Condition.RequiresConfirmedPayment: {
         const paid = await paymentsRepo.settlementView(row.id);
-        // En la moneda con la que se le cobro (`chargeCurrencyFor`). Preguntarlo
-        // en la otra columna retiene un paquete de Paqueteria que ya pago sus
-        // dolares, por los colones que la conversion deja sueltos.
-        if (isSettled(paid, chargeBasisFor(row.shipmentType, row))) break;
+        // En la moneda con la que se le cobro (`chargeCurrencyOf`, la de su
+        // proforma). Preguntarlo en la otra columna retiene un paquete que ya
+        // pago sus dolares, por los colones que la conversion deja sueltos.
+        if (isSettled(paid, chargeBasisFor(row))) break;
         // Sin pagar: se retiene, salvo que el casillero este exento y el flow lo
         // admita. La bandera se lee EN VIVO de la fila, no de una copia.
         if (!paymentGateWaived(flow, row.clientPaymentGateExempt === true)) {

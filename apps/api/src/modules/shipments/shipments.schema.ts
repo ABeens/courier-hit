@@ -142,23 +142,37 @@ export const shipments = pgTable(
     tariffPosition: text('tariff_position'),
     /** Retener el paquete en la bodega del proveedor. Solo staff; null/false = no retener. */
     retain: boolean('retain'),
+    /**
+     * CNEE (consignatario) del paquete. Texto libre, solo Paqueteria: lo puede
+     * anotar el cliente al prealertar (portal o API publica) y el staff en el alta
+     * o la edicion. No viaja al proveedor. null = no indicado.
+     */
+    cnee: text('cnee'),
 
     /**
-     * Documento que acompaña al tramite: la ORDEN DE COMPRA de lo que se
-     * prealerta. Desde el portal del cliente es obligatorio y llega con el alta
-     * misma, asi que una prealerta hecha por ahi nunca nace sin el.
+     * Documentos que acompañan al tramite: la ORDEN DE COMPRA de lo que se
+     * prealerta y lo que la acompañe (factura de la tienda, comprobantes), en el
+     * orden en que se subieron y hasta `MAX_SHIPMENT_DOCUMENTS`. Desde el portal
+     * del cliente al menos uno es obligatorio y llega con el alta misma, asi que
+     * una prealerta hecha por ahi nunca nace sin documento.
      *
-     * La columna sigue siendo NULLABLE porque hay tramites que no pasan por esa
-     * puerta: los que registra el staff, el paquete que aparece en bodega sin
-     * dueño y las prealertas de la API publica, donde el documento se adjunta
-     * despues (`POST /:id/document`) si llega a adjuntarse.
+     * Puede quedar VACIO porque hay tramites que no pasan por esa puerta: los que
+     * registra el staff, el paquete que aparece en bodega sin dueño y las
+     * prealertas de la API publica, donde se adjuntan despues
+     * (`POST /:id/documents`) si llegan a adjuntarse.
      *
-     * Guarda la CLAVE OPACA del almacen, no una ruta ni el nombre original (ver
+     * Array y no tabla hija por lo mismo que las fotos de una entrega: no son una
+     * entidad, no se consultan por su cuenta y nacen y mueren con el tramite.
+     *
+     * Guarda CLAVES OPACAS del almacen, no rutas ni nombres originales (ver
      * `core/storage.ts`): el dia que el driver pase a S3 esta columna no cambia.
      * Los formatos aceptados son los de `DOCUMENT_ATTACHMENT` (PDF, Word y
      * similares); las imagenes se rechazan en el borde.
      */
-    documentFileKey: text('document_file_key'),
+    documentFileKeys: text('document_file_keys')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
 
     // --- Solo Transporte y Agenciamiento ---
     warehouse: text('warehouse'),

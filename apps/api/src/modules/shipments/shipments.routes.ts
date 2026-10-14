@@ -14,6 +14,7 @@ import { Hono } from 'hono';
 import { zValidator } from '../../core/validator';
 import {
   MAX_DELIVERY_PHOTOS,
+  MAX_SHIPMENT_DOCUMENTS,
   Permission,
   assignShipmentOwnerSchema,
   correctStateSchema,
@@ -28,6 +29,16 @@ import {
   updateShipmentSchema,
 } from '@courier/shared';
 import type { AppEnv } from '../../core/http';
+
+/**
+ * Archivos de un campo multipart que puede repetirse. Hace falta
+ * `parseBody({ all: true })`: sin el, Hono se queda con el ultimo y se pierden
+ * los demas en silencio. Con un solo archivo el valor NO llega como array, asi
+ * que se normaliza aqui.
+ */
+function filesOf(value: unknown): File[] {
+  return (Array.isArray(value) ? value : [value]).filter((item): item is File => item instanceof File);
+}
 import { requireAnyPermission } from '../../core/middleware/requireAnyPermission';
 import { requirePermission } from '../../core/middleware/requirePermission';
 import { requireSession } from '../../core/middleware/requireSession';
@@ -65,24 +76,25 @@ shipmentsRoutes.get('/', canRead, zValidator('query', listShipmentsQuerySchema),
  * Prealerta del titular del casillero. El dueño sale de la sesion, no del cuerpo.
  *
  * El cuerpo es MULTIPART y no JSON, a diferencia del resto del modulo, porque la
- * orden de compra es OBLIGATORIA: los datos y el documento tienen que llegar
- * juntos para que no exista una prealerta sin el. Antes iban en dos peticiones
+ * orden de compra es OBLIGATORIA: los datos y los documentos tienen que llegar
+ * juntos para que no exista una prealerta sin ellos. El campo `document` se
+ * repite una vez por archivo, de 1 a `MAX_SHIPMENT_DOCUMENTS`. Antes iban en dos peticiones
  * (alta en JSON y archivo despues), y ahi el documento solo podia ser opcional:
  * si la segunda fallaba, el tramite ya estaba dado de alta.
  *
  * Los campos de texto se validan con el MISMO esquema compartido de siempre y el
  * archivo lo valida el almacen, igual que en el registro de una visita de
- * entrega. El adjunto por separado (`POST /:id/document`) sigue existiendo: es
- * por donde se REEMPLAZA el documento de un tramite ya registrado.
+ * entrega. El adjunto por separado (`POST /:id/documents`) sigue existiendo: es
+ * por donde se SUMAN documentos a un tramite ya registrado.
  *
  * Solo cubre esta puerta. Por la API publica (`POST /v1/prealerts`) la prealerta
  * se sigue aceptando sin documento: es un contrato publicado y exigirlo ahi
  * romperia a quien ya la consume.
  */
 shipmentsRoutes.post('/prealert', requirePermission(Permission.PrealertCreate), async (c) => {
-  const form = await c.req.parseBody();
-  const document = form['document'];
-  if (!(document instanceof File)) throw StorageErrors.fileRequired('la orden de compra');
+  const form = await c.req.parseBody({ all: true });
+  const documents = filesOf(form['document']);
+  if (documents.length === 0) throw StorageErrors.fileRequired('la orden de compra');
 
   /**
    * En multipart todo llega como texto. El valor declarado se convierte aqui
@@ -101,23 +113,24 @@ shipmentsRoutes.post('/prealert', requirePermission(Permission.PrealertCreate), 
     store: text(form['store']),
     carrier: text(form['carrier']),
     declaredValueUsd: declared === undefined ? undefined : Number(declared),
+    cnee: text(form['cnee']),
   });
 
-  const created = await shipmentsService.prealert(c.get('session'), input, document);
+  const created = await shipmentsService.prealert(c.get('session'), input, documents);
   return c.json(created, 201);
 });
 
 /**
  * Alta por staff. El permiso definitivo lo valida el servicio segun el tipo.
  *
- * MULTIPART, como la prealerta, para que el documento (opcional aqui) viaje en la
+ * MULTIPART, como la prealerta, para que los documentos (opcionales aqui) viajen en la
  * misma peticion que los datos: o entra todo o no entra nada. El campo `payload`
  * lleva el JSON de `createShipmentSchema` (mismo patron que la entrega de una
  * proforma: el esquema tiene numeros y booleanos, y reconstruirlos campo a campo
- * desde texto duplicaria la validacion) y `document` el archivo, si lo hay.
+ * desde texto duplicaria la validacion) y `document`, repetido, los archivos si los hay.
  */
 shipmentsRoutes.post('/', canWrite, async (c) => {
-  const form = await c.req.parseBody();
+  const form = await c.req.parseBody({ all: true });
   const rawPayload = form['payload'];
   let parsed: unknown = {};
   try {
@@ -126,13 +139,8 @@ shipmentsRoutes.post('/', canWrite, async (c) => {
     parsed = {};
   }
   const input = createShipmentSchema.parse(parsed);
-  const document = form['document'];
 
-  const created = await shipmentsService.create(
-    c.get('session'),
-    input,
-    document instanceof File ? document : null,
-  );
+  const created = await shipmentsService.create(c.get('session'), input, filesOf(form['document']));
   return c.json(created, 201);
 });
 
@@ -239,10 +247,12 @@ shipmentsRoutes.get('/:id/delivery-photos/:attemptId/:index', canRead, async (c)
 });
 
 /**
- * Documento adjunto del tramite (la factura de la compra, tipicamente). Va como
- * multipart porque lleva un archivo; el resto del modulo es JSON.
+ * Documentos adjuntos del tramite (la orden de compra, la factura de la tienda).
+ * Van como multipart porque llevan archivos; el resto del modulo es JSON. El
+ * campo `file` se repite una vez por archivo y SE SUMAN a los que ya habia, sin
+ * pasar de `MAX_SHIPMENT_DOCUMENTS` en total.
  *
- * La barrera es `canRead` y no `canWrite` a proposito: adjuntar el documento es
+ * La barrera es `canRead` y no `canWrite` a proposito: adjuntar documentos es
  * parte de prealertar, y el cliente solo tiene permisos de LECTURA sobre sus
  * tramites (`package.read.own`). Con `canWrite` ningun cliente podria adjuntar
  * nada. Quien puede escribir es siempre el dueño del tramite o el staff, y de eso
@@ -250,23 +260,38 @@ shipmentsRoutes.get('/:id/delivery-photos/:attemptId/:index', canRead, async (c)
  * detalle (404 si el tramite no es suyo). Mismo criterio que el comprobante de
  * deposito en el modulo de pagos.
  */
-shipmentsRoutes.post('/:id/document', canRead, async (c) => {
-  const form = await c.req.parseBody();
-  const file = form['file'];
-  if (!(file instanceof File)) throw StorageErrors.fileRequired('el documento del trámite');
+shipmentsRoutes.post('/:id/documents', canRead, async (c) => {
+  const form = await c.req.parseBody({ all: true });
+  const files = filesOf(form['file']);
+  return c.json(await shipmentsService.attachDocuments(c.get('session'), c.req.param('id'), files));
+});
 
-  return c.json(await shipmentsService.attachDocument(c.get('session'), c.req.param('id'), file));
+/** Posicion de un documento en la ruta, o null si no puede existir. */
+function documentIndex(raw: string): number | null {
+  const index = Number(raw);
+  return Number.isInteger(index) && index >= 0 && index < MAX_SHIPMENT_DOCUMENTS ? index : null;
+}
+
+/** Quita un documento por su posicion. Mismas barreras que adjuntarlo. */
+shipmentsRoutes.delete('/:id/documents/:index', canRead, async (c) => {
+  const index = documentIndex(c.req.param('index'));
+  if (index === null) return c.notFound();
+  return c.json(await shipmentsService.removeDocument(c.get('session'), c.req.param('id'), index));
 });
 
 /**
- * Descarga del documento. `attachment` y no `inline`: un .docx o un .xlsx no los
- * pinta el navegador, y forzar la descarga evita la pantalla en blanco. El nombre
- * lo arma el servicio a partir del consecutivo, nunca del archivo original.
+ * Descarga de un documento, por su posicion. `attachment` y no `inline`: un
+ * .docx o un .xlsx no los pinta el navegador, y forzar la descarga evita la
+ * pantalla en blanco. El nombre lo arma el servicio a partir del consecutivo,
+ * nunca del archivo original.
  */
-shipmentsRoutes.get('/:id/document', canRead, async (c) => {
+shipmentsRoutes.get('/:id/documents/:index', canRead, async (c) => {
+  const index = documentIndex(c.req.param('index'));
+  if (index === null) return c.notFound();
   const { body, contentType, filename } = await shipmentsService.documentFile(
     c.get('session'),
     c.req.param('id'),
+    index,
   );
   return c.body(body, 200, {
     'content-type': contentType,

@@ -10,7 +10,7 @@
  *
  * Paqueteria va en USD: su mapeo cotiza en dolares de punta a punta (MONTO
  * FACTURA, IMPUESTOS, TRANSPORTE INTL). Agenciamiento y transporte va en CRC,
- * la moneda en que se le cobra (`chargeCurrencyFor`). Lo que no cambia es que
+ * la moneda en que se le cobra (`chargeCurrencyOf`). Lo que no cambia es que
  * cada resta se hace con los dos lados en LA MISMA moneda (regla M2): por eso
  * las funciones que restan dinero reciben la moneda explicita.
  */

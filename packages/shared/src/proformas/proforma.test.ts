@@ -14,13 +14,15 @@ import {
   proformaDeliveryStatus,
   ProformaJoinBlock,
   allocateProformaInvoices,
+  allowedProformaCurrencies,
+  canChooseProformaCurrency,
   formatProformaNumber,
+  initialProformaCurrency,
   sumInvoices,
   ProformaStatus,
   groupsAutomatically,
   isProformaEditable,
   joinBlockFor,
-  proformaCurrencyFor,
 } from './proforma';
 import type { ProformaIdentity } from './proforma';
 
@@ -52,15 +54,33 @@ test('solo Paqueteria arma sus borradores sola', () => {
   assert.equal(groupsAutomatically(Flow.Agenciamiento), false);
 });
 
-test('la moneda de la proforma es la de cobro del flujo', () => {
-  assert.equal(proformaCurrencyFor(ShipmentType.Paqueteria), Currency.USD);
-  assert.equal(proformaCurrencyFor(ShipmentType.Aereo), Currency.CRC);
-  assert.equal(proformaCurrencyFor(ShipmentType.Agenciamiento), Currency.CRC);
+test('Paqueteria cobra siempre en dolares: su moneda no se elige', () => {
+  assert.equal(canChooseProformaCurrency(Flow.Paqueteria), false);
+  assert.deepEqual(allowedProformaCurrencies(Flow.Paqueteria), [Currency.USD]);
+  // Ni aunque el catalogo propusiera colones.
+  assert.equal(initialProformaCurrency(ShipmentType.Paqueteria, Currency.CRC), Currency.USD);
+});
+
+test('Transporte y Agenciamiento eligen la moneda de su proforma', () => {
+  for (const flow of [Flow.Transporte, Flow.Agenciamiento]) {
+    assert.equal(canChooseProformaCurrency(flow), true);
+    assert.deepEqual(allowedProformaCurrencies(flow), [Currency.CRC, Currency.USD]);
+  }
+});
+
+test('la proforma de Transporte nace con la moneda que propone el catalogo', () => {
+  assert.equal(initialProformaCurrency(ShipmentType.Aereo, Currency.USD), Currency.USD);
+  assert.equal(initialProformaCurrency(ShipmentType.Agenciamiento, Currency.CRC), Currency.CRC);
+});
+
+test('si el catalogo no propone moneda, nace en la del flujo (colones)', () => {
+  assert.equal(initialProformaCurrency(ShipmentType.Aereo, null), Currency.CRC);
+  assert.equal(initialProformaCurrency(ShipmentType.Agenciamiento, null), Currency.CRC);
 });
 
 test('un paquete del mismo cliente entra a su borrador de Paqueteria', () => {
   assert.equal(
-    joinBlockFor(packageDraft, { clientId: CLIENT, shipmentType: ShipmentType.Paqueteria }),
+    joinBlockFor(packageDraft, { clientId: CLIENT, shipmentType: ShipmentType.Paqueteria, currency: Currency.USD }),
     null,
   );
 });
@@ -70,7 +90,7 @@ test('una proforma aprobada o pagada no recibe tramites', () => {
     assert.equal(
       joinBlockFor(
         { ...packageDraft, status },
-        { clientId: CLIENT, shipmentType: ShipmentType.Paqueteria },
+        { clientId: CLIENT, shipmentType: ShipmentType.Paqueteria, currency: Currency.USD },
       ),
       ProformaJoinBlock.NotDraft,
     );
@@ -79,33 +99,43 @@ test('una proforma aprobada o pagada no recibe tramites', () => {
 
 test('no se mezclan clientes', () => {
   assert.equal(
-    joinBlockFor(packageDraft, { clientId: 'cliente-b', shipmentType: ShipmentType.Paqueteria }),
+    joinBlockFor(packageDraft, { clientId: 'cliente-b', shipmentType: ShipmentType.Paqueteria, currency: Currency.USD }),
     ProformaJoinBlock.OtherClient,
   );
 });
 
 test('no se mezclan flujos: un agenciamiento no entra a una proforma de Transporte', () => {
   assert.equal(
-    joinBlockFor(transportDraft, { clientId: CLIENT, shipmentType: ShipmentType.Agenciamiento }),
+    joinBlockFor(transportDraft, { clientId: CLIENT, shipmentType: ShipmentType.Agenciamiento, currency: Currency.CRC }),
     ProformaJoinBlock.OtherFlow,
   );
 });
 
 test('dentro de Transporte se juntan aereo y maritimo', () => {
   for (const shipmentType of [ShipmentType.Aereo, ShipmentType.MaritimoFCL, ShipmentType.MaritimoLCL]) {
-    assert.equal(joinBlockFor(transportDraft, { clientId: CLIENT, shipmentType }), null);
+    assert.equal(joinBlockFor(transportDraft, { clientId: CLIENT, shipmentType, currency: Currency.CRC }), null);
   }
 });
 
 test('monedas distintas, proformas distintas', () => {
-  // Un borrador de Transporte en dolares (dato imposible hoy) no recibe tramites
-  // que se cobran en colones: la moneda se revisa aunque hoy la fije el flujo.
+  // Un tramite que viene de una proforma en colones no entra a un borrador de
+  // Transporte que se cobra en dolares: primero se iguala la moneda de una de las dos.
   assert.equal(
     joinBlockFor(
       { ...transportDraft, currency: Currency.USD },
-      { clientId: CLIENT, shipmentType: ShipmentType.Aereo },
+      { clientId: CLIENT, shipmentType: ShipmentType.Aereo, currency: Currency.CRC },
     ),
     ProformaJoinBlock.OtherCurrency,
+  );
+});
+
+test('dos proformas de Transporte en dolares si se juntan', () => {
+  assert.equal(
+    joinBlockFor(
+      { ...transportDraft, currency: Currency.USD },
+      { clientId: CLIENT, shipmentType: ShipmentType.MaritimoFCL, currency: Currency.USD },
+    ),
+    null,
   );
 });
 

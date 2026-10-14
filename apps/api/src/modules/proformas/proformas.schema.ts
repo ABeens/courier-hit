@@ -68,9 +68,10 @@ export const proformas = pgTable(
       .references(() => clients.id, { onDelete: 'cascade' }),
     flow: shipmentFlowEnum('flow').notNull(),
     /**
-     * Moneda de la proforma: la de cobro de su flujo (`proformaCurrencyFor`).
-     * Explicita (regla M2) aunque hoy se deduzca del flujo: es la columna contra
-     * la que se compara lo pagado.
+     * Moneda en que se COBRA la proforma, y con ella cada uno de sus tramites
+     * (`chargeCurrencyOf`): es la columna contra la que se compara lo pagado.
+     * Paqueteria siempre USD; Transporte y Agenciamiento la elige el operador
+     * mientras es borrador (`canChooseProformaCurrency`).
      */
     currency: currencyEnum('currency').notNull(),
     status: proformaStatusEnum('status').notNull().default(ProformaStatus.Borrador),

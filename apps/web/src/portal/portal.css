@@ -1472,6 +1472,10 @@ select.input { cursor: pointer; padding-right: 30px; }
 }
 .file-field-size { font-size: 12px; color: var(--faint); }
 .file-field-actions { display: flex; gap: 6px; flex: none; }
+/* Variante de varios archivos (FilesField): una ficha por archivo y, debajo, la
+   zona para añadir otro mientras quede sitio. */
+.files-field-list { display: flex; flex-direction: column; gap: 6px; list-style: none; margin: 0 0 6px; padding: 0; }
+.files-field-count { font-weight: 500; color: var(--faint); }
 @media (max-width: 480px) {
   /* Sin sitio para nombre y botones en la misma línea: los botones bajan. */
   .file-field-picked { flex-wrap: wrap; }
@@ -1576,6 +1580,19 @@ select.input { cursor: pointer; padding-right: 30px; }
    Cada miniatura es un <button>: se amplia con clic, con Enter y con la barra, y
    el foco lo pinta el estilo de foco del portal sin nada extra. */
 .pkg-photos { margin-bottom: 22px; }
+
+/* Documentos adjuntos del tramite, en el historial: una ficha por archivo. */
+.pkg-docs { margin-bottom: 22px; }
+.pkg-doc-list { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.pkg-doc {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--ink); font-size: 13.5px; font-weight: 600;
+  text-decoration: none; transition: border-color .15s ease, background .15s ease;
+}
+.pkg-doc:hover { border-color: var(--brand); background: var(--brand-softer); }
+.pkg-doc svg { width: 17px; height: 17px; flex: none; color: var(--brand); }
+.pkg-doc-ext { font-size: 11px; font-weight: 700; color: var(--faint); }
 
 .pkg-photos-title {
   margin-bottom: 8px;

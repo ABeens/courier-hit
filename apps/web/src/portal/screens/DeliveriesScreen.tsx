@@ -30,7 +30,7 @@ import {
   findProvince,
   usesPackageFields,
 } from '@courier/shared';
-import type { ShipmentType } from '@courier/shared';
+import type { Currency, ShipmentType } from '@courier/shared';
 import { IconButton } from '../components/IconButton';
 import { FilterBar } from '../components/FilterBar';
 import { CardsSkeleton, EmptyList, ListBody } from '../components/ListLoading';
@@ -71,8 +71,9 @@ export interface DeliveryQueueRow {
    * adelanto el trámite a mano y el mensajero va a llegar a cobrar.
    *
    * Las dos monedas, porque la bandera decide en la que se cobra el trámite
-   * (`chargeBasisFor`) y en Paquetería son dólares.
+   * (`chargeCurrency`, la de su proforma), que puede ser dólares.
    */
+  chargeCurrency: Currency;
   settledUsd: number;
   settledCrc: number;
   settled: boolean;
@@ -302,7 +303,7 @@ export function DeliveriesScreen() {
                             lleva algo con saldo: es lo unico que cambia lo que hace
                             al llegar. */}
                         <PayFlag
-                          shipmentType={pay.shipmentType}
+                          chargeCurrency={pay.chargeCurrency}
                           invoiceTotalUsd={pay.invoiceTotalUsd}
                           invoiceTotalCrc={pay.invoiceTotalCrc}
                           settledUsd={pay.settledUsd}

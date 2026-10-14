@@ -117,7 +117,8 @@ export interface ReportColumn {
  * factura y luego el resto) y no coincide con la numeracion del mapeo. El orden
  * no es cosmetico: el reporte operativo se define mas abajo como el prefijo de
  * este ("Solo puede ver del Campo 1 al Campo 15"), asi que los campos 1 a 15
- * deben quedar SIEMPRE en las primeras 15 posiciones, en el orden que sea.
+ * deben quedar SIEMPRE en las primeras posiciones, en el orden que sea. El CNEE
+ * (fuera del mapeo) cierra ese prefijo: es operativo y lo ven los dos reportes.
  *
  * Los comentarios numerados son el puente con el documento del negocio (numero
  * de campo del mapeo, no posicion): sin ellos, cuadrar 27 columnas contra una
@@ -139,6 +140,9 @@ const PAQUETERIA_COLUMNS: readonly ReportColumn[] = [
   { key: 'deliveredAt', label: 'FECHA ENTREGA' }, //               12  derivado del historial
   { key: 'month', label: 'MES' }, //                               13  derivado de 12
   { key: 'proforma', label: 'PROFORMA' }, //                       14  consecutivo propio
+  // Fuera del mapeo original (sin numero, para no mover la numeracion): el CNEE
+  // es dato operativo, asi que cierra el prefijo que ve el reporte operativo.
+  { key: 'cnee', label: 'CNEE' }, //                                +
   // --- A partir de aqui, solo el reporte FULL (admin) ---
   { key: 'collectionStatus', label: 'ESTATUS COBRO' }, //          16  derivado de los pagos
   { key: 'bankAccount', label: 'CUENTA' }, //                      17
@@ -161,8 +165,8 @@ const PAQUETERIA_COLUMNS: readonly ReportColumn[] = [
   { key: 'electronicInvoiceNumber', label: 'FE' }, //              27
 ];
 
-/** Cuantas columnas ve el reporte operativo de Paqueteria (campos 1 al 15 del mapeo). */
-const PAQUETERIA_OPERATIONAL_FIELDS = 15;
+/** Cuantas columnas ve el reporte operativo de Paqueteria (campos 1 al 15 del mapeo, mas CNEE). */
+const PAQUETERIA_OPERATIONAL_FIELDS = 16;
 
 /**
  * AGENCIAMIENTO y transporte, los 23 campos del mapeo. El orden lo pidio el
@@ -175,7 +179,7 @@ const PAQUETERIA_OPERATIONAL_FIELDS = 15;
  * quitando las claves de `AGENCIAMIENTO_FULL_ONLY_KEYS` (campos 1 al 18).
  *
  * Los montos van en COLONES: es la moneda en que se le cobra a este flujo
- * (`chargeCurrencyFor`), y la del deposito que se compara contra la factura en
+ * (`chargeCurrencyOf`), y la del deposito que se compara contra la factura en
  * DIF. El encabezado lo dice para que el CSV no dependa de saberlo.
  */
 const AGENCIAMIENTO_COLUMNS: readonly ReportColumn[] = [
@@ -253,6 +257,7 @@ export const REPORT_COLUMNS: Record<ReportKind, readonly ReportColumn[]> = {
     { key: 'clientName', label: 'Cliente' },
     { key: 'tracking', label: 'Tracking / AWB / BL' },
     { key: 'description', label: 'Descripción (REF)' },
+    { key: 'cnee', label: 'CNEE' },
     { key: 'store', label: 'Tienda' },
     { key: 'carrier', label: 'Transportista' },
     { key: 'hawb', label: 'HAWB / HBL' },

@@ -1006,7 +1006,7 @@ function buildShipment(args: BuildArgs): void {
     insuredValueUsd: isPackage && rng.chance(0.15) ? roundMoney(80 + rng.next() * 700, Currency.USD) : null,
     tariffPosition: isPackage && rng.chance(0.3) ? `8517.62.00.${String(rng.int(10, 99))}` : null,
     retain: isPackage ? rng.chance(0.04) : null,
-    documentFileKey: isPackage && rng.chance(0.35) ? `documents/bulk-${code}.pdf` : null,
+    documentFileKeys: isPackage && rng.chance(0.35) ? [`documents/bulk-${code}.pdf`] : [],
     warehouse: isPackage ? null : rng.pick(WAREHOUSES),
     dua: isPackage ? null : `DUA-2026-${String(rng.int(100_000, 999_999))}`,
     billingNotes: !isPackage && rng.chance(0.3) ? 'Cliente solicita factura separada por flete y aranceles.' : null,
@@ -1083,13 +1083,19 @@ function buildShipment(args: BuildArgs): void {
   // --- 5) Pagos. Se cobra en la moneda del tramite: Paqueteria en dolares,
   // Transporte y Agenciamiento en colones (`chargeBasisFor`) ---
   if (approved) {
-    const basis = chargeBasisFor(type, { invoiceTotalUsd: totals!.usd, invoiceTotalCrc: totals!.crc });
+    // Las proformas del seed nacen con la moneda del flujo (`proformaCurrency: null`).
+    const basis = chargeBasisFor({
+      shipmentType: type,
+      proformaCurrency: null,
+      invoiceTotalUsd: totals!.usd,
+      invoiceTotalCrc: totals!.crc,
+    });
     const due = basis.invoiceTotal!;
     const settledRequired = settledState !== undefined && reached(settledState);
     const paidAt =
       (settledState ? firstAt(settledState) : null) ??
       new Date(Math.min(NOW.getTime(), approvedAt!.getTime() + DAY));
-    const account = (): BankAccount => rng.pick(bankAccountsFor(type));
+    const account = (): BankAccount => rng.pick(bankAccountsFor(basis.currency));
 
     const deposit = (amount: number, status: PaymentStatus, note: string | null = null): typeof payments.$inferInsert => ({
       shipmentId,

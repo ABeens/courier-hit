@@ -204,21 +204,22 @@ export function bankAccountOptionLabel(account: BankAccount): string {
 }
 
 /**
- * Cuentas que se le OFRECEN al cliente para depositar un tramite: Paqueteria
- * solo las de dolares, Transporte y Agenciamiento las de las dos monedas.
+ * Cuentas que se le OFRECEN al cliente para depositar, segun la moneda en que se
+ * le cobra (`chargeCurrencyOf`): un cobro en dolares solo las de dolares, uno en
+ * colones las de las dos monedas.
  *
- * No es una regla suelta: es la misma con la que `chargeCurrencyFor` cobra la
- * Paqueteria en dolares. Ofrecerle una cuenta en colones para una factura que
- * lee y paga en dolares es pedirle que convierta el monto de cabeza, y el
- * comprobante llega por una cifra que no cuadra con nada.
+ * Ofrecerle una cuenta en colones para una factura que lee y paga en dolares es
+ * pedirle que convierta el monto de cabeza, y el comprobante llega por una cifra
+ * que no cuadra con nada. Al reves no pasa: depositar dolares contra una factura
+ * en colones es lo que Transporte y Agenciamiento siempre admitieron.
  *
  * Solo acota lo que se le PROPONE. La cuenta a la que realmente entro el dinero
  * la sabe el banco, no el sistema: por eso el staff puede corregirla despues sin
  * este filtro (ver `bankAccountsForStaff`).
  */
-export function bankAccountsFor(shipmentType: ShipmentType): BankAccount[] {
+export function bankAccountsFor(chargeCurrency: Currency): BankAccount[] {
   const accounts = Object.values(BankAccount);
-  if (flowForType(shipmentType) !== Flow.Paqueteria) return accounts;
+  if (chargeCurrency !== Currency.USD) return accounts;
   return accounts.filter((a) => BANK_ACCOUNTS[a].currency === Currency.USD);
 }
 
@@ -237,28 +238,48 @@ export function bankAccountsForStaff(): BankAccount[] {
 }
 
 /**
+ * Moneda de cobro POR DEFECTO de un flujo: la que toma una proforma al nacer
+ * mientras nadie elija otra, y la de un tramite que todavia no esta en ninguna.
+ *
+ * REGLA DE NEGOCIO: la Paqueteria se cobra en DOLARES, siempre. Sus lineas de
+ * costo son USD-only (`allowedCurrencies`), asi que el dolar es la cifra EXACTA y
+ * el colon la derivada de una tasa. Cobrar la derivada le pide al cliente que
+ * deposite un monto que no coincide con el que leyo, y le manda a la tarjeta un
+ * importe que no es el de su factura. Transporte y Agenciamiento arrancan en
+ * colones, pero su proforma puede cobrarse en dolares (`canChooseProformaCurrency`).
+ */
+export function defaultChargeCurrencyFor(shipmentType: ShipmentType): Currency {
+  return flowForType(shipmentType) === Flow.Paqueteria ? Currency.USD : Currency.CRC;
+}
+
+/**
+ * Lo que decide en que moneda se cobra un tramite: su tipo y la moneda de la
+ * proforma en la que esta (null si todavia no entro a ninguna).
+ */
+export interface ChargeSubject {
+  shipmentType: ShipmentType;
+  proformaCurrency: Currency | null;
+}
+
+/**
  * Moneda en la que se COBRA un tramite: la del importe del abono, la del intento
  * que se le manda a la pasarela y la de la cuenta a la que se deposita.
  *
- * REGLA DE NEGOCIO: la Paqueteria se cobra en DOLARES. Sus lineas de costo son
- * USD-only (`allowedCurrencies`), asi que el dolar es la cifra EXACTA y el colon
- * la derivada de una tasa. Cobrar la derivada le pide al cliente que deposite un
- * monto que no coincide con el que leyo, y le manda a la tarjeta un importe que
- * no es el de su factura. Transporte y Agenciamiento se cobra en colones, que es
- * la moneda local y la de la mitad de sus cuentas.
+ * Es la de SU PROFORMA. La proforma es lo que el cliente paga, y un tramite
+ * cobrado en una moneda distinta a la de su documento obligaria a convertir para
+ * reconocer el propio cobro. Sin proforma todavia no hay factura que cobrar, y se
+ * responde la del flujo (`defaultChargeCurrencyFor`).
  *
  * NO ES `billingCurrencyFor`, y la diferencia es la que evita confundirlas:
  * aquella dice en que moneda se le HABLA a quien mira la pantalla (el staff lee
- * colones en todo), esta dice en que moneda SALE el dinero. Coinciden en el
- * cliente de Paqueteria justamente porque a el se le habla en la moneda en que
- * se le cobra.
+ * colones en todo), esta dice en que moneda SALE el dinero.
  *
  * Punto UNICO de esa eleccion: la consultan el pago suelto, el pago agrupado y
  * la liquidacion (`isSettled`). Con la condicion escrita en tres sitios, el
  * importe cobrado y el saldo que lo cancela acaban en monedas distintas.
  */
-export function chargeCurrencyFor(shipmentType: ShipmentType): Currency {
-  return flowForType(shipmentType) === Flow.Paqueteria ? Currency.USD : Currency.CRC;
+export function chargeCurrencyOf(subject: ChargeSubject): Currency {
+  return subject.proformaCurrency ?? defaultChargeCurrencyFor(subject.shipmentType);
 }
 
 /** Los dos totales congelados de la factura, tal como los guarda el tramite. */
@@ -279,9 +300,17 @@ export interface ChargeBasis {
   invoiceTotal: number | null;
 }
 
-/** La base de cobro de un tramite: su moneda segun el tipo y el total que le toca. */
-export function chargeBasisFor(shipmentType: ShipmentType, invoice: InvoiceTotals): ChargeBasis {
-  const currency = chargeCurrencyFor(shipmentType);
+/** La base de cobro de un tramite: su moneda de cobro y el total que le toca en ella. */
+export function chargeBasisFor(subject: ChargeSubject & InvoiceTotals): ChargeBasis {
+  return chargeBasisWith(chargeCurrencyOf(subject), subject);
+}
+
+/**
+ * La base de cobro con la moneda ya resuelta: lee de la factura la columna de
+ * esa moneda. La usan las pantallas, que reciben la moneda de cobro calculada
+ * por la API (`chargeCurrency`) y no la rededucen.
+ */
+export function chargeBasisWith(currency: Currency, invoice: InvoiceTotals): ChargeBasis {
   return {
     currency,
     invoiceTotal: currency === Currency.USD ? invoice.invoiceTotalUsd : invoice.invoiceTotalCrc,
@@ -445,22 +474,21 @@ export function outstanding(
 /**
  * Moneda en la que se le EXPRESA el cobro a quien esta mirando la pantalla.
  *
- * NO ES `chargeCurrencyFor`, que es la moneda en la que el dinero SALE. Esta
+ * NO ES `chargeCurrencyOf`, que es la moneda en la que el dinero SALE. Esta
  * solo elige de que columna se lee una cifra que ya existe en las dos. Al
- * CLIENTE de Paqueteria las dos coinciden y por buen motivo: se le habla en la
- * moneda en que se le cobra.
+ * CLIENTE las dos coinciden y por buen motivo: se le habla en la moneda en que
+ * se le cobra.
  *
- * REGLA DE NEGOCIO: al CLIENTE, el saldo de un tramite de Paqueteria se le dice
- * siempre en dolares y nunca convertido a colones. No es una preferencia de
- * formato: sus lineas de costo son USD-only (`allowedCurrencies`), asi que el
- * dolar es la cifra EXACTA y el colon la derivada de una tasa. Enseñarle las dos
- * le da dos numeros para la misma deuda y le obliga a preguntar con cual se le
- * va a cobrar.
+ * REGLA DE NEGOCIO: al CLIENTE, el saldo se le dice en la moneda de cobro y
+ * nunca convertido a la otra. No es una preferencia de formato: la cifra de la
+ * moneda de cobro es la EXACTA y la otra la derivada de una tasa. Enseñarle las
+ * dos le da dos numeros para la misma deuda y le obliga a preguntar con cual se
+ * le va a cobrar.
  *
  * El STAFF sigue leyendo colones en todo: es la moneda con la que cuadra contra
- * el banco y arma sus reportes. Que un paquete de Paqueteria se COBRE en dolares
- * no cambia eso; lo que cambia es que el "esta pagado" ya no sale de la columna
- * que el staff esta mirando, sino de `isSettled` sobre la base de cobro. Por eso
+ * el banco y arma sus reportes. Que un tramite se COBRE en dolares no cambia eso;
+ * lo que cambia es que el "esta pagado" ya no sale de la columna que el staff
+ * esta mirando, sino de `isSettled` sobre la base de cobro. Por eso
  * `billingAmounts` recibe ese booleano y no lo rededuce: cuando las dos columnas
  * discrepan por un redondeo, manda la contabilidad.
  *
@@ -468,9 +496,8 @@ export function outstanding(
  * de la ficha y la pantalla de pago tienen que coincidir; con la condicion
  * escrita en tres sitios, tarde o temprano no coinciden.
  */
-export function billingCurrencyFor(shipmentType: ShipmentType, role: Role): Currency {
-  const isPaqueteria = flowForType(shipmentType) === Flow.Paqueteria;
-  return role === Role.Client && isPaqueteria ? Currency.USD : Currency.CRC;
+export function billingCurrencyFor(chargeCurrency: Currency, role: Role): Currency {
+  return role === Role.Client ? chargeCurrency : Currency.CRC;
 }
 
 /** Cifras del cobro de un tramite en las DOS monedas, tal como llegan de la API. */

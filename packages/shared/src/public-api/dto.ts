@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { paginationQuerySchema } from '../http/pagination';
 import { CARRIERS, STORES } from '../shipments/catalogs';
 import {
+  cneeSchema,
   descriptionSchema,
   declaredValueUsdSchema,
   trackingSchema,
@@ -82,6 +83,8 @@ export const publicPrealertSchema = z.object({
     errorMap: () => ({ message: 'El transportista no es uno de los del catálogo.' }),
   }),
   declaredValueUsd: declaredValueUsdSchema,
+  /** CNEE (consignatario). Texto libre y opcional. */
+  cnee: cneeSchema.optional(),
 });
 export type PublicPrealertInput = z.infer<typeof publicPrealertSchema>;
 
@@ -137,6 +140,8 @@ export interface PublicPackage {
   /** Peso en kg redondeado hacia arriba (entero); `null` hasta que se pesa en bodega. */
   weightKg: number | null;
   declaredValueUsd: number | null;
+  /** CNEE (consignatario), texto libre; `null` si no se indico. */
+  cnee: string | null;
   /** True cuando la factura está cubierta por pagos confirmados. */
   settled: boolean;
   /**

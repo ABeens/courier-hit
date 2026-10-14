@@ -23,26 +23,29 @@
  *
  * HABLA EN COLONES SALVO QUE SE LE DIGA OTRA COSA. Es la moneda de la operacion,
  * la que cuadra contra el banco. El tablero del cliente le pasa `amounts` con la
- * moneda que a EL le toca leer (`billingCurrencyFor`), que en Paqueteria son
- * dolares sin convertir.
+ * moneda que a EL le toca leer (`billingCurrencyFor`), que es la de cobro y sin
+ * convertir.
  *
  * Lo que NO se lee en colones es si el tramite esta en validacion: esa pregunta
- * se responde en la moneda en que se cobra (`chargeBasisFor`), que es contra la
+ * se responde en la moneda en que se cobra (`chargeCurrency`), que es contra la
  * que se cancela la deuda. Por eso la ficha recibe los pares de las dos monedas
  * y no solo la columna que va a pintar.
  */
-import type { BillingAmounts, ShipmentType } from '@courier/shared';
+import type { BillingAmounts } from '@courier/shared';
 import {
   Currency,
   awaitsValidation,
   billingAmounts,
-  chargeBasisFor,
+  chargeBasisWith,
   formatMoney,
 } from '@courier/shared';
 
 export interface PayState {
-  /** Decide en que moneda se cobra y se salda el tramite (`chargeCurrencyFor`). */
-  shipmentType: ShipmentType;
+  /**
+   * Moneda en que se cobra y se salda el tramite: la de su proforma, resuelta
+   * por la API (`chargeCurrencyOf`).
+   */
+  chargeCurrency: Currency;
   /** Montos de factura congelados en las dos monedas; null = costos sin aprobar. */
   invoiceTotalUsd: number | null;
   invoiceTotalCrc: number | null;
@@ -82,7 +85,7 @@ export function awaitingValidation(row: PayState): boolean {
   // En la MONEDA DE COBRO, no en la que se esta pintando: un comprobante en
   // dolares comparado contra un saldo en colones no cubre nada, y la ficha
   // ofreceria pagar de nuevo un saldo que ya tiene comprobante encima.
-  const basis = chargeBasisFor(row.shipmentType, row);
+  const basis = chargeBasisWith(row.chargeCurrency, row);
   const { paid, pending } = billingAmounts(row, basis.currency, row.settled);
   return awaitsValidation(paid, pending, basis);
 }

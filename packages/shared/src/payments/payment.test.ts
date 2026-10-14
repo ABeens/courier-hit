@@ -16,7 +16,9 @@ import {
   bankAccountsForStaff,
   chargeBasisFor,
   chargeBasisIn,
-  chargeCurrencyFor,
+  chargeBasisWith,
+  chargeCurrencyOf,
+  defaultChargeCurrencyFor,
   isSettled,
   PaymentStatus,
 } from './payment';
@@ -59,24 +61,17 @@ test('sin factura aprobada no hay nada que bloquear', () => {
 // equivocada, asi que el catalogo se prueba tan en serio como las reglas.
 // ---------------------------------------------------------------------------
 
-test('Paqueteria solo ofrece las cuentas en dolares', () => {
-  const accounts = bankAccountsFor(ShipmentType.Paqueteria);
+test('un cobro en dolares solo ofrece las cuentas en dolares', () => {
+  const accounts = bankAccountsFor(Currency.USD);
   assert.deepEqual(accounts, [BankAccount.BacUsd, BankAccount.BcrUsd]);
   assert.ok(accounts.every((a) => BANK_ACCOUNTS[a].currency === Currency.USD));
 });
 
-test('Transporte y Agenciamiento ofrecen las cuentas de las dos monedas', () => {
-  for (const type of [
-    ShipmentType.Aereo,
-    ShipmentType.MaritimoFCL,
-    ShipmentType.MaritimoLCL,
-    ShipmentType.Agenciamiento,
-  ]) {
-    const accounts = bankAccountsFor(type);
-    assert.equal(accounts.length, 4, `${type} deberia ofrecer las cuatro cuentas`);
-    assert.ok(accounts.some((a) => BANK_ACCOUNTS[a].currency === Currency.CRC));
-    assert.ok(accounts.some((a) => BANK_ACCOUNTS[a].currency === Currency.USD));
-  }
+test('un cobro en colones ofrece las cuentas de las dos monedas', () => {
+  const accounts = bankAccountsFor(Currency.CRC);
+  assert.equal(accounts.length, 4);
+  assert.ok(accounts.some((a) => BANK_ACCOUNTS[a].currency === Currency.CRC));
+  assert.ok(accounts.some((a) => BANK_ACCOUNTS[a].currency === Currency.USD));
 });
 
 test('el staff no arrastra el filtro del cliente: puede corregir a cualquier cuenta', () => {
@@ -86,7 +81,7 @@ test('el staff no arrastra el filtro del cliente: puede corregir a cualquier cue
   const staffAccounts = bankAccountsForStaff();
   assert.equal(staffAccounts.length, 4);
   assert.ok(staffAccounts.includes(BankAccount.BacCrc));
-  assert.ok(!bankAccountsFor(ShipmentType.Paqueteria).includes(BankAccount.BacCrc));
+  assert.ok(!bankAccountsFor(Currency.USD).includes(BankAccount.BacCrc));
 });
 
 test('cada banco tiene exactamente una cuenta por moneda', () => {
@@ -124,27 +119,40 @@ test('la opcion del select trae el numero con el que el cliente va a depositar',
 // contra la que se cancela la deuda: un error aqui cobra la cifra equivocada.
 // ---------------------------------------------------------------------------
 
-test('la Paqueteria se cobra en dolares', () => {
-  assert.equal(chargeCurrencyFor(ShipmentType.Paqueteria), Currency.USD);
+test('sin proforma, la Paqueteria se cobra en dolares', () => {
+  assert.equal(defaultChargeCurrencyFor(ShipmentType.Paqueteria), Currency.USD);
+  assert.equal(chargeCurrencyOf({ shipmentType: ShipmentType.Paqueteria, proformaCurrency: null }), Currency.USD);
 });
 
-test('Transporte y Agenciamiento se cobran en colones', () => {
+test('sin proforma, Transporte y Agenciamiento se cobran en colones', () => {
   for (const type of [
     ShipmentType.Aereo,
     ShipmentType.MaritimoFCL,
     ShipmentType.MaritimoLCL,
     ShipmentType.Agenciamiento,
   ]) {
-    assert.equal(chargeCurrencyFor(type), Currency.CRC, `${type} deberia cobrarse en colones`);
+    assert.equal(
+      chargeCurrencyOf({ shipmentType: type, proformaCurrency: null }),
+      Currency.CRC,
+      `${type} deberia cobrarse en colones`,
+    );
   }
 });
 
+test('con proforma, manda la moneda de la proforma', () => {
+  // Es la regla nueva: un agenciamiento cuya proforma se eligio en dolares se
+  // cobra y se salda en dolares, no en los colones de su flujo.
+  assert.equal(
+    chargeCurrencyOf({ shipmentType: ShipmentType.Agenciamiento, proformaCurrency: Currency.USD }),
+    Currency.USD,
+  );
+});
+
 test('las cuentas que se ofrecen son las de la moneda en que se cobra', () => {
-  // Las dos reglas salen del mismo tipo de tramite y tienen que coincidir: una
-  // factura en dolares con una cuenta en colones al lado es un deposito por un
-  // monto que no cuadra con nada.
-  const currency = chargeCurrencyFor(ShipmentType.Paqueteria);
-  for (const account of bankAccountsFor(ShipmentType.Paqueteria)) {
+  // Las dos reglas tienen que coincidir: una factura en dolares con una cuenta
+  // en colones al lado es un deposito por un monto que no cuadra con nada.
+  const currency = chargeCurrencyOf({ shipmentType: ShipmentType.Aereo, proformaCurrency: Currency.USD });
+  for (const account of bankAccountsFor(currency)) {
     assert.equal(BANK_ACCOUNTS[account].currency, currency);
   }
 });
@@ -152,13 +160,17 @@ test('las cuentas que se ofrecen son las de la moneda en que se cobra', () => {
 test('la base de cobro toma el total de SU moneda, no el otro', () => {
   const invoice = { invoiceTotalUsd: 50, invoiceTotalCrc: 25_500 };
 
-  assert.deepEqual(chargeBasisFor(ShipmentType.Paqueteria, invoice), {
+  assert.deepEqual(chargeBasisFor({ shipmentType: ShipmentType.Paqueteria, proformaCurrency: null, ...invoice }), {
     currency: Currency.USD,
     invoiceTotal: 50,
   });
-  assert.deepEqual(chargeBasisFor(ShipmentType.Aereo, invoice), {
+  assert.deepEqual(chargeBasisFor({ shipmentType: ShipmentType.Aereo, proformaCurrency: null, ...invoice }), {
     currency: Currency.CRC,
     invoiceTotal: 25_500,
+  });
+  assert.deepEqual(chargeBasisFor({ shipmentType: ShipmentType.Aereo, proformaCurrency: Currency.USD, ...invoice }), {
+    currency: Currency.USD,
+    invoiceTotal: 50,
   });
 });
 
@@ -176,7 +188,7 @@ test('un tramite en dolares se salda con los dolares que se le cobraron', () => 
   ];
   const invoice = { invoiceTotalUsd: 50, invoiceTotalCrc: 25_500 };
 
-  assert.equal(isSettled(payments, chargeBasisFor(ShipmentType.Paqueteria, invoice)), true);
+  assert.equal(isSettled(payments, chargeBasisWith(Currency.USD, invoice)), true);
 
   // Y la razon de que no se pueda liquidar por la otra columna: reexpresados a
   // colones con SUS tasas suman 25.350 contra una factura congelada de 25.500.
@@ -191,7 +203,7 @@ test('un tramite en colones sigue saldandose en colones', () => {
   ];
   const invoice = { invoiceTotalUsd: 98.04, invoiceTotalCrc: 50_000 };
 
-  assert.equal(isSettled(payments, chargeBasisFor(ShipmentType.Aereo, invoice)), true);
+  assert.equal(isSettled(payments, chargeBasisWith(Currency.CRC, invoice)), true);
 });
 
 test('un abono en la moneda que no es tambien cancela, convertido con su tasa', () => {

@@ -15,10 +15,11 @@
  */
 import { useState } from 'react';
 import { ClientPicker } from '../components/ClientPicker';
-import { FileField } from '../components/FileField';
+import { FilesField } from '../components/FilesField';
 import { ModalOverlay } from '../components/ModalOverlay';
 import {
   DOCUMENT_ATTACHMENT,
+  MAX_SHIPMENT_DOCUMENTS,
   MANUAL_SHIPMENT_TYPES,
   Permission,
   SHIPMENT_TYPE_LABELS,
@@ -28,7 +29,6 @@ import {
   STORES,
   CARRIERS,
   CLIENT_RATE_KIND_LABELS,
-  attachmentRejection,
   can,
   clientFullLabel,
   createShipmentSchema,
@@ -40,6 +40,7 @@ import {
 } from '@courier/shared';
 import type { Role, ShipmentDto } from '@courier/shared';
 import { ApiError, api } from '../lib/api';
+import { mergeDocuments } from '../lib/documents';
 import { useErrorToast } from '../lib/toast';
 
 interface Props {
@@ -102,33 +103,25 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
   const [insuredValue, setInsuredValue] = useState(row?.insuredValueUsd != null ? String(row.insuredValueUsd) : '');
   const [tariffPosition, setTariffPosition] = useState(row?.tariffPosition ?? '');
   const [retain, setRetain] = useState(row?.retain ?? false);
+  const [cnee, setCnee] = useState(row?.cnee ?? '');
   const [billingNotes, setBillingNotes] = useState(row?.billingNotes ?? '');
   const [warehouse, setWarehouse] = useState(row?.warehouse ?? '');
   const [dua, setDua] = useState(row?.dua ?? '');
   const [feNumber, setFeNumber] = useState(row?.electronicInvoiceNumber ?? '');
-  // Solo en alta y OPCIONAL (a diferencia de la prealerta del cliente). Mismo
+  // Solo en alta y OPCIONALES (a diferencia de la prealerta del cliente). Mismo
   // nombre que en `ClientShipmentModal`: `document` ya es el del DOM.
-  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const setError = useErrorToast();
   const [busy, setBusy] = useState(false);
 
   /**
-   * Filtra el archivo con el MISMO catalogo que aplica la API, para que el
+   * Filtra lo elegido con el MISMO catalogo que aplica la API, para que el
    * rechazo llegue al elegirlo y no despues de mandar el tramite.
    */
-  function pickDocument(file: File | null) {
-    if (!file) {
-      setDocumentFile(null);
-      return;
-    }
-    const rejection = attachmentRejection(DOCUMENT_ATTACHMENT, file.type, file.name);
-    if (rejection) {
-      setError(rejection);
-      setDocumentFile(null);
-      return;
-    }
-    setError(null);
-    setDocumentFile(file);
+  function addDocuments(picked: File[]) {
+    const { files, error } = mergeDocuments(documentFiles, picked);
+    setError(error);
+    setDocumentFiles(files);
   }
 
   const isPackage = usesPackageFields(shipmentType);
@@ -159,7 +152,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
   const weightLocked = mode === 'edit' && row != null && row.invoiceTotalUsd != null;
   // Campos visibles del formulario para este tipo; sirve para avisar si alguno quedo bloqueado.
   const relevantFields = isPackage
-    ? [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg, ShipmentField.DeclaredValue, ShipmentField.InsuredValue, ShipmentField.TariffPosition, ShipmentField.Retain, ShipmentField.BillingNotes]
+    ? [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg, ShipmentField.DeclaredValue, ShipmentField.InsuredValue, ShipmentField.TariffPosition, ShipmentField.Retain, ShipmentField.Cnee, ShipmentField.BillingNotes]
     : [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Warehouse, ShipmentField.Dua, ShipmentField.BillingNotes];
   const someFrozen = editable !== null && (weightLocked || relevantFields.some((f) => !editable.includes(f)));
 
@@ -223,6 +216,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
                 insuredValueUsd: insuredValue ? Number(insuredValue) : undefined,
                 tariffPosition: tariffPosition.trim() || undefined,
                 retain,
+                cnee: cnee.trim() || undefined,
               }
             : {}),
           // Comun a los dos flujos desde que el reporte las pide en ambos.
@@ -233,11 +227,12 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
           setBusy(false);
           return;
         }
-        // Multipart: los datos van en `payload` (JSON) y el documento, si lo hay,
-        // en la misma peticion; asi un archivo rechazado no deja el tramite creado.
+        // Multipart: los datos van en `payload` (JSON) y los documentos, si los
+        // hay, en la misma peticion (un `append` por archivo); asi un archivo
+        // rechazado no deja el tramite creado.
         const form = new FormData();
         form.set('payload', JSON.stringify(parsed.data));
-        if (documentFile) form.set('document', documentFile);
+        for (const file of documentFiles) form.append('document', file);
         const created = await api.postForm<ShipmentDto>('/shipments', form);
         onSaved(`Trámite ${created.code} creado.`);
         return;
@@ -264,6 +259,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
         if (nextInsured !== row.insuredValueUsd) patch.insuredValueUsd = nextInsured;
         put('tariffPosition', tariffPosition, row.tariffPosition);
         if (retain !== (row.retain ?? false)) patch.retain = retain;
+        put('cnee', cnee, row.cnee);
       } else {
         put('warehouse', warehouse, row.warehouse);
         put('dua', dua, row.dua);
@@ -369,6 +365,16 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
 
           {isPackage ? (
             <>
+              <div className="col-full">
+                <label className="field-label" htmlFor="t-cnee">CNEE</label>
+                <input
+                  id="t-cnee" className="input" autoComplete="off" value={cnee}
+                  placeholder="Opcional" disabled={!canEdit(ShipmentField.Cnee)}
+                  onChange={(e) => setCnee(e.target.value)}
+                />
+                <div className="field-hint">Consignatario del paquete. Texto libre.</div>
+              </div>
+
               {mode === 'edit' && (
                 <>
                   <div className="col-full">
@@ -520,14 +526,16 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
 
           {mode === 'create' && (
             <div className="col-full">
-              <FileField
+              <FilesField
                 id="t-document"
-                label="Documento (opcional)"
+                label="Documentos (opcional)"
                 accept={DOCUMENT_ATTACHMENT.accept}
-                file={documentFile}
-                onPick={pickDocument}
+                files={documentFiles}
+                max={MAX_SHIPMENT_DOCUMENTS}
+                onAdd={addDocuments}
+                onRemove={(index) => setDocumentFiles((current) => current.filter((_, i) => i !== index))}
                 disabled={busy}
-                hint={`Factura, orden de compra u otro soporte del trámite. Se aceptan ${DOCUMENT_ATTACHMENT.label}.`}
+                hint={`Factura, orden de compra u otro soporte del trámite, hasta ${MAX_SHIPMENT_DOCUMENTS}. Se aceptan ${DOCUMENT_ATTACHMENT.label}.`}
               />
             </div>
           )}

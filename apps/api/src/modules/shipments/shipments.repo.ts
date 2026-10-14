@@ -43,7 +43,8 @@ const columns = {
   insuredValueUsd: shipments.insuredValueUsd,
   tariffPosition: shipments.tariffPosition,
   retain: shipments.retain,
-  documentFileKey: shipments.documentFileKey,
+  cnee: shipments.cnee,
+  documentFileKeys: shipments.documentFileKeys,
   warehouse: shipments.warehouse,
   dua: shipments.dua,
   billingNotes: shipments.billingNotes,
@@ -83,6 +84,8 @@ const columns = {
   proformaId: proformas.id,
   proformaNumber: proformas.number,
   proformaStatus: proformas.status,
+  // Moneda en que se cobra el tramite (`chargeCurrencyOf`): la de su proforma.
+  proformaCurrency: proformas.currency,
 };
 
 /**
@@ -191,7 +194,7 @@ function buildConditions(
 
   // El buscador cubre los identificadores por los que se pregunta en operacion:
   // consecutivo, tracking, HAWB (el "LES" de la bodega de Miami), cuenta en
-  // Miami (la cuenta del operador por la que entro, p. ej. SJO009623) y casillero.
+  // Miami (la cuenta del operador por la que entro, p. ej. SJO009623), CNEE y casillero.
   if (query.q) {
     const term = `%${query.q}%`;
     const match = or(
@@ -205,6 +208,7 @@ function buildConditions(
         ? [and(isNull(shipments.providerAccountCode), inArray(shipments.shipmentType, PACKAGE_SHIPMENT_TYPES))]
         : []),
       ilike(shipments.description, term),
+      ilike(shipments.cnee, term),
       ilike(clients.code, term),
       ilike(users.name, term),
     );

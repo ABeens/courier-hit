@@ -59,14 +59,15 @@ async function countRows(table: string): Promise<number> {
 /**
  * Claves de adjunto vivas: documentos de tramite, fotos de entrega, comprobantes.
  *
- * Las fotos van en un ARRAY (`photo_file_keys`): un intento de entrega puede
- * llevar hasta tres. Se abre con `unnest` para que cada foto sea una clave
- * suelta; un array vacio no aporta filas, que es lo que se quiere.
+ * Las fotos y los documentos van en ARRAYS (`photo_file_keys`,
+ * `document_file_keys`): un intento de entrega o un tramite pueden llevar
+ * varios. Se abren con `unnest` para que cada archivo sea una clave suelta; un
+ * array vacio no aporta filas, que es lo que se quiere.
  */
 async function attachmentKeys(): Promise<string[]> {
   const rows = (await db.execute(
     sql.raw(`
-      select document_file_key as key from shipments where document_file_key is not null
+      select unnest(document_file_keys) as key from shipments
       union all
       select unnest(photo_file_keys) as key from delivery_attempts
       union all
