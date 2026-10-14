@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
+  CURRENCY_LABELS,
   Currency,
   FLOW_LABELS,
   PROFORMA_DELIVERY_STATUS_LABELS,
@@ -26,6 +27,7 @@ import {
   SHIPMENT_TYPE_LABELS,
   STATE_LABELS,
   can,
+  canChooseProformaCurrency,
   formatMoney,
 } from '@courier/shared';
 import type {
@@ -234,6 +236,28 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
     }
   }
 
+  /**
+   * Moneda de cobro (Transporte y Agenciamiento, en borrador). No convierte
+   * ninguna linea: cambia la moneda en que se cobra y se muestra el total.
+   */
+  async function changeCurrency(currency: Currency) {
+    if (!data || currency === data.currency) return;
+    const n = data.shipments.length;
+    const scope = n > 1 ? ` para los ${n} trámites de la proforma` : '';
+    if (!window.confirm(`La proforma se cobrará en ${CURRENCY_LABELS[currency]}${scope}. ¿Continuar?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const dto = await api.put<ProformaDetailDto>(`/proformas/${id}/currency`, { currency });
+      setData(dto);
+      setNotice(`La proforma se cobra ahora en ${CURRENCY_LABELS[currency]}.`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo cambiar la moneda.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveFe() {
     setBusy(true);
     setError(null);
@@ -307,6 +331,24 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
                         <div className="cell-sub">
                           {money(other === Currency.USD ? data.totals.usd : data.totals.crc, other)} · TC {data.exchangeRate}
                         </div>
+                      )}
+                    </dd>
+                  </div>
+                  <div className="card-item-field">
+                    <dt>Moneda</dt>
+                    <dd>
+                      {editable && canChooseProformaCurrency(data.flow) ? (
+                        <select
+                          className="input" aria-label="Moneda de la proforma"
+                          value={data.currency} disabled={busy}
+                          onChange={(e) => void changeCurrency(e.target.value as Currency)}
+                        >
+                          {Object.values(Currency).map((c) => (
+                            <option key={c} value={c}>{CURRENCY_LABELS[c]}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        CURRENCY_LABELS[data.currency]
                       )}
                     </dd>
                   </div>

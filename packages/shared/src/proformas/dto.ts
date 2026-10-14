@@ -238,6 +238,15 @@ export const updateProformaSchema = z.object({
 });
 export type UpdateProformaInput = z.infer<typeof updateProformaSchema>;
 
+/**
+ * Moneda de cobro elegida desde el detalle de la proforma. Solo Transporte y
+ * Agenciamiento, y solo en borrador (`canChooseProformaCurrency`).
+ */
+export const setProformaCurrencySchema = z.object({
+  currency: proformaCurrencyInputSchema.unwrap(),
+});
+export type SetProformaCurrencyInput = z.infer<typeof setProformaCurrencySchema>;
+
 /** Contador de la serie: el numero que recibira la proxima proforma aprobada. */
 export interface ProformaCounterDto {
   nextNumber: number;

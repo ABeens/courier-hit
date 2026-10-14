@@ -81,6 +81,7 @@ import type {
   Session,
   SetProformaCounterInput,
   ShipmentCostsDto,
+  SetProformaCurrencyInput,
   UpdateProformaInput,
 } from '@courier/shared';
 import { AppError, CostErrors, ProformaErrors } from '../../core/errors';
@@ -730,6 +731,13 @@ export const proformasService = {
   async update(id: string, input: UpdateProformaInput): Promise<ProformaDetailDto> {
     await loadHeader(id);
     await proformasRepo.setElectronicInvoiceNumber(id, input.electronicInvoiceNumber);
+    return this.get(id);
+  },
+
+  /** Cambia la moneda de cobro de un borrador de Transporte o Agenciamiento. */
+  async setCurrency(id: string, input: SetProformaCurrencyInput): Promise<ProformaDetailDto> {
+    const header = await loadHeader(id);
+    await applyProformaCurrency(header.proforma, input.currency);
     return this.get(id);
   },
 

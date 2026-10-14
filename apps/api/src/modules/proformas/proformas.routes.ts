@@ -23,6 +23,7 @@ import {
   moveProformaShipmentSchema,
   saveProformaCostsSchema,
   setProformaCounterSchema,
+  setProformaCurrencySchema,
   updateProformaSchema,
 } from '@courier/shared';
 import { AuthErrors, ProformaErrors } from '../../core/errors';
@@ -180,6 +181,11 @@ proformasRoutes.get('/:id/export.xlsx', read, async (c) => {
 
 proformasRoutes.patch('/:id', manage, zValidator('json', updateProformaSchema), async (c) => {
   return c.json(await proformasService.update(c.req.param('id'), c.req.valid('json')));
+});
+
+/** Moneda de cobro del borrador (Transporte y Agenciamiento). */
+proformasRoutes.put('/:id/currency', manage, zValidator('json', setProformaCurrencySchema), async (c) => {
+  return c.json(await proformasService.setCurrency(c.req.param('id'), c.req.valid('json')));
 });
 
 /** Datos del editor de servicios adicionales de la proforma. */
