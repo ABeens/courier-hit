@@ -33,6 +33,7 @@ import {
   Permission,
   SHIPMENT_TYPE_LABELS,
   STATE_LABELS,
+  ShipmentType,
   State,
   can,
   clientFullLabel,
@@ -52,6 +53,7 @@ import { STATE_TONE } from '../lib/tone';
 import { AssignOwnerModal } from './AssignOwnerModal';
 import { DiscardPackageModal } from './DiscardPackageModal';
 import { ShipmentHistoryModal } from './ShipmentHistoryModal';
+import { ShipmentFormModal } from './ShipmentFormModal';
 import { StateCorrectModal } from './StateCorrectModal';
 import { UnassignedFormModal } from './UnassignedFormModal';
 
@@ -117,6 +119,8 @@ export function ControlRoomScreen({ role }: { role: Role }) {
    * paso la puerta de saltar la máquina de estados.
    */
   const canCorrectState = can(role, Permission.ShipmentCorrect);
+  /** Prealertar es alta de Paqueteria: el mismo permiso que en su tablero. */
+  const canPrealert = can(role, Permission.PackageWrite);
 
   /**
    * La pila que se está mirando, paginada. TODOS los filtros viajan a la API
@@ -186,9 +190,12 @@ export function ControlRoomScreen({ role }: { role: Role }) {
             </div>
           )}
         </div>
-        {view !== 'descartados' && (
+        {/* Mismo boton y mismo flujo que el tablero de Paqueteria: un paquete
+            con dueño se prealerta. El bulto sin dueño se registra desde
+            Recepcion, que es donde aparece la caja que nadie anuncio. */}
+        {view !== 'descartados' && canPrealert && (
           <button className="btn btn-primary" onClick={() => setRegistering(true)}>
-            + Registrar paquete
+            + Prealertar
           </button>
         )}
       </div>
@@ -412,10 +419,12 @@ export function ControlRoomScreen({ role }: { role: Role }) {
       </EmptyList>
 
       {registering && (
-        <UnassignedFormModal
+        <ShipmentFormModal
           mode="create"
+          role={role}
+          boardTypes={[ShipmentType.Paqueteria]}
           onClose={() => setRegistering(false)}
-          onSaved={afterChange}
+          onSaved={(message) => afterChange(message ?? '')}
         />
       )}
 

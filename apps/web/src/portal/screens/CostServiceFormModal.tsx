@@ -1,9 +1,10 @@
 /**
  * Modal crear / editar servicio de costo. Dos reglas encadenadas:
  *   - El tipo de servicio acota el tipo de valor: Transporte y Agenciamiento se
- *     carga al recibir el tramite, asi que queda fijo en Manual; Paqueteria elige.
- *   - El tipo de valor decide si se pide un valor por defecto: Porcentaje/Monto
- *     fijo lo exigen; Manual lo oculta (el importe se digita al cargar).
+ *     carga al recibir el tramite, asi que elige entre Manual y Por kilo;
+ *     Paqueteria elige entre Porcentaje, Monto fijo y Manual.
+ *   - El tipo de valor decide si se pide un valor por defecto: Porcentaje y Monto
+ *     fijo lo exigen; Manual y Por kilo lo ocultan (se digitan al cargar).
  * En editar solo envia lo que cambio.
  */
 import { useState } from 'react';
@@ -50,8 +51,9 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
 
   const valueTypeOptions = allowedValueTypes(kind);
   const lockedToManual = valueTypeOptions.length === 1;
-  const needsValue = valueType !== ServiceValueType.Manual;
-  // Solo el monto fijo es dinero: lleva moneda. Porcentaje y manual no (regla M2).
+  // Manual y por kilo no llevan valor en el catalogo: se digitan al cargar los costos.
+  const needsValue = valueType !== ServiceValueType.Manual && valueType !== ServiceValueType.PerKg;
+  // Solo el monto fijo es dinero: lleva moneda. Porcentaje, manual y por kilo no (regla M2).
   const needsCurrency = valueType === ServiceValueType.Fixed;
   // Paqueteria (compras en USA) solo admite dolares: el selector se muestra fijo.
   const currencyOptions = allowedCurrencies(kind);
@@ -245,7 +247,9 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
             </div>
           ) : (
             <div className="banner ok" style={{ background: 'var(--paper-2)', color: 'var(--muted)' }}>
-              El importe de este servicio se digita al cargar los costos del trámite.
+              {valueType === ServiceValueType.PerKg
+                ? 'Al cargar los costos se digitan los kilos y el precio por kilo; el sistema calcula el importe.'
+                : 'El importe de este servicio se digita al cargar los costos del trámite.'}
             </div>
           )}
         </div>

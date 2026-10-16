@@ -508,7 +508,9 @@ export function ShipmentsScreen({
         ) : (
           canWrite && creatableTypes.length > 0 && (
             <button className="btn btn-primary" onClick={() => setModal({ mode: 'create' })}>
-              {view === 'paqueteria' ? '+ Nuevo paquete' : '+ Nuevo trámite'}
+              {/* Mismo nombre y mismo formulario que el boton de la sala de
+                  control: el alta de un paquete con dueño es una prealerta. */}
+              {view === 'paqueteria' ? '+ Prealertar' : '+ Nuevo trámite'}
             </button>
           )
         )}

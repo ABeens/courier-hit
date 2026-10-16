@@ -3,9 +3,9 @@
  * Reglas (docs/manuales/flujo.md L1-20):
  *   - nombre unico (case-insensitive).
  *   - coherencia tipo de servicio <-> tipo de valor: Transporte y Agenciamiento se
- *     carga al recibir el tramite, asi que solo admite Manual; Paqueteria admite
- *     los tres.
- *   - coherencia tipo <-> valor: Percentage/Fixed exigen valor; Manual lo ignora.
+ *     carga al recibir el tramite, asi que admite Manual o PerKg (kilos y precio
+ *     por kg se digitan al cargar); Paqueteria admite porcentaje, fijo o manual.
+ *   - coherencia tipo <-> valor: Percentage/Fixed exigen valor; Manual y PerKg lo ignoran.
  *   - "deshabilitar, no eliminar": no hay DELETE; se conmuta `enabled`.
  */
 import {
@@ -27,7 +27,8 @@ function resolveDefaultValue(
   value: number | null | undefined,
 ): number | null {
   if (!isValueTypeAllowed(kind, valueType)) throw CostServiceErrors.valueTypeNotAllowed();
-  if (valueType === ServiceValueType.Manual) return null; // el importe se digita al cargar
+  // El importe (o kilos y precio por kg) se digita al cargar.
+  if (valueType === ServiceValueType.Manual || valueType === ServiceValueType.PerKg) return null;
   if (value === null || value === undefined) throw CostServiceErrors.valueRequired();
   if (valueType === ServiceValueType.Percentage && (value < 0 || value > 100)) {
     throw CostServiceErrors.invalidPercentage();
@@ -37,7 +38,7 @@ function resolveDefaultValue(
 
 /**
  * Normaliza la moneda segun el tipo de valor: solo el monto fijo es dinero y
- * exige moneda; porcentaje y manual no llevan (regla M2). Sin tasa de cambio: la
+ * exige moneda; porcentaje, manual y por kilo no llevan (regla M2). Sin tasa de cambio: la
  * captura el flujo del paquete al cargar los costos (regla M5), no el catalogo.
  */
 function resolveCurrency(

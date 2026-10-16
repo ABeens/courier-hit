@@ -4,11 +4,12 @@
  *
  * Regla del valor por defecto (coherencia tipo <-> valor):
  *   - Percentage -> defaultValue obligatorio, 0..100.
- *   - Fixed      -> defaultValue obligatorio, >= 0.
+ *   - Fixed      -> defaultValue obligatorio, >= 0, con moneda.
  *   - Manual     -> sin defaultValue (se ignora / se guarda null).
+ *   - PerKg      -> igual que Manual: kilos y precio por kg se digitan al cargar.
  * Regla del tipo de servicio (coherencia kind <-> valueType):
- *   - TransporteAgenciamiento -> solo Manual (se carga al recibir el tramite).
- *   - Paqueteria              -> cualquier tipo de valor.
+ *   - TransporteAgenciamiento -> Manual o PerKg (se carga al recibir el tramite).
+ *   - Paqueteria              -> Percentage, Fixed o Manual.
  * En crear se valida aqui (todos los campos presentes). En editar, como el PATCH
  * puede traer solo una parte, la coherencia final la resuelve el servicio de la API.
  */
@@ -66,11 +67,14 @@ function refineValueCoherence(
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['valueType'],
-      message: 'Los servicios de Transporte y agenciamiento se cargan al recibir: su valor debe ser manual.',
+      message:
+        data.kind === ServiceKind.TransporteAgenciamiento
+          ? 'Los servicios de Transporte y agenciamiento son manuales o por kilo.'
+          : 'El cobro por kilo de Paquetería es el flete de la tarifa del casillero.',
     });
     return;
   }
-  // Solo el importe fijo es dinero: exige moneda. Porcentaje y manual la prohiben.
+  // Solo el importe fijo es dinero: exige moneda. Porcentaje, manual y por kilo la prohiben.
   if (data.valueType === ServiceValueType.Fixed) {
     if (data.currency === undefined || data.currency === null) {
       ctx.addIssue({
@@ -89,10 +93,11 @@ function refineValueCoherence(
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['currency'],
-      message: 'Solo el monto fijo lleva moneda; el porcentaje y el valor manual no.',
+      message: 'Solo el monto fijo lleva moneda; el porcentaje, el valor manual y el por kilo no.',
     });
   }
-  if (data.valueType === ServiceValueType.Manual) return; // el importe se digita luego
+  // El importe (o los kilos y el precio por kg) se digita al cargar.
+  if (data.valueType === ServiceValueType.Manual || data.valueType === ServiceValueType.PerKg) return;
   if (data.defaultValue === undefined || data.defaultValue === null) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

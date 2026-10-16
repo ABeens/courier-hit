@@ -30,6 +30,7 @@ import {
   editableFieldsAt,
   flowForType,
   initialState,
+  isWeightEditableInProforma,
   knownTracking,
   chargeBasisFor,
   chargeCurrencyOf,
@@ -914,6 +915,11 @@ export const shipmentsService = {
    * el alta falla, igual que en `prealert`: un archivo rechazado no deja un
    * tramite ocupando el tracking, y un tracking repetido no deja archivos
    * huerfanos.
+   *
+   * Un paquete de Paqueteria dado de alta aqui ES una prealerta (el portal la
+   * llama asi en el tablero y en la sala de control), asi que sigue el mismo
+   * flujo que la del cliente: se replica ante el proveedor al guardar, sin
+   * esperar a la reconciliacion.
    */
   async create(session: Session, input: CreateShipmentInput, documents: File[]): Promise<ShipmentDto> {
     assertCanWrite(session, input.shipmentType);
@@ -924,8 +930,9 @@ export const shipmentsService = {
     if (documents.length > MAX_SHIPMENT_DOCUMENTS) throw ShipmentErrors.tooManyDocuments(MAX_SHIPMENT_DOCUMENTS);
 
     const documentFileKeys = await storeDocuments(documents);
+    let created: ShipmentDto;
     try {
-      return await this.insert(
+      created = await this.insert(
         {
           clientId: input.clientId,
           shipmentType: input.shipmentType,
@@ -955,6 +962,9 @@ export const shipmentsService = {
       await removeFiles(documentFileKeys);
       throw err;
     }
+
+    if (usesPackageFields(input.shipmentType)) await this.prealertWithProvider(input.clientId, created);
+    return created;
   },
 
   /** Inserta con consecutivo y estado inicial derivados; comun a prealerta y alta. */
@@ -1040,7 +1050,12 @@ export const shipmentsService = {
     // el estado actual. Un campo presente en el patch (aunque sea `null` para
     // limpiarlo) que no este permitido -> 409. Fuente unica; la web deshabilita los
     // mismos campos con `editableFieldsAt`.
-    const editable = editableFieldsAt(flowForType(current.shipmentType), current.state);
+    const editable = [...editableFieldsAt(flowForType(current.shipmentType), current.state)];
+    // En un borrador el peso se corrige aunque el paquete ya se haya entregado:
+    // es el caso de una proforma corregida (ver `isWeightEditableInProforma`).
+    if (isPackage && !editable.includes(ShipmentField.WeightKg) && isWeightEditableInProforma(current.proformaStatus)) {
+      editable.push(ShipmentField.WeightKg);
+    }
     for (const field of Object.values(ShipmentField)) {
       const present = patch[field as keyof UpdateShipmentInput] !== undefined;
       if (present && !editable.includes(field)) {
@@ -1377,6 +1392,12 @@ export const shipmentsService = {
 
     const updated = await shipmentsRepo.findById(id);
     if (!updated) throw ShipmentErrors.notFound();
+
+    // Si lo sacaron de su proforma (o se elimino) mientras estaba descartado,
+    // vuelve a un borrador del cliente. Si sigue en una, no se hace nada.
+    if (updated.state === State.FacturacionEnProceso) {
+      await proformaDraftsService.onEnterBilling(session, updated);
+    }
     return toDto(updated);
   },
 

@@ -35,8 +35,10 @@ export const providerSyncRepo = {
    * Nuestros envios de Paqueteria que siguen dentro del tramo del proveedor. La
    * sincronizacion parte de AQUI (no de Helga): la op. B consulta un paquete por
    * su tracking, asi que se recorre lo que tenemos y se le pregunta a Helga por
-   * cada uno. Se ordena por el mas rezagado (`updatedAt` ascendente) y se acota
-   * con `limit` para acotar cada corrida.
+   * cada uno. Se ordena por el consultado hace mas tiempo (`providerCheckedAt`,
+   * los nunca consultados primero) y se acota con `limit` para acotar cada
+   * corrida. Asi el lote ROTA: lo que se consulto pasa al final aunque no haya
+   * cambiado nada, y lo recien llegado entra en las proximas corridas.
    */
   async shipmentsInProviderTramo(limit: number) {
     return db
@@ -83,8 +85,17 @@ export const providerSyncRepo = {
           inArray(shipments.state, PROVIDER_TRAMO_STATES),
         ),
       )
-      .orderBy(asc(shipments.updatedAt))
+      .orderBy(sql`${shipments.providerCheckedAt} asc nulls first`, asc(shipments.updatedAt))
       .limit(limit);
+  },
+
+  /**
+   * Anota que a este envio ya le toco su turno en la sincronizacion. Va aparte de
+   * `shipmentsRepo.update` a proposito: no toca `updated_at`, que dice cuando
+   * cambio el tramite, no cuando se le pregunto al proveedor.
+   */
+  async markChecked(id: string): Promise<void> {
+    await db.update(shipments).set({ providerCheckedAt: new Date() }).where(eq(shipments.id, id));
   },
 
   /**

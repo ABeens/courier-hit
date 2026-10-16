@@ -11,6 +11,10 @@
  *     no se guarda, y quien no puede fijarla tiene que pedirsela a un admin.
  *   - Las lineas de PORCENTAJE no llevan monto: el importe lo calcula la API
  *     sobre el subtotal de las demas. Aqui solo se muestra la estimacion.
+ *   - En las lineas POR KILO el importe no se digita: el operador digita solo el
+ *     precio por kg con su moneda, y el importe es ese precio por los kilos del
+ *     paquete (o de la proforma), que se muestran pero no se editan. La pantalla
+ *     lo calcula con el mismo helper que la API al guardar (`applyPerKg`).
  *   - Cada linea tiene COSTO NETO (en codigo, `realAmount`) y COSTO A FACTURAR
  *     (`amount`). El costo a facturar nace igual al neto y lo sigue mientras
  *     nadie lo edite; editarlo factura otro valor. La proforma y los totales
@@ -33,6 +37,7 @@ import {
   canSetExchangeRate,
   clientFullLabel,
   applyPercentage,
+  applyPerKg,
   computeTotals,
   percentageBase,
   roundMoney,
@@ -78,6 +83,13 @@ interface DraftLine {
   source: CostLineSource;
   /** Texto crudo del input: se convierte a numero solo al guardar. */
   percentage: string;
+  /**
+   * Kilos de una linea por kilo; vacio en el resto. Solo se MUESTRAN: salen del
+   * peso del paquete (o de la proforma) y la API los vuelve a leer al guardar.
+   */
+  weightKg: string;
+  /** Precio por kg digitado al cargar (texto crudo); vacio en el resto. */
+  pricePerKg: string;
   /** COSTO REAL (texto crudo): del catalogo, de la tarifa o digitado. */
   amount: string;
   /**
@@ -115,6 +127,26 @@ function isAmountEditable(line: DraftLine): boolean {
   return line.source === CostLineSource.Freight || line.valueType === ServiceValueType.Manual;
 }
 
+/**
+ * True si la moneda de la linea se elige aqui: la de los importes que se digitan
+ * (manual y flete) y la del precio por kg, que tambien se digita al cargar.
+ */
+function isCurrencyEditable(line: DraftLine): boolean {
+  return isAmountEditable(line) || line.source === CostLineSource.PerKg;
+}
+
+/**
+ * Importe de una linea por kilo (texto, como el resto de importes en edicion).
+ * Vacio mientras falten kilos o precio validos: no se inventa un cero.
+ */
+function perKgAmount(weightKg: string, pricePerKg: string, currency: Currency): string {
+  const kg = Number(weightKg);
+  const price = Number(pricePerKg);
+  if (weightKg.trim() === '' || !Number.isFinite(kg) || kg <= 0) return '';
+  if (pricePerKg.trim() === '' || !Number.isFinite(price) || price < 0) return '';
+  return String(applyPerKg(kg, price, currency));
+}
+
 /** Costo facturado efectivo de la linea: el digitado, o el real si no se toco. */
 function billedOf(line: DraftLine): string {
   return line.billedTouched ? line.billed : line.amount;
@@ -136,6 +168,8 @@ function fromSuggestion(s: SuggestedCostLine): DraftLine {
     label: s.label,
     source: s.source,
     percentage: s.percentage !== null ? String(s.percentage) : '',
+    weightKg: '',
+    pricePerKg: '',
     amount: s.amount !== null ? String(s.amount) : '',
     billed: '',
     billedTouched: false,
@@ -180,6 +214,12 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
         label: l.label,
         source: l.source,
         percentage: l.percentage !== null ? String(l.percentage) : '',
+        // Aprobada, se muestra con los kilos que se cobraron. En borrador, con el
+        // peso de ahora: es el que la API va a usar al volver a guardar.
+        weightKg: dto.approved
+          ? l.weightKg !== null ? String(l.weightKg) : ''
+          : dto.weightKg !== null ? String(dto.weightKg) : '',
+        pricePerKg: l.pricePerKg !== null ? String(l.pricePerKg) : '',
         // La linea guardada trae los dos: `amount` es el facturado y
         // `realAmount` el real. Si coinciden, el facturado vuelve a seguir al real.
         amount: String(l.realAmount),
@@ -187,7 +227,12 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
         billedTouched: l.realAmount !== l.amount,
         currency: l.currency,
         pick: l.costServiceId ?? CUSTOM_PICK,
-        valueType: l.source === CostLineSource.Freight ? null : valueTypeOf(l.costServiceId),
+        valueType:
+          l.source === CostLineSource.Freight
+            ? null
+            : l.source === CostLineSource.PerKg
+              ? ServiceValueType.PerKg
+              : valueTypeOf(l.costServiceId),
       }));
       /**
        * El flete no se "agrega": es el cobro base del tramite y sale de la tarifa
@@ -342,6 +387,8 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
         label: '',
         source: CostLineSource.Service,
         percentage: '',
+        weightKg: '',
+        pricePerKg: '',
         amount: '',
         billed: '',
         billedTouched: false,
@@ -371,6 +418,8 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
         label: '',
         source: CostLineSource.Service,
         percentage: '',
+        weightKg: '',
+        pricePerKg: '',
         amount: '',
         billed: '',
         billedTouched: false,
@@ -386,13 +435,23 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
     // Un servicio que ya no esta en el catalogo (deshabilitado despues de
     // guardar) sigue listado desde la propia linea: no hay nada que reescribir.
     if (!service) return;
+    // Por kilo: los kilos son el peso del tramite (o de la proforma) y el precio
+    // por kg nace en blanco, porque se define al cargar. El importe es la cuenta.
+    const isPerKg = service.source === CostLineSource.PerKg;
+    const weightKg = isPerKg && data?.weightKg != null ? String(data.weightKg) : '';
     patchLine(key, {
       pick: value,
       costServiceId: service.costServiceId,
       label: service.label,
       source: service.source,
       percentage: service.percentage !== null ? String(service.percentage) : '',
-      amount: service.amount !== null ? String(service.amount) : '',
+      weightKg,
+      pricePerKg: '',
+      amount: isPerKg
+        ? ''
+        : service.amount !== null
+          ? String(service.amount)
+          : '',
       // Concepto nuevo, facturado nuevo: vuelve a seguir al costo real.
       billed: '',
       billedTouched: false,
@@ -417,6 +476,16 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
       setError('Elige el concepto de cada línea (o escríbelo, si es un concepto suelto).');
       return false;
     }
+    // Por kilo: sin peso del paquete o sin precio no hay multiplicacion que hacer.
+    const perKg = lines.filter((l) => l.source === CostLineSource.PerKg);
+    if (perKg.length > 0 && !(data?.weightKg != null && data.weightKg > 0)) {
+      setError('El paquete aún no tiene peso: no se puede cobrar un servicio por kilo.');
+      return false;
+    }
+    if (perKg.some((l) => perKgAmount(l.weightKg, l.pricePerKg, l.currency) === '')) {
+      setError('Digita el precio por kilo de las líneas que se cobran por kilo.');
+      return false;
+    }
     /**
      * Un monto en blanco viajaria como 0 y se guardaria como una linea que no
      * cobra nada. Solo puede pasar en las lineas que se digitan aqui: las del
@@ -433,10 +502,17 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
         source: l.source,
         percentage: l.source === CostLineSource.Percentage ? Number(l.percentage) : null,
         // En porcentaje el importe lo calcula la API; mandarlo seria ruido.
+        // En por kilo tambien: solo viaja el precio, la API pone los kilos del
+        // paquete y multiplica. El facturado solo viaja si se ajusto a mano.
         // `amount` es el facturado y `realAmount` el real.
         ...(l.source === CostLineSource.Percentage
           ? {}
-          : { amount: Number(billedOf(l)), realAmount: Number(l.amount) }),
+          : l.source === CostLineSource.PerKg
+            ? {
+                pricePerKg: Number(l.pricePerKg),
+                ...(isBilledAdjusted(l) ? { amount: Number(l.billed) } : {}),
+              }
+            : { amount: Number(billedOf(l)), realAmount: Number(l.amount) }),
         currency: l.currency,
         exchangeRate: parsedRate,
       })),
@@ -621,6 +697,34 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
                           <strong>{line.percentage || 0}%</strong>
                           <div className="field-hint">Del catálogo</div>
                         </>
+                      ) : line.source === CostLineSource.PerKg ? (
+                        // Solo se digita el precio por kg. Los kilos son los del
+                        // paquete: se muestran debajo, no se editan.
+                        <>
+                          <input
+                            className="input" type="number" min="0" step="0.01"
+                            value={line.pricePerKg} disabled={approved} placeholder="Precio por kg"
+                            onChange={(e) =>
+                              patchLine(line.key, {
+                                pricePerKg: e.target.value,
+                                amount: perKgAmount(line.weightKg, e.target.value, line.currency),
+                              })
+                            }
+                            aria-label={`Precio por kilo de ${line.label || 'la línea'}`}
+                          />
+                          <small className="field-hint">
+                            {line.weightKg === '' ? (
+                              'Sin peso del paquete'
+                            ) : line.amount !== '' ? (
+                              <>
+                                {line.weightKg} kg ={' '}
+                                <strong>{formatMoney(Number(line.amount), line.currency)}</strong>
+                              </>
+                            ) : (
+                              `${line.weightKg} kg`
+                            )}
+                          </small>
+                        </>
                       ) : isAmountEditable(line) ? (
                         <input
                           className="input" type="number" min="0" step="0.01"
@@ -671,7 +775,7 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
                         <span className="muted">
                           {target.kind === 'proforma' ? '% del subtotal de la proforma' : '% del subtotal'}
                         </span>
-                      ) : !isAmountEditable(line) ? (
+                      ) : !isCurrencyEditable(line) ? (
                         // La moneda del monto fijo tambien viene del catalogo.
                         <span className="muted">
                           {line.pick === '' ? '—' : CURRENCY_LABELS[line.currency]}
@@ -679,7 +783,16 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
                       ) : (
                         <select
                           className="input" value={line.currency} disabled={approved}
-                          onChange={(e) => patchLine(line.key, { currency: e.target.value as Currency })}
+                          onChange={(e) => {
+                            const currency = e.target.value as Currency;
+                            // En por kilo el importe se redondea a la moneda: se rehace.
+                            patchLine(line.key, {
+                              currency,
+                              ...(line.source === CostLineSource.PerKg
+                                ? { amount: perKgAmount(line.weightKg, line.pricePerKg, currency) }
+                                : {}),
+                            });
+                          }}
                           aria-label={`Moneda de ${line.label || 'la línea'}`}
                         >
                           {Object.values(Currency).map((c) => (

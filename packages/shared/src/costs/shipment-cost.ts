@@ -35,6 +35,8 @@ export enum CostLineSource {
   Service = 'service',
   /** Servicio del catalogo de tipo porcentaje, resuelto sobre la base. */
   Percentage = 'percentage',
+  /** Servicio del catalogo por kilo: kilos x precio por kg, resuelto por la API. */
+  PerKg = 'per_kg',
 }
 
 /** Etiqueta de presentacion del origen de la linea. */
@@ -42,6 +44,7 @@ export const COST_LINE_SOURCE_LABELS: Record<CostLineSource, string> = {
   [CostLineSource.Freight]: 'Flete',
   [CostLineSource.Service]: 'Servicio',
   [CostLineSource.Percentage]: 'Porcentaje',
+  [CostLineSource.PerKg]: 'Por kilo',
 };
 
 /** Una linea de costo de un tramite (vista publica; forma equivalente a la fila de BD). */
@@ -62,6 +65,13 @@ export interface ShipmentCostLine {
   source: CostLineSource;
   /** Porcentaje aplicado (0-100) cuando `source` es Percentage; null en el resto. */
   percentage: number | null;
+  /**
+   * Kilos cobrados cuando `source` es PerKg; null en el resto. Se congela con la
+   * linea: si despues cambia el peso del tramite, la factura no se mueve sola.
+   */
+  weightKg: number | null;
+  /** Precio por kg aplicado (en `currency`) cuando `source` es PerKg; null en el resto. */
+  pricePerKg: number | null;
   /**
    * COSTO FACTURADO: importe de la linea que ve y paga el cliente, ya resuelto.
    * Siempre >= 0 (regla M3). Es el que suman la proforma, los totales y el cobro.
@@ -259,6 +269,15 @@ export function percentageBase(
     .filter((l) => l.source !== CostLineSource.Percentage)
     .reduce((sum, l) => sum + convertMoney(l.amount, l.currency, target, l.exchangeRate), 0);
   return roundMoney(base, target);
+}
+
+/**
+ * Importe de una linea por kilo: kilos x precio por kg, redondeado a la moneda.
+ * Punto UNICO de esa multiplicacion: la usan la API al guardar y la pantalla en
+ * su vista previa, asi lo que se ve antes de guardar es lo que se congela.
+ */
+export function applyPerKg(weightKg: number, pricePerKg: number, currency: Currency): number {
+  return roundMoney(weightKg * pricePerKg, currency);
 }
 
 /** Importe de una linea de porcentaje sobre su base, redondeado a la moneda. */

@@ -35,6 +35,7 @@ import {
   displayedWeightKg,
   editableFieldsAt,
   formatDua,
+  isWeightEditableInProforma,
   updateShipmentSchema,
   usesPackageFields,
 } from '@courier/shared';
@@ -133,7 +134,15 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
    * si el estado congelo un campo, la API lo rechazaria igual, pero deshabilitarlo
    * ahorra el viaje y el error.
    */
-  const editable = mode === 'edit' && row ? editableFieldsAt(row.flow, row.state) : null;
+  const editable =
+    mode === 'edit' && row
+      ? [
+          ...editableFieldsAt(row.flow, row.state),
+          // Misma excepcion que la API: en un borrador (proforma corregida) el peso
+          // se corrige aunque el paquete ya se haya entregado.
+          ...(isPackage && isWeightEditableInProforma(row.proforma?.status) ? [ShipmentField.WeightKg] : []),
+        ]
+      : null;
   const canEdit = (field: ShipmentField) => editable === null || editable.includes(field);
   /**
    * "Congelado" = ya no se puede tocar ningun DATO del tramite. Se mide contra la
@@ -234,7 +243,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
         form.set('payload', JSON.stringify(parsed.data));
         for (const file of documentFiles) form.append('document', file);
         const created = await api.postForm<ShipmentDto>('/shipments', form);
-        onSaved(`Trámite ${created.code} creado.`);
+        onSaved(isPackage ? `Paquete ${created.code} prealertado.` : `Trámite ${created.code} creado.`);
         return;
       }
 
@@ -290,7 +299,11 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
     <ModalOverlay onClose={onClose}>
       <form className="modal modal-lg fadeUp" autoComplete="off" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal-head">
-          <h3>{mode === 'create' ? 'Nuevo trámite' : `Editar trámite ${row?.code}`}</h3>
+          <h3>
+            {mode === 'create'
+              ? isPackage ? 'Prealertar' : 'Nuevo trámite'
+              : `Editar trámite ${row?.code}`}
+          </h3>
           <p>
             {isPackage
               ? 'Paquete comprado en USA que llega por la bodega de Miami.'
@@ -561,7 +574,11 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
             Cancelar
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? 'Guardando…' : mode === 'create' ? 'Crear trámite' : 'Guardar cambios'}
+            {busy
+              ? 'Guardando…'
+              : mode === 'create'
+                ? isPackage ? 'Prealertar' : 'Crear trámite'
+                : 'Guardar cambios'}
           </button>
         </div>
       </form>

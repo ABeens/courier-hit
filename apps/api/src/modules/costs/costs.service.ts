@@ -31,6 +31,7 @@ import {
   ServiceValueType,
   State,
   applyPercentage,
+  applyPerKg,
   asRealCosts,
   can,
   canSetExchangeRate,
@@ -107,6 +108,8 @@ function toLineDto(row: Awaited<ReturnType<typeof costsRepo.listLines>>[number])
     electronicInvoiceCode: row.electronicInvoiceCode,
     source: row.source,
     percentage: row.percentage,
+    weightKg: row.weightKg,
+    pricePerKg: row.pricePerKg,
     amount: row.amount,
     realAmount: realAmountOf(row),
     currency: row.currency,
@@ -130,9 +133,15 @@ function currencyFor(service: CostService, flow: Flow): Currency {
  */
 function detailFor(service: CostService, currency: Currency): string | null {
   if (service.defaultValue === null) return null;
-  return service.valueType === ServiceValueType.Percentage
-    ? `${service.defaultValue}% del subtotal`
-    : formatMoney(service.defaultValue, currency);
+  if (service.valueType === ServiceValueType.Percentage) return `${service.defaultValue}% del subtotal`;
+  return formatMoney(service.defaultValue, currency);
+}
+
+/** Origen de la linea que produce un servicio del catalogo, segun su tipo de valor. */
+function sourceFor(valueType: ServiceValueType): CostLineSource {
+  if (valueType === ServiceValueType.Percentage) return CostLineSource.Percentage;
+  if (valueType === ServiceValueType.PerKg) return CostLineSource.PerKg;
+  return CostLineSource.Service;
 }
 
 /**
@@ -162,15 +171,16 @@ export async function catalogSuggestions(flow: Flow): Promise<SuggestedCostLine[
   const suggestions: SuggestedCostLine[] = [];
   const services = await costServicesRepo.list({ kind: serviceKindFor(flow), enabled: true });
   for (const service of services) {
-    const isPercentage = service.valueType === 'percentage';
+    const source = sourceFor(service.valueType);
     suggestions.push({
       costServiceId: service.id,
       label: service.name,
       category: service.category,
       valueType: service.valueType,
-      source: isPercentage ? CostLineSource.Percentage : CostLineSource.Service,
-      percentage: isPercentage ? service.defaultValue : null,
-      amount: isPercentage ? null : service.defaultValue,
+      source,
+      percentage: source === CostLineSource.Percentage ? service.defaultValue : null,
+      // Ni el porcentaje ni el por kilo traen importe: salen de una cuenta.
+      amount: source === CostLineSource.Service ? service.defaultValue : null,
       currency: currencyFor(service, flow),
       /**
        * Lo que el desplegable de la pantalla muestra al lado del nombre. El monto
@@ -271,6 +281,13 @@ async function resolveExchangeRate(
  * primero las que tienen importe propio, luego los porcentajes sobre esa base.
  * Un porcentaje NUNCA se calcula sobre otro porcentaje (ver `percentageBase`).
  *
+ * Las de POR KILO entran en la primera pasada: su importe propio es kilos x
+ * precio por kg (`applyPerKg`). El precio lo digita el operador al cargar; los
+ * kilos son `weightKg`, el peso que lee quien llama (el del tramite o el de la
+ * proforma), nunca uno que mande el cliente. Esa cuenta
+ * es el costo real; el facturado es el `amount` que ajusto el operador, o la
+ * misma cuenta si no vino.
+ *
  * `extraBase` suma a la base lineas que NO se guardan con estas: la proforma la
  * usa para que el porcentaje de un servicio suyo se calcule sobre el subtotal de
  * la proforma entera (sus paquetes mas sus servicios fijos), no solo sobre sus
@@ -285,11 +302,14 @@ async function resolveExchangeRate(
 export function resolveLines(
   input: CostLineInput[],
   extraBase: (Parameters<typeof percentageBase>[0][number] & { realAmount?: number | null })[] = [],
+  weightKg: number | null = null,
 ): {
   costServiceId: string | null;
   label: string;
   source: CostLineSource;
   percentage: number | null;
+  weightKg: number | null;
+  pricePerKg: number | null;
   amount: number;
   realAmount: number;
   currency: Currency;
@@ -297,17 +317,38 @@ export function resolveLines(
 }[] {
   const base = input
     .filter((l) => l.source !== CostLineSource.Percentage)
-    .map((l) => ({
-      costServiceId: l.costServiceId ?? null,
-      label: l.label,
-      source: l.source,
-      percentage: null,
-      // El esquema Zod ya garantizo que las lineas no-porcentaje traen importe.
-      amount: roundMoney(l.amount!, l.currency),
-      realAmount: roundMoney(l.realAmount ?? l.amount!, l.currency),
-      currency: l.currency,
-      exchangeRate: l.exchangeRate,
-    }));
+    .map((l) => {
+      if (l.source === CostLineSource.PerKg) {
+        if (weightKg === null || !(weightKg > 0)) throw CostErrors.perKgWithoutWeight();
+        // El esquema Zod ya garantizo el precio en las lineas por kilo.
+        const computed = applyPerKg(weightKg, l.pricePerKg!, l.currency);
+        return {
+          costServiceId: l.costServiceId ?? null,
+          label: l.label,
+          source: l.source,
+          percentage: null,
+          weightKg,
+          pricePerKg: l.pricePerKg!,
+          amount: l.amount !== undefined ? roundMoney(l.amount, l.currency) : computed,
+          realAmount: computed,
+          currency: l.currency,
+          exchangeRate: l.exchangeRate,
+        };
+      }
+      return {
+        costServiceId: l.costServiceId ?? null,
+        label: l.label,
+        source: l.source,
+        percentage: null,
+        weightKg: null,
+        pricePerKg: null,
+        // El esquema Zod ya garantizo que las lineas no-porcentaje traen importe.
+        amount: roundMoney(l.amount!, l.currency),
+        realAmount: roundMoney(l.realAmount ?? l.amount!, l.currency),
+        currency: l.currency,
+        exchangeRate: l.exchangeRate,
+      };
+    });
 
   const billedBase = [...base, ...extraBase];
   const realBase = asRealCosts(billedBase);
@@ -320,6 +361,8 @@ export function resolveLines(
         label: l.label,
         source: CostLineSource.Percentage,
         percentage: pct,
+        weightKg: null,
+        pricePerKg: null,
         amount: applyPercentage(percentageBase(billedBase, l.currency), pct, l.currency),
         realAmount: applyPercentage(percentageBase(realBase, l.currency), pct, l.currency),
         currency: l.currency,
@@ -369,6 +412,8 @@ export const costsService = {
       suggestions: approved ? [] : await buildSuggestions(shipment),
       totals: computeTotals(rows),
       realTotals: computeTotals(asRealCosts(rows)),
+      // Kilos con los que nace una linea por kilo: el peso de bascula del tramite.
+      weightKg: shipment.weightKg,
       approved,
       approvedAt: approval?.approvedAt?.toISOString() ?? null,
       approvedByName: approval?.approvedByName ?? null,
@@ -463,7 +508,7 @@ export const costsService = {
       inputLines = inputLines.map((l) => ({ ...l, exchangeRate: rate }));
     }
 
-    const resolved = resolveLines(await withFreight(shipment, inputLines));
+    const resolved = resolveLines(await withFreight(shipment, inputLines), [], shipment.weightKg);
 
     /**
      * Categoria y COD SIS FE se copian del catalogo AQUI, al guardar, y no se

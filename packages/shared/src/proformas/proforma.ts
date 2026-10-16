@@ -67,6 +67,16 @@ export function isProformaEditable(status: ProformaStatus): boolean {
 }
 
 /**
+ * True si el peso de un paquete se puede corregir por estar en un BORRADOR,
+ * aunque su estado ya no lo admita. Pasa con un paquete que ya se entrego y cuya
+ * proforma se corrigio: la factura esta descongelada y el peso es justo lo que
+ * hay que arreglar. Fuera de un borrador manda la ventana del estado.
+ */
+export function isWeightEditableInProforma(status: ProformaStatus | null | undefined): boolean {
+  return status != null && isProformaEditable(status);
+}
+
+/**
  * True si el flujo arma sus borradores SOLO, juntando todo lo del cliente
  * (regla 3). En los demas cada tramite abre el suyo.
  */

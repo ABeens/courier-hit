@@ -50,6 +50,8 @@ const shipmentLineColumns = {
   electronicInvoiceCode: shipmentCosts.electronicInvoiceCode,
   source: shipmentCosts.source,
   percentage: shipmentCosts.percentage,
+  weightKg: shipmentCosts.weightKg,
+  pricePerKg: shipmentCosts.pricePerKg,
   amount: shipmentCosts.amount,
   realAmount: shipmentCosts.realAmount,
   currency: shipmentCosts.currency,
@@ -69,6 +71,8 @@ const proformaLineColumns = {
   electronicInvoiceCode: proformaCosts.electronicInvoiceCode,
   source: proformaCosts.source,
   percentage: proformaCosts.percentage,
+  weightKg: proformaCosts.weightKg,
+  pricePerKg: proformaCosts.pricePerKg,
   amount: proformaCosts.amount,
   realAmount: proformaCosts.realAmount,
   currency: proformaCosts.currency,
@@ -250,6 +254,7 @@ export const proformasRepo = {
         // Para imprimir el peso FACTURABLE, el mismo que multiplica al flete.
         rateKind: effectiveRateKind(shipments.clientId),
         discardedAt: shipments.discardedAt,
+        discardReason: shipments.discardReason,
         costsApprovedAt: shipments.costsApprovedAt,
         addedAt: proformaShipments.addedAt,
       })
@@ -364,6 +369,14 @@ export const proformasRepo = {
         updatedAt: new Date(),
       })
       .where(eq(shipments.id, shipmentId));
+  },
+
+  /**
+   * Borra la proforma dentro de `tx`. Sus lineas y sus vinculos con los tramites
+   * caen en cascada; los tramites no se tocan.
+   */
+  async deleteProforma(tx: Tx, id: string) {
+    await tx.delete(proformas).where(eq(proformas.id, id));
   },
 
   /** Marca la proforma como aprobada con todo lo que la aprobacion congela. */

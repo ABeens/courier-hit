@@ -26,7 +26,8 @@ import { Flow } from '../workflow/shipment-type';
 /**
  * Estado del proveedor -> estado de HS Global. Las claves son los valores
  * EXACTOS que devuelve su API, en mayusculas y con tildes tal cual: la
- * normalizacion la hace `mapProviderState`, no una copia distinta de esta tabla.
+ * normalizacion (incluidas las tildes) la hace `mapProviderState`, no una copia
+ * distinta de esta tabla.
  */
 export const HELGA_STATE_MAP: Record<string, State> = {
   // --- Recibido bodega Miami ---
@@ -44,11 +45,16 @@ export const HELGA_STATE_MAP: Record<string, State> = {
   // Agrupacion, consolidacion, manifiesto y generacion de guia aerea.
   AGRUPADA: State.PreparandoEnvio,
   CONSOLIDADA: State.PreparandoEnvio,
-  MANIFESTADA: State.PreparandoEnvio,
   'GENERACION DE GUIA TRANSPORTADORA': State.PreparandoEnvio,
   'EN PLANILLA DE DESPACHO': State.PreparandoEnvio,
 
   // --- En transito a Costa Rica ---
+  // Rehomologado 2026-10-15: "Manifestada" y "Entregado a Aerolinea" ya cuentan
+  // como en transito (antes Manifestada era Preparando envio y la aerolinea no
+  // estaba homologada).
+  MANIFESTADA: State.EnTransitoCostaRica,
+  'ENTREGADA A AEROLINEA': State.EnTransitoCostaRica,
+  'ENTREGADO A AEROLINEA': State.EnTransitoCostaRica,
   'ENTREGADA A TRANSPORTADORA': State.EnTransitoCostaRica,
   'LLEGA A AEROPUERTO DESTINO': State.EnTransitoCostaRica,
 
@@ -61,7 +67,32 @@ export const HELGA_STATE_MAP: Record<string, State> = {
   'SALE PARA ENTREGA': State.EnAduanas,
   ENTREGADA: State.EnAduanas,
   'ENTREGADA A DESTINATARIO': State.EnAduanas,
+  'ENTREGADO A DESTINATARIO': State.EnAduanas,
+  // Rehomologado 2026-10-15: "En Aduana" y "Listo en Sucursal Escazu" tambien
+  // cierran el tramo del proveedor.
+  'EN ADUANA': State.EnAduanas,
+  'EN ADUANAS': State.EnAduanas,
+  'LISTO EN SUCURSAL ESCAZU': State.EnAduanas,
 };
+
+/**
+ * Forma canonica de un estado del proveedor: sin espacios sobrantes, en
+ * mayusculas y sin tildes. Helga no es consistente con las tildes entre su API
+ * y su pantalla ("AEROLÍNEA" / "AEROLINEA"), asi que se comparan sin ellas.
+ */
+function normalizeProviderState(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+}
+
+/** `HELGA_STATE_MAP` con las claves ya normalizadas, para la busqueda. */
+const NORMALIZED_STATE_MAP: Record<string, State> = Object.fromEntries(
+  Object.entries(HELGA_STATE_MAP).map(([k, v]) => [normalizeProviderState(k), v]),
+);
 
 /**
  * Estados nuestros que MUEVE el proveedor. Se derivan de la tabla de arriba, no
@@ -156,13 +187,13 @@ export type ProviderStateMapping =
  * pareja esta en `HELGA_ALT_STATE_MAP`, y en ese caso manda sobre el `estado`.
  */
 export function mapProviderState(raw: string, alt?: string | null): ProviderStateMapping {
-  const key = raw.trim().toUpperCase();
+  const key = normalizeProviderState(raw);
 
-  const altKey = alt?.trim().toUpperCase();
+  const altKey = alt ? normalizeProviderState(alt) : undefined;
   const byPair = altKey ? HELGA_ALT_STATE_MAP[`${key}|${altKey}`] : undefined;
   if (byPair) return { kind: 'advance', state: byPair };
 
-  const mapped = HELGA_STATE_MAP[key];
+  const mapped = NORMALIZED_STATE_MAP[key];
   if (mapped) return { kind: 'advance', state: mapped };
   if (HELGA_OPERATIONAL_STATES.includes(key)) return { kind: 'operational' };
   if (HELGA_INCIDENT_STATES.includes(key)) return { kind: 'incident', providerState: key };

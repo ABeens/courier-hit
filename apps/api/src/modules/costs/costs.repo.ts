@@ -23,6 +23,8 @@ const columns = {
   electronicInvoiceCode: shipmentCosts.electronicInvoiceCode,
   source: shipmentCosts.source,
   percentage: shipmentCosts.percentage,
+  weightKg: shipmentCosts.weightKg,
+  pricePerKg: shipmentCosts.pricePerKg,
   amount: shipmentCosts.amount,
   realAmount: shipmentCosts.realAmount,
   currency: shipmentCosts.currency,

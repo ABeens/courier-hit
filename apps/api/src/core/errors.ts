@@ -90,13 +90,20 @@ export const CostServiceErrors = {
   valueTypeNotAllowed: () =>
     new AppError(
       'COST_SERVICE_VALUE_TYPE_NOT_ALLOWED',
-      'Los servicios de Transporte y agenciamiento se cargan al recibir: su valor debe ser manual.',
+      'Ese tipo de valor no aplica: Transporte y agenciamiento admite manual o por kilo; Paquetería, porcentaje, monto fijo o manual.',
       400,
     ),
 };
 
 /** Errores de los costos cargados sobre un tramite (docs/06-modulo-administrativo.md §3.3). */
 export const CostErrors = {
+  /** Un servicio por kilo necesita el peso del paquete, y todavia no lo tiene. */
+  perKgWithoutWeight: () =>
+    new AppError(
+      'COSTS_PER_KG_WITHOUT_WEIGHT',
+      'Este trámite aún no tiene peso: no se puede cobrar un servicio por kilo.',
+      409,
+    ),
   alreadyApproved: () =>
     new AppError(
       'COSTS_ALREADY_APPROVED',
@@ -183,7 +190,21 @@ export const ProformaErrors = {
   hasPayments: () =>
     new AppError(
       'PROFORMA_HAS_PAYMENTS',
-      'La proforma tiene pagos confirmados o en validación. Resuélvelos antes de corregirla.',
+      'La proforma tiene pagos confirmados o en validación. Resuélvelos antes de corregirla o eliminarla.',
+      409,
+    ),
+  /** Eliminar es solo para proformas cuyos tramites estan TODOS descartados. */
+  notDeletable: () =>
+    new AppError(
+      'PROFORMA_NOT_DELETABLE',
+      'Solo se puede eliminar una proforma sin pagar cuyos paquetes estén todos descartados.',
+      409,
+    ),
+  /** Sacar un tramite del borrador por esta via es solo para los descartados. */
+  shipmentNotDiscarded: () =>
+    new AppError(
+      'PROFORMA_SHIPMENT_NOT_DISCARDED',
+      'Solo se pueden quitar de la proforma los paquetes descartados.',
       409,
     ),
   joinBlocked: (message: string) => new AppError('PROFORMA_JOIN_BLOCKED', message, 409),

@@ -130,12 +130,23 @@ export interface ProformaShipmentDto {
   lines: CostLineDto[];
   /** Total de ESTE tramite en la moneda de la proforma. */
   total: number;
+  /**
+   * Descarte del tramite (UTC, ISO 8601) y su motivo. Null si esta vivo. Un
+   * descartado no se puede aprobar, y la pantalla lo marca para sacarlo.
+   */
+  discardedAt: string | null;
+  discardReason: string | null;
 }
 
 /** Detalle completo de la proforma. */
 export interface ProformaDetailDto extends ProformaListItem {
   /** True mientras es borrador: la pantalla habilita la edicion con esto. */
   editable: boolean;
+  /**
+   * True si todos sus tramites estan descartados y no esta pagada: se ofrece
+   * eliminarla. Los pagos en validacion o confirmados los comprueba la API.
+   */
+  deletable: boolean;
   /**
    * El borrador que acumula del cliente (Paqueteria): los paquetes que lleguen
    * caen aqui. La pantalla lo marca para que el operador sepa cual es.

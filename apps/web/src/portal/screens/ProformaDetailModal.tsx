@@ -179,6 +179,47 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
     }
   }
 
+  /**
+   * Quita del borrador un paquete descartado. Si era el ultimo y el borrador
+   * nunca se numero, la API lo borra y se cierra el detalle.
+   */
+  async function removeDiscarded(shipmentId: string, code: string) {
+    if (!window.confirm(`Se quitará el paquete descartado ${code} de esta proforma. ¿Continuar?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const dto = await api.del<ProformaDetailDto | null>(`/proformas/${id}/shipments/${shipmentId}`);
+      if (dto === null) {
+        onClose();
+        return;
+      }
+      setData(dto);
+      setNotice(`Paquete ${code} quitado de la proforma.`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo quitar el paquete.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Elimina la proforma entera: solo cuando todos sus paquetes están descartados. */
+  async function remove() {
+    if (!data) return;
+    const n = data.shipments.length;
+    const what = n === 1 ? 'su paquete está descartado' : `sus ${n} paquetes están descartados`;
+    const gap = data.number ? ` Su número (${data.number}) no se reutiliza.` : '';
+    if (!window.confirm(`Se eliminará la proforma porque ${what}.${gap} ¿Continuar?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.del(`/proformas/${id}`);
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo eliminar la proforma.');
+      setBusy(false);
+    }
+  }
+
   async function approve() {
     if (!data) return;
     if (!window.confirm('Al aprobar se asigna el número, se congela el monto y los trámites pasan a cobro. ¿Continuar?')) return;
@@ -300,6 +341,19 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
             </div>
           )}
 
+          {/* Los descartados que siguen dentro: en borrador se quitan desde la
+              tabla; en una aprobada hay que corregirla primero. Si TODOS lo
+              están, la salida es eliminarla, y eso lo dice el botón del pie. */}
+          {data && canManage && !data.deletable && data.shipments.some((s) => s.discardedAt !== null) && (
+            <div className="banner warn">
+              {data.editable
+                ? 'Esta proforma tiene paquetes descartados y no se puede aprobar con ellos. Quítalos desde la tabla de trámites.'
+                : data.status === ProformaStatus.Aprobada
+                  ? 'Esta proforma tiene paquetes descartados. Para quitarlos, corrígela primero: vuelve a borrador.'
+                  : 'Esta proforma tiene paquetes descartados.'}
+            </div>
+          )}
+
           {data && (
             <>
               <div className="pay-sec is-money proforma-summary">
@@ -399,7 +453,24 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
                           <td className="mono">{s.hawb ?? s.tracking}</td>
                           <td>{s.description}</td>
                           <td>{s.weightKg !== null ? `${s.weightKg} kg` : '—'}</td>
-                          <td>{STATE_LABELS[s.state]}</td>
+                          <td>
+                            {/* Un descartado no se puede aprobar: se marca para que
+                                quien revisa sepa por qué la proforma no avanza. */}
+                            {s.discardedAt !== null ? (
+                              <>
+                                <span className="spill danger">
+                                  <span className="dot" />
+                                  Descartado
+                                </span>
+                                <div className="cell-sub" title={s.discardReason ?? undefined}>
+                                  {formatDate(s.discardedAt)}
+                                  {s.discardReason ? ` · ${s.discardReason}` : ''}
+                                </div>
+                              </>
+                            ) : (
+                              STATE_LABELS[s.state]
+                            )}
+                          </td>
                           <td>
                             {money(s.total, data.currency)}
                             {s.lines.length === 0 && <div className="cell-sub">Sin costos</div>}
@@ -407,9 +478,21 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
                           {editable && (
                             <td>
                               <div className="actions">
-                                <IconButton label="Costos del trámite" icon="dollar" onClick={() => void openShipmentCosts(s.id)} />
-                                <IconButton label="Mover a otra proforma" icon="arrowR" onClick={() => void openMove(s.id)} />
-                                <IconButton label="Reasignar a otro cliente" icon="userSwap" onClick={() => void openReassign(s.id)} />
+                                {s.discardedAt !== null ? (
+                                  <IconButton
+                                    label="Quitar de la proforma"
+                                    icon="trash"
+                                    tone="danger"
+                                    disabled={busy}
+                                    onClick={() => void removeDiscarded(s.id, s.code)}
+                                  />
+                                ) : (
+                                  <>
+                                    <IconButton label="Costos del trámite" icon="dollar" onClick={() => void openShipmentCosts(s.id)} />
+                                    <IconButton label="Mover a otra proforma" icon="arrowR" onClick={() => void openMove(s.id)} />
+                                    <IconButton label="Reasignar a otro cliente" icon="userSwap" onClick={() => void openReassign(s.id)} />
+                                  </>
+                                )}
                               </div>
                             </td>
                           )}
@@ -542,6 +625,11 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
               {canManage && data.status === ProformaStatus.Aprobada && (
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => void correct()} disabled={busy}>
                   Corregir
+                </button>
+              )}
+              {canManage && data.deletable && (
+                <button type="button" className="btn btn-danger btn-sm" onClick={() => void remove()} disabled={busy}>
+                  Eliminar proforma
                 </button>
               )}
               {canRecord && data.status === ProformaStatus.Aprobada && !inValidation && (

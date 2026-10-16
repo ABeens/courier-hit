@@ -41,6 +41,12 @@ export enum ServiceValueType {
   Fixed = 'fixed',
   /** Solo el nombre; el importe se digita al cargar los costos. `defaultValue` = null. */
   Manual = 'manual',
+  /**
+   * Cobro por kilo. Solo el nombre, como Manual: `defaultValue` = null. Al cargar
+   * el costo el operador digita los kilos y el precio por kg (con su moneda), y
+   * el sistema hace la multiplicacion.
+   */
+  PerKg = 'per_kg',
 }
 
 /** Etiqueta de presentacion del tipo de valor. */
@@ -48,7 +54,9 @@ export const SERVICE_VALUE_TYPE_LABELS: Record<ServiceValueType, string> = {
   [ServiceValueType.Percentage]: 'Porcentaje',
   [ServiceValueType.Fixed]: 'Monto fijo',
   [ServiceValueType.Manual]: 'Manual (se define al cargar)',
+  [ServiceValueType.PerKg]: 'Por kilo',
 };
+
 
 /**
  * DE QUIEN es el dinero de un concepto. Enum de dominio.
@@ -146,13 +154,15 @@ export function isPassThroughCost(category: CostCategory): boolean {
  * Tipos de valor admitidos segun el tipo de servicio.
  *
  * Los costos de Transporte y Agenciamiento se cargan al momento de recibir el
- * tramite, asi que su importe siempre se digita ahi: solo admiten Manual.
- * Paqueteria admite los tres (porcentaje, monto fijo o manual).
+ * tramite: o se digita el importe ahi (Manual) o se digitan los kilos y el
+ * precio por kg y el sistema los multiplica (PerKg).
+ * Paqueteria admite porcentaje, monto fijo o manual; su cobro por kilo ya es el
+ * flete, que sale de la tarifa del casillero y no del catalogo.
  */
 export function allowedValueTypes(kind: ServiceKind): ServiceValueType[] {
   return kind === ServiceKind.TransporteAgenciamiento
-    ? [ServiceValueType.Manual]
-    : Object.values(ServiceValueType);
+    ? [ServiceValueType.Manual, ServiceValueType.PerKg]
+    : [ServiceValueType.Percentage, ServiceValueType.Fixed, ServiceValueType.Manual];
 }
 
 /** True si el tipo de valor es admisible para ese tipo de servicio. */
@@ -176,7 +186,7 @@ export function isCurrencyAllowed(kind: ServiceKind, currency: Currency): boolea
 
 /**
  * Moneda que PROPONE un catalogo: la de la mayoria de sus servicios con moneda
- * (los de monto fijo; el porcentaje y el manual no tienen). Null si no hay
+ * (los de monto fijo; el porcentaje, el manual y el por kilo no tienen). Null si no hay
  * ninguno o si las dos monedas empatan: ahi el catalogo no propone nada y quien
  * pregunta usa la suya por defecto.
  *
@@ -215,11 +225,11 @@ export interface CostService {
    */
   electronicInvoiceCode: string | null;
   valueType: ServiceValueType;
-  /** Porcentaje (Percentage) o importe (Fixed); null cuando es Manual. */
+  /** Porcentaje (Percentage) o importe (Fixed); null cuando es Manual o PerKg. */
   defaultValue: number | null;
   /**
-   * Moneda del importe. Solo aplica cuando valueType = Fixed (es dinero);
-   * null cuando es Percentage (es %) o Manual (se digita al cargar). Regla M2.
+   * Moneda del importe. Solo aplica cuando valueType = Fixed (es dinero); null
+   * cuando es Percentage (es %), Manual o PerKg (se digitan al cargar). Regla M2.
    */
   currency: Currency | null;
   enabled: boolean;

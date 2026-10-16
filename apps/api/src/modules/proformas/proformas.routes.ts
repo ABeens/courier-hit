@@ -211,6 +211,26 @@ proformasRoutes.post('/:id/correct', manage, zValidator('json', correctProformaS
   );
 });
 
+/** Eliminar una proforma cuyos paquetes estan todos descartados. */
+proformasRoutes.delete('/:id', manage, async (c) => {
+  await proformasService.remove(c.get('session'), c.req.param('id'));
+  return c.body(null, 204);
+});
+
+/**
+ * Quitar del borrador un paquete descartado. Responde la proforma, o `null` si
+ * quedo vacia y se borro.
+ */
+proformasRoutes.delete('/:id/shipments/:shipmentId', manage, async (c) => {
+  return c.json(
+    await proformasService.removeDiscardedShipment(
+      c.get('session'),
+      c.req.param('id'),
+      c.req.param('shipmentId'),
+    ),
+  );
+});
+
 /** Mover un tramite a otro borrador o a uno nuevo. Responde la proforma de destino. */
 proformasRoutes.post(
   '/:id/shipments/:shipmentId/move',

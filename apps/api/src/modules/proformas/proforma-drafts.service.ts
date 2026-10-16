@@ -232,6 +232,10 @@ export const proformaDraftsService = {
    * El tramite cambio de dueño: sacarlo del borrador del dueño anterior y, si esta
    * en facturacion, ponerlo en el del nuevo con el flete de SU tarifa.
    *
+   * Tambien entra al del nuevo si venia de un borrador sin estar en facturacion:
+   * es un paquete ya entregado de una proforma corregida. Si no, se quedaria sin
+   * proforma y nadie se lo cobraria al dueño correcto.
+   *
    * El borrador de origen se borra si quedo vacio y nunca se numero: no hay nada
    * que mostrarle a nadie. Quien llama ya comprobo que el tramite se podia
    * reasignar (sin factura congelada ni pagos).
@@ -244,6 +248,6 @@ export const proformaDraftsService = {
     const from = await proformasRepo.detachShipment(shipment.id);
     if (from) await proformasRepo.deleteIfEmptyDraft(from);
 
-    if (inBilling) await this.onEnterBilling(session, shipment);
+    if (inBilling || from) await this.onEnterBilling(session, shipment);
   },
 };

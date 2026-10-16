@@ -11,9 +11,10 @@
  *    los tramites avanzan a su estado de cobro. En bloque, cada proforma va en su
  *    propia transaccion: una que falla no deshace las demas.
  * 2. CORREGIR DEVUELVE A BORRADOR SIN PERDER EL NUMERO. Solo una aprobada y sin
- *    pagos (ni confirmados ni en validacion). Los tramites vuelven a "Facturacion
- *    en proceso" (Transporte ya estaba ahi) y la factura se descongela. Al
- *    reaprobar sale con el mismo numero.
+ *    pagos (ni confirmados ni en validacion). La factura se descongela; los
+ *    tramites que seguian en cobro vuelven a "Facturacion en proceso" (Transporte
+ *    ya estaba ahi) y los que ya siguieron de largo (entregados, en ruta) se
+ *    quedan donde estan. Al reaprobar sale con el mismo numero.
  * 3. LOS SERVICIOS ADICIONALES SON DE LA PROFORMA (decision D10). El flete de
  *    cada paquete y los costos propios de cada tramite siguen en el tramite; lo
  *    que se cobra por la proforma entera va en `proforma_costs`.
@@ -52,6 +53,7 @@ import {
   findDistrict,
   findProvince,
   formatProformaNumber,
+  isAtOrPastPayable,
   isProformaEditable,
   joinBlockFor,
   payableStateOf,
@@ -114,6 +116,8 @@ function toLineDto(row: Line): CostLineDto {
     electronicInvoiceCode: row.electronicInvoiceCode,
     source: row.source,
     percentage: row.percentage,
+    weightKg: row.weightKg,
+    pricePerKg: row.pricePerKg,
     amount: row.amount,
     realAmount: realAmountOf(row),
     currency: row.currency,
@@ -264,11 +268,36 @@ function toDocumentLine(line: Line, currency: Currency): DocumentLine {
   };
 }
 
+/**
+ * Kilos con los que se cobra un servicio por kilo de la proforma: la suma del
+ * peso de bascula de sus paquetes vivos (un descartado no se cobra). Es el mismo
+ * peso que usa un tramite suelto; el redondeo de `billableWeightKg` es regla del
+ * flete de Paqueteria, no de estos servicios. Null si ninguno tiene peso todavia.
+ */
+function proformaWeightKg(
+  shipments: readonly { weightKg: number | null; discardedAt: Date | null }[],
+): number | null {
+  const weights = shipments
+    .filter((s) => s.discardedAt === null)
+    .map((s) => s.weightKg)
+    .filter((w): w is number => w !== null);
+  if (weights.length === 0) return null;
+  return Math.round(weights.reduce((a, b) => a + b, 0) * 1000) / 1000;
+}
+
 /** Carga la cabecera o responde 404. */
 async function loadHeader(id: string): Promise<Header> {
   const header = await proformasRepo.header(id);
   if (!header) throw ProformaErrors.notFound();
   return header;
+}
+
+/**
+ * Una proforma se elimina solo si no esta pagada y TODOS sus tramites estan
+ * descartados: no queda nada vivo que cobrar. Una vacia tambien cuenta.
+ */
+function isDeletable(status: ProformaStatus, shipments: readonly { discardedAt: Date | null }[]): boolean {
+  return status !== ProformaStatus.Pagada && shipments.every((s) => s.discardedAt !== null);
 }
 
 /** Carga la proforma exigiendo que siga en borrador. */
@@ -338,6 +367,8 @@ export const proformasService = {
         weightKg: displayedWeightKg(s.weightKg, s.rateKind),
         lines: lines.map(toLineDto),
         total: totalIn(computeTotals(lines), p.currency),
+        discardedAt: s.discardedAt?.toISOString() ?? null,
+        discardReason: s.discardReason,
       };
     });
 
@@ -345,6 +376,7 @@ export const proformasService = {
     return {
       ...toListItem(header, [...shipmentLines, ...extras]),
       editable: isProformaEditable(p.status),
+      deletable: isDeletable(p.status, shipments),
       accumulates: p.accumulates,
       // El peso no es un monto: se suma (el facturable de cada paquete) y se deja
       // con tres decimales de bascula.
@@ -364,9 +396,10 @@ export const proformasService = {
   async costsView(session: Session, id: string): Promise<ShipmentCostsDto> {
     const header = await loadHeader(id);
     const p = header.proforma;
-    const [saved, shipmentLines, suggestions, globalRate, reference] = await Promise.all([
+    const [saved, shipmentLines, shipments, suggestions, globalRate, reference] = await Promise.all([
       proformasRepo.proformaLinesOf([id]),
       proformasRepo.shipmentLinesOf([id]),
+      proformasRepo.shipmentsOf(id),
       catalogSuggestions(p.flow),
       settingsRepo.currentExchangeRate(),
       canSetExchangeRate(session.role) ? exchangeRateReference.suggest() : null,
@@ -389,6 +422,7 @@ export const proformasService = {
         crc: percentageBase(packagesRealBase, Currency.CRC),
       },
       suggestions: editable ? suggestions : [],
+      weightKg: proformaWeightKg(shipments),
       totals: computeTotals(lines),
       realTotals: computeTotals(asRealCosts(lines)),
       approved: !editable,
@@ -425,8 +459,12 @@ export const proformasService = {
 
     // Los porcentajes van sobre el subtotal de la proforma entera: sus paquetes
     // entran a la base aunque no se guarden con estas lineas.
-    const shipmentLines = await proformasRepo.shipmentLinesOf([id]);
-    const resolved = resolveLines(lines, percentageBaseLines(shipmentLines, []));
+    const [shipmentLines, shipments] = await Promise.all([
+      proformasRepo.shipmentLinesOf([id]),
+      proformasRepo.shipmentsOf(id),
+    ]);
+    // Los servicios por kilo se cobran con el peso de la proforma, leido aqui.
+    const resolved = resolveLines(lines, percentageBaseLines(shipmentLines, []), proformaWeightKg(shipments));
     const serviceIds = [...new Set(resolved.map((l) => l.costServiceId).filter((x) => x !== null))];
     const byId = new Map((await costServicesRepo.listByIds(serviceIds)).map((s) => [s.id, s]));
 
@@ -474,15 +512,24 @@ export const proformasService = {
     const extras = withLivePercentages(proformaLines, shipmentLines);
 
     const payable = payableStateOf(p.flow);
+    if (!payable) throw ProformaErrors.shipmentNotBillable(shipments[0]!.code);
+    /**
+     * Un tramite que ya siguio de largo (entregado, en ruta) solo puede estar en
+     * una proforma CORREGIDA, que por eso conserva su numero: corregir le
+     * descongela la factura sin devolverlo atras (ver `correct`). Se vuelve a
+     * congelar con los demas, pero no se mueve.
+     */
+    const advanced = (s: { state: State }) => p.number !== null && isAtOrPastPayable(p.flow, s.state);
     for (const s of shipments) {
-      if (s.discardedAt !== null || s.state !== State.FacturacionEnProceso) {
+      if (s.discardedAt !== null) throw ProformaErrors.shipmentNotBillable(s.code);
+      if (s.state !== State.FacturacionEnProceso && !advanced(s)) {
         throw ProformaErrors.shipmentNotBillable(s.code);
       }
       if (s.clientId !== p.clientId) throw ProformaErrors.changed();
       if ((linesByShipment.get(s.id) ?? []).length === 0) {
         throw ProformaErrors.shipmentWithoutCosts(s.code);
       }
-      if (!payable || (payable !== s.state && !canTransition(p.flow, s.state, payable))) {
+      if (!advanced(s) && payable !== s.state && !canTransition(p.flow, s.state, payable)) {
         throw ProformaErrors.shipmentNotBillable(s.code);
       }
     }
@@ -545,10 +592,12 @@ export const proformasService = {
      * Avance a cobro, DESPUES de la transaccion: lo hace `transitionsService` para
      * que la guarda RequiresInvoiceAmount se compruebe de verdad contra la factura
      * recien congelada y queden el evento y la notificacion del estado. En
-     * Transporte no hay avance: se cobra en el mismo estado de facturacion.
+     * Transporte no hay avance: se cobra en el mismo estado de facturacion. Los
+     * que ya siguieron de largo no se tocan (ni reciben otro aviso de cobro).
      */
-    if (payable && payable !== State.FacturacionEnProceso) {
+    if (payable !== State.FacturacionEnProceso) {
       for (const s of shipments) {
+        if (s.state !== State.FacturacionEnProceso) continue;
         await transitionsService.transition(
           session,
           s.id,
@@ -631,8 +680,9 @@ export const proformasService = {
 
   /**
    * Corrige una proforma aprobada y no pagada: vuelve a borrador CONSERVANDO SU
-   * NUMERO y sus tramites vuelven a "Facturacion en proceso" con la factura
-   * descongelada.
+   * NUMERO y con la factura de cada tramite descongelada. Sirve tambien con
+   * tramites ya entregados o en ruta (un peso mal tomado, un paquete a nombre de
+   * otro cliente): esos no retroceden, solo se reabre su factura.
    *
    * Cualquier pago confirmado o en validacion la bloquea: el cliente ya pago (o
    * dice haber pagado) contra este monto, y cambiarlo dejaria ese pago apuntando
@@ -646,11 +696,6 @@ export const proformasService = {
     const shipments = await proformasRepo.shipmentsOf(id);
     const payable = payableStateOf(p.flow);
     for (const s of shipments) {
-      // Solo se deshace lo que la aprobacion hizo: un tramite que ya siguio de
-      // largo (salio a ruta, entro a aduana) ya no esta en el estado de cobro.
-      if (s.state !== State.FacturacionEnProceso && s.state !== payable) {
-        throw ProformaErrors.notCorrectable();
-      }
       const payments = await paymentsRepo.settlementView(s.id);
       if (payments.some((x) => x.status === PaymentStatus.Confirmado || x.status === PaymentStatus.Pendiente)) {
         throw ProformaErrors.hasPayments();
@@ -665,16 +710,103 @@ export const proformasService = {
     });
 
     /**
-     * Vuelta a facturacion, fuera de la maquina (que no retrocede). El prefijo de
-     * correccion marca el asiento como enmienda: el historial no puede decir que
-     * el tramite "avanzo" a facturacion.
+     * Vuelta a facturacion, fuera de la maquina (que no retrocede), SOLO de los
+     * que siguen en el estado de cobro: es lo unico que hizo la aprobacion. Uno
+     * que ya siguio de largo (salio a ruta, se entrego) se queda donde esta,
+     * porque eso paso en la realidad; solo se le descongela la factura.
+     *
+     * El prefijo de correccion marca el asiento como enmienda: el historial no
+     * puede decir que el tramite "avanzo" a facturacion. Los que no se mueven
+     * tambien llevan su asiento, para que su historial diga que su factura se
+     * reabrio.
      */
     const note = `${CORRECTION_NOTE_PREFIX}proforma ${formatProformaNumber(p.number)} devuelta a borrador. ${input.note}`;
     for (const s of shipments) {
-      if (s.state !== State.FacturacionEnProceso) {
-        await shipmentsRepo.transition(s.id, State.FacturacionEnProceso, session.userId, note);
+      if (s.state === State.FacturacionEnProceso) continue;
+      const target = s.state === payable ? State.FacturacionEnProceso : s.state;
+      await shipmentsRepo.transition(s.id, target, session.userId, note);
+    }
+    return this.get(id);
+  },
+
+  /**
+   * Elimina una proforma cuyos tramites estan todos descartados (uno o varios).
+   *
+   * No aplica a una pagada, y un pago confirmado o en validacion la bloquea por
+   * la misma razon que en `correct`. Si estaba aprobada, a sus tramites se les
+   * deshace lo que la aprobacion hizo (factura congelada y paso a cobro), para
+   * que al restaurar uno vuelva a facturacion y entre a un borrador nuevo.
+   *
+   * Si tenia numero, el numero no se reutiliza: queda el hueco en la serie, y
+   * el historial de cada tramite dice que proforma se elimino y por que.
+   */
+  async remove(session: Session, id: string): Promise<void> {
+    const header = await loadHeader(id);
+    const p = header.proforma;
+    const shipments = await proformasRepo.shipmentsOf(id);
+    if (!isDeletable(p.status, shipments)) throw ProformaErrors.notDeletable();
+
+    for (const s of shipments) {
+      const payments = await paymentsRepo.settlementView(s.id);
+      if (payments.some((x) => x.status === PaymentStatus.Confirmado || x.status === PaymentStatus.Pendiente)) {
+        throw ProformaErrors.hasPayments();
       }
     }
+
+    // Solo se deshace la aprobacion en los que siguen donde ella los dejo.
+    const payable = payableStateOf(p.flow);
+    const released = new Set(
+      shipments
+        .filter((s) => s.costsApprovedAt !== null && (s.state === State.FacturacionEnProceso || s.state === payable))
+        .map((s) => s.id),
+    );
+
+    await db.transaction(async (tx) => {
+      const locked = await proformasRepo.lockForUpdate(tx, id);
+      if (!locked || locked.status !== p.status) throw ProformaErrors.changed();
+      const ids = await proformasRepo.shipmentIdsIn(tx, id);
+      if (ids.length !== shipments.length || ids.some((x) => !shipments.some((s) => s.id === x))) {
+        throw ProformaErrors.changed();
+      }
+      for (const shipmentId of released) await proformasRepo.releaseShipmentInvoice(tx, shipmentId);
+      await proformasRepo.deleteProforma(tx, id);
+    });
+
+    const label = p.number !== null ? `proforma ${formatProformaNumber(p.number)}` : 'proforma en borrador';
+    const note = `${CORRECTION_NOTE_PREFIX}${label} eliminada: todos sus paquetes estaban descartados.`;
+    for (const s of shipments) {
+      const state = released.has(s.id) ? State.FacturacionEnProceso : s.state;
+      await shipmentsRepo.transition(s.id, state, session.userId, note);
+    }
+  },
+
+  /**
+   * Saca de un borrador un tramite descartado. Un descartado no se puede aprobar,
+   * asi que mientras siga dentro bloquea la proforma entera.
+   *
+   * Solo en borrador: en una aprobada el monto ya esta congelado; se corrige
+   * primero (vuelve a borrador) y luego se saca. El borrador se borra si quedo
+   * vacio y nunca se numero. Devuelve null en ese caso.
+   */
+  async removeDiscardedShipment(
+    session: Session,
+    id: string,
+    shipmentId: string,
+  ): Promise<ProformaDetailDto | null> {
+    const p = (await loadDraft(id)).proforma;
+    const shipment = (await proformasRepo.shipmentsOf(id)).find((s) => s.id === shipmentId);
+    if (!shipment) throw ProformaErrors.shipmentNotInProforma();
+    if (shipment.discardedAt === null) throw ProformaErrors.shipmentNotDiscarded();
+
+    await proformasRepo.detachShipment(shipmentId);
+    const label = p.number !== null ? `proforma ${formatProformaNumber(p.number)}` : 'proforma en borrador';
+    await shipmentsRepo.transition(
+      shipmentId,
+      shipment.state,
+      session.userId,
+      `${CORRECTION_NOTE_PREFIX}paquete descartado quitado de la ${label}.`,
+    );
+    if (await proformasRepo.deleteIfEmptyDraft(id)) return null;
     return this.get(id);
   },
 

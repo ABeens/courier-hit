@@ -152,6 +152,9 @@ export const providerSyncService = {
       if (shipment.providerAccountCode && !target && !isHelgaSimulated()) {
         // Preguntar con el token de la principal devolveria 404 para siempre, que
         // se leeria como "aun no llega": es peor que no preguntar.
+        // Se marca igual: sin turno anotado volveria al frente en cada corrida y
+        // le quitaria su lugar en el lote a un paquete que si se puede consultar.
+        await providerSyncRepo.markChecked(shipment.id);
         if (!report.unknownAccounts.includes(shipment.providerAccountCode)) {
           report.unknownAccounts.push(shipment.providerAccountCode);
           console.warn(
@@ -180,8 +183,15 @@ export const providerSyncService = {
           break;
         }
         console.error(`[helga] fallo consultando ${shipment.code} (${shipment.tracking}):`, err);
+        // Un paquete que falla siempre no puede quedarse con su lugar en el lote.
+        await providerSyncRepo.markChecked(shipment.id);
         continue;
       }
+
+      // Ya le toco su turno, traiga o no novedades: pasa al final de la cola
+      // (ver `shipmentsInProviderTramo`). Antes del 404 a proposito, que es justo
+      // el caso que dejaba a los estancados ocupando el lote para siempre.
+      await providerSyncRepo.markChecked(shipment.id);
 
       // 404: el paquete aun no existe del lado de Helga (prealerta sin llegar).
       if (!pkg) continue;

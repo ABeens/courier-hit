@@ -268,6 +268,16 @@ export const shipments = pgTable(
      * hace un ano no puede perder de donde vino porque el enlace se cancelara.
      */
     providerAccountCode: text('provider_account_code'),
+    /**
+     * Ultima vez que la sincronizacion le pregunto a Helga por este paquete,
+     * haya cambiado algo o no. Es el ORDEN de la cola de `provider-sync`: cada
+     * corrida toma los consultados hace mas tiempo (NULL = nunca, primero).
+     *
+     * No sirve `updated_at` para eso: solo cambia cuando el proveedor trae algo
+     * nuevo, asi que los paquetes estancados (404, sin novedades) se quedaban
+     * siempre al frente y los recien llegados nunca alcanzaban el lote.
+     */
+    providerCheckedAt: timestamp('provider_checked_at', { withTimezone: true }),
 
     // --- Descarte desde la sala de control (solo paquetes sin dueño) ---
     /**

@@ -33,10 +33,21 @@ const amountSchema = z
   .nonnegative('El monto no puede ser negativo.')
   .max(99_999_999, 'Ese monto excede el máximo permitido.');
 
+/** Precio por kg de una linea por kilo: nunca negativo (regla M3). */
+const pricePerKgSchema = z
+  .number({ invalid_type_error: 'Falta el precio por kilo.' })
+  .nonnegative('El precio por kilo no puede ser negativo.')
+  .max(99_999_999, 'Ese precio por kilo excede el máximo permitido.');
+
 /**
  * Una linea a guardar. `amount` es obligatorio salvo en las de porcentaje, donde
  * lo calcula la API sobre la base (si llegara, se ignora: el cliente no decide el
  * resultado de una formula del negocio).
+ *
+ * Las de POR KILO traen solo el precio por kg: los kilos NO viajan, los pone la
+ * API con el peso del paquete (o de la proforma) y multiplica (`applyPerKg`).
+ * `amount` es opcional: si viene, es el costo a facturar ajustado por el
+ * operador; si no, se factura el resultado de la multiplicacion.
  */
 export const costLineInputSchema = z
   .object({
@@ -50,6 +61,8 @@ export const costLineInputSchema = z
       .max(100, 'El porcentaje debe estar entre 0 y 100.')
       .nullable()
       .optional(),
+    /** Precio por kg en `currency` (solo en las de por kilo). */
+    pricePerKg: pricePerKgSchema.nullable().optional(),
     /** COSTO FACTURADO: lo que se le cobra al cliente. */
     amount: amountSchema.optional(),
     /**
@@ -67,6 +80,16 @@ export const costLineInputSchema = z
           code: z.ZodIssueCode.custom,
           path: ['percentage'],
           message: 'Indica el porcentaje que se aplica.',
+        });
+      }
+      return;
+    }
+    if (line.source === CostLineSource.PerKg) {
+      if (line.pricePerKg === undefined || line.pricePerKg === null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['pricePerKg'],
+          message: 'Falta el precio por kilo de la línea.',
         });
       }
       return;
@@ -107,6 +130,10 @@ export interface CostLineDto {
   electronicInvoiceCode: string | null;
   source: CostLineSource;
   percentage: number | null;
+  /** Kilos cobrados en las de por kilo; null en el resto. */
+  weightKg: number | null;
+  /** Precio por kg aplicado en las de por kilo; null en el resto. */
+  pricePerKg: number | null;
   /** COSTO A FACTURAR: el que ve el cliente y suman los totales. */
   amount: number;
   /** COSTO NETO (lo que costo). Siempre resuelto: sin uno guardado, igual al costo a facturar. */
@@ -138,7 +165,10 @@ export interface SuggestedCostLine {
   category: CostCategory;
   source: CostLineSource;
   percentage: number | null;
-  /** Importe sugerido; null cuando el servicio es de valor manual. */
+  /**
+   * Importe sugerido; null cuando el servicio es de valor manual o por kilo (en
+   * ese caso el importe sale de multiplicar kilos por precio, digitados al cargar).
+   */
   amount: number | null;
   currency: Currency;
   /** Por que se propone (p. ej. "3 kg × $13.45"). Solo informativo. */
@@ -171,6 +201,13 @@ export interface ShipmentCostsDto {
   packagesSubtotal?: { usd: number; crc: number };
   /** El mismo subtotal de los paquetes, con sus costos REALES. */
   packagesRealSubtotal?: { usd: number; crc: number };
+  /**
+   * Kilos con los que se cobra una linea por kilo: el peso de bascula del
+   * tramite o, en el editor de una proforma, la suma de los de sus paquetes. No
+   * se editan: la API los vuelve a leer al guardar. Null si todavia no hay peso,
+   * y entonces no se puede cargar un servicio por kilo.
+   */
+  weightKg: number | null;
   /** Aprobado = congelado. Ya no admite edicion. */
   approved: boolean;
   approvedAt: string | null;

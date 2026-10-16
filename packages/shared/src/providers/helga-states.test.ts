@@ -27,9 +27,14 @@ test('un estadoAlt que coincide con un estado de la tabla no mueve nada por si s
   assert.deepEqual(mapProviderState('EN ABANDONO', 'RECIBIDO'), { kind: 'incident', providerState: 'EN ABANDONO' });
 });
 
-test('ENTREGADA A AEROLINEA sigue sin homologar', () => {
-  assert.deepEqual(mapProviderState('ENTREGADA A AEROLINEA', 'ENTREGADA A AEROLINEA'), {
-    kind: 'unknown',
-    providerState: 'ENTREGADA A AEROLINEA',
-  });
+test('Manifestada y Entregado a Aerolinea van a En transito a Costa Rica', () => {
+  for (const raw of ['MANIFESTADA', 'ENTREGADA A AEROLINEA', 'Entregado a Aerolínea']) {
+    assert.deepEqual(mapProviderState(raw), { kind: 'advance', state: State.EnTransitoCostaRica });
+  }
+});
+
+test('En Aduana, Listo en Sucursal Escazu y Entregado a Destinatario van a En aduanas', () => {
+  for (const raw of ['En Aduana', 'Listo en Sucursal Escazú', 'Entregado a Destinatario', 'ENTREGADA A DESTINATARIO']) {
+    assert.deepEqual(mapProviderState(raw), { kind: 'advance', state: State.EnAduanas });
+  }
 });

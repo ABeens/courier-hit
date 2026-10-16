@@ -62,6 +62,13 @@ export const shipmentCosts = pgTable(
     /** Porcentaje aplicado (0-100) cuando source = percentage; null en el resto. */
     percentage: doublePrecision('percentage'),
     /**
+     * Kilos cobrados cuando source = per_kg; null en el resto. Congelados con la
+     * linea: el importe es `weight_kg * price_per_kg` al momento de cargarla.
+     */
+    weightKg: doublePrecision('weight_kg'),
+    /** Precio por kg aplicado (en `currency`) cuando source = per_kg; null en el resto. */
+    pricePerKg: doublePrecision('price_per_kg'),
+    /**
      * COSTO FACTURADO: importe ya resuelto de la linea, el que ve y paga el
      * cliente. Siempre >= 0 (lo acota el servicio, regla M3).
      */
@@ -109,6 +116,8 @@ export const shipmentCosts = pgTable(
     check('shipment_costs_amount_nonneg', sql`${t.amount} >= 0`),
     check('shipment_costs_real_amount_nonneg', sql`${t.realAmount} is null or ${t.realAmount} >= 0`),
     check('shipment_costs_rate_positive', sql`${t.exchangeRate} > 0`),
+    check('shipment_costs_weight_positive', sql`${t.weightKg} is null or ${t.weightKg} > 0`),
+    check('shipment_costs_price_per_kg_nonneg', sql`${t.pricePerKg} is null or ${t.pricePerKg} >= 0`),
     check(
       'shipment_costs_percentage_range',
       sql`${t.percentage} is null or (${t.percentage} >= 0 and ${t.percentage} <= 100)`,

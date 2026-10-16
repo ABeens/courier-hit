@@ -379,6 +379,20 @@
       "when": 1791962065980,
       "tag": "0053_shipment_cnee",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1792126369650,
+      "tag": "0054_shipment_provider_checked_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1792126843453,
+      "tag": "0055_cost_per_kg",
+      "breakpoints": true
     }
   ]
 }

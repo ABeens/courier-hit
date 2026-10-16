@@ -184,6 +184,9 @@ export const proformaCosts = pgTable(
     electronicInvoiceCode: text('electronic_invoice_code'),
     source: costLineSourceEnum('source').notNull(),
     percentage: doublePrecision('percentage'),
+    /** Kilos y precio por kg de las lineas por kilo. Igual que en `shipment_costs`. */
+    weightKg: doublePrecision('weight_kg'),
+    pricePerKg: doublePrecision('price_per_kg'),
     /** COSTO FACTURADO (el que imprime la proforma). */
     amount: doublePrecision('amount').notNull(),
     /** COSTO REAL; null = igual al facturado. Igual que en `shipment_costs`. */
@@ -206,6 +209,8 @@ export const proformaCosts = pgTable(
     check('proforma_costs_amount_nonneg', sql`${t.amount} >= 0`),
     check('proforma_costs_real_amount_nonneg', sql`${t.realAmount} is null or ${t.realAmount} >= 0`),
     check('proforma_costs_rate_positive', sql`${t.exchangeRate} > 0`),
+    check('proforma_costs_weight_positive', sql`${t.weightKg} is null or ${t.weightKg} > 0`),
+    check('proforma_costs_price_per_kg_nonneg', sql`${t.pricePerKg} is null or ${t.pricePerKg} >= 0`),
     check(
       'proforma_costs_percentage_range',
       sql`${t.percentage} is null or (${t.percentage} >= 0 and ${t.percentage} <= 100)`,
