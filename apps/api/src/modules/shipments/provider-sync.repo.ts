@@ -54,6 +54,9 @@ export const providerSyncRepo = {
         // consulta (`providerTextPatch`).
         content: shipments.content,
         notes: shipments.notes,
+        // El HAWB (LES) que le pone la bodega: un paquete prealertado no lo tiene
+        // hasta que llega, y la op. B es la que lo trae (`Sello`).
+        hawb: shipments.hawb,
         weightKg: shipments.weightKg,
         lengthCm: shipments.lengthCm,
         widthCm: shipments.widthCm,

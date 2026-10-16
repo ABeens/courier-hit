@@ -334,21 +334,28 @@ export const providerSyncService = {
   },
 
   /**
-   * Contenido y notas que reporta el proveedor, solo lo que CAMBIA (mismo
+   * Contenido, notas y HAWB que reporta el proveedor, solo lo que CAMBIA (mismo
    * criterio que `measurementsPatch`). Un valor vacio no borra el nuestro: que
    * el proveedor no lo mande no significa que el paquete no tenga contenido.
+   *
+   * El HAWB (LES) lo asigna la bodega del proveedor al recibir el paquete, asi
+   * que el suyo es el que vale. Sin esto, un paquete que entro por prealerta
+   * (flujo 1) se quedaba sin LES para siempre: solo el descubrimiento (op. E) lo
+   * guardaba, y ese descarta los trackings que ya tenemos.
    *
    * La descripcion NO se toca: es nuestra (ver `shipments.schema`).
    */
   providerTextPatch(
-    shipment: { content: string | null; notes: string | null },
-    pkg: { contenido?: string; notas?: string | null },
-  ): { content?: string; notes?: string } {
-    const patch: { content?: string; notes?: string } = {};
+    shipment: { content: string | null; notes: string | null; hawb: string | null },
+    pkg: { contenido?: string; notas?: string | null; Sello?: string },
+  ): { content?: string; notes?: string; hawb?: string } {
+    const patch: { content?: string; notes?: string; hawb?: string } = {};
     const content = pkg.contenido?.trim();
     if (content && content !== shipment.content) patch.content = content;
     const notes = pkg.notas?.trim();
     if (notes && notes !== shipment.notes) patch.notes = notes;
+    const hawb = pkg.Sello?.trim();
+    if (hawb && hawb !== shipment.hawb) patch.hawb = hawb;
     return patch;
   },
 
