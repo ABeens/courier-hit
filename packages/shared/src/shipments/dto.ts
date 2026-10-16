@@ -232,11 +232,12 @@ function refineTypeFieldCoherence(
   ctx: z.RefinementCtx,
 ): void {
   const isPackage = usesPackageFields(data.shipmentType);
+  // El peso NO esta aqui: es comun a los dos flujos. En Paqueteria alimenta el
+  // flete; en Transporte y Agenciamiento, los servicios que se cobran por kilo.
   const packageOnly = [
     'store',
     'carrier',
     'hawb',
-    'weightKg',
     'declaredValueUsd',
     'insuredValueUsd',
     'tariffPosition',

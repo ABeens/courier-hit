@@ -248,7 +248,7 @@ export function CostServiceFormModal({ mode, row, onClose, onSaved }: Props) {
           ) : (
             <div className="banner ok" style={{ background: 'var(--paper-2)', color: 'var(--muted)' }}>
               {valueType === ServiceValueType.PerKg
-                ? 'Al cargar los costos se digitan los kilos y el precio por kilo; el sistema calcula el importe.'
+                ? 'Al cargar los costos se digita el precio por kilo; el sistema lo multiplica por el peso del trámite.'
                 : 'El importe de este servicio se digita al cargar los costos del trámite.'}
             </div>
           )}

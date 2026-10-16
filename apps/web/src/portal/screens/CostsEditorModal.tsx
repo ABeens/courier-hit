@@ -479,7 +479,7 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
     // Por kilo: sin peso del paquete o sin precio no hay multiplicacion que hacer.
     const perKg = lines.filter((l) => l.source === CostLineSource.PerKg);
     if (perKg.length > 0 && !(data?.weightKg != null && data.weightKg > 0)) {
-      setError('El paquete aún no tiene peso: no se puede cobrar un servicio por kilo.');
+      setError('El trámite aún no tiene peso: regístralo en el trámite para cobrar un servicio por kilo.');
       return false;
     }
     if (perKg.some((l) => perKgAmount(l.weightKg, l.pricePerKg, l.currency) === '')) {
@@ -714,7 +714,7 @@ export function CostsEditorModal({ target, role, onClose, onSaved }: Props) {
                           />
                           <small className="field-hint">
                             {line.weightKg === '' ? (
-                              'Sin peso del paquete'
+                              'Sin peso: regístralo en el trámite'
                             ) : line.amount !== '' ? (
                               <>
                                 {line.weightKg} kg ={' '}

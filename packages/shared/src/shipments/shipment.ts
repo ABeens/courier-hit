@@ -522,6 +522,20 @@ export function displayedWeightKg(weightKg: number | null, kind: ClientRateKind 
 }
 
 /**
+ * `displayedWeightKg` segun el tipo de tramite. El redondeo de la tarifa del
+ * casillero es regla del flete de Paqueteria: en Transporte y Agenciamiento el
+ * peso lo cobran los servicios por kilo, que multiplican el de bascula, y eso
+ * es lo que se muestra.
+ */
+export function shipmentDisplayedWeightKg(
+  shipmentType: ShipmentType,
+  weightKg: number | null,
+  kind: ClientRateKind | null,
+): number | null {
+  return displayedWeightKg(weightKg, usesPackageFields(shipmentType) ? kind : null);
+}
+
+/**
  * Formato del consecutivo de negocio: `HSX` + 9 digitos (ejemplo HSX000001000).
  * El numero sale de una secuencia de Postgres; aqui vive el formato para que API
  * y web lo interpreten igual.

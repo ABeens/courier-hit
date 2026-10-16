@@ -48,7 +48,7 @@ import {
   computeTotals,
   convertMoney,
   costLineExchangeRateSchema,
-  displayedWeightKg,
+  shipmentDisplayedWeightKg,
   findCanton,
   findDistrict,
   findProvince,
@@ -364,7 +364,7 @@ export const proformasService = {
         tracking: s.tracking,
         hawb: s.hawb,
         description: s.description,
-        weightKg: displayedWeightKg(s.weightKg, s.rateKind),
+        weightKg: shipmentDisplayedWeightKg(s.shipmentType, s.weightKg, s.rateKind),
         lines: lines.map(toLineDto),
         total: totalIn(computeTotals(lines), p.currency),
         discardedAt: s.discardedAt?.toISOString() ?? null,
@@ -921,7 +921,7 @@ export const proformasService = {
         awb: s.hawb ?? s.tracking,
         tracking: s.tracking,
         description: s.description,
-        weightKg: displayedWeightKg(s.weightKg, s.rateKind),
+        weightKg: shipmentDisplayedWeightKg(s.shipmentType, s.weightKg, s.rateKind),
         freight: breakdown.flete,
         // "Otros / Permisos" junta lo trasladado que no es impuesto con los
         // honorarios propios: para el cliente es lo que se cobra aparte.

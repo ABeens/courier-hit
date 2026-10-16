@@ -6,8 +6,9 @@
  *   - Paqueteria       -> tienda, transportista, HAWB (LES) y peso. El
  *                         contenido y las notas del proveedor solo se
  *                         muestran: los escribe la sincronizacion con el.
- *   - Transporte y Ag. -> notas para facturar; almacen y DUA solo al EDITAR,
- *                         porque el manual los pide despues de guardar (L80-83).
+ *   - Transporte y Ag. -> peso (lo cobran los servicios por kilo) y notas para
+ *                         facturar; almacen y DUA solo al EDITAR, porque el
+ *                         manual los pide despues de guardar (L80-83).
  *
  * Los tipos ofrecidos dependen del rol (quien solo tiene package.write ve
  * Paqueteria; quien tiene tramite.manage ve los manuales) Y del tablero desde
@@ -139,8 +140,8 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
       ? [
           ...editableFieldsAt(row.flow, row.state),
           // Misma excepcion que la API: en un borrador (proforma corregida) el peso
-          // se corrige aunque el paquete ya se haya entregado.
-          ...(isPackage && isWeightEditableInProforma(row.proforma?.status) ? [ShipmentField.WeightKg] : []),
+          // se corrige aunque el tramite ya haya avanzado.
+          ...(isWeightEditableInProforma(row.proforma?.status) ? [ShipmentField.WeightKg] : []),
         ]
       : null;
   const canEdit = (field: ShipmentField) => editable === null || editable.includes(field);
@@ -162,7 +163,7 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
   // Campos visibles del formulario para este tipo; sirve para avisar si alguno quedo bloqueado.
   const relevantFields = isPackage
     ? [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg, ShipmentField.DeclaredValue, ShipmentField.InsuredValue, ShipmentField.TariffPosition, ShipmentField.Retain, ShipmentField.Cnee, ShipmentField.BillingNotes]
-    : [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Warehouse, ShipmentField.Dua, ShipmentField.BillingNotes];
+    : [ShipmentField.Tracking, ShipmentField.Description, ShipmentField.Warehouse, ShipmentField.Dua, ShipmentField.WeightKg, ShipmentField.BillingNotes];
   const someFrozen = editable !== null && (weightLocked || relevantFields.some((f) => !editable.includes(f)));
 
   /**
@@ -227,7 +228,9 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
                 retain,
                 cnee: cnee.trim() || undefined,
               }
-            : {}),
+            : {
+                weightKg: weight ? Number(weight) : undefined,
+              }),
           // Comun a los dos flujos desde que el reporte las pide en ambos.
           billingNotes: billingNotes.trim() || undefined,
         });
@@ -272,6 +275,8 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
       } else {
         put('warehouse', warehouse, row.warehouse);
         put('dua', dua, row.dua);
+        const nextWeight = weight ? Number(weight) : null;
+        if (nextWeight !== row.weightKg) patch.weightKg = nextWeight;
       }
       // Fuera del if: los dos flujos los llevan.
       put('billingNotes', billingNotes, row.billingNotes);
@@ -495,6 +500,19 @@ export function ShipmentFormModal({ mode, role, boardTypes, row, onClose, onSave
             </>
           ) : (
             <>
+              <div>
+                <label className="field-label" htmlFor="t-weight">Peso (kg)</label>
+                <input
+                  id="t-weight" className="input" autoComplete="off" type="number" min="0" step="0.01" value={weight}
+                  placeholder="Opcional" disabled={!canEdit(ShipmentField.WeightKg) || weightLocked}
+                  onChange={(e) => setWeight(e.target.value)}
+                />
+                <div className="field-hint">
+                  {weightLocked
+                    ? 'La factura ya fue aprobada: el peso no se puede cambiar sin reversar los costos.'
+                    : 'Peso de la carga. Lo usan los servicios que se cobran por kilo.'}
+                </div>
+              </div>
               {mode === 'edit' && (
                 <>
                   <div>

@@ -456,6 +456,12 @@ function handler(event) {
                    *    cuerpo, y la descripcion de un paquete puede llevar
                    *    perfectamente el enlace de la compra.
                    *
+                   *  - `CrossSiteScripting_BODY` lee los bytes de un PDF como si
+                   *    fueran HTML y bloqueaba prealertas con la orden de compra
+                   *    adjunta (403 en HTML que el portal no sabe leer). Aqui
+                   *    solo cuenta; la regla `BlockXssBodyOutsideUploads` la
+                   *    vuelve a bloquear en todo lo que NO es una subida.
+                   *
                    * Siguen contadas, no desactivadas: si alguna empieza a marcar
                    * trafico raro, se ve en las metricas antes de decidir nada.
                    */
@@ -463,12 +469,58 @@ function handler(event) {
                     { name: 'SizeRestrictions_BODY', actionToUse: { count: {} } },
                     { name: 'NoUserAgent_HEADER', actionToUse: { count: {} } },
                     { name: 'GenericRFI_BODY', actionToUse: { count: {} } },
+                    { name: 'CrossSiteScripting_BODY', actionToUse: { count: {} } },
                   ],
                 },
               },
               visibilityConfig: {
                 cloudWatchMetricsEnabled: true,
                 metricName: 'common-rule-set',
+                sampledRequestsEnabled: true,
+              },
+            },
+            {
+              /**
+               * Devuelve el bloqueo XSS que el grupo comun deja en "contar", menos
+               * en las subidas de archivos. Va DESPUES del grupo porque se apoya en
+               * la etiqueta que este le pone a la peticion.
+               *
+               * Lo que se excluye es el binario adjunto, no el texto del formulario:
+               * la descripcion y demas campos de una prealerta viajan en el mismo
+               * multipart, pero el portal los pinta con React, que escapa todo.
+               */
+              name: 'BlockXssBodyOutsideUploads',
+              priority: 5,
+              action: { block: {} },
+              statement: {
+                andStatement: {
+                  statements: [
+                    {
+                      labelMatchStatement: {
+                        scope: 'LABEL',
+                        key: 'awswaf:managed:aws:core-rule-set:CrossSiteScripting_Body',
+                      },
+                    },
+                    {
+                      notStatement: {
+                        statement: {
+                          byteMatchStatement: {
+                            // `singleHeader` es `any` en el L1: la clave va tal
+                            // cual la espera CloudFormation, con mayuscula.
+                            fieldToMatch: { singleHeader: { Name: 'content-type' } },
+                            positionalConstraint: 'STARTS_WITH',
+                            searchString: 'multipart/form-data',
+                            textTransformations: [{ priority: 0, type: 'LOWERCASE' }],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+              visibilityConfig: {
+                cloudWatchMetricsEnabled: true,
+                metricName: 'xss-body-outside-uploads',
                 sampledRequestsEnabled: true,
               },
             },

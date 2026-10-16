@@ -86,11 +86,12 @@ const PKG_IN_TRANSIT = [F.Description, F.Cnee, F.Hawb, F.WeightKg, F.BillingNote
 const PKG_BILLING = [F.Description, F.Cnee, F.WeightKg, F.BillingNotes]; // ultimo tramo para el peso (antes de aprobar la proforma)
 
 // Transporte / Agenciamiento. El AWB/BL se congela al salir de la prealerta; almacen,
-// DUA y notas de facturacion se completan durante el proceso; tras aprobar costos solo
-// quedan los descriptivos que no tocan la factura.
-const TR_PREALERT = [F.Tracking, F.Description, F.Warehouse, F.Dua, F.BillingNotes];
-const TR_OPERATIONAL = [F.Description, F.Warehouse, F.Dua, F.BillingNotes]; // tracking congelado
-const TR_BILLING = [F.Description, F.BillingNotes];
+// DUA y notas de facturacion se completan durante el proceso. El PESO alimenta los
+// servicios por kilo, asi que sigue editable en facturacion, como en Paqueteria (el
+// candado de costos aprobados lo cierra igual); despues de facturar no se toca.
+const TR_PREALERT = [F.Tracking, F.Description, F.Warehouse, F.Dua, F.WeightKg, F.BillingNotes];
+const TR_OPERATIONAL = [F.Description, F.Warehouse, F.Dua, F.WeightKg, F.BillingNotes]; // tracking congelado
+const TR_BILLING = [F.Description, F.WeightKg, F.BillingNotes];
 
 /**
  * Agenciamiento DESPUES de facturar. Es el unico flujo que factura a mitad de

@@ -62,7 +62,7 @@ import type {
 } from '@courier/shared';
 import { helgaPrincipalAccountCode } from '../../core/config';
 import { AuthErrors, ShipmentErrors, isProviderRateLimited } from '../../core/errors';
-import { displayedWeightKg, formatProformaNumber, formatShipmentCode } from '@courier/shared';
+import { formatProformaNumber, formatShipmentCode, shipmentDisplayedWeightKg } from '@courier/shared';
 import {
   createHelgaPrealert,
   deleteHelgaPrealert,
@@ -313,7 +313,7 @@ export function toDto(row: NonNullable<ShipmentRowView>): ShipmentDto {
     hawb: row.hawb,
     weightKg: row.weightKg,
     rateKind: row.rateKind,
-    billableWeightKg: displayedWeightKg(row.weightKg, row.rateKind),
+    billableWeightKg: shipmentDisplayedWeightKg(row.shipmentType, row.weightKg, row.rateKind),
     lengthCm: row.lengthCm,
     widthCm: row.widthCm,
     heightCm: row.heightCm,
@@ -1041,7 +1041,7 @@ export const shipmentsService = {
     // listas: son comunes a los dos flujos (el reporte los pide en ambos).
     const notForThisType = isPackage
       ? (['warehouse', 'dua'] as const)
-      : (['store', 'carrier', 'hawb', 'weightKg', 'declaredValueUsd', 'insuredValueUsd', 'tariffPosition', 'retain', 'cnee'] as const);
+      : (['store', 'carrier', 'hawb', 'declaredValueUsd', 'insuredValueUsd', 'tariffPosition', 'retain', 'cnee'] as const);
     for (const field of notForThisType) {
       if (patch[field] !== undefined && patch[field] !== null) throw ShipmentErrors.fieldNotForType();
     }
@@ -1051,9 +1051,10 @@ export const shipmentsService = {
     // limpiarlo) que no este permitido -> 409. Fuente unica; la web deshabilita los
     // mismos campos con `editableFieldsAt`.
     const editable = [...editableFieldsAt(flowForType(current.shipmentType), current.state)];
-    // En un borrador el peso se corrige aunque el paquete ya se haya entregado:
-    // es el caso de una proforma corregida (ver `isWeightEditableInProforma`).
-    if (isPackage && !editable.includes(ShipmentField.WeightKg) && isWeightEditableInProforma(current.proformaStatus)) {
+    // En un borrador el peso se corrige aunque el tramite ya haya avanzado: es el
+    // caso de una proforma corregida (ver `isWeightEditableInProforma`). Aplica a
+    // los dos flujos: el peso mueve el flete o los servicios por kilo.
+    if (!editable.includes(ShipmentField.WeightKg) && isWeightEditableInProforma(current.proformaStatus)) {
       editable.push(ShipmentField.WeightKg);
     }
     for (const field of Object.values(ShipmentField)) {

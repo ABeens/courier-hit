@@ -36,7 +36,7 @@ import { Condition } from './automation';
  * los dos flujos (el reporte las pide en ambos, campo 20). Tampoco
  * `ElectronicInvoiceNumber`, por lo mismo.
  */
-const PACKAGE_ONLY = [ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb, ShipmentField.WeightKg];
+const PACKAGE_ONLY = [ShipmentField.Store, ShipmentField.Carrier, ShipmentField.Hawb];
 const TRANSPORT_ONLY = [ShipmentField.Warehouse, ShipmentField.Dua];
 
 /** Estados de bodega/entrega: tras el congelamiento de factura no se editan datos. */
@@ -127,6 +127,18 @@ test('Invariante: el tracking solo es editable en Prealertado, en TODOS los flow
 test('Invariante: el peso nunca es editable en los estados congelados (post-factura)', () => {
   for (const state of FROZEN_PACKAGE) {
     assert.ok(!canEditField(Flow.Paqueteria, state, ShipmentField.WeightKg), `peso editable en ${state}`);
+  }
+});
+
+test('Transporte y Agenciamiento: el peso es editable hasta facturar (lo cobran los servicios por kilo)', () => {
+  for (const flow of [Flow.Transporte, Flow.Agenciamiento]) {
+    for (const state of [State.Prealertado, State.FacturacionEnProceso]) {
+      assert.ok(canEditField(flow, state, ShipmentField.WeightKg), `peso no editable en ${flow}/${state}`);
+    }
+    assert.ok(!canEditField(flow, State.TramiteFinalizado, ShipmentField.WeightKg));
+  }
+  for (const state of [State.ProformaPendientePago, State.ProcesoAduanas, State.Aforando, State.LiberadoAduanas]) {
+    assert.ok(!canEditField(Flow.Agenciamiento, state, ShipmentField.WeightKg), `peso editable en ${state}`);
   }
 });
 
