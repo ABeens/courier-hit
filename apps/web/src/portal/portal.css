@@ -1631,6 +1631,8 @@ select.input { cursor: pointer; padding-right: 30px; }
 .pkg-doc:hover { border-color: var(--brand); background: var(--brand-softer); }
 .pkg-doc svg { width: 17px; height: 17px; flex: none; color: var(--brand); }
 .pkg-doc-ext { font-size: 11px; font-weight: 700; color: var(--faint); }
+/* Documento + su boton de borrar (solo admin), juntos en la misma ficha. */
+.pkg-doc-item { display: inline-flex; align-items: center; gap: 4px; }
 
 .pkg-photos-title {
   margin-bottom: 8px;

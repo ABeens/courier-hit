@@ -648,8 +648,9 @@ export const shipmentsService = {
   /**
    * Quita UN documento, por su posicion. Borra tambien el archivo: dejarlo
    * huerfano solo acumula basura en el almacen que ya nadie puede alcanzar
-   * (mismo criterio que el comprobante de pago). Las mismas reglas de acceso que
-   * para adjuntar.
+   * (mismo criterio que el comprobante de pago). El permiso
+   * (`shipment.documents.delete`, solo admin) lo aplica la ruta; el acceso al
+   * tramite, `get`, como al adjuntar.
    */
   async removeDocument(session: Session, id: string, index: number): Promise<ShipmentDto> {
     const shipment = await this.get(session, id);

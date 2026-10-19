@@ -31,6 +31,7 @@ import type {
   ShipmentPhotosResponse,
 } from '@courier/shared';
 import { API_BASE, ApiError, api } from '../lib/api';
+import { IconButton } from '../components/IconButton';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { formatStamp } from '../lib/datetime';
 import { toast } from '../lib/toast';
@@ -40,6 +41,13 @@ import { tracePlace } from '../lib/trace';
 interface Props {
   row: ShipmentDto;
   onClose: () => void;
+  /**
+   * Ofrecer quitar cada documento adjunto (permiso `shipment.documents.delete`,
+   * solo admin). Lo decide quien abre la ventana, que es quien conoce el rol.
+   */
+  canRemoveDocuments?: boolean;
+  /** Avisa que el tramite cambio (se quito un documento), para recargar la lista. */
+  onChanged?: () => void;
 }
 
 /**
@@ -106,8 +114,16 @@ function ZoomIcon() {
   );
 }
 
-export function ShipmentHistoryModal({ row, onClose }: Props) {
+export function ShipmentHistoryModal({ row, onClose, canRemoveDocuments = false, onChanged }: Props) {
   const [events, setEvents] = useState<ShipmentEventDto[] | null>(null);
+  /**
+   * Documentos que se pintan. Arrancan con los de la ficha y, al quitar uno, se
+   * toman de la respuesta de la API: las posiciones se corren y la de la ficha
+   * ya no sirve para pedir ni borrar el siguiente.
+   */
+  const [documentKeys, setDocumentKeys] = useState<string[]>(row.documentFileKeys);
+  /** Posicion del documento que se esta quitando, para no repetir el clic. */
+  const [removing, setRemoving] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [photos, setPhotos] = useState<ShipmentPhotoDto[]>([]);
   /** Foto abierta a tamaño completo, o null. Es la ampliacion del criterio. */
@@ -148,6 +164,23 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
       return;
     }
     onClose();
+  }
+
+  async function removeDocument(index: number) {
+    if (!window.confirm(`¿Borrar el documento ${index + 1} del trámite ${row.code}? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    setRemoving(index);
+    try {
+      const updated = await api.del<ShipmentDto>(`/shipments/${row.id}/documents/${index}`);
+      setDocumentKeys(updated.documentFileKeys);
+      toast.success(`Documento ${index + 1} borrado.`);
+      onChanged?.();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo borrar el documento.');
+    } finally {
+      setRemoving(null);
+    }
   }
 
   useEffect(() => {
@@ -242,14 +275,14 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
             {/* Documentos adjuntos (orden de compra, factura de la tienda), uno
                 por enlace. Cada descarga pasa por la API, que comprueba el
                 permiso; sin documentos la seccion no aparece. */}
-            {row.documentFileKeys.length > 0 && (
+            {documentKeys.length > 0 && (
               <section className="pkg-docs">
                 <h4 className="pkg-photos-title">
-                  {row.documentFileKeys.length === 1 ? 'Documento adjunto' : 'Documentos adjuntos'}
+                  {documentKeys.length === 1 ? 'Documento adjunto' : 'Documentos adjuntos'}
                 </h4>
                 <ul className="pkg-doc-list">
-                  {row.documentFileKeys.map((key, i) => (
-                    <li key={key}>
+                  {documentKeys.map((key, i) => (
+                    <li key={key} className="pkg-doc-item">
                       <a className="pkg-doc" href={`${API_BASE}/api/shipments/${row.id}/documents/${i}`}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
@@ -258,6 +291,15 @@ export function ShipmentHistoryModal({ row, onClose }: Props) {
                         Documento {i + 1}
                         <span className="pkg-doc-ext">{key.split('.').pop()?.toUpperCase()}</span>
                       </a>
+                      {canRemoveDocuments && (
+                        <IconButton
+                          label={`Borrar documento ${i + 1}`}
+                          icon="trash"
+                          tone="danger"
+                          disabled={removing !== null}
+                          onClick={() => void removeDocument(i)}
+                        />
+                      )}
                     </li>
                   ))}
                 </ul>

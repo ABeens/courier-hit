@@ -272,8 +272,13 @@ function documentIndex(raw: string): number | null {
   return Number.isInteger(index) && index >= 0 && index < MAX_SHIPMENT_DOCUMENTS ? index : null;
 }
 
-/** Quita un documento por su posicion. Mismas barreras que adjuntarlo. */
-shipmentsRoutes.delete('/:id/documents/:index', canRead, async (c) => {
+/**
+ * Quita un documento por su posicion. Al reves que adjuntarlo, NO basta con
+ * poder ver el tramite: hace falta `shipment.documents.delete` (solo admin). El
+ * cliente sube la orden de compra como requisito de la prealerta y no puede
+ * quitarla despues.
+ */
+shipmentsRoutes.delete('/:id/documents/:index', requirePermission(Permission.ShipmentDocumentsDelete), async (c) => {
   const index = documentIndex(c.req.param('index'));
   if (index === null) return c.notFound();
   return c.json(await shipmentsService.removeDocument(c.get('session'), c.req.param('id'), index));

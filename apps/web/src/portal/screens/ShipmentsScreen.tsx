@@ -336,6 +336,8 @@ export function ShipmentsScreen({
   const isOwnPackages = view === 'propios';
   const canWrite = can(role, Permission.PackageWrite) || can(role, Permission.TramiteManage);
   const canPay = can(role, Permission.PackagePay);
+  /** Quitar documentos adjuntos, desde el historial del tramite (solo admin). */
+  const canRemoveDocuments = can(role, Permission.ShipmentDocumentsDelete);
   /**
    * El staff abre los pagos del trámite para CONSULTARLOS (abonos, comprobante,
    * quién los registró y quién los aprobó). Registrar y validar un depósito se
@@ -895,7 +897,12 @@ export function ShipmentsScreen({
       )}
 
       {tracing && (
-        <ShipmentHistoryModal row={tracing} onClose={() => setTracing(null)} />
+        <ShipmentHistoryModal
+          row={tracing}
+          onClose={() => setTracing(null)}
+          canRemoveDocuments={canRemoveDocuments && !isOwn}
+          onChanged={() => void load()}
+        />
       )}
 
       {registering && (

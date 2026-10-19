@@ -106,6 +106,8 @@ export enum Action {
   Correct = 'correct',
   /** Sacar a ruta un tramite ya cobrado (ver Permission.DeliveryDispatch). */
   Dispatch = 'dispatch',
+  /** Quitar algo ya registrado (ver Permission.ShipmentDocumentsDelete). */
+  Delete = 'delete',
 }
 
 /** Alcance: sobre lo propio (cliente) o sobre todo (staff). */
@@ -202,6 +204,16 @@ export enum Permission {
    * su propio modulo (costs.routes.ts).
    */
   ShipmentCorrect = 'shipment.correct',
+  /**
+   * Quitar un documento adjunto del tramite (la orden de compra, la factura de la
+   * tienda que subio el cliente al prealertar, o lo que sumo el staff despues).
+   *
+   * Solo `admin`. El cliente NO lo tiene aunque los documentos sean suyos: la
+   * orden de compra es obligatoria en la prealerta, y poder quitarla despues
+   * deja sin efecto esa regla. Tampoco va con `package.write`: quien opera la
+   * bodega adjunta, pero borrar el soporte de un tramite es enmendar el registro.
+   */
+  ShipmentDocumentsDelete = 'shipment.documents.delete',
   CostsManage = 'costs.manage',
   CostsTramiteManage = 'costs.tramite.manage',
   /**
@@ -421,6 +433,7 @@ export const PERMISSION_DEFS: Record<Permission, PermissionDef> = {
   // Resource.Package y no uno nuevo: corregir no es un modulo del menu, es una
   // accion excepcional sobre el tramite (de cualquier tipo).
   [Permission.ShipmentCorrect]: { resource: Resource.Package, action: Action.Correct, scope: Scope.All },
+  [Permission.ShipmentDocumentsDelete]: { resource: Resource.Package, action: Action.Delete, scope: Scope.All },
   [Permission.CostsManage]: { resource: Resource.Costs, action: Action.Manage, scope: Scope.All },
   [Permission.CostsTramiteManage]: { resource: Resource.Costs, action: Action.Manage, scope: Scope.All },
   // Resource.Settings: fijar la tasa SI abre un modulo del menu (Configuración),
@@ -471,6 +484,8 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   // Solo admin: son las dos puertas para deshacer, no para operar.
   Permission.ShipmentCorrect,
   Permission.ControlRoomManage,
+  // Solo admin: quitar el soporte de un tramite es enmendar el registro.
+  Permission.ShipmentDocumentsDelete,
   Permission.CostsManage,
   Permission.CostsTramiteManage,
   // Solo admin: son valores generales del sistema, no datos del tramite.

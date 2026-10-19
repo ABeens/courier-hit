@@ -461,7 +461,14 @@ export function ControlRoomScreen({ role }: { role: Role }) {
         />
       )}
 
-      {tracing && <ShipmentHistoryModal row={tracing} onClose={() => setTracing(null)} />}
+      {tracing && (
+        <ShipmentHistoryModal
+          row={tracing}
+          onClose={() => setTracing(null)}
+          canRemoveDocuments={can(role, Permission.ShipmentDocumentsDelete)}
+          onChanged={() => void load()}
+        />
+      )}
     </div>
   );
 }
