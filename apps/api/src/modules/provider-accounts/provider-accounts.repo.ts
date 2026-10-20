@@ -129,6 +129,14 @@ export const providerAccountsRepo = {
    * EDITO una persona, y el robot escribiendo cada pocos minutos la volveria
    * inservible para eso.
    */
+  /** Guarda el destinatario de prealertas resuelto por el robot (sin `updated_at`). */
+  async setPrealertRecipient(id: string, recipientId: string): Promise<void> {
+    await db
+      .update(providerAccounts)
+      .set({ prealertRecipientId: recipientId })
+      .where(eq(providerAccounts.id, id));
+  },
+
   async markImport(id: string, error: string | null): Promise<void> {
     await db
       .update(providerAccounts)

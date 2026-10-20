@@ -16,6 +16,7 @@ import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { payments } from '../payments/payments.schema';
 import { proformaShipments, proformas } from '../proformas/proformas.schema';
+import { providerAccounts } from '../provider-accounts/provider-accounts.schema';
 import { settlementColumn } from '../payments/settlement';
 import { cantonRoutes } from '../routes/canton-route.schema';
 import { districtRoutes } from '../routes/district-route.schema';
@@ -433,14 +434,15 @@ export const shipmentsRepo = {
   /**
    * Prealertas que el robot debe reenviar al proveedor: las que quedaron
    * 'pending' (Helga apagado o casillero sin enlazar al prealertar) o 'failed', y
-   * cuyo casillero YA esta enlazado (sin `helgaClientId` no hay destinatario a
-   * quien prealertar). Orden por antiguedad y con tope, como el reconcile del
-   * casillero.
+   * que YA tienen a quien prealertar: el casillero enlazado (`helgaClientId`) o
+   * una cuenta exclusiva (cliente consolidado, cuyo destinatario es de esa
+   * cuenta). Orden por antiguedad y con tope, como el reconcile del casillero.
    */
   async findPrealertsToReconcile(limit: number) {
     return db
       .select({
         id: shipments.id,
+        clientId: clients.id,
         code: shipments.code,
         tracking: shipments.tracking,
         description: shipments.description,
@@ -450,14 +452,14 @@ export const shipmentsRepo = {
         tariffPosition: shipments.tariffPosition,
         retain: shipments.retain,
         attempts: shipments.helgaPrealertAttempts,
-        helgaClientId: sql<string>`${clients.helgaClientId}`,
       })
       .from(shipments)
       .innerJoin(clients, eq(shipments.clientId, clients.id))
+      .leftJoin(providerAccounts, eq(providerAccounts.consolidatedClientId, clients.id))
       .where(
         and(
           inArray(shipments.helgaPrealertStatus, [HelgaSyncStatus.Pending, HelgaSyncStatus.Failed]),
-          isNotNull(clients.helgaClientId),
+          or(isNotNull(clients.helgaClientId), isNotNull(providerAccounts.id)),
         ),
       )
       .orderBy(shipments.createdAt)

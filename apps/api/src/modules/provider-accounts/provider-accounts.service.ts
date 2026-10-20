@@ -39,9 +39,11 @@ import type {
 } from '@courier/shared';
 import type { HelgaAccount } from '../../core/config';
 import { helgaPrincipalAccount } from '../../core/config';
-import { AuthErrors, ProviderAccountErrors } from '../../core/errors';
+import { AuthErrors, ProviderAccountErrors, ProviderErrors } from '../../core/errors';
 import { decryptSecret, encryptSecret, secretsKeyConfigured } from '../../core/secrets';
 import { invalidateToken } from '../../integrations/helga/helga.auth';
+import type { HelgaCallPriority } from '../../integrations/helga/helga.client';
+import { isHelgaSimulated, listHelgaRecipients } from '../../integrations/helga/helga.client';
 import { authRepo } from '../auth/auth.repo';
 import { authService } from '../auth/auth.service';
 import { providerLinkRepo } from '../clients/provider-link.repo';
@@ -346,5 +348,62 @@ export const providerAccountsService = {
     }
 
     return out;
+  },
+
+  /**
+   * Con que cuenta y a que destinatario se prealerta el paquete de un cliente
+   * CONSOLIDADO. `null` = el cliente no es consolidado (se prealerta por la
+   * principal, con el destinatario de su casillero).
+   *
+   * El destinatario no es nuestro: lo crea el administrador de la cuenta en
+   * Helga. La primera vez se lee del listado de la cuenta (op. G) y se guarda en
+   * la fila, asi que se pregunta una vez por cuenta y no una vez por paquete.
+   * Solo se resuelve si hay UN destinatario activo: con varios, prealertar a
+   * cualquiera seria adivinar quien recibe la caja.
+   *
+   * Lanza (y el que prealerta lo sella 'failed' con este motivo) si la cuenta
+   * esta apagada, si no tiene destinatario o si tiene varios.
+   */
+  async prealertTargetFor(
+    clientId: string,
+    priority?: HelgaCallPriority,
+  ): Promise<{ account?: HelgaAccount; recipientId: string } | null> {
+    const row = await providerAccountsRepo.findByClientId(clientId);
+    if (!row) return null;
+    if (!row.active) {
+      throw ProviderErrors.validation(`la cuenta ${row.code} está apagada; no se prealerta con ella.`);
+    }
+
+    // El simulador es UNA sola cuenta y da de alta al vuelo el destinatario que no
+    // conoce: listar ahi devolveria los de todos los casilleros. Como en la
+    // sincronizacion, en simulado no se pasa la cuenta.
+    if (isHelgaSimulated()) return { recipientId: row.prealertRecipientId ?? `SIM-${row.code}` };
+
+    const account = toHelgaAccount(row);
+    if (row.prealertRecipientId) return { account, recipientId: row.prealertRecipientId };
+
+    const found = (
+      await listHelgaRecipients({ search: '', account, ...(priority ? { priority } : {}) })
+    ).filter((r) => r.active);
+    if (found.length !== 1) {
+      throw ProviderErrors.validation(
+        `la cuenta ${row.code} tiene ${found.length} destinatarios activos; hace falta exactamente uno para prealertar.`,
+      );
+    }
+
+    const recipientId = found[0]!.id;
+    // No pasa por `update`: `updated_at` cuenta las ediciones de una persona.
+    await providerAccountsRepo.setPrealertRecipient(row.id, recipientId);
+    return { account, recipientId };
+  },
+
+  /**
+   * Credenciales de la cuenta con la que se creo una prealerta, para borrarla.
+   * `null` = la principal.
+   */
+  async helgaAccountForCode(code: string | null): Promise<HelgaAccount | null> {
+    if (!code) return null;
+    const row = await providerAccountsRepo.findByCode(code);
+    return row ? toHelgaAccount(row) : null;
   },
 };

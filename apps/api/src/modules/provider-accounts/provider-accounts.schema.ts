@@ -51,6 +51,15 @@ export const providerAccounts = pgTable(
      */
     providerCustomerId: integer('provider_customer_id'),
     /**
+     * Destinatario de ESTA cuenta del que cuelgan las prealertas de su cliente
+     * consolidado (`destinatario_id` de la op. C). No lo creamos nosotros: lo da
+     * de alta el administrador de la cuenta en Helga, asi que se lee de su listado
+     * (op. G) la primera vez que hace falta y se guarda aqui. `null` = todavia no
+     * se resolvio. Solo se resuelve solo si la cuenta tiene UN destinatario
+     * activo; con varios no hay forma de adivinar a cual va el paquete.
+     */
+    prealertRecipientId: text('prealert_recipient_id'),
+    /**
      * El cliente consolidado al que se atribuye TODA la paqueteria de la cuenta,
      * venga del sub-casillero que venga.
      *

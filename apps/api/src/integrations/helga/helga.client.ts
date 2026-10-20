@@ -292,16 +292,19 @@ export interface HelgaRecipientListing {
 }
 
 /**
- * Op. G: destinatarios de la cuenta principal que coinciden con `search`
- * (cedula, nombre, sub-casillero o correo; el filtro lo aplica Helga).
+ * Op. G: destinatarios de una cuenta (la principal por defecto) que coinciden con
+ * `search` (cedula, nombre, sub-casillero o correo; el filtro lo aplica Helga).
+ * `search` vacio = todos.
  *
- * Existe para un solo caso: el alta (op. D) se rechazo porque el destinatario YA
- * existe, y hay que averiguar su id sin que nadie lo copie a mano. Es de solo
- * lectura. Recorre todas las paginas: con una busqueda por cedula casi siempre es
- * una.
+ * Dos casos: el alta (op. D) se rechazo porque el destinatario YA existe, y hay
+ * que averiguar su id sin que nadie lo copie a mano; y una cuenta EXCLUSIVA, cuyo
+ * destinatario no creamos nosotros y hay que leerlo para poder prealertar. Es de
+ * solo lectura. Recorre todas las paginas: con una busqueda por cedula casi
+ * siempre es una.
  */
 export async function listHelgaRecipients(params: {
   search: string;
+  account?: HelgaAccount;
   priority?: HelgaCallPriority;
 }): Promise<HelgaRecipientListing[]> {
   const out: HelgaRecipientListing[] = [];
@@ -311,8 +314,11 @@ export async function listHelgaRecipients(params: {
   do {
     const data = await post<HelgaPaginator<HelgaRecipientListItem>>(
       `/api/casillero/clientes/destinatarios?page=${page}`,
-      { pageSize: 50, str_busqueda: params.search },
-      params.priority ? { priority: params.priority } : {},
+      { pageSize: 50, ...(params.search ? { str_busqueda: params.search } : {}) },
+      {
+        ...(params.account ? { account: params.account } : {}),
+        ...(params.priority ? { priority: params.priority } : {}),
+      },
     );
     for (const row of data?.data ?? []) {
       if (row.id === undefined || row.id === null || row.id === '') continue;
@@ -363,9 +369,15 @@ function usdAmountFor(value: number | null | undefined): number {
  *
  * Devuelve el id de la prealerta si el proveedor lo da; no es imprescindible,
  * porque el cruce posterior se hace por tracking.
+ *
+ * `account`: la cuenta EXCLUSIVA de un cliente consolidado, con `helgaClientId`
+ * = el destinatario de ESA cuenta. Ausente = la principal. Verificado en vivo el
+ * 2026-10-20 con Zuca (SJO009623): con el token de su cuenta y su destinatario,
+ * responde `201` igual que la principal.
  */
 export async function createHelgaPrealert(params: {
   helgaClientId: string;
+  account?: HelgaAccount;
   tracking: string;
   description: string;
   store?: string | null;
@@ -398,6 +410,7 @@ export async function createHelgaPrealert(params: {
   };
 
   const data = await post<HelgaPrealertResponse>('/api/v2/prealertas', body, {
+    ...(params.account ? { account: params.account } : {}),
     ...(params.priority ? { priority: params.priority } : {}),
   });
   const raw = data?.Id ?? data?.id ?? data?.prealerta_id;
@@ -417,13 +430,16 @@ export async function createHelgaPrealert(params: {
  *
  * Devuelve `true` si el proveedor la elimino y `false` si ya no existia (404).
  * Ese caso NO es un error: significa que el estado deseado ya se cumple.
+ *
+ * `account`: la cuenta con la que se CREO la prealerta. Cada cuenta ve solo lo
+ * suyo, asi que la de un consolidado se borra con su token, no con la principal.
  */
-export async function deleteHelgaPrealert(prealertId: string): Promise<boolean> {
+export async function deleteHelgaPrealert(prealertId: string, account?: HelgaAccount): Promise<boolean> {
   const data = await request<boolean>(
     'DELETE',
     `/api/casillero/prealertas/${encodeURIComponent(prealertId)}`,
     undefined,
-    { allowNotFound: true },
+    { allowNotFound: true, ...(account ? { account } : {}) },
   );
   return data !== undefined;
 }

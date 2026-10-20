@@ -60,6 +60,7 @@ import type {
   ShipmentPhotosResponse,
   UpdateShipmentInput,
 } from '@courier/shared';
+import type { HelgaAccount } from '../../core/config';
 import { helgaPrincipalAccountCode } from '../../core/config';
 import { AuthErrors, ShipmentErrors, isProviderRateLimited } from '../../core/errors';
 import { formatProformaNumber, formatShipmentCode, shipmentDisplayedWeightKg } from '@courier/shared';
@@ -69,6 +70,7 @@ import {
   isHelgaEnabled,
   isHelgaSimulated,
 } from '../../integrations/helga/helga.client';
+import type { HelgaCallPriority } from '../../integrations/helga/helga.client';
 import type { HelgaPackagePhoto } from '../../integrations/helga/helga.types';
 import { StorageErrors, storage } from '../../core/storage';
 import { clientsRepo } from '../clients/clients.repo';
@@ -433,6 +435,25 @@ async function removeFiles(keys: string[]): Promise<void> {
   await Promise.all(keys.map((key) => storage.remove(key)));
 }
 
+/**
+ * A quien se prealerta el paquete de un cliente, y con que cuenta.
+ *
+ * - Consolidado: su cuenta exclusiva y el destinatario de esa cuenta. Lanza si
+ *   la cuenta no sirve para prealertar; el que llama lo sella 'failed'.
+ * - Normal: la principal (`account` ausente) y el destinatario de su casillero.
+ * - `null`: casillero sin enlazar. No es un fallo: queda 'pending' hasta que se
+ *   enlace.
+ */
+async function prealertTarget(
+  clientId: string,
+  priority?: HelgaCallPriority,
+): Promise<{ account?: HelgaAccount; recipientId: string } | null> {
+  const consolidated = await providerAccountsService.prealertTargetFor(clientId, priority);
+  if (consolidated) return consolidated;
+  const link = await clientsRepo.providerLinkFor(clientId);
+  return link?.helgaClientId ? { recipientId: link.helgaClientId } : null;
+}
+
 export const shipmentsService = {
   /**
    * Una pagina del dashboard, acotada al casillero propio cuando el rol es client.
@@ -784,32 +805,27 @@ export const shipmentsService = {
    *   del insert); se reintentara cuando Helga este on y el casillero enlazado.
    * - exito -> 'synced'. fallo del proveedor -> 'failed' con el motivo.
    *
+   * Un cliente CONSOLIDADO se prealerta con SU cuenta y el destinatario de esa
+   * cuenta (`prealertTargetFor`), no con la principal.
+   *
    * Aun sin replicar, la sincronizacion por tracking recupera el paquete cuando
    * llega a bodega: la bandera es una red adelantada, no un requisito.
    */
   async prealertWithProvider(clientId: string, shipment: ShipmentDto): Promise<void> {
     if (!isHelgaEnabled()) return;
 
-    /**
-     * Un cliente CONSOLIDADO no se prealerta: su paqueteria cuelga de su propia
-     * cuenta en Helga y no de un destinatario nuestro (ver `insert`). Se comprueba
-     * antes que el enlace para no confundirlo con un casillero roto: el aviso de
-     * abajo pide una correccion manual que aqui no hay que hacer.
-     */
-    if (await providerAccountsRepo.findByClientId(clientId)) return;
-
-    const link = await clientsRepo.providerLinkFor(clientId);
-    if (!link?.helgaClientId) {
-      console.warn(`[helga] casillero ${shipment.client?.code ?? '(sin dueño)'} sin enlazar: prealerta no replicada.`);
-      return;
-    }
-
     let status: HelgaSyncStatus;
     let error: string | null;
     let prealertId: string | null = null;
     try {
+      const target = await prealertTarget(clientId);
+      if (!target) {
+        console.warn(`[helga] casillero ${shipment.client?.code ?? '(sin dueño)'} sin enlazar: prealerta no replicada.`);
+        return;
+      }
       prealertId = await createHelgaPrealert({
-        helgaClientId: link.helgaClientId,
+        helgaClientId: target.recipientId,
+        ...(target.account ? { account: target.account } : {}),
         tracking: shipment.tracking,
         description: shipment.description,
         store: shipment.store,
@@ -873,8 +889,16 @@ export const shipmentsService = {
       let error: string | null;
       let prealertId: string | null = null;
       try {
+        // La consulta ya dejo fuera a los casilleros sin enlazar, asi que aqui
+        // siempre hay destino; si no, el tramite sigue como estaba.
+        const target = await prealertTarget(s.clientId, 'robot');
+        if (!target) {
+          report.checked -= 1;
+          continue;
+        }
         prealertId = await createHelgaPrealert({
-          helgaClientId: s.helgaClientId,
+          helgaClientId: target.recipientId,
+          ...(target.account ? { account: target.account } : {}),
           tracking: s.tracking,
           description: s.description,
           store: s.store,
@@ -1007,15 +1031,12 @@ export const shipmentsService = {
      * inmediato de `prealertWithProvider` la sella; si no se intenta o falla,
      * queda para la reconciliacion.
      *
-     * UN CLIENTE CONSOLIDADO TAMPOCO SE REPLICA, y por eso tambien nace en `null`.
-     * La op. C cuelga la prealerta de un `destinatario_id`, y este cliente no
-     * tiene uno nuestro: recibe por los sub-casilleros de su propia cuenta, que
-     * crea el administrador del proveedor. Dejarlo 'pending' seria prometer un
-     * reenvio que nunca puede ocurrir. Su paquete entra igual por el
-     * descubrimiento (op. E) en cuanto llega a la bodega de Miami.
+     * Un cliente CONSOLIDADO tambien se replica, con su propia cuenta y el
+     * destinatario de esa cuenta (`prealertTargetFor`). Antes nacia en `null`
+     * porque no habia destinatario nuestro del que colgar la prealerta; desde el
+     * 2026-10-20 se sabe que Helga la acepta con el token de la cuenta exclusiva.
      */
-    const helgaPrealertStatus =
-      usesPackageFields(values.shipmentType) && !providerAccount ? HelgaSyncStatus.Pending : null;
+    const helgaPrealertStatus = usesPackageFields(values.shipmentType) ? HelgaSyncStatus.Pending : null;
 
     const id = await shipmentsRepo.insert({
       ...values,
@@ -1438,7 +1459,9 @@ export const shipmentsService = {
 
     if (previousPrealertId) {
       try {
-        const removed = await deleteHelgaPrealert(previousPrealertId);
+        // Se borra con la cuenta que la creo: la de un consolidado no la ve la principal.
+        const account = await providerAccountsService.helgaAccountForCode(shipment.providerAccountCode);
+        const removed = await deleteHelgaPrealert(previousPrealertId, account ?? undefined);
         if (!removed) {
           console.warn(`[helga] la prealerta ${previousPrealertId} ya no existía al cambiar el tracking.`);
         }
