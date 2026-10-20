@@ -2,7 +2,7 @@
  * Lecturas de la sincronizacion con el proveedor. Solo consulta: los cambios de
  * estado los escribe `shipmentsRepo.transition`, que es el punto unico.
  */
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { Flow, ShipmentType, State, flowForType } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients } from '../auth/auth.schema';
@@ -29,6 +29,9 @@ const PROVIDER_TRAMO_STATES = [
   State.PreparandoEnvio,
   State.EnTransitoCostaRica,
 ] as [State, ...State[]];
+
+/** Ultimo estado del proveedor: ver la excepcion del HAWB en `shipmentsInProviderTramo`. */
+const PROVIDER_LAST_STATE = State.EnAduanas;
 
 export const providerSyncRepo = {
   /**
@@ -85,7 +88,19 @@ export const providerSyncRepo = {
       .where(
         and(
           sql`${shipments.shipmentType} in ${PACKAGE_TYPES}`,
-          inArray(shipments.state, PROVIDER_TRAMO_STATES),
+          /**
+           * En Aduanas SIN HAWB tambien entra, solo para recoger el `Sello`: los
+           * que llegaron alli antes de que la sincronizacion guardara el HAWB se
+           * quedaban sin LES para siempre, porque al salir del tramo nadie volvia
+           * a preguntar. La op. B sigue respondiendo despues de En Aduanas
+           * (verificado en vivo con un paquete ya entregado), y en cuanto el HAWB
+           * se guarda el paquete sale solo de la cola. El estado no se toca:
+           * `advanceTowards` nunca pasa de En Aduanas.
+           */
+          or(
+            inArray(shipments.state, PROVIDER_TRAMO_STATES),
+            and(eq(shipments.state, PROVIDER_LAST_STATE), isNull(shipments.hawb)),
+          ),
         ),
       )
       .orderBy(sql`${shipments.providerCheckedAt} asc nulls first`, asc(shipments.updatedAt))

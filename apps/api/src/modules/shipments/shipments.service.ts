@@ -66,7 +66,6 @@ import { formatProformaNumber, formatShipmentCode, shipmentDisplayedWeightKg } f
 import {
   createHelgaPrealert,
   deleteHelgaPrealert,
-  fetchHelgaPackageState,
   isHelgaEnabled,
   isHelgaSimulated,
 } from '../../integrations/helga/helga.client';
@@ -78,6 +77,7 @@ import { proformaDraftsService } from '../proformas/proforma-drafts.service';
 import { providerAccountsRepo } from '../provider-accounts/provider-accounts.repo';
 import { providerAccountsService } from '../provider-accounts/provider-accounts.service';
 import { shipmentsRepo } from './shipments.repo';
+import { lookupProviderPackage } from './provider-sync.service';
 
 /** Fila de la vista de lectura del repo (tramite + cliente + ruta). */
 type ShipmentRowView = Awaited<ReturnType<typeof shipmentsRepo.findById>>;
@@ -559,10 +559,11 @@ export const shipmentsService = {
     // Agenciamiento no tienen paquete que fotografiar alli.
     if (!usesPackageFields(shipment.shipmentType)) return unavailable;
 
-    // Sin guia legible no hay con que preguntar: el paquete desconocido lleva su
-    // propio consecutivo en `tracking` y el proveedor no lo reconoceria.
+    // Sin guia legible ni HAWB no hay con que preguntar: el paquete desconocido
+    // lleva su propio consecutivo en `tracking` y el proveedor no lo reconoceria.
     const tracking = knownTracking(shipment);
-    if (!tracking) return unavailable;
+    const hawb = shipment.hawb?.trim() || null;
+    if (!tracking && !hawb) return unavailable;
 
     /**
      * La cuenta de la que vino el paquete, igual que en la sincronizacion: con
@@ -582,15 +583,26 @@ export const shipmentsService = {
      * con tokens distintos puede devolver cosas distintas (cada cuenta ve solo lo
      * suyo), y servir una respuesta por otra mostraria las fotos equivocadas.
      */
-    const cacheKey = `${shipment.providerAccountCode ?? 'principal'}:${tracking}`;
+    const cacheKey = `${shipment.providerAccountCode ?? 'principal'}:${hawb ?? tracking}`;
     const cached = cachedPhotos(cacheKey);
     if (cached) return cached;
 
     try {
-      const pkg = await fetchHelgaPackageState(tracking, account);
+      // Por HAWB si lo hay, que Helga busca por igualdad (ver `lookupProviderPackage`).
+      const lookup = await lookupProviderPackage({ tracking, hawb }, account);
       // 404: el paquete aun no existe del lado del proveedor (prealerta sin
       // llegar a bodega). No es que no tenga fotos, es que todavia no hay paquete.
-      if (!pkg) return unavailable;
+      if (lookup.kind === 'not_found') return unavailable;
+      // Por tracking la op. B busca por "contiene": puede contestar con OTRO
+      // paquete, y sus fotos no son de este cliente.
+      if (lookup.kind === 'other_package') {
+        console.warn(
+          `[helga] las fotos de ${shipment.code} (${lookup.search}) vinieron de otro paquete ` +
+            `(${lookup.pkg.tracking ?? '-'} / ${lookup.pkg.Sello ?? '-'}); no se muestran.`,
+        );
+        return unavailable;
+      }
+      const { pkg } = lookup;
 
       const items = (pkg.fotos ?? [])
         .map(toPhotoDto)
@@ -603,7 +615,7 @@ export const shipmentsService = {
       cachePhotos(cacheKey, response);
       return response;
     } catch (err) {
-      console.error(`[helga] fallo pidiendo las fotos de ${shipment.code} (${tracking}):`, err);
+      console.error(`[helga] fallo pidiendo las fotos de ${shipment.code} (${hawb ?? tracking}):`, err);
       return unavailable;
     }
   },

@@ -540,9 +540,12 @@ function opDeletePrealert(prealertId: string): Response {
 function opPackageState(search: string): Response {
   const w = getWorld();
   const needle = search.trim().toUpperCase();
-  const pkg = w.packages.find(
-    (p) => p.tracking.toUpperCase() === needle || p.hawb.toUpperCase() === needle,
-  );
+  // Como el proveedor (verificado en vivo, 2026-10-19): el HAWB por igualdad y el
+  // tracking por "contiene", devolviendo el primero que aparezca. Es la trampa
+  // que obliga a `lookupProviderPackage` a comprobar lo que vuelve.
+  const pkg =
+    w.packages.find((p) => p.hawb.toUpperCase() === needle) ??
+    w.packages.find((p) => p.tracking.toUpperCase().includes(needle));
   if (!pkg) return errorResponse(404, 'No se encontró el paquete.');
 
   const estado = currentState(pkg);

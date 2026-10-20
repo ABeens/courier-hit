@@ -124,7 +124,8 @@ export function registerJobs(scheduler: Scheduler): void {
         console.log(
           `[scheduler] provider-sync: revisados=${r.checked} avanzados=${r.advanced} ` +
             `incidencias=${r.incidents.length} desconocidos=${r.unknownStates.length} ` +
-            `casillero_no_coincide=${r.lockerMismatches.length}`,
+            `casillero_no_coincide=${r.lockerMismatches.length} ` +
+            `otro_paquete=${r.trackingMismatches.length}`,
         );
       },
     });

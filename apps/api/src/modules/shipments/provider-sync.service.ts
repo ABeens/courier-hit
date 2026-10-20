@@ -11,6 +11,8 @@
  *    HAWB/tracking, no lista los de un casillero. Asi que la sincronizacion parte
  *    de NUESTROS envios en tramo y le pregunta a Helga por cada tracking. Un 404
  *    significa que el paquete aun no llega a bodega (prealerta): no es error.
+ *    En cuanto el tramite tiene HAWB se pregunta por el HAWB, que Helga busca por
+ *    igualdad; por tracking busca por "contiene" (ver `lookupProviderPackage`).
  * 2. SOLO SE AVANZA, NUNCA SE RETROCEDE. Se aplica `canTransition` como cualquier
  *    otro movimiento: si el proveedor reporta un estado anterior al que ya
  *    tenemos (llega tarde, o es una correccion suya), se ignora.
@@ -39,7 +41,9 @@ import {
 } from '@courier/shared';
 import type { Session } from '@courier/shared';
 import { isProviderRateLimited } from '../../core/errors';
+import type { HelgaAccount } from '../../core/config';
 import type { HelgaPackageStatus } from '../../integrations/helga/helga.types';
+import type { HelgaCallPriority } from '../../integrations/helga/helga.client';
 import {
   isHelgaEnabled,
   isHelgaSimulated,
@@ -74,6 +78,72 @@ export function toNumber(value: number | string | undefined): number {
 }
 
 /**
+ * True si el paquete que devolvio la op. B es de verdad el que preguntamos.
+ *
+ * Por TRACKING la op. B NO busca por igualdad sino por "contiene", y devuelve UN
+ * solo paquete. Verificado en vivo (2026-10-19, cuenta Zuca): buscar
+ * `FA-ZN-1-2026101402-1` devuelve el paquete `FA-ZN-1-2026101402-13`, y buscar
+ * solo `2026101402` tambien. Sin esta comprobacion el tramite recibiria el
+ * estado, el peso y el HAWB de otro paquete, y el portal mostraria sus fotos.
+ *
+ * `search` es lo que se le pregunto: el HAWB o nuestro tracking (que a su vez
+ * puede ser un HAWB, porque el descubrimiento lo usa cuando la fila no trae
+ * tracking), asi que vale cualquiera de los dos campos. Si el proveedor no manda
+ * ninguno no hay contra que comparar y se acepta: es el comportamiento de siempre.
+ */
+export function isSamePackage(search: string, pkg: { tracking?: string; Sello?: string }): boolean {
+  const ours = search.trim().toUpperCase();
+  const theirs = [pkg.tracking, pkg.Sello]
+    .map((v) => v?.trim().toUpperCase())
+    .filter((v): v is string => Boolean(v));
+  return theirs.length === 0 || theirs.includes(ours);
+}
+
+/** Resultado de `lookupProviderPackage`. */
+export type ProviderLookup =
+  | { kind: 'found'; pkg: HelgaPackageStatus }
+  /** 404: el paquete aun no existe del lado de Helga (prealerta sin llegar). */
+  | { kind: 'not_found' }
+  /** Helga contesto con OTRO paquete (ver `isSamePackage`): no se usa nada. */
+  | { kind: 'other_package'; search: string; pkg: HelgaPackageStatus };
+
+/**
+ * Op. B para UN tramite, por la llave mas segura que tenga.
+ *
+ * POR HAWB PRIMERO. Verificado en vivo (2026-10-19): por HAWB la op. B busca por
+ * IGUALDAD (sin distinguir mayusculas; `LES4858001` o `48580012` dan 404), y por
+ * tracking busca por "contiene". Asi que en cuanto el tramite tiene su LES, la
+ * respuesta no puede ser de otro paquete.
+ *
+ * Si el HAWB da 404 se reintenta por tracking: un LES mal digitado en recepcion
+ * no puede dejar al paquete sin sincronizar. Cuesta una llamada de mas solo en
+ * ese caso, porque un prealertado (el grueso del lote) aun no tiene HAWB.
+ *
+ * Por tracking se exige `isSamePackage`. Exportada porque las fotos
+ * (`shipmentsService.photosOf`) consultan la misma op. B con el mismo riesgo.
+ */
+export async function lookupProviderPackage(
+  ref: { tracking: string | null; hawb: string | null },
+  account?: HelgaAccount,
+  priority?: HelgaCallPriority,
+): Promise<ProviderLookup> {
+  const hawb = ref.hawb?.trim();
+  if (hawb) {
+    const pkg = await fetchHelgaPackageState(hawb, account, priority);
+    // La comprobacion sobra si Helga cumple la igualdad, pero es gratis.
+    if (pkg && isSamePackage(hawb, pkg)) return { kind: 'found', pkg };
+  }
+
+  const tracking = ref.tracking?.trim();
+  if (!tracking || tracking.toUpperCase() === hawb?.toUpperCase()) return { kind: 'not_found' };
+
+  const pkg = await fetchHelgaPackageState(tracking, account, priority);
+  if (!pkg) return { kind: 'not_found' };
+  if (!isSamePackage(tracking, pkg)) return { kind: 'other_package', search: tracking, pkg };
+  return { kind: 'found', pkg };
+}
+
+/**
  * Estados que ya pertenecen al flujo manual: el proveedor no los toca.
  *
  * La frontera sale de `isProviderDrivenState` (shared) para no tener dos copias
@@ -99,6 +169,8 @@ export interface SyncReport {
    * cada corrida en vez de dejarlos morir en silencio.
    */
   unknownAccounts: string[];
+  /** Consultas que devolvieron OTRO paquete (ver `isSamePackage`): se ignoran. */
+  trackingMismatches: string[];
 }
 
 export const providerSyncService = {
@@ -118,6 +190,7 @@ export const providerSyncService = {
       unknownStates: [],
       lockerMismatches: [],
       unknownAccounts: [],
+      trackingMismatches: [],
     };
 
     if (!isHelgaEnabled()) {
@@ -165,11 +238,11 @@ export const providerSyncService = {
         continue;
       }
 
-      let pkg;
+      let lookup;
       try {
         // `robot`: esta pasada encola hasta SYNC_BATCH llamadas de golpe, y no
         // puede ponerse por delante de lo que una persona esta esperando.
-        pkg = await fetchHelgaPackageState(shipment.tracking, target?.account, 'robot');
+        lookup = await lookupProviderPackage(shipment, target?.account, 'robot');
       } catch (err) {
         // El limite del proveedor no dice nada de ESTE paquete: se corta la
         // pasada y se sigue en la proxima. Insistir con los demas solo alargaria
@@ -194,7 +267,17 @@ export const providerSyncService = {
       await providerSyncRepo.markChecked(shipment.id);
 
       // 404: el paquete aun no existe del lado de Helga (prealerta sin llegar).
-      if (!pkg) continue;
+      if (lookup.kind === 'not_found') continue;
+
+      // Un paquete ajeno contesto por el nuestro (ver `isSamePackage`): nada de
+      // lo que trae se escribe ni se usa para avanzar.
+      if (lookup.kind === 'other_package') {
+        const detail = `${shipment.code} (${lookup.search}): Helga devolvió ${lookup.pkg.tracking ?? '-'} / ${lookup.pkg.Sello ?? '-'}`;
+        report.trackingMismatches.push(detail);
+        console.warn(`[helga] la consulta devolvió otro paquete, se ignora -> ${detail}`);
+        continue;
+      }
+      const { pkg } = lookup;
 
       const rawState = pkg.Estado_Envio?.trim();
       // "NO TIENE ESTADO": el paquete existe pero aun no tiene tracking util; no
@@ -265,6 +348,7 @@ export const providerSyncService = {
     const key = rawState.toUpperCase();
     return pkg.Seguimiento?.find((e) => e.estado?.trim().toUpperCase() === key)?.estadoAlt;
   },
+
 
   /**
    * Avisa si el paquete que devolvio el proveedor NO es del casillero que
