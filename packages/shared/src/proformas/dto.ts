@@ -8,6 +8,7 @@
 import { z } from 'zod';
 import type { CostLineDto } from '../costs/shipment-cost-dto';
 import { costLineInputSchema, proformaCurrencyInputSchema } from '../costs/shipment-cost-dto';
+import { MAX_DELIVERY_SHIPMENTS } from '../deliveries/delivery';
 import { paginationQuerySchema } from '../http/pagination';
 import type { Currency } from '../money/currency';
 import { electronicInvoiceNumberSchema } from '../shipments/dto';
@@ -285,10 +286,13 @@ export type SetProformaCounterInput = z.infer<typeof setProformaCounterSchema>;
  *     (decision P6).
  *   - Los que no aparecen en ninguna lista siguen "En ruta de entrega" y se
  *     confirman despues (regla 13 del SOW).
+ *   - Entre las dos listas, como mucho `MAX_DELIVERY_SHIPMENTS` por visita.
  */
+const tooManyShipments = `Máximo ${MAX_DELIVERY_SHIPMENTS} paquetes por entrega. Registra el resto en otra entrega.`;
+
 export const recordProformaDeliverySchema = z
   .object({
-    delivered: z.array(z.string().uuid()).max(200),
+    delivered: z.array(z.string().uuid()).max(MAX_DELIVERY_SHIPMENTS, tooManyShipments),
     returned: z
       .array(
         z.object({
@@ -300,10 +304,14 @@ export const recordProformaDeliverySchema = z
             .max(500, 'El motivo es demasiado largo.'),
         }),
       )
-      .max(200),
+      .max(MAX_DELIVERY_SHIPMENTS, tooManyShipments),
   })
   .refine((v) => v.delivered.length + v.returned.length > 0, {
     message: 'Marca al menos un paquete entregado o devuelto.',
+    path: ['delivered'],
+  })
+  .refine((v) => v.delivered.length + v.returned.length <= MAX_DELIVERY_SHIPMENTS, {
+    message: tooManyShipments,
     path: ['delivered'],
   })
   .refine(

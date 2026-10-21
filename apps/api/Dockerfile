@@ -11,9 +11,14 @@
 # compilar en cualquier arquitectura, asi que el builder corre en la NATIVA de
 # quien construye ($BUILDPLATFORM) y solo la etapa final se emula. Sin esto, un
 # build arm64 desde un runner x86 emula tambien el bundler y tarda varios minutos.
+#
+# Node va fijado a una version exacta, no a `node:22-slim`: asi la version que
+# corre en produccion queda en el repo y un parche de seguridad es un cambio
+# visible (22.23.4 cierra los CVE de octubre de 2026). Al subirla, cambiar las
+# dos etapas a la vez.
 
 # --- Etapa 1: bundle ----------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:22-slim AS builder
+FROM --platform=$BUILDPLATFORM node:22.23.4-slim AS builder
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -39,7 +44,7 @@ COPY apps/api apps/api
 RUN pnpm --filter @courier/api build
 
 # --- Etapa 2: runtime ---------------------------------------------------------
-FROM node:22-slim AS runtime
+FROM node:22.23.4-slim AS runtime
 
 ENV NODE_ENV=production
 ENV PORT=3001

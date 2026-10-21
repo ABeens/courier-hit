@@ -136,7 +136,10 @@ deploy_api() {
 
   # arm64 porque la instancia es Graviton. El bundle se compila en la
   # arquitectura nativa y solo se emula la etapa final (ver apps/api/Dockerfile).
+  # --pull: vuelve a pedir la imagen base aunque haya una en cache, para que un
+  # parche de seguridad publicado bajo la misma etiqueta entre en el build.
   docker buildx build \
+    --pull \
     --platform linux/arm64 \
     -f "$REPO_ROOT/apps/api/Dockerfile" \
     -t "${repository}:${tag}" \

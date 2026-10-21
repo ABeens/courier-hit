@@ -31,6 +31,15 @@ import { State } from '../workflow/states';
  */
 export const MAX_DELIVERY_PHOTOS = 10;
 
+/**
+ * Cuantos paquetes admite UNA visita de entrega de proforma, sumando entregados
+ * y devueltos. No es regla de negocio sino freno tecnico: el servidor procesa
+ * cada paquete en serie y fuera de una transaccion unica, asi que una visita
+ * enorme puede pasar del timeout del proxy y quedar a medias. Si una proforma
+ * trae mas, se registra en varias visitas.
+ */
+export const MAX_DELIVERY_SHIPMENTS = 500;
+
 /** Como termino la visita del mensajero. */
 export enum DeliveryOutcome {
   Entregado = 'entregado',
