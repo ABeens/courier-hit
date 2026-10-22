@@ -24,13 +24,13 @@ export enum ReportKind {
   OperativoCompleto = 'operativo_completo',
   /** Movimiento de estados: que paso con cada tramite y cuando. */
   Transaccional = 'transaccional',
-  /** Facturacion y saldos por cliente (estado de cuenta). */
+  /** Proformas emitidas, lo abonado y el saldo (estado de cuenta). */
   Financiero = 'financiero',
 
   // --- Reportes POR SERVICIO (mapeo de campos validado con el negocio) ---
-  /** Paqueteria, los 27 campos: incluye costos, margen y factura electronica. */
+  /** Paqueteria completo: incluye cobro, costos, gross profit y margen. */
   PaqueteriaFull = 'paqueteria_full',
-  /** Paqueteria, campos 1 al 15: hasta el monto de factura, sin costos ni margen. */
+  /** Paqueteria operativo: seguimiento, monto y numero de factura, sin costos ni margen. */
   PaqueteriaOperativo = 'paqueteria_operativo',
   /** Agenciamiento y transporte, los 23 campos. */
   AgenciamientoFull = 'agenciamiento_full',
@@ -51,19 +51,19 @@ export const REPORT_LABELS: Record<ReportKind, string> = {
 
 export const REPORT_DESCRIPTIONS: Record<ReportKind, string> = {
   [ReportKind.OperativoBasico]:
-    'Trámites con sus datos de seguimiento, sin montos ni costos internos.',
+    'Trámites con sus datos de seguimiento, peso y CNEE, sin montos ni costos internos.',
   [ReportKind.OperativoCompleto]:
-    'Trámites con todo el detalle operativo y el monto de factura aprobado.',
+    'Trámites con todo el detalle operativo, la cuenta Miami y el monto de factura aprobado.',
   [ReportKind.Transaccional]:
     'Historial de cambios de estado de cada trámite, con quién lo movió y cuándo.',
   [ReportKind.Financiero]:
-    'Facturado, abonado y saldo por cliente, con el detalle de cada trámite.',
+    'Proformas emitidas en el rango: facturado, abonado, saldo y estatus de pago.',
   [ReportKind.PaqueteriaFull]:
-    'Paquetes con todo: cobro, costos, transporte internacional, margen y factura electrónica.',
+    'Paquetes con todo: cobro, costos, costo neto, gross profit y margen.',
   [ReportKind.PaqueteriaOperativo]:
-    'Paquetes con su seguimiento, entrega y monto de factura. Sin costos ni margen.',
+    'Paquetes con su seguimiento, entrega, monto y número de factura. Sin costos ni margen.',
   [ReportKind.AgenciamientoFull]:
-    'Trámites con todo: cobro, depósito, costos asociados, profit y factura electrónica.',
+    'Trámites con todo: cobro, depósito, costos asociados, impuestos, profit y factura electrónica.',
   [ReportKind.AgenciamientoOperativo]:
     'Trámites con su seguimiento, facturación y depósito. Sin costos ni profit.',
 };
@@ -112,61 +112,94 @@ export interface ReportColumn {
 }
 
 /**
- * PAQUETERIA, los 27 campos del mapeo. El orden lo pidio el negocio (cliente,
- * HAWB, peso, tracking, ref, estatus, consecutivo, servicio, fecha de arribo,
- * factura y luego el resto) y no coincide con la numeracion del mapeo. El orden
- * no es cosmetico: el reporte operativo se define mas abajo como el prefijo de
- * este ("Solo puede ver del Campo 1 al Campo 15"), asi que los campos 1 a 15
- * deben quedar SIEMPRE en las primeras posiciones, en el orden que sea. El CNEE
- * (fuera del mapeo) cierra ese prefijo: es operativo y lo ven los dos reportes.
+ * PAQUETERIA. Las columnas se declaran UNA vez (`PAQ`) y los dos reportes eligen
+ * de ahi, cada uno en el orden que pidio el negocio (docs/reportes-revision.html).
+ * El operativo ya no es un prefijo del FULL: lleva SERVICIO, que el FULL no, y no
+ * lleva TIENDA ni CARRIER. Declarar la columna una sola vez es lo que evita que
+ * las dos listas diverjan el dia que alguien renombre un encabezado.
  *
- * Los comentarios numerados son el puente con el documento del negocio (numero
- * de campo del mapeo, no posicion): sin ellos, cuadrar 27 columnas contra una
- * tabla en Word se hace a ojo.
+ * Los comentarios numerados son el puente con el mapeo de campos original del
+ * negocio (numero de campo, no posicion); "+" son columnas fuera del mapeo.
  */
-const PAQUETERIA_COLUMNS: readonly ReportColumn[] = [
-  { key: 'clientName', label: 'CLIENTE' }, //                       3
-  { key: 'hawb', label: 'HAWB' }, //                                9
-  { key: 'weightKg', label: 'WEIGHT KG' }, //                      10
-  { key: 'tracking', label: 'TRACKING' }, //                        4
-  { key: 'description', label: 'REF' }, //                          7
-  { key: 'state', label: 'ESTATUS' }, //                           11
-  { key: 'code', label: 'Consecutivo Interno HS' }, //              2
-  { key: 'service', label: 'SERVICIO' }, //                        1  constante
-  { key: 'miamiArrivalAt', label: 'FECHA DE ARRIBO A MIAMI' }, //   8  derivado del historial
-  { key: 'invoiceTotalUsd', label: 'MONTO FACTURA' }, //           15
-  { key: 'store', label: 'TIENDA' }, //                             5
-  { key: 'carrier', label: 'CARRIER' }, //                          6
-  { key: 'deliveredAt', label: 'FECHA ENTREGA' }, //               12  derivado del historial
-  { key: 'month', label: 'MES' }, //                               13  derivado de 12
-  { key: 'proforma', label: 'PROFORMA' }, //                       14  consecutivo propio
-  // Fuera del mapeo original (sin numero, para no mover la numeracion): el CNEE
-  // es dato operativo, asi que cierra el prefijo que ve el reporte operativo.
-  { key: 'cnee', label: 'CNEE' }, //                                +
-  // --- A partir de aqui, solo el reporte FULL (admin) ---
-  { key: 'collectionStatus', label: 'ESTATUS COBRO' }, //          16  derivado de los pagos
-  { key: 'bankAccount', label: 'CUENTA' }, //                      17
-  { key: 'receipt', label: 'COMPROBANTE' }, //                     18
-  { key: 'paidAt', label: 'FECHA DE PAGO' }, //                    19  derivado del pago
-  // Fuera del mapeo original (sin numero, como COSTO NETO): cuando se aprobo la
-  // proforma en la que se facturo el tramite.
-  { key: 'proformaApprovedAt', label: 'FECHA DE APROBACIÓN DE LA PROFORMA' }, // +
-  { key: 'billingNotes', label: 'NOTAS P/FACTURAR' }, //           20
-  { key: 'internationalFreightUsd', label: 'TRANSPORTE INTL' }, // 21  calculado
-  { key: 'taxesUsd', label: 'IMPUESTOS' }, //                      22
-  { key: 'othersUsd', label: 'OTROS / COMPRAS' }, //               23
-  { key: 'totalCostUsd', label: 'TOTAL' }, //                      24  = 21+22+23
-  // --- Costo neto vs a facturar (fuera del mapeo original: sin numero, para no
-  // mover la numeracion del documento del negocio) ---
-  { key: 'realCostsUsd', label: 'COSTO NETO' }, //                  +   lineas, costo neto
-  { key: 'billedCostsUsd', label: 'COSTO A FACTURAR' }, //          +   lineas, costo a facturar
-  { key: 'grossProfitUsd', label: 'GROSS PROFIT' }, //             25  = a facturar - 24
-  { key: 'marginPct', label: '%' }, //                             26  = 25/15
-  { key: 'electronicInvoiceNumber', label: 'FE' }, //              27
+const PAQ = {
+  clientName: { key: 'clientName', label: 'CLIENTE' }, //                     3
+  hawb: { key: 'hawb', label: 'AWB (LES)' }, //                               9
+  weightKg: { key: 'weightKg', label: 'PESO KG' }, //                        10
+  tracking: { key: 'tracking', label: 'TRACKING' }, //                        4
+  cnee: { key: 'cnee', label: 'CNEE' }, //                                    +
+  description: { key: 'description', label: 'REF' }, //                       7
+  state: { key: 'state', label: 'ESTATUS' }, //                              11
+  code: { key: 'code', label: 'Consecutivo Interno HS' }, //                  2
+  service: { key: 'service', label: 'SERVICIO' }, //                          1  constante
+  miamiArrivalAt: { key: 'miamiArrivalAt', label: 'FECHA DE ARRIBO A MIAMI' }, // 8  derivado del historial
+  store: { key: 'store', label: 'TIENDA' }, //                                5
+  carrier: { key: 'carrier', label: 'CARRIER' }, //                           6
+  deliveredAt: { key: 'deliveredAt', label: 'FECHA ENTREGA' }, //            12  derivado del historial
+  month: { key: 'month', label: 'MES' }, //                                  13  mes de facturacion
+  invoiceTotalUsd: { key: 'invoiceTotalUsd', label: 'MONTO FACTURA' }, //    15
+  // "# de factura" es el de la factura ELECTRONICA: el negocio pide el numero de
+  // proforma y el de FE por separado en el Financiero, asi que "factura" es la FE.
+  electronicInvoiceNumber: { key: 'electronicInvoiceNumber', label: '# DE FACTURA (FE)' }, // 27
+  collectionStatus: { key: 'collectionStatus', label: 'ESTATUS COBRO' }, //  16  derivado de los pagos
+  bankAccount: { key: 'bankAccount', label: 'CUENTA' }, //                   17
+  receipt: { key: 'receipt', label: 'COMPROBANTE' }, //                      18
+  paidAt: { key: 'paidAt', label: 'FECHA DE PAGO' }, //                      19  derivado del pago
+  proformaApprovedAt: { key: 'proformaApprovedAt', label: 'FECHA DE APROBACIÓN' }, // +
+  billingNotes: { key: 'billingNotes', label: 'NOTAS P/FACTURAR' }, //      20
+  internationalFreightUsd: { key: 'internationalFreightUsd', label: 'TRANSPORTE' }, // 21  calculado
+  taxesUsd: { key: 'taxesUsd', label: 'IMPUESTOS' }, //                      22
+  othersUsd: { key: 'othersUsd', label: 'OTROS / COMPRAS' }, //              23
+  netCostUsd: { key: 'netCostUsd', label: 'COSTO NETO' }, //                 24  = 21+22+23
+  grossProfitUsd: { key: 'grossProfitUsd', label: 'GROSS PROFIT' }, //       25  = 15-24
+  marginPct: { key: 'marginPct', label: '%' }, //                            26  = 25/15
+} as const satisfies Record<string, ReportColumn>;
+
+const PAQUETERIA_FULL_COLUMNS: readonly ReportColumn[] = [
+  PAQ.clientName,
+  PAQ.hawb,
+  PAQ.weightKg,
+  PAQ.tracking,
+  PAQ.cnee,
+  PAQ.description,
+  PAQ.state,
+  PAQ.code,
+  PAQ.miamiArrivalAt,
+  PAQ.store,
+  PAQ.carrier,
+  PAQ.deliveredAt,
+  PAQ.month,
+  PAQ.invoiceTotalUsd,
+  PAQ.electronicInvoiceNumber,
+  PAQ.collectionStatus,
+  PAQ.bankAccount,
+  PAQ.receipt,
+  PAQ.paidAt,
+  PAQ.proformaApprovedAt,
+  PAQ.billingNotes,
+  PAQ.internationalFreightUsd,
+  PAQ.taxesUsd,
+  PAQ.othersUsd,
+  PAQ.netCostUsd,
+  PAQ.grossProfitUsd,
+  PAQ.marginPct,
 ];
 
-/** Cuantas columnas ve el reporte operativo de Paqueteria (campos 1 al 15 del mapeo, mas CNEE). */
-const PAQUETERIA_OPERATIONAL_FIELDS = 16;
+const PAQUETERIA_OPERATIONAL_COLUMNS: readonly ReportColumn[] = [
+  PAQ.clientName,
+  PAQ.hawb,
+  PAQ.weightKg,
+  PAQ.tracking,
+  PAQ.cnee,
+  PAQ.description,
+  PAQ.state,
+  PAQ.code,
+  PAQ.service,
+  PAQ.miamiArrivalAt,
+  PAQ.deliveredAt,
+  PAQ.month,
+  PAQ.invoiceTotalUsd,
+  PAQ.electronicInvoiceNumber,
+];
 
 /**
  * AGENCIAMIENTO y transporte, los 23 campos del mapeo. El orden lo pidio el
@@ -207,12 +240,12 @@ const AGENCIAMIENTO_COLUMNS: readonly ReportColumn[] = [
   // Vacia si el tramite no esta en una proforma aprobada (p. ej. costos
   // aprobados antes del modulo de proformas).
   { key: 'proformaApprovedAt', label: 'FECHA DE APROBACIÓN DE LA PROFORMA' }, // +
-  { key: 'associatedCostsCrc', label: 'COSTOS ASOCIADOS (CRC)' }, // 20  lineas trasladadas
-  // --- Costo neto vs a facturar (fuera del mapeo original: sin numero, para no
-  // mover la numeracion del documento del negocio) ---
-  { key: 'realCostsCrc', label: 'COSTO NETO (CRC)' }, //            +   lineas, costo neto
-  { key: 'billedCostsCrc', label: 'COSTO A FACTURAR (CRC)' }, //    +   lineas, costo a facturar
-  { key: 'profitCrc', label: 'PROFIT (CRC)' }, //                  21  = 12-20
+  // Costos asociados (campo 20) se partio en dos a pedido del negocio: los
+  // impuestos van en su propia columna y COSTO NETO suma las dos.
+  { key: 'associatedCostsCrc', label: 'COSTOS ASOCIADOS (CRC)' }, // 20  lineas "otros"
+  { key: 'taxesCrc', label: 'IMPUESTOS (CRC)' }, //                  +   lineas "impuestos"
+  { key: 'netCostCrc', label: 'COSTO NETO (CRC)' }, //               +   = asociados + impuestos
+  { key: 'profitCrc', label: 'PROFIT (CRC)' }, //                  21  = 12 - costo neto
   { key: 'marginPct', label: '%' }, //                             22  = 21/12
   { key: 'electronicInvoiceNumber', label: 'FE' }, //              23
 ];
@@ -225,18 +258,23 @@ const AGENCIAMIENTO_FULL_ONLY_KEYS: ReadonlySet<string> = new Set([
   'billingNotes',
   'proformaApprovedAt',
   'associatedCostsCrc',
-  'realCostsCrc',
-  'billedCostsCrc',
+  'taxesCrc',
+  'netCostCrc',
   'profitCrc',
   'marginPct',
   'electronicInvoiceNumber',
 ]);
 
 /**
- * Columnas de cada reporte, en orden. El Basico es un SUBCONJUNTO estricto del
- * Completo, y esa es justamente la separacion que pide la matriz: lo que le falta
- * al basico (peso, monto de factura) es lo que no debe ver el personal no
- * administrador.
+ * Columnas de cada reporte, en orden. El Basico es un SUBCONJUNTO del Completo:
+ * lo que le falta al basico (montos de factura, datos internos de bodega) es lo
+ * que no debe ver el personal no administrador. El peso SI lo ve: no es un monto
+ * y el negocio lo pidio para atender al cliente.
+ *
+ * "Última actualización" es el ultimo cambio de ESTADO del tramite (su
+ * historial), no `updated_at`, que se mueve con cualquier edicion tecnica
+ * (sincronizacion con Helga, correcciones). El filtro de fechas de los
+ * operativos usa esa misma fecha (ver `reportsRepo.shipments`).
  */
 export const REPORT_COLUMNS: Record<ReportKind, readonly ReportColumn[]> = {
   [ReportKind.OperativoBasico]: [
@@ -244,23 +282,27 @@ export const REPORT_COLUMNS: Record<ReportKind, readonly ReportColumn[]> = {
     { key: 'shipmentType', label: 'Trámite' },
     { key: 'clientName', label: 'Cliente' },
     { key: 'tracking', label: 'Tracking / AWB / BL' },
+    { key: 'hawb', label: 'HAWB (LES)' },
+    { key: 'weightKg', label: 'Peso (kg)' },
+    { key: 'cnee', label: 'CNEE' },
     { key: 'description', label: 'Descripción (REF)' },
     { key: 'state', label: 'Estatus' },
     { key: 'routeNumber', label: 'Ruta' },
-    { key: 'createdAt', label: 'Fecha ingreso' },
+    { key: 'lastMovedAt', label: 'Última actualización' },
   ],
 
   [ReportKind.OperativoCompleto]: [
     { key: 'code', label: 'Consecutivo' },
     { key: 'shipmentType', label: 'Trámite' },
     { key: 'clientCode', label: 'Casillero' },
+    { key: 'miamiAccount', label: 'Cuenta Miami' },
     { key: 'clientName', label: 'Cliente' },
     { key: 'tracking', label: 'Tracking / AWB / BL' },
     { key: 'description', label: 'Descripción (REF)' },
     { key: 'cnee', label: 'CNEE' },
     { key: 'store', label: 'Tienda' },
     { key: 'carrier', label: 'Transportista' },
-    { key: 'hawb', label: 'HAWB / HBL' },
+    { key: 'hawb', label: 'HAWB (LES) / HBL' },
     { key: 'weightKg', label: 'Peso (kg)' },
     { key: 'warehouse', label: 'Almacén' },
     { key: 'dua', label: 'DUA' },
@@ -268,7 +310,7 @@ export const REPORT_COLUMNS: Record<ReportKind, readonly ReportColumn[]> = {
     { key: 'routeNumber', label: 'Ruta' },
     { key: 'invoiceTotalUsd', label: 'Factura (USD)' },
     { key: 'invoiceTotalCrc', label: 'Factura (CRC)' },
-    { key: 'createdAt', label: 'Fecha ingreso' },
+    { key: 'lastMovedAt', label: 'Última actualización' },
   ],
 
   [ReportKind.Transaccional]: [
@@ -276,33 +318,48 @@ export const REPORT_COLUMNS: Record<ReportKind, readonly ReportColumn[]> = {
     { key: 'shipmentType', label: 'Trámite' },
     { key: 'clientName', label: 'Cliente' },
     { key: 'tracking', label: 'Tracking / AWB / BL' },
+    { key: 'hawb', label: 'HAWB (LES)' },
     { key: 'state', label: 'Estado' },
     { key: 'note', label: 'Comentario' },
     { key: 'createdByName', label: 'Registrado por' },
     { key: 'createdAt', label: 'Fecha del movimiento' },
   ],
 
+  /**
+   * Estado de cuenta: UNA FILA POR PROFORMA emitida (aprobada o pagada) en el
+   * rango, no por tramite. La pregunta del reporte es cuanto debe el cliente, y
+   * lo que se le cobra es la proforma entera.
+   *
+   * Los montos van en la moneda en que se COBRA la proforma (columna Moneda), y
+   * al lado su equivalente en dolares con la tasa congelada en la aprobacion:
+   * una columna homogenea que si se puede sumar en la hoja de calculo.
+   */
   [ReportKind.Financiero]: [
     { key: 'clientCode', label: 'Casillero' },
+    { key: 'miamiAccount', label: 'Cuenta Miami' },
     { key: 'clientName', label: 'Cliente' },
-    { key: 'code', label: 'Consecutivo' },
-    { key: 'description', label: 'Descripción (REF)' },
-    { key: 'state', label: 'Estatus' },
-    { key: 'invoiceTotalCrc', label: 'Facturado (CRC)' },
-    { key: 'settledCrc', label: 'Abonado (CRC)' },
-    { key: 'balanceCrc', label: 'Saldo (CRC)' },
-    { key: 'createdAt', label: 'Fecha ingreso' },
+    { key: 'proforma', label: '# Proforma' },
+    { key: 'approvedAt', label: 'Fecha proforma' },
+    { key: 'electronicInvoiceNumber', label: '# FE' },
+    { key: 'shipmentCount', label: 'Paquetes / trámites' },
+    { key: 'weightKg', label: 'Peso facturado (kg)' },
+    { key: 'currency', label: 'Moneda' },
+    { key: 'invoiced', label: 'Facturado' },
+    { key: 'settled', label: 'Abonado' },
+    { key: 'balance', label: 'Saldo' },
+    { key: 'invoicedUsd', label: 'Facturado (USD)' },
+    { key: 'balanceUsd', label: 'Saldo (USD)' },
+    { key: 'paymentStatus', label: 'Estatus de pago' },
+    { key: 'paidAt', label: 'Fecha de pago' },
   ],
 
   /**
-   * El operativo se DERIVA del FULL, no es una lista paralela: dos listas
-   * escritas a mano acabarian divergiendo el dia que alguien renombre una
-   * columna en una sola de ellas. En Paqueteria es el prefijo (`slice`); en
-   * Agenciamiento se filtra por clave porque una columna solo FULL (NOTAS
-   * P/FACTURAR) va en medio de las operativas.
+   * En Agenciamiento el operativo se DERIVA del FULL filtrando por clave: dos
+   * listas escritas a mano acabarian divergiendo. En Paqueteria las dos listas
+   * eligen de `PAQ`, que cumple el mismo papel.
    */
-  [ReportKind.PaqueteriaFull]: PAQUETERIA_COLUMNS,
-  [ReportKind.PaqueteriaOperativo]: PAQUETERIA_COLUMNS.slice(0, PAQUETERIA_OPERATIONAL_FIELDS),
+  [ReportKind.PaqueteriaFull]: PAQUETERIA_FULL_COLUMNS,
+  [ReportKind.PaqueteriaOperativo]: PAQUETERIA_OPERATIONAL_COLUMNS,
   [ReportKind.AgenciamientoFull]: AGENCIAMIENTO_COLUMNS,
   [ReportKind.AgenciamientoOperativo]: AGENCIAMIENTO_COLUMNS.filter(
     (column) => !AGENCIAMIENTO_FULL_ONLY_KEYS.has(column.key),

@@ -38,8 +38,8 @@ export function internationalFreightUsd(
 }
 
 /**
- * TOTAL de costos (campo 24 de Paqueteria): transporte internacional + impuestos
- * + otros/compras.
+ * COSTO NETO (campo 24 de Paqueteria, antes TOTAL): transporte internacional +
+ * impuestos + otros/compras.
  *
  * El transporte internacional entra como `null` cuando no se pudo calcular, y en
  * ese caso el TOTAL tambien es null: sumarlo como cero daria un total que parece
@@ -58,8 +58,9 @@ export function totalCostUsd(
 
 /**
  * GROSS PROFIT / PROFIT (campo 25 de Paqueteria, 21 de Agenciamiento): lo
- * facturado menos lo que costo. En Paqueteria es COSTO A FACTURAR menos TOTAL
- * (transporte intl + impuestos + otros); en Agenciamiento, MONTO FACTURA menos COSTOS ASOCIADOS.
+ * facturado menos lo que costo: MONTO FACTURA menos COSTO NETO en los dos flujos.
+ * En Paqueteria el costo neto es transporte + impuestos + otros; en
+ * Agenciamiento, costos asociados + impuestos.
  * Puede ser NEGATIVO, y por eso no pasa por
  * `Math.max(0, ...)` como el saldo de un cliente: un tramite que se vendio por
  * debajo del costo es exactamente lo que este reporte existe para encontrar.

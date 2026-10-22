@@ -30,14 +30,16 @@ import {
   breakdownByCategory,
   can,
   chargeBasisFor,
+  chargeBasisIn,
   collectionStatus,
-  computeTotals,
+  convertMoney,
   depositDifference,
   formatProformaNumber,
   grossProfit,
   internationalFreightUsd,
   marginPercentage,
   monthOf,
+  outstandingFor,
   roundMoney,
   settledAmount,
   settledAt,
@@ -147,10 +149,14 @@ function collectionColumns(row: ServiceRow) {
  * menos es a proposito; la alternativa —dos caminos de calculo— es como se
  * acaban filtrando columnas que no debian salir.
  *
- * COSTO REAL Y FACTURADO. Las columnas de costo (IMPUESTOS, OTROS, COSTOS
- * ASOCIADOS) se desglosan con el costo REAL de cada linea, y MONTO FACTURA sigue
- * siendo lo facturado. En Paqueteria el GROSS PROFIT es COSTO A FACTURAR menos
- * TOTAL.
+ * COSTO NETO Y PROFIT. Las columnas de costo (IMPUESTOS, OTROS, COSTOS
+ * ASOCIADOS) se desglosan con el costo NETO de cada linea, y MONTO FACTURA sigue
+ * siendo lo facturado. COSTO NETO es la suma de las columnas de costo que se ven
+ * en la fila, y el PROFIT es MONTO FACTURA menos COSTO NETO en los dos flujos:
+ * quien abre el CSV puede rehacer la resta con las columnas que tiene delante.
+ *
+ * MES es el mes de FACTURACION (aprobacion de la proforma) en los dos flujos:
+ * el reporte se usa para cerrar meses, y eso lo fija la factura, no la entrega.
  */
 async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
   const rows = await reportsRepo.serviceReportRows(query);
@@ -159,8 +165,6 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
 
   return rows.map((row) => {
     const realLines = asRealCosts(row.costs);
-    const realTotals = computeTotals(realLines);
-    const billedTotals = computeTotals(row.costs);
     const collection = collectionColumns(row);
     const common = {
       code: row.code,
@@ -175,6 +179,9 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
        */
       proforma: row.proformaSequence === null ? null : formatProformaNumber(row.proformaSequence),
       billingNotes: row.billingNotes,
+      // FECHA FACTURACION = cuando se aprobaron los costos, que es cuando la
+      // factura queda emitida y congelada. De ahi sale el MES.
+      month: monthOf(row.costsApprovedAt),
       /**
        * FE: con el modulo de proformas la factura electronica es una por proforma
        * y se anota en ella. El campo del tramite queda para lo facturado antes.
@@ -185,19 +192,16 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
 
     if (isPaqueteria) {
       const costs = breakdownByCategory(realLines, Currency.USD);
-      const billedCostsUsd = billedTotals.usd;
       const freight = internationalFreightUsd(row.weightKg, row.freightRateUsdPerKg);
-      const total = totalCostUsd(freight, costs.impuestos, costs.otros);
-      // GROSS PROFIT = COSTO A FACTURAR - TOTAL (transporte intl + impuestos +
-      // otros). Sin TOTAL (falta peso o tarifa) el profit sale vacio, no inflado.
-      const profit = grossProfit(billedCostsUsd, total, Currency.USD);
+      const netCost = totalCostUsd(freight, costs.impuestos, costs.otros);
+      // GROSS PROFIT = MONTO FACTURA - COSTO NETO (transporte + impuestos +
+      // otros). Sin COSTO NETO (falta peso o tarifa) el profit sale vacio, no inflado.
+      const profit = grossProfit(row.invoiceTotalUsd, netCost, Currency.USD);
 
       return project(query.kind, {
         ...common,
         service: SHIPMENT_TYPE_LABELS[ShipmentType.Paqueteria],
         invoiceTotalUsd: row.invoiceTotalUsd,
-        realCostsUsd: realTotals.usd,
-        billedCostsUsd,
         cnee: row.cnee,
         store: row.store,
         carrier: row.carrier,
@@ -206,12 +210,10 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
         weightKg: row.weightKg,
         deliveredAt: row.deliveredAt,
         proformaApprovedAt: row.proformaApprovedAt,
-        // MES sale de la FECHA DE ENTREGA en Paqueteria (campo 13 del mapeo).
-        month: monthOf(row.deliveredAt),
         internationalFreightUsd: freight,
         taxesUsd: costs.impuestos,
         othersUsd: costs.otros,
-        totalCostUsd: total,
+        netCostUsd: netCost,
         grossProfitUsd: profit,
         marginPct: marginPercentage(profit, row.invoiceTotalUsd),
       });
@@ -227,26 +229,79 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
      */
     const costs = breakdownByCategory(realLines, Currency.CRC);
     const deposited = settledAmount(row.payments, Currency.CRC);
-    const profit = grossProfit(row.invoiceTotalCrc, costs.passThrough, Currency.CRC);
+    // COSTO NETO = COSTOS ASOCIADOS + IMPUESTOS, sumado desde las dos columnas ya
+    // redondeadas para que la fila cuadre a simple vista.
+    const netCost = roundMoney(costs.otros + costs.impuestos, Currency.CRC);
+    const profit = grossProfit(row.invoiceTotalCrc, netCost, Currency.CRC);
 
     return project(query.kind, {
       ...common,
       shipmentType: SHIPMENT_TYPE_LABELS[row.shipmentType],
       warehouse: row.warehouse,
       dua: row.dua,
-      // FECHA FACTURACIÓN = cuando se aprobaron los costos, que es cuando la
-      // factura queda emitida y congelada. De ahi sale el MES (campo 10).
       invoicedAt: row.costsApprovedAt,
-      month: monthOf(row.costsApprovedAt),
       invoiceTotalCrc: row.invoiceTotalCrc,
       proformaApprovedAt: row.proformaApprovedAt,
       depositedCrc: deposited,
       differenceCrc: depositDifference(row.invoiceTotalCrc, deposited, Currency.CRC),
-      associatedCostsCrc: costs.passThrough,
-      realCostsCrc: realTotals.crc,
-      billedCostsCrc: billedTotals.crc,
+      associatedCostsCrc: costs.otros,
+      taxesCrc: costs.impuestos,
+      netCostCrc: netCost,
       profitCrc: profit,
       marginPct: marginPercentage(profit, row.invoiceTotalCrc),
+    });
+  });
+}
+
+/**
+ * Filas del estado de cuenta: una por proforma emitida.
+ *
+ * Todo se calcula en la moneda en que se COBRA la proforma, con los mismos
+ * puntos que usa el modulo de pagos (`settledAmount`, `outstandingFor`,
+ * `collectionStatus`): un reporte que dijera "pendiente" de una proforma que el
+ * sistema da por pagada seria peor que no tener el reporte.
+ *
+ * El equivalente en dolares no se recalcula con la tasa del dia: FACTURADO (USD)
+ * es el total congelado en la aprobacion, y el SALDO (USD) convierte el saldo con
+ * la tasa de esa misma proforma (regla M5). Si la proforma se cobra en dolares
+ * no hay conversion que hacer.
+ */
+async function financialRows(query: ReportQuery): Promise<ReportRow[]> {
+  const rows = await reportsRepo.billedProformas(query);
+  return rows.map((row) => {
+    const invoiced = row.currency === Currency.USD ? row.totalUsd : row.totalCrc;
+    const basis = chargeBasisIn(row.currency, invoiced);
+    const settled = settledAmount(row.payments, row.currency);
+    const balance = outstandingFor(settled, basis);
+    const balanceUsd =
+      row.currency === Currency.USD
+        ? balance
+        : row.exchangeRate == null
+          ? null
+          : convertMoney(balance, Currency.CRC, Currency.USD, row.exchangeRate);
+
+    const weights = row.shipments
+      .map((s) => s.weightKg)
+      .filter((w): w is number => w != null);
+
+    return project(query.kind, {
+      clientCode: row.clientCode,
+      miamiAccount: row.miamiAccount,
+      clientName: row.clientName,
+      proforma: row.number === null ? null : formatProformaNumber(row.number),
+      approvedAt: row.approvedAt,
+      electronicInvoiceNumber: row.electronicInvoiceNumber,
+      shipmentCount: row.shipments.length,
+      // Sin ningun peso (Agenciamiento, Transporte) la celda queda vacia, no en 0.
+      weightKg: weights.length === 0 ? null : Math.round(weights.reduce((a, b) => a + b, 0) * 100) / 100,
+      currency: row.currency,
+      invoiced,
+      settled,
+      balance,
+      invoicedUsd: row.totalUsd,
+      balanceUsd,
+      paymentStatus: COLLECTION_STATUS_LABELS[collectionStatus(row.payments, basis)],
+      paidAt: row.paidAt,
     });
   });
 }
@@ -289,25 +344,7 @@ export const reportsService = {
       );
     }
 
-    if (query.kind === ReportKind.Financiero) {
-      const rows = await reportsRepo.billedShipments(query);
-      return rows.map((row) => {
-        /**
-         * El abonado se calcula con `settledAmount`, el mismo punto que usa el
-         * modulo de pagos para decidir si un tramite esta cubierto. Sumar aqui
-         * por separado abriria la puerta a que el reporte y el sistema
-         * discreparan sobre cuanto debe un cliente.
-         */
-        const settledCrc = settledAmount(row.payments, Currency.CRC);
-        const invoiced = row.invoiceTotalCrc ?? 0;
-        return project(query.kind, {
-          ...row,
-          state: STATE_LABELS[row.state],
-          settledCrc,
-          balanceCrc: roundMoney(invoiced - settledCrc, Currency.CRC),
-        });
-      });
-    }
+    if (query.kind === ReportKind.Financiero) return financialRows(query);
 
     const rows = await reportsRepo.shipments(query);
     return rows.map((row) =>

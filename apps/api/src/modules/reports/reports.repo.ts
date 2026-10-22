@@ -12,6 +12,7 @@ import {
   count,
   desc,
   eq,
+  exists,
   gte,
   inArray,
   isNotNull,
@@ -22,7 +23,7 @@ import {
   sql,
 } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
-import { ClientRateKind, State, terminalStates } from '@courier/shared';
+import { ClientRateKind, ProformaStatus, State, terminalStates } from '@courier/shared';
 import type { ReportQuery } from '@courier/shared';
 
 /**
@@ -35,6 +36,7 @@ const CLOSING_STATES = [...terminalStates()];
 import { db } from '../../core/db';
 import { allocatedProformaCosts } from '../proformas/proforma-allocation';
 import { proformasRepo } from '../proformas/proformas.repo';
+import { proformaShipments, proformas } from '../proformas/proformas.schema';
 import { clients, users } from '../auth/auth.schema';
 import { cantonRoutes } from '../routes/canton-route.schema';
 import { districtRoutes } from '../routes/district-route.schema';
@@ -74,24 +76,51 @@ const moverName = sql<string | null>`(
 const firstEventAt = sql<Date>`min(${shipmentEvents.createdAt})`.mapWith(shipmentEvents.createdAt);
 
 /**
- * Filtros comunes a todos los reportes, sobre la fecha de ingreso del tramite.
- * Toma solo los campos de alcance: el `kind` no acota nada aqui.
+ * ULTIMA ACTUALIZACION del tramite: su ultimo cambio de estado. Sale del
+ * historial y no de `updated_at`, que se mueve con cualquier edicion tecnica
+ * (sincronizacion con Helga, correcciones) sin que el envio haya avanzado. Un
+ * tramite sin eventos (no deberia haberlo) cae a su fecha de creacion.
+ *
+ * `mapWith` por la misma razon que en `firstEventAt`: sin el, el driver entrega
+ * una cadena y no un Date.
  */
-function conditions(query: Pick<ReportQuery, 'clientId' | 'shipmentType' | 'from' | 'to'>): SQL[] {
+const lastMovedAt = sql<Date>`coalesce(
+  (select max(${shipmentEvents.createdAt}) from ${shipmentEvents}
+    where ${shipmentEvents.shipmentId} = ${shipments.id}),
+  ${shipments.createdAt}
+)`.mapWith(shipments.createdAt);
+
+/**
+ * Filtros comunes a todos los reportes de tramites. Toma solo los campos de
+ * alcance: el `kind` no acota nada aqui.
+ *
+ * El rango se aplica sobre `dateColumn`: por defecto la fecha de ingreso, y en
+ * los operativos la ultima actualizacion, que es la fecha que muestran. Un
+ * filtro sobre una fecha distinta de la que se ve dejaria en el reporte filas
+ * que a simple vista no caen en el rango.
+ */
+function conditions(
+  query: Pick<ReportQuery, 'clientId' | 'shipmentType' | 'from' | 'to'>,
+  dateColumn: SQL | typeof shipments.createdAt = shipments.createdAt,
+): SQL[] {
   const conds: SQL[] = [];
   if (query.clientId) conds.push(eq(shipments.clientId, query.clientId));
   if (query.shipmentType) conds.push(inArray(shipments.shipmentType, query.shipmentType));
   // Inicio inclusive, fin exclusivo: la web manda el arranque del dia siguiente,
-  // asi el ultimo dia del rango entra completo.
-  if (query.from) conds.push(gte(shipments.createdAt, new Date(query.from)));
-  if (query.to) conds.push(lt(shipments.createdAt, new Date(query.to)));
+  // asi el ultimo dia del rango entra completo. Viajan como ISO con cast
+  // explicito: sobre una expresion `sql` Drizzle no sabe serializar un Date.
+  if (query.from) conds.push(sql`${dateColumn} >= ${new Date(query.from).toISOString()}::timestamptz`);
+  if (query.to) conds.push(sql`${dateColumn} < ${new Date(query.to).toISOString()}::timestamptz`);
   return conds;
 }
 
 export const reportsRepo = {
-  /** Tramites con cliente y ruta: alimenta los reportes operativos. */
+  /**
+   * Tramites con cliente y ruta: alimenta los reportes operativos. El rango y el
+   * orden van por la ultima actualizacion, que es la fecha que muestran.
+   */
   async shipments(query: ReportQuery) {
-    const conds = conditions(query);
+    const conds = conditions(query, lastMovedAt);
     const base = db
       .select({
         code: shipments.code,
@@ -108,8 +137,10 @@ export const reportsRepo = {
         dua: shipments.dua,
         invoiceTotalUsd: shipments.invoiceTotalUsd,
         invoiceTotalCrc: shipments.invoiceTotalCrc,
-        createdAt: shipments.createdAt,
+        lastMovedAt,
         clientCode: clients.code,
+        /** Sub-casillero de Helga: la direccion con la que el cliente compra en Miami. */
+        miamiAccount: clients.helgaSubLocker,
         clientName: users.name,
         routeNumber: effectiveRouteNumber,
       })
@@ -119,7 +150,7 @@ export const reportsRepo = {
       .leftJoin(districtRoutes, districtRouteJoin)
       .leftJoin(cantonRoutes, cantonRouteJoin)
       .where(conds.length > 0 ? and(...conds) : undefined)
-      .orderBy(desc(shipments.createdAt));
+      .orderBy(desc(lastMovedAt));
 
     return base;
   },
@@ -132,6 +163,7 @@ export const reportsRepo = {
         code: shipments.code,
         shipmentType: shipments.shipmentType,
         tracking: shipments.tracking,
+        hawb: shipments.hawb,
         state: shipmentEvents.state,
         note: shipmentEvents.note,
         createdAt: shipmentEvents.createdAt,
@@ -149,59 +181,111 @@ export const reportsRepo = {
   },
 
   /**
-   * Tramites CON FACTURA aprobada y sus pagos: alimenta el estado de cuenta.
+   * PROFORMAS EMITIDAS (aprobadas o pagadas) con sus tramites y sus pagos:
+   * alimenta el estado de cuenta. Los borradores no entran: no son un documento
+   * que se le cobre a nadie.
    *
-   * Los pagos vienen como lista por tramite (no sumados en SQL) para que el
-   * total lo calcule `settledAmount` de @courier/shared, que convierte cada abono
-   * con SU propia tasa. Una suma en SQL tendria que asumir una tasa unica y
-   * daria un numero distinto al que ve el cliente en su pantalla de pago.
+   * El rango va sobre la fecha de APROBACION de la proforma, no sobre la de
+   * ingreso de los tramites: el reporte responde cuanto se facturo y cuanto se
+   * debe en el periodo, y eso lo fija la emision.
+   *
+   * Los pagos vienen como lista (no sumados en SQL) para que el total lo calcule
+   * `settledAmount` de @courier/shared, que convierte cada abono con SU propia
+   * tasa. Una suma en SQL tendria que asumir una tasa unica y daria un numero
+   * distinto al que ve el cliente en su pantalla de pago.
    */
-  async billedShipments(query: ReportQuery) {
-    const conds = conditions(query);
-    const base = db
-      .select({
-        code: shipments.code,
-        state: shipments.state,
-        description: shipments.description,
-        invoiceTotalCrc: shipments.invoiceTotalCrc,
-        createdAt: shipments.createdAt,
-        clientCode: clients.code,
-        clientName: users.name,
-        id: shipments.id,
-      })
-      .from(shipments)
-      .innerJoin(clients, eq(shipments.clientId, clients.id))
-      .innerJoin(users, eq(clients.userId, users.id))
-      .where(conds.length > 0 ? and(...conds) : undefined)
-      .orderBy(asc(clients.code), desc(shipments.createdAt));
+  async billedProformas(query: ReportQuery) {
+    const conds: SQL[] = [inArray(proformas.status, [ProformaStatus.Aprobada, ProformaStatus.Pagada])];
+    if (query.clientId) conds.push(eq(proformas.clientId, query.clientId));
+    if (query.from) conds.push(gte(proformas.approvedAt, new Date(query.from)));
+    if (query.to) conds.push(lt(proformas.approvedAt, new Date(query.to)));
+    if (query.shipmentType) {
+      // Una proforma puede juntar tipos (aereo con maritimo): entra si contiene
+      // al menos un tramite del tipo pedido.
+      conds.push(
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(proformaShipments)
+            .innerJoin(shipments, eq(proformaShipments.shipmentId, shipments.id))
+            .where(
+              and(
+                eq(proformaShipments.proformaId, proformas.id),
+                inArray(shipments.shipmentType, query.shipmentType),
+              ),
+            ),
+        ),
+      );
+    }
 
-    const rows = await base;
+    const rows = await db
+      .select({
+        id: proformas.id,
+        number: proformas.number,
+        currency: proformas.currency,
+        exchangeRate: proformas.exchangeRate,
+        totalUsd: proformas.totalUsd,
+        totalCrc: proformas.totalCrc,
+        electronicInvoiceNumber: proformas.electronicInvoiceNumber,
+        approvedAt: proformas.approvedAt,
+        paidAt: proformas.paidAt,
+        clientCode: clients.code,
+        miamiAccount: clients.helgaSubLocker,
+        clientName: users.name,
+      })
+      .from(proformas)
+      .innerJoin(clients, eq(proformas.clientId, clients.id))
+      .innerJoin(users, eq(clients.userId, users.id))
+      .where(and(...conds))
+      .orderBy(asc(clients.code), asc(proformas.number));
+
     if (rows.length === 0) return [];
 
-    const paid = await db
+    const members = await db
       .select({
-        shipmentId: payments.shipmentId,
-        amount: payments.amount,
-        currency: payments.currency,
-        exchangeRate: payments.exchangeRate,
-        status: payments.status,
+        proformaId: proformaShipments.proformaId,
+        shipmentId: proformaShipments.shipmentId,
+        weightKg: shipments.weightKg,
       })
-      .from(payments)
+      .from(proformaShipments)
+      .innerJoin(shipments, eq(proformaShipments.shipmentId, shipments.id))
       .where(
         inArray(
-          payments.shipmentId,
+          proformaShipments.proformaId,
           rows.map((r) => r.id),
         ),
       );
 
-    const byShipment = new Map<string, typeof paid>();
-    for (const p of paid) {
-      const list = byShipment.get(p.shipmentId) ?? [];
-      list.push(p);
-      byShipment.set(p.shipmentId, list);
-    }
+    const paid =
+      members.length === 0
+        ? []
+        : await db
+            .select({
+              shipmentId: payments.shipmentId,
+              amount: payments.amount,
+              currency: payments.currency,
+              exchangeRate: payments.exchangeRate,
+              status: payments.status,
+            })
+            .from(payments)
+            .where(
+              inArray(
+                payments.shipmentId,
+                members.map((m) => m.shipmentId),
+              ),
+            );
 
-    return rows.map((row) => ({ ...row, payments: byShipment.get(row.id) ?? [] }));
+    const membersBy = groupBy(members, (m) => m.proformaId);
+    const paymentsBy = groupBy(paid, (p) => p.shipmentId);
+
+    return rows.map((row) => {
+      const own = membersBy.get(row.id) ?? [];
+      return {
+        ...row,
+        shipments: own,
+        payments: own.flatMap((m) => paymentsBy.get(m.shipmentId) ?? []),
+      };
+    });
   },
 
   /**
