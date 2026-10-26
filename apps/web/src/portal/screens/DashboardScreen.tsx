@@ -55,6 +55,8 @@ interface RecentRow {
 
 interface Summary {
   queues: Queue[];
+  /** Proformas de Transporte aprobadas y sin pagar (no es un estado del trámite). */
+  transportUnpaid: number;
   pendingPayments: number;
   byType: { shipmentType: ShipmentType; total: number }[];
   /** Todos los estados con al menos un trámite, no solo los accionables. */
@@ -110,13 +112,15 @@ const QUEUE_META: Partial<Record<State, { hint: string; icon: ReactElement; targ
     ],
   },
   /* Solo Transporte: se entrega antes de cobrar, así que este cuadro es la
-     mercadería que ya salió y nadie ha facturado. Lleva a los borradores de
-     proforma porque lo que falta es justo eso, facturarla y aprobarla. */
+     mercadería que ya salió y nadie ha facturado. NO lleva a los borradores de
+     proforma: el borrador nace al pasar a "Facturación en proceso", así que
+     estos trámites todavía no tienen uno. Lo que falta es ese avance, y se
+     hace desde el tablero de Trámites. */
   [State.EntregadoPendientePago]: {
-    hint: 'Ya entregados: falta facturarlos y cobrar',
+    hint: 'Ya entregados: falta pasarlos a facturación',
     icon: <path d="M20 6L9 17l-5-5" />,
     targets: [
-      { resource: Resource.Proformas, name: 'Proformas', intent: { proformaStatus: ProformaStatus.Borrador } },
+      { resource: Resource.Tramite, name: 'Trámites', intent: { state: State.EntregadoPendientePago } },
       boardFor(State.EntregadoPendientePago),
     ],
   },
@@ -131,7 +135,11 @@ const QUEUE_META: Partial<Record<State, { hint: string; icon: ReactElement; targ
     hint: 'Proforma emitida: sin el pago no entra a aduana',
     icon: <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8" />,
     targets: [
-      { resource: Resource.Proformas, name: 'Proformas', intent: { proformaStatus: ProformaStatus.Aprobada } },
+      {
+        resource: Resource.Proformas,
+        name: 'Proformas',
+        intent: { proformaStatus: ProformaStatus.Aprobada, proformaFlow: Flow.Agenciamiento },
+      },
       boardFor(State.ProformaPendientePago),
     ],
   },
@@ -152,6 +160,35 @@ const QUEUE_META: Partial<Record<State, { hint: string; icon: ReactElement; targ
 
 const CHECK_ICON = <path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />;
 
+/** Forma comun de los cuadros que no son un estado del tramite. */
+interface ExtraTile {
+  label: string;
+  hint: string;
+  tone: Tone;
+  icon: ReactElement;
+  targets: Target[];
+}
+
+/**
+ * Cuadro del cobro de Transporte. No es un estado: Transporte factura y cobra
+ * sin salir de "Facturación en proceso", así que lo facturado y sin pagar no
+ * cae en ninguna cola por estado. Cuenta proformas aprobadas de Transporte y
+ * lleva a esa misma bandeja, para que el cuadro y el destino digan lo mismo.
+ */
+const TRANSPORT_UNPAID_TILE: ExtraTile = {
+  label: 'Transporte por cobrar',
+  hint: 'Proformas de Transporte aprobadas, sin pagar',
+  tone: STATE_TONE[State.FacturacionEnProceso],
+  icon: <path d="M21 4H3a2 2 0 00-2 2v12a2 2 0 002 2h18a2 2 0 002-2V6a2 2 0 00-2-2zM1 10h22" />,
+  targets: [
+    {
+      resource: Resource.Proformas,
+      name: 'Proformas',
+      intent: { proformaStatus: ProformaStatus.Aprobada, proformaFlow: Flow.Transporte },
+    },
+  ],
+};
+
 /**
  * Cuadro de los depositos: no es un estado del trámite, es cola de tesoreria.
  *
@@ -160,7 +197,7 @@ const CHECK_ICON = <path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5
  * aprueba o se rechaza. La cifra es de proformas, igual que esa bandeja, para
  * que el cuadro y la cabecera de destino digan lo mismo.
  */
-const PAYMENTS_TILE: { label: string; hint: string; tone: Tone; icon: ReactElement; targets: Target[] } = {
+const PAYMENTS_TILE: ExtraTile = {
   label: 'Depósitos por validar',
   hint: 'Proformas con un pago registrado, sin revisar',
   tone: 'info',
@@ -200,7 +237,7 @@ export function DashboardScreen({ allowed, onNavigate }: Props) {
   }, []);
 
   const pending = data
-    ? data.queues.reduce((sum, q) => sum + q.total, 0) + data.pendingPayments
+    ? data.queues.reduce((sum, q) => sum + q.total, 0) + data.transportUnpaid + data.pendingPayments
     : 0;
   const headline = !data
     ? 'Colas de trabajo del día'
@@ -236,7 +273,9 @@ export function DashboardScreen({ allowed, onNavigate }: Props) {
               !error &&
               /* Esqueleto: sin el, el bloque salta de vacio a lleno y la pantalla
                  parece rota mientras carga. */
-              [0, 1, 2, 3, 4, 5].map((i) => <div className="dash-tile is-skeleton" key={i} />)}
+              /* Tantos como cuadros reales (7 colas + Transporte + Depositos):
+                 con menos, la fila salta al terminar de cargar. */
+              [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => <div className="dash-tile is-skeleton" key={i} />)}
 
             {data?.queues.map((queue) => {
               const meta = QUEUE_META[queue.state];
@@ -253,6 +292,18 @@ export function DashboardScreen({ allowed, onNavigate }: Props) {
                 />
               );
             })}
+
+            {data && (
+              <Tile
+                total={data.transportUnpaid}
+                label={TRANSPORT_UNPAID_TILE.label}
+                hint={TRANSPORT_UNPAID_TILE.hint}
+                tone={TRANSPORT_UNPAID_TILE.tone}
+                icon={TRANSPORT_UNPAID_TILE.icon}
+                target={pickTarget(TRANSPORT_UNPAID_TILE.targets, allowed)}
+                onNavigate={onNavigate}
+              />
+            )}
 
             {data && (
               <Tile

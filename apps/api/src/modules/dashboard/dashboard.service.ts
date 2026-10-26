@@ -11,12 +11,13 @@ import { dashboardRepo } from './dashboard.repo';
 
 export const dashboardService = {
   async summary() {
-    const [byState, byType, pendingPayments, recent, billedInBilling] = await Promise.all([
+    const [byState, byType, pendingPayments, recent, billedInBilling, transportUnpaid] = await Promise.all([
       dashboardRepo.countByState(),
       dashboardRepo.countByType(),
       dashboardRepo.pendingPaymentCount(),
       dashboardRepo.recent(),
       dashboardRepo.billedInBillingCount(),
+      dashboardRepo.transportUnpaidCount(),
     ]);
 
     const counts = new Map(byState.map((row) => [row.state, row.total]));
@@ -28,8 +29,8 @@ export const dashboardService = {
         { state: State.Prealertado, label: 'Prealertados', total: at(State.Prealertado) },
         /**
          * Lo que falta facturar, sin los de Transporte que ya se facturaron y
-         * comparten estado (ver `billedInBillingCount`). La cifra tiene que ser
-         * la misma que ensena la cola de Costos a la que lleva el cuadro.
+         * comparten estado (ver `billedInBillingCount`): esos ya no esperan
+         * factura sino cobro, y los cuenta `transportUnpaid`.
          */
         {
           state: State.FacturacionEnProceso,
@@ -70,6 +71,13 @@ export const dashboardService = {
           total: at(State.DevueltoBodega),
         },
       ],
+      /**
+       * Proformas de Transporte aprobadas y sin pagar. Va aparte de `queues`
+       * porque no es un estado del tramite: Transporte cobra sin salir de
+       * "Facturacion en proceso", y sin esta cifra ese cobro no salia en
+       * ningun cuadro.
+       */
+      transportUnpaid,
       /** Proformas con un pago esperando validacion del administrador. */
       pendingPayments,
       byType,

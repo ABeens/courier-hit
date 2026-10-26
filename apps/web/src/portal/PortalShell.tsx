@@ -465,6 +465,7 @@ export function PortalShell({ me, onLoggedOut }: { me: Me; onLoggedOut: () => vo
               key={nav?.key}
               role={me.role}
               initialStatus={nav?.intent.proformaStatus}
+              initialFlow={nav?.intent.proformaFlow}
               initialPendingValidation={nav?.intent.pendingValidation}
             />
           ) : current === Resource.Config ? (

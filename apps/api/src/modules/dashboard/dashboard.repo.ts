@@ -7,11 +7,11 @@
  * que el cuadro dijera una cifra y la pantalla destino otra.
  */
 import { and, count, countDistinct, desc, eq, isNotNull, isNull } from 'drizzle-orm';
-import { PaymentStatus, State } from '@courier/shared';
+import { Flow, PaymentStatus, ProformaStatus, State } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { payments } from '../payments/payments.schema';
-import { proformaShipments } from '../proformas/proformas.schema';
+import { proformaShipments, proformas } from '../proformas/proformas.schema';
 import { shipments } from '../shipments/shipments.schema';
 
 export const dashboardRepo = {
@@ -43,6 +43,22 @@ export const dashboardRepo = {
           isNull(shipments.discardedAt),
         ),
       );
+    return row?.total ?? 0;
+  },
+
+  /**
+   * PROFORMAS de Transporte aprobadas y sin pagar: lo facturado que falta cobrar.
+   *
+   * Transporte factura y cobra en el mismo estado, asi que este cobro no tiene
+   * un estado propio que contar (ver `billedInBillingCount`). Se cuentan
+   * proformas y no tramites porque el cuadro lleva a la bandeja de Proformas
+   * con estado Aprobada y tipo Transporte: el mismo filtro, la misma cifra.
+   */
+  async transportUnpaidCount() {
+    const [row] = await db
+      .select({ total: count() })
+      .from(proformas)
+      .where(and(eq(proformas.status, ProformaStatus.Aprobada), eq(proformas.flow, Flow.Transporte)));
     return row?.total ?? 0;
   },
 

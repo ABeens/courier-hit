@@ -119,11 +119,14 @@ export function openProformaDocument(id: string): void {
 export function ProformasScreen({
   role,
   initialStatus,
+  initialFlow,
   initialPendingValidation,
 }: {
   role: Role;
   /** Estado de arranque (lo fija el Resumen al llegar desde un cuadro). */
   initialStatus?: ProformaStatus;
+  /** Tipo de trámite de arranque (cuadros del Resumen de un solo flujo). */
+  initialFlow?: Flow;
   /** Arranca en la cola de pagos por validar (cuadro del Resumen). */
   initialPendingValidation?: boolean;
 }) {
@@ -139,7 +142,7 @@ export function ProformasScreen({
       (initialPendingValidation ? '' : canManage ? ProformaStatus.Borrador : canDispatch ? ProformaStatus.Pagada : ''),
   );
   const [pendingValidation, setPendingValidation] = useState(initialPendingValidation ?? false);
-  const [flow, setFlow] = useState<Flow | ''>('');
+  const [flow, setFlow] = useState<Flow | ''>(initialFlow ?? '');
   const [q, setQ] = useState('');
   /** Rango de dias (YYYY-MM-DD, calendario local) sobre la columna "Fecha". */
   const [from, setFrom] = useState('');

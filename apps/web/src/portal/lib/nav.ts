@@ -9,7 +9,7 @@
  * Vive en `lib/` y no en PortalShell para que las pantallas lo importen sin
  * cerrar un ciclo con el modulo que las renderiza.
  */
-import type { ProformaStatus, State } from '@courier/shared';
+import type { Flow, ProformaStatus, State } from '@courier/shared';
 import type { ShipmentView } from '../screens/ShipmentsScreen';
 
 export interface NavIntent {
@@ -21,6 +21,8 @@ export interface NavIntent {
   q?: string;
   /** Estado inicial de la bandeja de Proformas. */
   proformaStatus?: ProformaStatus;
+  /** Tipo de trámite inicial de la bandeja de Proformas. */
+  proformaFlow?: Flow;
   /** Proformas con un pago por validar (cola de tesorería). */
   pendingValidation?: boolean;
 }

@@ -541,24 +541,8 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
                     ))}
                   </dl>
                 )}
-                {editable && (
-                  <div className="pay-sec-actions">
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() =>
-                        setCosts({
-                          kind: 'proforma',
-                          id: data.id,
-                          title: 'Servicios de la proforma',
-                          subtitle: `${data.client.name} · se cobran por la proforma entera, no por un paquete`,
-                        })
-                      }
-                    >
-                      Editar servicios
-                    </button>
-                  </div>
-                )}
+                {/* Sin boton de edicion: los costos se cargan por tramite, no a la
+                    proforma entera. Los servicios que ya existan se siguen mostrando. */}
               </div>
 
               {canSeePayments && data.status !== ProformaStatus.Borrador && (
