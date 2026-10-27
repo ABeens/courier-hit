@@ -527,23 +527,8 @@ export function ProformaDetailModal({ id, role, onClose, onOpen }: Props) {
                 )}
               </div>
 
-              <div className="pay-sec">
-                <div className="card-sec-title">Servicios de la proforma</div>
-                {data.costs.length === 0 ? (
-                  <div className="cell-sub">Sin servicios adicionales.</div>
-                ) : (
-                  <dl className="pay-fields">
-                    {data.costs.map((c) => (
-                      <div className="card-item-field" key={c.id}>
-                        <dt>{c.label}</dt>
-                        <dd>{formatMoney(c.amount, c.currency)}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-                {/* Sin boton de edicion: los costos se cargan por tramite, no a la
-                    proforma entera. Los servicios que ya existan se siguen mostrando. */}
-              </div>
+              {/* Sin seccion de servicios de la proforma: los costos se cargan y se
+                  ven por tramite, no a la proforma entera. */}
 
               {canSeePayments && data.status !== ProformaStatus.Borrador && (
                 <ProformaPendingPayments

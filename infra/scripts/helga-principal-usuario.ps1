@@ -16,7 +16,7 @@
 #   powershell -ExecutionPolicy Bypass -File .\infra\scripts\helga-principal-usuario.ps1
 #
 # Para volver atras, se lanza otra vez con el correo anterior:
-#   ... helga-principal-usuario.ps1 -Username servicioalcliente1@hsglobal-services.com
+#   ... helga-principal-usuario.ps1 -Username casillero-hs@hsglobal-services.com
 
 param(
   [string]$Username = 'casillero-hs@hsglobal-services.com',

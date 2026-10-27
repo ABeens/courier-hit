@@ -179,6 +179,9 @@ export function registerJobs(scheduler: Scheduler): void {
           return;
         }
         const r = await providerDiscoveryService.run(session);
+        // Corre cada pocos minutos: una corrida sin novedades no deja linea en el
+        // log, o el dia entero seria ruido.
+        if (r.created === 0 && r.unassigned === 0 && r.invalid === 0 && r.failed === 0) return;
         console.log(
           `[scheduler] helga-discovery: cuentas=${r.accounts} listados=${r.fetched} ` +
             `creados=${r.created} sin_dueno=${r.unassigned} conocidos=${r.known} ` +

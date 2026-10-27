@@ -3,7 +3,7 @@
  *
  * Los filtros son los mismos del dashboard de tramites (rango de fechas, tipo,
  * cliente) porque un reporte ES el dashboard exportado: si divergieran, el
- * usuario veria una cosa en pantalla y otra en el CSV.
+ * usuario veria una cosa en pantalla y otra en el Excel.
  */
 import { z } from 'zod';
 import { ShipmentType } from '../workflow/shipment-type';
@@ -29,8 +29,8 @@ export const reportQuerySchema = z.object({
     errorMap: () => ({ message: 'Elige un reporte válido.' }),
   }),
   ...scopeFields,
-  /** `csv` descarga el archivo; sin esto la respuesta es JSON para la tabla. */
-  format: z.enum(['json', 'csv']).default('json'),
+  /** `xlsx` descarga el archivo; sin esto la respuesta es JSON para la tabla. */
+  format: z.enum(['json', 'xlsx']).default('json'),
 });
 export type ReportQuery = z.infer<typeof reportQuerySchema>;
 

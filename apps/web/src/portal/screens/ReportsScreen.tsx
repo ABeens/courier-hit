@@ -85,15 +85,15 @@ export function ReportsScreen() {
    * recibir el `content-disposition` para guardar el archivo, y la cookie de
    * sesión viaja igual por ser el mismo origen de la API.
    */
-  function downloadCsv() {
+  function downloadXlsx() {
     const params = buildParams();
-    params.set('format', 'csv');
+    params.set('format', 'xlsx');
     window.open(`${API_BASE}/api/reports?${params.toString()}`, '_blank');
   }
 
   /**
    * Lo aplicado sobre el reporte. Aqui importa mas que en un listado: lo que
-   * se ve en pantalla es lo que se descarga en CSV, y un recorte escondido
+   * se ve en pantalla es lo que se descarga en Excel, y un recorte escondido
    * viaja dentro del archivo sin que nada lo diga.
    */
   const chips: FilterChip[] = [
@@ -123,8 +123,8 @@ export function ReportsScreen() {
           {selected && <div className="count">{selected.description}</div>}
         </div>
         <div className="actions">
-          <button className="btn btn-primary" onClick={downloadCsv} disabled={!report || !kind}>
-            Descargar CSV
+          <button className="btn btn-primary" onClick={downloadXlsx} disabled={!report || !kind}>
+            Descargar Excel
           </button>
         </div>
       </div>

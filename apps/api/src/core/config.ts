@@ -493,9 +493,9 @@ const EnvSchema = z.object({
    */
   ROBOT_PACKAGE_DISCOVERY_EVERY: z
     .string()
-    .default('15m')
+    .default('2m')
     .refine(isValidDuration, {
-      message: 'ROBOT_PACKAGE_DISCOVERY_EVERY debe ser una duracion valida (p. ej. "15m", "1h").',
+      message: 'ROBOT_PACKAGE_DISCOVERY_EVERY debe ser una duracion valida (p. ej. "2m", "15m").',
     }),
 }).superRefine((env, ctx) => {
   // OJO: la tasa de referencia (HACIENDA_*) NO se valida aqui a proposito. No

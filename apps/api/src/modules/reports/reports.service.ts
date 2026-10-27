@@ -8,10 +8,10 @@
  *    asi que recortar en la UI no bastaria: el servidor arma la fila con las
  *    columnas del reporte y no con todo lo que tiene a mano.
  * 2. LAS COLUMNAS SALEN DE @courier/shared. `REPORT_COLUMNS` es la fuente unica:
- *    la tabla de la pantalla y el CSV descargado tienen las mismas, en el mismo
+ *    la tabla de la pantalla y el Excel descargado tienen las mismas, en el mismo
  *    orden, sin repetir la lista.
  * 3. LOS MONTOS VIAJAN COMO NUMEROS CRUDOS. El formateo con simbolo de moneda es
- *    presentacion (`formatMoney`); meterlo en el CSV convertiria una columna
+ *    presentacion (`formatMoney`); meterlo en el Excel convertiria una columna
  *    calculable en texto y rompería cualquier hoja de calculo que la sume.
  */
 import {
@@ -70,16 +70,6 @@ function project(kind: ReportKind, source: Record<string, unknown>): ReportRow {
 }
 
 /**
- * Escapa un valor para CSV: comillas dobladas y el campo entrecomillado si lleva
- * separador, comillas o salto de linea. Punto unico del escapado.
- */
-function csvCell(value: string | number | null): string {
-  if (value === null) return '';
-  const text = String(value);
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-/**
  * Acota el filtro de tipo de tramite a los que ese reporte cubre.
  *
  * INTERSECCION y no reemplazo: el reporte de Agenciamiento incluye aereo y
@@ -128,7 +118,7 @@ function collectionColumns(row: ServiceRow) {
     /**
      * El numero de comprobante si lo hay; si no, se dice que existe un archivo
      * adjunto. La clave del almacen NO viaja: es opaca, no sirve para nada fuera
-     * del sistema y en un CSV solo seria ruido.
+     * del sistema y en el Excel solo seria ruido.
      */
     receipt: reference?.receiptNumber ?? (reference?.receiptFileKey ? 'Adjunto' : null),
     paidAt: settledAt(row.payments, basis),
@@ -153,7 +143,7 @@ function collectionColumns(row: ServiceRow) {
  * ASOCIADOS) se desglosan con el costo NETO de cada linea, y MONTO FACTURA sigue
  * siendo lo facturado. COSTO NETO es la suma de las columnas de costo que se ven
  * en la fila, y el PROFIT es MONTO FACTURA menos COSTO NETO en los dos flujos:
- * quien abre el CSV puede rehacer la resta con las columnas que tiene delante.
+ * quien abre el Excel puede rehacer la resta con las columnas que tiene delante.
  *
  * MES es el mes de FACTURACION (aprobacion de la proforma) en los dos flujos:
  * el reporte se usa para cerrar meses, y eso lo fija la factura, no la entrega.
@@ -304,15 +294,6 @@ async function financialRows(query: ReportQuery): Promise<ReportRow[]> {
       paidAt: row.paidAt,
     });
   });
-}
-
-/** Serializa el reporte a CSV con BOM, para que Excel respete los acentos. */
-export function toCsv(report: ReportDto): string {
-  const header = report.columns.map((c) => csvCell(c.label)).join(',');
-  const lines = report.rows.map((row) =>
-    report.columns.map((c) => csvCell(row[c.key] ?? null)).join(','),
-  );
-  return `﻿${[header, ...lines].join('\r\n')}`;
 }
 
 export const reportsService = {

@@ -19,7 +19,8 @@ import {
 import type { AppEnv } from '../../core/http';
 import { requireAnyPermission } from '../../core/middleware/requireAnyPermission';
 import { requireSession } from '../../core/middleware/requireSession';
-import { reportsService, toCsv } from './reports.service';
+import { reportsService } from './reports.service';
+import { renderReportXlsx } from './reports.xlsx';
 
 export const reportsRoutes = new Hono<AppEnv>();
 
@@ -57,10 +58,10 @@ reportsRoutes.get('/', zValidator('query', reportQuerySchema), async (c) => {
   const query = c.req.valid('query');
   const report = await reportsService.generate(c.get('session'), query);
 
-  if (query.format !== 'csv') return c.json(report);
+  if (query.format !== 'xlsx') return c.json(report);
 
-  return c.body(toCsv(report), 200, {
-    'content-type': 'text/csv; charset=utf-8',
-    'content-disposition': `attachment; filename="${query.kind}.csv"`,
+  return c.body(await renderReportXlsx(report), 200, {
+    'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'content-disposition': `attachment; filename="${query.kind}.xlsx"`,
   });
 });

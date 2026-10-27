@@ -111,7 +111,7 @@ export interface DiscoveryReport {
    * Son las UNICAS que se siguen tirando, y no por criterio sino por una
    * limitacion dura: el tracking es la llave con la que se sabe si una fila ya
    * se importo. Sin ella, cada corrida del robot volveria a dar de alta el mismo
-   * paquete, y en quince minutos la cola de sin dueño serian copias. El alta
+   * paquete, y en pocos minutos la cola de sin dueño serian copias. El alta
    * manual de la sala de control si puede prescindir del tracking porque la hace
    * una persona una sola vez.
    */
