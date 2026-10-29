@@ -10,12 +10,48 @@
  * `@courier/shared` lo hace aparecer aquí sin tocar este archivo.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { ReportKind, SHIPMENT_TYPE_LABELS, ShipmentType } from '@courier/shared';
+import {
+  REPORT_MAX_RANGE_MONTHS,
+  ReportKind,
+  SHIPMENT_TYPE_LABELS,
+  ShipmentType,
+  addUtcMonths,
+} from '@courier/shared';
 import type { ReportColumn, ReportRow } from '@courier/shared';
 import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
 import { API_BASE, ApiError, api } from '../lib/api';
-import { formatDayInput, startOfLocalDayUtc, startOfNextLocalDayUtc } from '../lib/datetime';
+import {
+  formatDayInput,
+  startOfLocalDayUtc,
+  startOfNextLocalDayUtc,
+  toDayInput,
+} from '../lib/datetime';
+
+/** Rango por defecto: el mes en curso, del dia 1 a hoy. */
+function currentMonthRange(): { from: string; to: string } {
+  const today = new Date();
+  return {
+    from: toDayInput(new Date(today.getFullYear(), today.getMonth(), 1)),
+    to: toDayInput(today),
+  };
+}
+
+/**
+ * Valida el rango con la MISMA regla que la API (`reportQuerySchema`), sobre los
+ * mismos instantes que se envian: asi la pantalla avisa antes de pedir y no hay
+ * un rango que aqui pase y alla se rechace.
+ */
+function rangeError(from: string, to: string): string | null {
+  if (!from || !to) return 'Elige las fechas "Desde" y "Hasta".';
+  const start = new Date(startOfLocalDayUtc(from));
+  const end = new Date(startOfNextLocalDayUtc(to));
+  if (start >= end) return 'La fecha "Desde" debe ser anterior a "Hasta".';
+  if (end > addUtcMonths(start, REPORT_MAX_RANGE_MONTHS)) {
+    return `El rango de fechas no puede superar ${REPORT_MAX_RANGE_MONTHS} meses.`;
+  }
+  return null;
+}
 
 interface CatalogItem {
   kind: ReportKind;
@@ -33,8 +69,8 @@ export function ReportsScreen() {
   const [catalog, setCatalog] = useState<CatalogItem[] | null>(null);
   const [kind, setKind] = useState<ReportKind | ''>('');
   const [type, setType] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [from, setFrom] = useState(() => currentMonthRange().from);
+  const [to, setTo] = useState(() => currentMonthRange().to);
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -58,13 +94,21 @@ export function ReportsScreen() {
     const params = new URLSearchParams();
     if (kind) params.set('kind', kind);
     if (type) params.set('shipmentType', type);
-    if (from) params.set('from', startOfLocalDayUtc(from));
-    if (to) params.set('to', startOfNextLocalDayUtc(to));
+    params.set('from', startOfLocalDayUtc(from));
+    params.set('to', startOfNextLocalDayUtc(to));
     return params;
   }, [kind, type, from, to]);
 
+  const invalidRange = rangeError(from, to);
+
   const load = useCallback(async () => {
     if (!kind) return;
+    // Sin rango valido no se pide nada: la API lo rechazaria igual, y la tabla
+    // anterior se quita para que no parezca el resultado del rango nuevo.
+    if (invalidRange) {
+      setReport(null);
+      return;
+    }
     setLoading(true);
     try {
       setReport(await api.get<ReportResponse>(`/reports?${buildParams().toString()}`));
@@ -74,7 +118,7 @@ export function ReportsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [buildParams, kind]);
+  }, [buildParams, kind, invalidRange]);
 
   useEffect(() => {
     void load();
@@ -103,14 +147,17 @@ export function ReportsScreen() {
           onClear: () => setType(''),
         }]
       : []),
-    ...(from ? [{ label: `Desde: ${formatDayInput(from)}`, onClear: () => setFrom('') }] : []),
-    ...(to ? [{ label: `Hasta: ${formatDayInput(to)}`, onClear: () => setTo('') }] : []),
+    // Las fechas son obligatorias: quitar el chip no las vacia, las devuelve al
+    // mes en curso.
+    ...(from ? [{ label: `Desde: ${formatDayInput(from)}`, onClear: () => setFrom(currentMonthRange().from) }] : []),
+    ...(to ? [{ label: `Hasta: ${formatDayInput(to)}`, onClear: () => setTo(currentMonthRange().to) }] : []),
   ];
 
   function clearFilters() {
+    const range = currentMonthRange();
     setType('');
-    setFrom('');
-    setTo('');
+    setFrom(range.from);
+    setTo(range.to);
   }
 
   const selected = catalog?.find((item) => item.kind === kind);
@@ -129,7 +176,9 @@ export function ReportsScreen() {
         </div>
       </div>
 
-      {error && <div className="banner err" style={{ marginBottom: 14 }}>{error}</div>}
+      {(invalidRange ?? error) && (
+        <div className="banner err" style={{ marginBottom: 14 }}>{invalidRange ?? error}</div>
+      )}
 
       <FilterBar
         /* El reporte NO se pliega: no recorta un listado, lo elige. Con el
@@ -168,14 +217,14 @@ export function ReportsScreen() {
           <div>
             <label className="field-label" htmlFor="f-from">Desde</label>
             <input
-              id="f-from" className="input" type="date" value={from}
+              id="f-from" className="input" type="date" value={from} required
               onChange={(e) => setFrom(e.target.value)}
             />
           </div>
           <div>
             <label className="field-label" htmlFor="f-to">Hasta</label>
             <input
-              id="f-to" className="input" type="date" value={to}
+              id="f-to" className="input" type="date" value={to} required
               onChange={(e) => setTo(e.target.value)}
             />
           </div>

@@ -1806,6 +1806,17 @@ select.input { cursor: pointer; padding-right: 30px; }
   color: var(--ink); letter-spacing: -0.03em;
 }
 .dash-tile-label { font-size: 13px; font-weight: 700; color: var(--ink); margin-top: 3px; }
+/* De que tipo de trámite es la cola, tambien cuando cuenta todos los tipos
+   ("Proformas por aprobar"), que el titulo no lo dice. Usa el matiz de cada flujo del
+   reparto por tipo, para que el mismo flujo se vea igual en toda la pantalla. */
+.dash-tile-flows { display: flex; flex-wrap: wrap; gap: 4px; }
+.dash-flow {
+  font-size: 10.5px; font-weight: 700; line-height: 1.5; padding: 0 7px; border-radius: 999px;
+  background: var(--paper-2); color: var(--ink-2);
+}
+.dash-flow.flow-paqueteria { background: var(--brand-soft); color: var(--brand); }
+.dash-flow.flow-transporte { background: var(--info-soft); color: var(--info); }
+.dash-flow.flow-agenciamiento { background: var(--purple-soft); color: var(--purple); }
 /* La explicacion se recorta a dos lineas: mas alla de eso el cuadro crece y
    deja de caber la fila entera en pantalla, que es justo lo que se busca. */
 .dash-tile-hint {
@@ -1835,10 +1846,11 @@ button.dash-tile:hover .dash-tile-go svg { transform: translateX(3px); }
 .dash-tile.is-empty .dash-tile-ic { background: var(--paper-2); color: var(--faint); }
 .dash-tile.is-empty .dash-tile-label { color: var(--ink-2); }
 .dash-tile.is-empty .dash-tile-go { color: var(--faint); }
+.dash-tile.is-empty .dash-flow { opacity: .6; }
 
 /* Esqueleto de carga: mismo hueco que el cuadro real, sin contenido inventado. */
 .dash-tile.is-skeleton {
-  min-height: 118px;
+  min-height: 136px;
   background: var(--paper-2); border-color: var(--line-2); box-shadow: none;
   animation: pulseDot 1.5s ease-in-out infinite;
 }

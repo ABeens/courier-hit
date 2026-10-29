@@ -103,14 +103,16 @@ function conditions(
   query: Pick<ReportQuery, 'clientId' | 'shipmentType' | 'from' | 'to'>,
   dateColumn: SQL | typeof shipments.createdAt = shipments.createdAt,
 ): SQL[] {
-  const conds: SQL[] = [];
+  // Un paquete descartado sale de las pantallas y de los reportes; el dashboard
+  // ya lo excluye, y un reporte que lo contara no cuadraria con el.
+  const conds: SQL[] = [isNull(shipments.discardedAt)];
   if (query.clientId) conds.push(eq(shipments.clientId, query.clientId));
   if (query.shipmentType) conds.push(inArray(shipments.shipmentType, query.shipmentType));
   // Inicio inclusive, fin exclusivo: la web manda el arranque del dia siguiente,
   // asi el ultimo dia del rango entra completo. Viajan como ISO con cast
   // explicito: sobre una expresion `sql` Drizzle no sabe serializar un Date.
-  if (query.from) conds.push(sql`${dateColumn} >= ${new Date(query.from).toISOString()}::timestamptz`);
-  if (query.to) conds.push(sql`${dateColumn} < ${new Date(query.to).toISOString()}::timestamptz`);
+  conds.push(sql`${dateColumn} >= ${new Date(query.from).toISOString()}::timestamptz`);
+  conds.push(sql`${dateColumn} < ${new Date(query.to).toISOString()}::timestamptz`);
   return conds;
 }
 
@@ -195,10 +197,12 @@ export const reportsRepo = {
    * distinto al que ve el cliente en su pantalla de pago.
    */
   async billedProformas(query: ReportQuery) {
-    const conds: SQL[] = [inArray(proformas.status, [ProformaStatus.Aprobada, ProformaStatus.Pagada])];
+    const conds: SQL[] = [
+      inArray(proformas.status, [ProformaStatus.Aprobada, ProformaStatus.Pagada]),
+      gte(proformas.approvedAt, new Date(query.from)),
+      lt(proformas.approvedAt, new Date(query.to)),
+    ];
     if (query.clientId) conds.push(eq(proformas.clientId, query.clientId));
-    if (query.from) conds.push(gte(proformas.approvedAt, new Date(query.from)));
-    if (query.to) conds.push(lt(proformas.approvedAt, new Date(query.to)));
     if (query.shipmentType) {
       // Una proforma puede juntar tipos (aereo con maritimo): entra si contiene
       // al menos un tramite del tipo pedido.

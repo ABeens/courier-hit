@@ -6,8 +6,9 @@
  * el listado al que lleva cada cifra tambien los esconde. Contarlos aqui hacia
  * que el cuadro dijera una cifra y la pantalla destino otra.
  */
-import { and, count, countDistinct, desc, eq, isNotNull, isNull } from 'drizzle-orm';
-import { Flow, PaymentStatus, ProformaStatus, State } from '@courier/shared';
+import { and, count, countDistinct, desc, eq, isNull } from 'drizzle-orm';
+import { PaymentStatus, ProformaStatus } from '@courier/shared';
+import type { Flow } from '@courier/shared';
 import { db } from '../../core/db';
 import { clients, users } from '../auth/auth.schema';
 import { payments } from '../payments/payments.schema';
@@ -25,40 +26,19 @@ export const dashboardRepo = {
   },
 
   /**
-   * Tramites parados en "Facturacion en proceso" que YA tienen factura.
+   * PROFORMAS en un estado, opcionalmente de un solo flujo.
    *
-   * Solo Transporte llega aqui: es el unico flujo que factura y cobra en el mismo
-   * estado, asi que al aprobar los costos no se mueve. Se descuentan del cuadro
-   * "Por facturar" porque ahi ya no hay nada que facturar, y porque si no la
-   * cifra del cuadro no cuadraba con la cola a la que lleva.
+   * Los cuadros que llevan a la bandeja de Proformas cuentan con esto, y no
+   * tramites, porque la bandeja lista proformas: Paqueteria agrupa todos los
+   * paquetes de un cliente en un mismo borrador, asi que contar tramites hacia
+   * que el cuadro dijera 5 y la bandeja mostrara 1. Es el mismo filtro de
+   * estado y flujo que aplica la bandeja, para que ambos digan la misma cifra.
    */
-  async billedInBillingCount() {
-    const [row] = await db
-      .select({ total: count() })
-      .from(shipments)
-      .where(
-        and(
-          eq(shipments.state, State.FacturacionEnProceso),
-          isNotNull(shipments.invoiceTotalCrc),
-          isNull(shipments.discardedAt),
-        ),
-      );
-    return row?.total ?? 0;
-  },
-
-  /**
-   * PROFORMAS de Transporte aprobadas y sin pagar: lo facturado que falta cobrar.
-   *
-   * Transporte factura y cobra en el mismo estado, asi que este cobro no tiene
-   * un estado propio que contar (ver `billedInBillingCount`). Se cuentan
-   * proformas y no tramites porque el cuadro lleva a la bandeja de Proformas
-   * con estado Aprobada y tipo Transporte: el mismo filtro, la misma cifra.
-   */
-  async transportUnpaidCount() {
+  async proformaCount(status: ProformaStatus, flow?: Flow) {
     const [row] = await db
       .select({ total: count() })
       .from(proformas)
-      .where(and(eq(proformas.status, ProformaStatus.Aprobada), eq(proformas.flow, Flow.Transporte)));
+      .where(and(eq(proformas.status, status), flow ? eq(proformas.flow, flow) : undefined));
     return row?.total ?? 0;
   },
 

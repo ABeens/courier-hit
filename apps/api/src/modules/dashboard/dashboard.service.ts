@@ -6,36 +6,43 @@
  * exactamente los estados sobre los que alguien tiene que actuar —facturar,
  * cobrar, repartir— y no un conteo de todo lo que existe.
  */
-import { State } from '@courier/shared';
+import { Flow, ProformaStatus, State } from '@courier/shared';
 import { dashboardRepo } from './dashboard.repo';
 
 export const dashboardService = {
   async summary() {
-    const [byState, byType, pendingPayments, recent, billedInBilling, transportUnpaid] = await Promise.all([
-      dashboardRepo.countByState(),
-      dashboardRepo.countByType(),
-      dashboardRepo.pendingPaymentCount(),
-      dashboardRepo.recent(),
-      dashboardRepo.billedInBillingCount(),
-      dashboardRepo.transportUnpaidCount(),
-    ]);
+    const [byState, byType, pendingPayments, recent, drafts, agencyUnpaid, transportUnpaid] =
+      await Promise.all([
+        dashboardRepo.countByState(),
+        dashboardRepo.countByType(),
+        dashboardRepo.pendingPaymentCount(),
+        dashboardRepo.recent(),
+        dashboardRepo.proformaCount(ProformaStatus.Borrador),
+        dashboardRepo.proformaCount(ProformaStatus.Aprobada, Flow.Agenciamiento),
+        dashboardRepo.proformaCount(ProformaStatus.Aprobada, Flow.Transporte),
+      ]);
 
     const counts = new Map(byState.map((row) => [row.state, row.total]));
     const at = (state: State) => counts.get(state) ?? 0;
 
     return {
-      /** Colas accionables, en el orden del flujo. */
+      /**
+       * Colas accionables, en el orden del flujo. Cuando el estado es de un solo
+       * flujo, la etiqueta lo nombra ("Paquetes...", "Transporte...",
+       * "Agenciamiento..."): sin eso el cuadro no dice de que trámites habla.
+       */
       queues: [
         { state: State.Prealertado, label: 'Prealertados', total: at(State.Prealertado) },
         /**
-         * Lo que falta facturar, sin los de Transporte que ya se facturaron y
-         * comparten estado (ver `billedInBillingCount`): esos ya no esperan
-         * factura sino cobro, y los cuenta `transportUnpaid`.
+         * Lo que falta facturar, contado en PROFORMAS en borrador (de los tres
+         * flujos) y no en tramites: el cuadro lleva a esa bandeja, y Paqueteria
+         * agrupa los paquetes de un cliente en un solo borrador. `state` queda
+         * como clave del cuadro (tono, destino), no como lo que se cuenta.
          */
         {
           state: State.FacturacionEnProceso,
-          label: 'Por facturar',
-          total: at(State.FacturacionEnProceso) - billedInBilling,
+          label: 'Proformas por aprobar',
+          total: drafts,
         },
         /**
          * Entregado sin facturar: solo Transporte. La mercaderia ya salio y
@@ -46,28 +53,29 @@ export const dashboardService = {
          */
         {
           state: State.EntregadoPendientePago,
-          label: 'Entregados sin facturar',
+          label: 'Transporte entregado sin facturar',
           total: at(State.EntregadoPendientePago),
         },
         {
           state: State.EnBodegaPendientePago,
-          label: 'Pendientes de pago',
+          label: 'Paquetes pendientes de pago',
           total: at(State.EnBodegaPendientePago),
         },
         /**
-         * La proforma de Agenciamiento esperando el pago. Es una cola de cobro
-         * propia y no se suma a la de arriba porque bloquea algo distinto: sin
-         * pagar, el tramite no entra a aduana.
+         * Las proformas de Agenciamiento aprobadas esperando el pago. Es una
+         * cola de cobro propia y no se suma a la de arriba porque bloquea algo
+         * distinto: sin pagar, el tramite no entra a aduana. Cuenta proformas,
+         * igual que la bandeja a la que lleva (mismo motivo que la de arriba).
          */
         {
           state: State.ProformaPendientePago,
-          label: 'Proformas por cobrar',
-          total: at(State.ProformaPendientePago),
+          label: 'Agenciamiento por cobrar',
+          total: agencyUnpaid,
         },
-        { state: State.EnRutaEntrega, label: 'En ruta', total: at(State.EnRutaEntrega) },
+        { state: State.EnRutaEntrega, label: 'Paquetes en ruta', total: at(State.EnRutaEntrega) },
         {
           state: State.DevueltoBodega,
-          label: 'Devueltos a bodega',
+          label: 'Paquetes devueltos a bodega',
           total: at(State.DevueltoBodega),
         },
       ],

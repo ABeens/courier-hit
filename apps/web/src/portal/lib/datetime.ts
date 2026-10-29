@@ -61,6 +61,16 @@ export function formatDayInput(day: string): string {
 }
 
 /**
+ * Fecha local -> valor de un <input type="date"> (YYYY-MM-DD). Sin `toISOString`,
+ * que daria el dia en UTC y en Costa Rica, despues de las 18:00, ya es manana.
+ */
+export function toDayInput(date: Date): string {
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${m}-${d}`;
+}
+
+/**
  * Dia elegido en un <input type="date"> (YYYY-MM-DD, hora local) -> instante UTC
  * del ARRANQUE de ese dia. Es el extremo inclusivo de un filtro de rango.
  */

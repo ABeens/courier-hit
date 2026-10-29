@@ -1,29 +1,17 @@
 # Aplica las migraciones pendientes a la base de datos LOCAL.
 #
 # Cuando hace falta: despues de traerse un cambio que agrega ficheros en
-# apps/api/drizzle/. La ultima es 0040_delivery_photos.sql: un intento de entrega
-# pasa de UNA foto a hasta tres. Cambia `delivery_attempts.photo_file_key` (texto)
-# por `photo_file_keys` (array de texto) y conserva lo que ya habia como primer
-# elemento, asi que ninguna prueba de entrega se pierde.
-#
-# Antes va 0038_aduana_states.sql: agrega al enum
-# `shipment_state` los dos estados de aduana que pidio el cliente,
-# `liberado_aduanas` (Transporte y Agenciamiento) y `aforando` (Agenciamiento).
-# Antes van las tres del recargo por la comision de la pasarela al pagar con
-# tarjeta: 0035_card_surcharge.sql (`surcharge_amount` en `payments` y
-# `payment_groups`), 0036_cost_line_payment.sql (`payment_id` en
-# `shipment_costs`) y 0037_card_surcharge_setting.sql (el porcentaje y el fijo en
-# `app_settings`, con su historial).
+# apps/api/drizzle/. Lo que hace cada migracion esta en su propio .sql (y en los
+# comentarios que lleve dentro); aqui no se lleva la cuenta para que no se
+# desactualice.
 #
 # Que hace: corre drizzle-kit migrate contra la DATABASE_URL de apps/api/.env.
-# Es incremental e idempotente: aplica solo lo que falta y no toca lo ya
-# aplicado. Las columnas nacen con DEFAULT 0, asi que los cobros anteriores
-# quedan con recargo cero y nada que rellenar a mano.
+# Es incremental e idempotente: aplica solo lo que falta (segun la tabla
+# drizzle.__drizzle_migrations) y no toca lo ya aplicado. Correrlo con la base
+# al dia no hace nada.
 #
-# La 0038 solo AGREGA valores al enum: no reescribe ninguna fila, ningun tramite
-# cambia de estado y ningun estado deja de existir. Lo unico que cambia es que
-# desde "Proceso de Aduanas" el siguiente avance ya no es "Facturacion en
-# proceso" sino el estado de aduana nuevo.
+# Los NOTICE de "el esquema drizzle ya existe" y "la relacion
+# __drizzle_migrations ya existe" son normales: no son errores.
 #
 # En la nube NO se corre esto: /opt/courier/deploy.sh aplica las migraciones al
 # desplegar (ver infra/scripts/reload-api-env.ps1).

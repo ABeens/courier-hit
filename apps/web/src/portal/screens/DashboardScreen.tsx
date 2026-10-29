@@ -34,6 +34,7 @@ import { formatDate } from '../lib/datetime';
 import { STATE_TONE } from '../lib/tone';
 import type { Tone } from '../lib/tone';
 import type { NavIntent } from '../lib/nav';
+import type { ShipmentView } from './ShipmentsScreen';
 
 interface Queue {
   state: State;
@@ -81,20 +82,36 @@ interface Props {
   onNavigate: (resource: Resource, intent?: NavIntent) => void;
 }
 
-/** Listado de trámites abierto en su vista amplia y acotado a un estado. */
-function boardFor(state: State): Target {
-  return { resource: Resource.Package, name: 'Ver listado', intent: { view: 'todos', state } };
+/**
+ * Listado de trámites acotado a un estado. La vista va con el tipo de trámite
+ * de la cola: un estado que solo existe en Paquetería abre el tablero de
+ * Paquetería, y uno de varios flujos, la vista amplia.
+ */
+function boardFor(state: State, view: ShipmentView = 'todos', name = 'Ver listado'): Target {
+  return { resource: Resource.Package, name, intent: { view, state } };
 }
 
+/** Rotulo corto de cada flujo en la ficha del cuadro. */
+const FLOW_SHORT: Record<Flow, string> = {
+  [Flow.Paqueteria]: 'Paquetería',
+  [Flow.Transporte]: 'Transporte',
+  [Flow.Agenciamiento]: 'Agenciamiento',
+};
+
+const ALL_FLOWS: Flow[] = [Flow.Paqueteria, Flow.Transporte, Flow.Agenciamiento];
+
 /**
- * Que se hace con cada cola y donde. Los destinos van en orden de preferencia:
- * se usa el primero que el rol pueda abrir, y el listado de trámites queda
- * siempre de ultimo como salida universal.
+ * Que se hace con cada cola, donde, y de que tipo de trámite es (`flows`: los
+ * flujos que pasan por ese estado, segun la maquina de estados). Los destinos
+ * van en orden de preferencia: se usa el primero que el rol pueda abrir, y el
+ * listado de trámites queda siempre de ultimo como salida universal.
  *
  * Es un Partial a proposito: si la API agrega una cola nueva, la pantalla la
  * pinta igual con el destino generico en vez de romperse.
  */
-const QUEUE_META: Partial<Record<State, { hint: string; icon: ReactElement; targets: Target[] }>> = {
+const QUEUE_META: Partial<
+  Record<State, { hint: string; icon: ReactElement; targets: Target[]; flows: Flow[] }>
+> = {
   /* Los prealertados no se "trabajan" desde aqui: el paquete llega a bodega y
      se recibe por su tracking, no eligiendo de una lista. El cuadro es solo la
      cifra de lo anunciado y por eso no lleva a ninguna pantalla. */
@@ -102,14 +119,20 @@ const QUEUE_META: Partial<Record<State, { hint: string; icon: ReactElement; targ
     hint: 'Anunciados por el cliente, aún sin recibir en bodega',
     icon: <path d="M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />,
     targets: [],
+    flows: ALL_FLOWS,
   },
   [State.FacturacionEnProceso]: {
-    hint: 'En su proforma en borrador: falta revisarla y aprobarla',
+    hint: 'Proformas en borrador de los tres tipos: falta revisarlas y aprobarlas',
     icon: <path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
     targets: [
-      { resource: Resource.Proformas, name: 'Proformas', intent: { proformaStatus: ProformaStatus.Borrador } },
+      {
+        resource: Resource.Proformas,
+        name: 'Proformas en borrador',
+        intent: { proformaStatus: ProformaStatus.Borrador },
+      },
       boardFor(State.FacturacionEnProceso),
     ],
+    flows: ALL_FLOWS,
   },
   /* Solo Transporte: se entrega antes de cobrar, así que este cuadro es la
      mercadería que ya salió y nadie ha facturado. NO lleva a los borradores de
@@ -120,41 +143,50 @@ const QUEUE_META: Partial<Record<State, { hint: string; icon: ReactElement; targ
     hint: 'Ya entregados: falta pasarlos a facturación',
     icon: <path d="M20 6L9 17l-5-5" />,
     targets: [
-      { resource: Resource.Tramite, name: 'Trámites', intent: { state: State.EntregadoPendientePago } },
-      boardFor(State.EntregadoPendientePago),
+      {
+        resource: Resource.Tramite,
+        name: 'Trámites de Transporte',
+        intent: { state: State.EntregadoPendientePago },
+      },
+      boardFor(State.EntregadoPendientePago, 'transporte', 'Trámites de Transporte'),
     ],
+    flows: [Flow.Transporte],
   },
   [State.EnBodegaPendientePago]: {
     hint: 'Facturados y en bodega: no salen a ruta sin el cobro',
     icon: <path d="M21 4H3a2 2 0 00-2 2v12a2 2 0 002 2h18a2 2 0 002-2V6a2 2 0 00-2-2zM1 10h22" />,
-    targets: [boardFor(State.EnBodegaPendientePago)],
+    targets: [boardFor(State.EnBodegaPendientePago, 'paqueteria', 'Paquetería')],
+    flows: [Flow.Paqueteria],
   },
   /* Solo Agenciamiento: la proforma ya emitida esperando el pago. Sin ese pago
      el trámite no entra a aduana, así que la cola bloquea el expediente entero. */
   [State.ProformaPendientePago]: {
-    hint: 'Proforma emitida: sin el pago no entra a aduana',
+    hint: 'Proformas emitidas sin pagar: sin el pago no entra a aduana',
     icon: <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8" />,
     targets: [
       {
         resource: Resource.Proformas,
-        name: 'Proformas',
+        name: 'Proformas de Agenciamiento',
         intent: { proformaStatus: ProformaStatus.Aprobada, proformaFlow: Flow.Agenciamiento },
       },
-      boardFor(State.ProformaPendientePago),
+      boardFor(State.ProformaPendientePago, 'transporte', 'Trámites de Agenciamiento'),
     ],
+    flows: [Flow.Agenciamiento],
   },
   [State.EnRutaEntrega]: {
     hint: 'En manos del mensajero, pendientes de confirmar',
     icon: <path d="M1 3h15v13H1zM16 8h4l3 3v5h-7M5.5 21a2 2 0 100-4 2 2 0 000 4zM18.5 21a2 2 0 100-4 2 2 0 000 4z" />,
     targets: [
       { resource: Resource.Delivery, name: 'Entregas' },
-      boardFor(State.EnRutaEntrega),
+      boardFor(State.EnRutaEntrega, 'paqueteria', 'Paquetería'),
     ],
+    flows: [Flow.Paqueteria],
   },
   [State.DevueltoBodega]: {
     hint: 'La entrega falló: hay que reprogramarlas',
     icon: <path d="M1 4v6h6M3.51 15a9 9 0 102.13-9.36L1 10" />,
-    targets: [boardFor(State.DevueltoBodega)],
+    targets: [boardFor(State.DevueltoBodega, 'paqueteria', 'Paquetería')],
+    flows: [Flow.Paqueteria],
   },
 };
 
@@ -167,6 +199,7 @@ interface ExtraTile {
   tone: Tone;
   icon: ReactElement;
   targets: Target[];
+  flows: Flow[];
 }
 
 /**
@@ -183,10 +216,11 @@ const TRANSPORT_UNPAID_TILE: ExtraTile = {
   targets: [
     {
       resource: Resource.Proformas,
-      name: 'Proformas',
+      name: 'Proformas de Transporte',
       intent: { proformaStatus: ProformaStatus.Aprobada, proformaFlow: Flow.Transporte },
     },
   ],
+  flows: [Flow.Transporte],
 };
 
 /**
@@ -209,6 +243,7 @@ const PAYMENTS_TILE: ExtraTile = {
       intent: { pendingValidation: true },
     },
   ],
+  flows: ALL_FLOWS,
 };
 
 /** Primer destino que el rol puede abrir; null si no puede abrir ninguno. */
@@ -287,6 +322,7 @@ export function DashboardScreen({ allowed, onNavigate }: Props) {
                   hint={meta?.hint ?? STATE_LABELS[queue.state]}
                   tone={STATE_TONE[queue.state]}
                   icon={meta?.icon ?? CHECK_ICON}
+                  flows={meta?.flows ?? ALL_FLOWS}
                   target={pickTarget(meta?.targets ?? [boardFor(queue.state)], allowed)}
                   onNavigate={onNavigate}
                 />
@@ -300,6 +336,7 @@ export function DashboardScreen({ allowed, onNavigate }: Props) {
                 hint={TRANSPORT_UNPAID_TILE.hint}
                 tone={TRANSPORT_UNPAID_TILE.tone}
                 icon={TRANSPORT_UNPAID_TILE.icon}
+                flows={TRANSPORT_UNPAID_TILE.flows}
                 target={pickTarget(TRANSPORT_UNPAID_TILE.targets, allowed)}
                 onNavigate={onNavigate}
               />
@@ -312,6 +349,7 @@ export function DashboardScreen({ allowed, onNavigate }: Props) {
                 hint={PAYMENTS_TILE.hint}
                 tone={PAYMENTS_TILE.tone}
                 icon={PAYMENTS_TILE.icon}
+                flows={PAYMENTS_TILE.flows}
                 target={pickTarget(PAYMENTS_TILE.targets, allowed)}
                 onNavigate={onNavigate}
               />
@@ -453,6 +491,7 @@ function Tile({
   hint,
   tone,
   icon,
+  flows,
   target,
   onNavigate,
 }: {
@@ -461,6 +500,8 @@ function Tile({
   hint: string;
   tone: Tone;
   icon: ReactElement;
+  /** Tipos de trámite que cuenta el cuadro; los tres juntos se rotulan "Todos". */
+  flows: Flow[];
   target: Target | null;
   onNavigate: (resource: Resource, intent?: NavIntent) => void;
 }) {
@@ -476,6 +517,17 @@ function Tile({
         <span className="dash-tile-n">{total}</span>
       </span>
       <span className="dash-tile-label">{label}</span>
+      <span className="dash-tile-flows">
+        {flows.length === ALL_FLOWS.length ? (
+          <span className="dash-flow">Todos los tipos</span>
+        ) : (
+          flows.map((flow) => (
+            <span key={flow} className={`dash-flow flow-${flow}`}>
+              {FLOW_SHORT[flow]}
+            </span>
+          ))
+        )}
+      </span>
       <span className="dash-tile-hint">{hint}</span>
       {target && (
         <span className="dash-tile-go">
