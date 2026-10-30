@@ -11,7 +11,7 @@ import { dashboardRepo } from './dashboard.repo';
 
 export const dashboardService = {
   async summary() {
-    const [byState, byType, pendingPayments, recent, drafts, agencyUnpaid, transportUnpaid] =
+    const [byState, byType, pendingPayments, recent, drafts, agencyUnpaid, transportUnpaid, packageUnpaid] =
       await Promise.all([
         dashboardRepo.countByState(),
         dashboardRepo.countByType(),
@@ -20,6 +20,7 @@ export const dashboardService = {
         dashboardRepo.proformaCount(ProformaStatus.Borrador),
         dashboardRepo.proformaCount(ProformaStatus.Aprobada, Flow.Agenciamiento),
         dashboardRepo.proformaCount(ProformaStatus.Aprobada, Flow.Transporte),
+        dashboardRepo.proformaCount(ProformaStatus.Aprobada, Flow.Paqueteria),
       ]);
 
     const counts = new Map(byState.map((row) => [row.state, row.total]));
@@ -56,9 +57,14 @@ export const dashboardService = {
           label: 'Transporte entregado sin facturar',
           total: at(State.EntregadoPendientePago),
         },
+        /**
+         * Paquetes en bodega a la espera de salir a ruta. Se rotula con el
+         * nombre del estado: el cobro de esos paquetes es por proforma y lo
+         * cuenta `packageUnpaid`, no este cuadro.
+         */
         {
           state: State.EnBodegaPendientePago,
-          label: 'Paquetes pendientes de pago',
+          label: 'En bodega preparando',
           total: at(State.EnBodegaPendientePago),
         },
         /**
@@ -86,6 +92,12 @@ export const dashboardService = {
        * ningun cuadro.
        */
       transportUnpaid,
+      /**
+       * Proformas de Paqueteria aprobadas y sin pagar: lo que el cliente debe
+       * de sus paquetes. Se cuenta por proforma, como el de Transporte, porque
+       * Paqueteria agrupa varios paquetes en una misma proforma.
+       */
+      packageUnpaid,
       /** Proformas con un pago esperando validacion del administrador. */
       pendingPayments,
       byType,

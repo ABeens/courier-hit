@@ -58,6 +58,8 @@ interface Summary {
   queues: Queue[];
   /** Proformas de Transporte aprobadas y sin pagar (no es un estado del trámite). */
   transportUnpaid: number;
+  /** Proformas de Paquetería aprobadas y sin pagar. */
+  packageUnpaid: number;
   pendingPayments: number;
   byType: { shipmentType: ShipmentType; total: number }[];
   /** Todos los estados con al menos un trámite, no solo los accionables. */
@@ -153,7 +155,7 @@ const QUEUE_META: Partial<
     flows: [Flow.Transporte],
   },
   [State.EnBodegaPendientePago]: {
-    hint: 'Facturados y en bodega: no salen a ruta sin el cobro',
+    hint: 'Paquetes en bodega: salen a ruta cuando su proforma está pagada',
     icon: <path d="M21 4H3a2 2 0 00-2 2v12a2 2 0 002 2h18a2 2 0 002-2V6a2 2 0 00-2-2zM1 10h22" />,
     targets: [boardFor(State.EnBodegaPendientePago, 'paqueteria', 'Paquetería')],
     flows: [Flow.Paqueteria],
@@ -201,6 +203,27 @@ interface ExtraTile {
   targets: Target[];
   flows: Flow[];
 }
+
+/**
+ * Cuadro del cobro de Paqueteria: proformas de paquetes aprobadas y sin pagar.
+ * Va por proforma y no por el estado "En bodega preparando" porque Paqueteria
+ * agrupa los paquetes de un cliente en una sola proforma, y es esa la que se
+ * cobra. Lleva a la misma bandeja que cuenta.
+ */
+const PACKAGE_UNPAID_TILE: ExtraTile = {
+  label: 'Paquetería por cobrar',
+  hint: 'Proformas de Paquetería aprobadas, sin pagar',
+  tone: STATE_TONE[State.EnBodegaPendientePago],
+  icon: <path d="M21 4H3a2 2 0 00-2 2v12a2 2 0 002 2h18a2 2 0 002-2V6a2 2 0 00-2-2zM1 10h22" />,
+  targets: [
+    {
+      resource: Resource.Proformas,
+      name: 'Proformas de Paquetería',
+      intent: { proformaStatus: ProformaStatus.Aprobada, proformaFlow: Flow.Paqueteria },
+    },
+  ],
+  flows: [Flow.Paqueteria],
+};
 
 /**
  * Cuadro del cobro de Transporte. No es un estado: Transporte factura y cobra
@@ -272,7 +295,10 @@ export function DashboardScreen({ allowed, onNavigate }: Props) {
   }, []);
 
   const pending = data
-    ? data.queues.reduce((sum, q) => sum + q.total, 0) + data.transportUnpaid + data.pendingPayments
+    ? data.queues.reduce((sum, q) => sum + q.total, 0) +
+      data.packageUnpaid +
+      data.transportUnpaid +
+      data.pendingPayments
     : 0;
   const headline = !data
     ? 'Colas de trabajo del día'
@@ -308,9 +334,9 @@ export function DashboardScreen({ allowed, onNavigate }: Props) {
               !error &&
               /* Esqueleto: sin el, el bloque salta de vacio a lleno y la pantalla
                  parece rota mientras carga. */
-              /* Tantos como cuadros reales (7 colas + Transporte + Depositos):
-                 con menos, la fila salta al terminar de cargar. */
-              [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => <div className="dash-tile is-skeleton" key={i} />)}
+              /* Tantos como cuadros reales (7 colas + Paquetería + Transporte +
+                 Depositos): con menos, la fila salta al terminar de cargar. */
+              [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => <div className="dash-tile is-skeleton" key={i} />)}
 
             {data?.queues.map((queue) => {
               const meta = QUEUE_META[queue.state];
@@ -328,6 +354,19 @@ export function DashboardScreen({ allowed, onNavigate }: Props) {
                 />
               );
             })}
+
+            {data && (
+              <Tile
+                total={data.packageUnpaid}
+                label={PACKAGE_UNPAID_TILE.label}
+                hint={PACKAGE_UNPAID_TILE.hint}
+                tone={PACKAGE_UNPAID_TILE.tone}
+                icon={PACKAGE_UNPAID_TILE.icon}
+                flows={PACKAGE_UNPAID_TILE.flows}
+                target={pickTarget(PACKAGE_UNPAID_TILE.targets, allowed)}
+                onNavigate={onNavigate}
+              />
+            )}
 
             {data && (
               <Tile
