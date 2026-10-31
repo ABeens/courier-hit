@@ -368,7 +368,7 @@ function sheet(doc: ProformaDocument): string {
     ${linesTable(doc)}
     ${itemsTable(doc)}
 
-    <div class="foot">Documento proforma. No sustituye la factura electrónica.</div>
+    <div class="foot">Documento proforma. No sustituye la factura electrónica, todos los costos locales aplican IVA no reflejado en este documento.</div>
   </section>`;
 }
 

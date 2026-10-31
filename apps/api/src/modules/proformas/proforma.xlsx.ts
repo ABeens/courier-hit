@@ -263,7 +263,7 @@ function addSheet(wb: ExcelJS.Workbook, logoId: number, doc: ProformaDocument, n
   }
   row = totalRows(ws, row, doc) + 1;
 
-  put(ws, row, 1, 'Documento proforma. No sustituye la factura electrónica.', {
+  put(ws, row, 1, 'Documento proforma. No sustituye la factura electrónica, todos los costos locales aplican IVA no reflejado en este documento.', {
     font: font({ size: 9, color: { argb: COLOR.muted } }),
   }, LAST_COL);
 
