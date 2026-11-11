@@ -257,10 +257,27 @@ function sectionsFor(row: ShipmentDto, view: ShipmentView, amounts: BillingAmoun
     ];
   }
 
-  // 'todos': conviven paquetes y trámites, así que solo lo común. Las dos vistas
-  // del cliente usan el mismo juego: al titular no le toca la trastienda (tienda,
-  // transportista, peso en Paquetería; DUA y almacén en los demás, que son
-  // documentación que llevamos nosotros) sino sus guías, su ruta y su cobro.
+  // "Mis paquetes": el titular quiere saber cuánto pesa y qué trae cada paquete
+  // (el peso es el que se le factura). La trastienda (tienda, transportista,
+  // notas internas) sigue fuera.
+  if (view === 'propios') {
+    return [
+      { title: guideTitle(row), fields: guideFields(row) },
+      {
+        title: 'Paquete',
+        fields: [
+          { label: 'Peso', value: row.billableWeightKg != null ? `${row.billableWeightKg} kg` : null },
+          { label: 'Contenido', value: row.content },
+        ],
+      },
+      { title: 'Entrega', fields: [entrega] },
+      ...(money ? [money] : []),
+    ];
+  }
+
+  // 'todos' y "Otros trámites": conviven o son trámites, así que solo lo común.
+  // Al titular no le toca la trastienda (DUA y almacén, que es documentación que
+  // llevamos nosotros) sino sus guías, su ruta y su cobro.
   // Los identificadores SI son comunes: `guideFields` ya resuelve por fila cuál
   // lleva HAWB y cuál no, sin que el tablero tenga que elegir un juego único.
   return [

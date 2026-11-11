@@ -109,6 +109,11 @@ export function reportsFor(role: Role): ReportKind[] {
 export interface ReportColumn {
   key: string;
   label: string;
+  /**
+   * La celda es un instante que se muestra SOLO con la fecha (dia local), sin
+   * hora. El valor sigue viajando como instante UTC: el recorte es presentacion.
+   */
+  dateOnly?: true;
 }
 
 /**
@@ -129,7 +134,7 @@ const PAQ = {
   cnee: { key: 'cnee', label: 'CNEE' }, //                                    +
   description: { key: 'description', label: 'REF' }, //                       7
   state: { key: 'state', label: 'ESTATUS' }, //                              11
-  lastMovedAt: { key: 'lastMovedAt', label: 'FECHA DE ESTADO' }, //          +  ultimo cambio de estado
+  lastMovedAt: { key: 'lastMovedAt', label: 'FECHA DE ESTADO', dateOnly: true }, //          +  ultimo cambio de estado
   code: { key: 'code', label: 'Consecutivo Interno HS' }, //                  2
   service: { key: 'service', label: 'SERVICIO' }, //                          1  constante
   miamiArrivalAt: { key: 'miamiArrivalAt', label: 'FECHA DE ARRIBO A MIAMI' }, // 8  derivado del historial
@@ -225,7 +230,7 @@ const AGENCIAMIENTO_COLUMNS: readonly ReportColumn[] = [
   { key: 'description', label: 'REF' }, //                          6
   { key: 'dua', label: 'DUA' }, //                                  7
   { key: 'state', label: 'ESTATUS' }, //                            8
-  { key: 'lastMovedAt', label: 'FECHA DE ESTADO' }, //               +   ultimo cambio de estado
+  { key: 'lastMovedAt', label: 'FECHA DE ESTADO', dateOnly: true }, //               +   ultimo cambio de estado
   { key: 'code', label: 'Consecutivo Interno HS' }, //              1
   { key: 'warehouse', label: 'ALMACEN' }, //                        3
   { key: 'month', label: 'MES' }, //                               10  derivado de 9
@@ -293,7 +298,7 @@ export const REPORT_COLUMNS: Record<ReportKind, readonly ReportColumn[]> = {
     { key: 'cnee', label: 'CNEE' },
     { key: 'description', label: 'Descripción (REF)' },
     { key: 'state', label: 'Estatus' },
-    { key: 'lastMovedAt', label: 'Fecha de estado' },
+    { key: 'lastMovedAt', label: 'Fecha de estado', dateOnly: true },
     { key: 'routeNumber', label: 'Ruta' },
   ],
 
@@ -313,7 +318,7 @@ export const REPORT_COLUMNS: Record<ReportKind, readonly ReportColumn[]> = {
     { key: 'warehouse', label: 'Almacén' },
     { key: 'dua', label: 'DUA' },
     { key: 'state', label: 'Estatus' },
-    { key: 'lastMovedAt', label: 'Fecha de estado' },
+    { key: 'lastMovedAt', label: 'Fecha de estado', dateOnly: true },
     { key: 'routeNumber', label: 'Ruta' },
     { key: 'invoiceTotalUsd', label: 'Factura (USD)' },
     { key: 'invoiceTotalCrc', label: 'Factura (CRC)' },

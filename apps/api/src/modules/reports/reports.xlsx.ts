@@ -42,14 +42,21 @@ const wallClock = new Intl.DateTimeFormat('en-US', {
  * La hora local de Costa Rica de un instante, como `Date` "ingenua": exceljs
  * escribe la fecha en UTC, asi que se le entrega ya con la hora de pared.
  */
-function toLocalDate(iso: string): Date {
+function toLocalDate(iso: string, dateOnly = false): Date {
   const parts = wallClock.formatToParts(new Date(iso));
   const part = (type: Intl.DateTimeFormatPartTypes) =>
     Number(parts.find((p) => p.type === type)?.value ?? 0);
-  return new Date(
-    Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'), part('second')),
-  );
+  // Una columna de solo fecha queda en la medianoche de ese dia local: asi un
+  // filtro o una comparacion de fechas en Excel no tropieza con una hora oculta.
+  return dateOnly
+    ? new Date(Date.UTC(part('year'), part('month') - 1, part('day')))
+    : new Date(
+        Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'), part('second')),
+      );
 }
+
+const DATE_TIME_FORMAT = 'dd/mm/yyyy hh:mm';
+const DATE_FORMAT = 'dd/mm/yyyy';
 
 /**
  * Formato numerico de UNA columna, igual en todas sus filas (regla M4).
@@ -95,12 +102,15 @@ export async function renderReportXlsx(report: ReportDto): Promise<Uint8Array<Ar
     const added = ws.addRow(
       report.columns.map((c) => {
         const value = row[c.key] ?? null;
-        return typeof value === 'string' && INSTANT.test(value) ? toLocalDate(value) : value;
+        return typeof value === 'string' && INSTANT.test(value)
+          ? toLocalDate(value, c.dateOnly)
+          : value;
       }),
     );
     added.eachCell((cell, col) => {
       cell.font = { name: FONT, size: 10 };
-      if (cell.value instanceof Date) cell.numFmt = 'dd/mm/yyyy hh:mm';
+      if (cell.value instanceof Date)
+        cell.numFmt = report.columns[col - 1]?.dateOnly ? DATE_FORMAT : DATE_TIME_FORMAT;
       else if (typeof cell.value === 'number' && formats[col - 1]) cell.numFmt = formats[col - 1]!;
     });
   }
@@ -111,7 +121,9 @@ export async function renderReportXlsx(report: ReportDto): Promise<Uint8Array<Ar
       return value === null || value === undefined
         ? ''
         : typeof value === 'string' && INSTANT.test(value)
-          ? 'dd/mm/yyyy hh:mm'
+          ? column.dateOnly
+            ? DATE_FORMAT
+            : DATE_TIME_FORMAT
           : String(value);
     });
     ws.getColumn(index + 1).width = widthOf([column.label, ...values]);

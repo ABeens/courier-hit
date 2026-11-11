@@ -22,6 +22,7 @@ import { FilterBar } from '../components/FilterBar';
 import type { FilterChip } from '../components/FilterBar';
 import { API_BASE, ApiError, api } from '../lib/api';
 import {
+  formatDate,
   formatDayInput,
   startOfLocalDayUtc,
   startOfNextLocalDayUtc,
@@ -245,7 +246,7 @@ export function ReportsScreen() {
               <tr key={index}>
                 {report.columns.map((column) => (
                   <td key={column.key}>
-                    {row[column.key] ?? <span className="empty-val">—</span>}
+                    {cellText(column, row[column.key]) ?? <span className="empty-val">—</span>}
                   </td>
                 ))}
               </tr>
@@ -260,4 +261,13 @@ export function ReportsScreen() {
       )}
     </div>
   );
+}
+
+/**
+ * Texto de una celda. Las columnas de solo fecha llegan como instante UTC y se
+ * muestran como el dia en la hora local del usuario, sin hora.
+ */
+function cellText(column: ReportColumn, value: ReportRow[string] | undefined) {
+  if (value === null || value === undefined) return null;
+  return column.dateOnly && typeof value === 'string' ? formatDate(value) : value;
 }
