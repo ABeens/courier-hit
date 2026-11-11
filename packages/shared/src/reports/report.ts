@@ -129,6 +129,7 @@ const PAQ = {
   cnee: { key: 'cnee', label: 'CNEE' }, //                                    +
   description: { key: 'description', label: 'REF' }, //                       7
   state: { key: 'state', label: 'ESTATUS' }, //                              11
+  lastMovedAt: { key: 'lastMovedAt', label: 'FECHA DE ESTADO' }, //          +  ultimo cambio de estado
   code: { key: 'code', label: 'Consecutivo Interno HS' }, //                  2
   service: { key: 'service', label: 'SERVICIO' }, //                          1  constante
   miamiArrivalAt: { key: 'miamiArrivalAt', label: 'FECHA DE ARRIBO A MIAMI' }, // 8  derivado del historial
@@ -162,6 +163,7 @@ const PAQUETERIA_FULL_COLUMNS: readonly ReportColumn[] = [
   PAQ.cnee,
   PAQ.description,
   PAQ.state,
+  PAQ.lastMovedAt,
   PAQ.code,
   PAQ.miamiArrivalAt,
   PAQ.store,
@@ -192,6 +194,7 @@ const PAQUETERIA_OPERATIONAL_COLUMNS: readonly ReportColumn[] = [
   PAQ.cnee,
   PAQ.description,
   PAQ.state,
+  PAQ.lastMovedAt,
   PAQ.code,
   PAQ.service,
   PAQ.miamiArrivalAt,
@@ -222,6 +225,7 @@ const AGENCIAMIENTO_COLUMNS: readonly ReportColumn[] = [
   { key: 'description', label: 'REF' }, //                          6
   { key: 'dua', label: 'DUA' }, //                                  7
   { key: 'state', label: 'ESTATUS' }, //                            8
+  { key: 'lastMovedAt', label: 'FECHA DE ESTADO' }, //               +   ultimo cambio de estado
   { key: 'code', label: 'Consecutivo Interno HS' }, //              1
   { key: 'warehouse', label: 'ALMACEN' }, //                        3
   { key: 'month', label: 'MES' }, //                               10  derivado de 9
@@ -271,10 +275,12 @@ const AGENCIAMIENTO_FULL_ONLY_KEYS: ReadonlySet<string> = new Set([
  * que no debe ver el personal no administrador. El peso SI lo ve: no es un monto
  * y el negocio lo pidio para atender al cliente.
  *
- * "Última actualización" es el ultimo cambio de ESTADO del tramite (su
- * historial), no `updated_at`, que se mueve con cualquier edicion tecnica
- * (sincronizacion con Helga, correcciones). El filtro de fechas de los
- * operativos usa esa misma fecha (ver `reportsRepo.shipments`).
+ * "Fecha de estado" es el ultimo cambio de ESTADO del tramite (su historial),
+ * no `updated_at`, que se mueve con cualquier edicion tecnica (sincronizacion
+ * con Helga, correcciones). Va al lado del Estatus en los seis reportes de
+ * tramites (operativos y por servicio). El filtro de fechas de los operativos
+ * usa esa misma fecha (ver `reportsRepo.shipments`); el de los reportes por
+ * servicio sigue por fecha de ingreso.
  */
 export const REPORT_COLUMNS: Record<ReportKind, readonly ReportColumn[]> = {
   [ReportKind.OperativoBasico]: [
@@ -287,8 +293,8 @@ export const REPORT_COLUMNS: Record<ReportKind, readonly ReportColumn[]> = {
     { key: 'cnee', label: 'CNEE' },
     { key: 'description', label: 'Descripción (REF)' },
     { key: 'state', label: 'Estatus' },
+    { key: 'lastMovedAt', label: 'Fecha de estado' },
     { key: 'routeNumber', label: 'Ruta' },
-    { key: 'lastMovedAt', label: 'Última actualización' },
   ],
 
   [ReportKind.OperativoCompleto]: [
@@ -307,10 +313,10 @@ export const REPORT_COLUMNS: Record<ReportKind, readonly ReportColumn[]> = {
     { key: 'warehouse', label: 'Almacén' },
     { key: 'dua', label: 'DUA' },
     { key: 'state', label: 'Estatus' },
+    { key: 'lastMovedAt', label: 'Fecha de estado' },
     { key: 'routeNumber', label: 'Ruta' },
     { key: 'invoiceTotalUsd', label: 'Factura (USD)' },
     { key: 'invoiceTotalCrc', label: 'Factura (CRC)' },
-    { key: 'lastMovedAt', label: 'Última actualización' },
   ],
 
   [ReportKind.Transaccional]: [

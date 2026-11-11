@@ -162,6 +162,7 @@ async function serviceReportRows(query: ReportQuery): Promise<ReportRow[]> {
       tracking: row.tracking,
       description: row.description,
       state: STATE_LABELS[row.state],
+      lastMovedAt: row.lastMovedAt,
       /**
        * PROFORMA es el numero de la proforma APROBADA en la que se facturo el
        * tramite. Vacio mientras siga en borrador: un borrador no es un documento

@@ -328,6 +328,8 @@ export const reportsRepo = {
         freightRateUsdPerKg: shipments.freightRateUsdPerKg,
         costsApprovedAt: shipments.costsApprovedAt,
         createdAt: shipments.createdAt,
+        /** FECHA DE ESTADO: el ultimo cambio de estado (ver `lastMovedAt`). */
+        lastMovedAt,
         clientCode: clients.code,
         clientName: users.name,
       })
