@@ -497,6 +497,70 @@ const EnvSchema = z.object({
     .refine(isValidDuration, {
       message: 'ROBOT_PACKAGE_DISCOVERY_EVERY debe ser una duracion valida (p. ej. "2m", "15m").',
     }),
+
+  // --- Webhooks de Helga (docs/webhooks-helga-plan.html) ---
+  /**
+   * Interruptor de la recepcion. Apagado, los dos endpoints responden 503: Helga
+   * lo toma como fallo temporal y reintenta, asi que apagarlo un rato (un
+   * despliegue delicado) no deja avisos en revision manual.
+   */
+  HELGA_WEBHOOKS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  /**
+   * Una llave por cuenta Miami, guardada como HASH SHA-256 (hex), nunca en
+   * claro: `[{"account":"SJO008835","hash":"9f2c..."}]`. La genera
+   * `infra/scripts/helga-webhook-key.ps1`, que ensena la llave una sola vez.
+   */
+  HELGA_WEBHOOK_KEYS: z
+    .string()
+    .optional()
+    .transform((raw, ctx) => {
+      const text = raw?.trim();
+      if (!text || /^<.*>$/.test(text)) return [];
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'HELGA_WEBHOOK_KEYS debe ser un JSON valido: [{"account":"SJO...","hash":"<sha256 hex>"}].',
+        });
+        return z.NEVER;
+      }
+      const result = z
+        .array(
+          z.object({
+            account: z.string().trim().min(1),
+            hash: z
+              .string()
+              .trim()
+              .regex(/^[0-9a-fA-F]{64}$/, 'el hash debe ser SHA-256 en hexadecimal (64 caracteres)')
+              .transform((h) => h.toLowerCase()),
+          }),
+        )
+        .safeParse(parsed);
+      if (!result.success) {
+        const detail = result.error.issues
+          .map((issue) => `[${issue.path.join('.')}] ${issue.message}`)
+          .join('; ');
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `HELGA_WEBHOOK_KEYS invalido: ${detail}` });
+        return z.NEVER;
+      }
+      return result.data;
+    }),
+  /**
+   * Cada cuanto barre el robot los avisos que quedaron pendientes o fallidos. El
+   * camino normal no lo espera (cada aviso despierta al procesador al llegar):
+   * esto solo recoge lo que dejo un reinicio o un fallo de la base.
+   */
+  ROBOT_WEBHOOK_SWEEP_EVERY: z
+    .string()
+    .default('1m')
+    .refine(isValidDuration, {
+      message: 'ROBOT_WEBHOOK_SWEEP_EVERY debe ser una duracion valida (p. ej. "1m", "5m").',
+    }),
 }).superRefine((env, ctx) => {
   // OJO: la tasa de referencia (HACIENDA_*) NO se valida aqui a proposito. No
   // tiene credenciales que exigir (la API es publica) y su URL trae default, asi

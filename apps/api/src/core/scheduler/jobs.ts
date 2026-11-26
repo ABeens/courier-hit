@@ -15,21 +15,18 @@
  * Para agregar una tarea nueva: (1) una clave en `JobLock`, (2) su intervalo en
  * `config`, (3) una llamada a `registerSyncJob` en `registerJobs`.
  */
-import { and, asc, eq } from 'drizzle-orm';
-import { Principal, Role, UserStatus } from '@courier/shared';
-import type { Session } from '@courier/shared';
 import { config } from '../config';
-import { db } from '../db';
 import { isHelgaEnabled } from '../../integrations/helga/helga.client';
-import { users } from '../../modules/auth/auth.schema';
 import { authService } from '../../modules/auth/auth.service';
 import { notificationsService } from '../../modules/notifications/notifications.service';
 import { proformaDraftsService } from '../../modules/proformas/proforma-drafts.service';
 import { providerDiscoveryService } from '../../modules/shipments/provider-discovery.service';
 import { providerSyncService } from '../../modules/shipments/provider-sync.service';
 import { shipmentsService } from '../../modules/shipments/shipments.service';
+import { providerWebhooksService } from '../../modules/provider-webhooks/provider-webhooks.service';
 import { Scheduler } from './scheduler';
 import { withLock } from './with-lock';
+import { resolveSystemSession } from './system-session';
 
 /**
  * Clave de advisory lock por tarea. Numeros arbitrarios pero FIJOS y UNICOS: no
@@ -65,34 +62,6 @@ function registerSyncJob(scheduler: Scheduler, def: SyncJobDef): void {
     every: def.every,
     handler: withLock(def.lockKey, def.name, def.run),
   });
-}
-
-/**
- * Sesion sintetica para las tareas de fondo. La sincronizacion del proveedor
- * escribe eventos de historial con `createdBy`, que es una FK a un usuario real;
- * por eso el robot actua "como" el staff mas antiguo activo en vez de con un id
- * inventado (que romperia la FK). `sessionId: 'system'` deja claro en cualquier
- * traza que el movimiento no lo hizo una persona sino el robot.
- *
- * Devuelve null si todavia no hay ningun staff activo (base recien sembrada sin
- * admin): la tarea que la use debe omitirse, no fallar.
- */
-async function resolveSystemSession(): Promise<Session | null> {
-  const [staff] = await db
-    .select({ id: users.id, role: users.role })
-    .from(users)
-    .where(and(eq(users.principal, Principal.Staff), eq(users.status, UserStatus.Activo)))
-    .orderBy(asc(users.createdAt))
-    .limit(1);
-
-  if (!staff) return null;
-
-  return {
-    sessionId: 'system',
-    userId: staff.id,
-    principal: Principal.Staff,
-    role: staff.role as Role,
-  };
 }
 
 /**
@@ -213,6 +182,19 @@ export function registerJobs(scheduler: Scheduler): void {
       );
     },
   });
+
+  // --- Avisos (webhooks) de Helga que quedaron en la cola ---
+  // Cada aviso despierta al procesador al llegar, asi que esto no es el camino
+  // normal: recoge lo que dejo un reinicio del contenedor o un fallo de la base.
+  // No pasa por `registerSyncJob` porque `drain` ya toma su propio candado
+  // (WEBHOOK_LOCK_KEY): envolverlo en otro lo dejaria sin poder entrar nunca.
+  if (config.HELGA_WEBHOOKS_ENABLED) {
+    scheduler.register({
+      name: 'helga-webhooks',
+      every: config.ROBOT_WEBHOOK_SWEEP_EVERY,
+      handler: () => providerWebhooksService.drain(),
+    });
+  }
 
   // --- Correo diario al cliente (decision P16 del SOW de proformas) ---
   // No depende de Helga: corre siempre que el robot este encendido. Pregunta cada

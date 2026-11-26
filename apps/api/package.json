@@ -8,6 +8,7 @@
     "build": "tsx build.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --env-file=.env --test \"src/**/*.test.ts\"",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:repair": "tsx --env-file=.env src/repair-migrations.ts",

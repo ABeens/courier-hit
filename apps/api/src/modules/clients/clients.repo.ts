@@ -193,6 +193,21 @@ export const clientsRepo = {
       .where(inArray(clients.helgaClientId, helgaClientIds));
   },
 
+  /**
+   * Casillero cuyo sub-casillero de Helga es ese (sin distinguir mayusculas). Lo
+   * usa el aviso de creacion de paquete (webhook) para atribuir los paquetes de
+   * la cuenta principal. `helga_sub_locker` es unico (migracion 0046), asi que
+   * como mucho hay uno.
+   */
+  async findBySubLocker(subLocker: string) {
+    const [row] = await db
+      .select({ id: clients.id, code: clients.code })
+      .from(clients)
+      .where(sql`upper(${clients.helgaSubLocker}) = upper(${subLocker.trim()})`)
+      .limit(1);
+    return row ?? null;
+  },
+
   async count() {
     const [row] = await db.select({ n: count() }).from(clients);
     return row?.n ?? 0;

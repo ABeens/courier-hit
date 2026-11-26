@@ -151,7 +151,7 @@ export async function lookupProviderPackage(
  * aqui se listara aparte, una tarea podria avanzar lo que alla se ofrece a mano.
  * Prealertado se suma porque es el punto de partida, todavia dentro del tramo.
  */
-function isBeyondProvider(state: State): boolean {
+export function isBeyondProvider(state: State): boolean {
   return state !== State.Prealertado && !isProviderDrivenState(Flow.Paqueteria, state);
 }
 
@@ -459,6 +459,8 @@ export const providerSyncService = {
     shipment: { id: string; state: State; shipmentType: ShipmentType; tracking: string; description: string },
     flow: Flow,
     target: State,
+    /** Nota de cada paso. La de siempre identifica al robot de la op. B. */
+    note = 'Actualizado desde el operador en Miami.',
   ): Promise<number> {
     if (flow !== Flow.Paqueteria) return 0;
 
@@ -484,7 +486,7 @@ export const providerSyncService = {
         shipment.id,
         next,
         session.userId,
-        'Actualizado desde el operador en Miami.',
+        note,
       );
       current = next;
       moved += 1;

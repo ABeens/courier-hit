@@ -25,6 +25,7 @@ import { reportsRoutes } from './modules/reports/reports.routes';
 import { dashboardRoutes } from './modules/dashboard/dashboard.routes';
 import { publicApiRoutes } from './modules/public-api/public.routes';
 import { settingsRoutes } from './modules/settings/settings.routes';
+import { providerWebhooksRoutes } from './modules/provider-webhooks/provider-webhooks.routes';
 
 const app = createApp();
 app.route('/api/auth', authRoutes);
@@ -45,6 +46,13 @@ app.route('/api/dashboard', dashboardRoutes);
 app.route('/api/settings', settingsRoutes);
 app.route('/api/api-keys', apiKeysRoutes);
 app.route('/api/audit', auditRoutes);
+
+/**
+ * Avisos de Helga (docs/webhooks-helga-plan.html). Ruta propia porque la llama
+ * un sistema externo con su propia llave por cuenta Miami: no es portal ni API
+ * publica de clientes.
+ */
+app.route('/api/webhooks/helga', providerWebhooksRoutes);
 
 /**
  * API PUBLICA para clientes (docs/16). Se monta bajo su propia version y no

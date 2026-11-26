@@ -400,6 +400,13 @@
       "when": 1792476160600,
       "tag": "0056_provider_account_prealert_recipient",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1795716915421,
+      "tag": "0057_provider_webhook_events",
+      "breakpoints": true
     }
   ]
 }

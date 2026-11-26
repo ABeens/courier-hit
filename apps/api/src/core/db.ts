@@ -18,6 +18,7 @@ import * as paymentsSchema from '../modules/payments/payments.schema';
 import * as proformasSchema from '../modules/proformas/proformas.schema';
 import * as deliveriesSchema from '../modules/deliveries/deliveries.schema';
 import * as settingsSchema from '../modules/settings/settings.schema';
+import * as providerWebhooksSchema from '../modules/provider-webhooks/provider-webhooks.schema';
 
 /**
  * Pool que atiende las peticiones HTTP. El `max` es explicito: el default de
@@ -54,6 +55,7 @@ export const schema = {
   ...deliveriesSchema,
   ...announcementsSchema,
   ...settingsSchema,
+  ...providerWebhooksSchema,
 };
 export const db = drizzle(client, { schema });
 export type Db = typeof db;
